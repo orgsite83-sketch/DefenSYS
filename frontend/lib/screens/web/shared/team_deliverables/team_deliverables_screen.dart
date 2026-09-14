@@ -7,6 +7,8 @@ import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'components/deliverables_filter_bar.dart';
 import 'components/deliverables_table.dart';
+import 'components/cohort_submissions_matrix.dart';
+import 'deliverables_view_types.dart';
 
 Widget _notice(IconData icon, String message, Color color) {
   return Container(
@@ -82,10 +84,19 @@ class TeamDeliverablesScreen extends ConsumerStatefulWidget {
 class _TeamDeliverablesScreenState
     extends ConsumerState<TeamDeliverablesScreen> {
   final _searchController = TextEditingController();
+  late DeliverablesViewMode _viewMode;
+  TeamTriageFilter _triageFilter = TeamTriageFilter.all;
+  int? _activeTeamId;
 
   @override
   void initState() {
     super.initState();
+    _activeTeamId = widget.initialTeamId;
+    final isInstructor = widget.initialScope == 'pit' ||
+        widget.pitYearLevel != null ||
+        widget.pitSection != null;
+    _viewMode = isInstructor ? DeliverablesViewMode.matrix : DeliverablesViewMode.dossier;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
         scope: widget.initialScope,
@@ -107,6 +118,15 @@ class _TeamDeliverablesScreenState
   Widget build(BuildContext context) {
     final state = ref.watch(capstoneDeliverablesProvider);
     final isWide = MediaQuery.of(context).size.width >= 900;
+    final isInstructor = widget.initialScope == 'pit' ||
+        widget.pitYearLevel != null ||
+        widget.pitSection != null ||
+        state.scope == 'pit';
+    final showViewToggle = isInstructor || state.teams.length >= 3;
+
+    final filteredTeams = state.teams
+        .where((t) => DeliverablesTriageHelper.matchesFilter(t, _triageFilter))
+        .toList();
 
     final content = SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -154,6 +174,19 @@ class _TeamDeliverablesScreenState
             state: state,
             searchController: _searchController,
             isAdviser: widget.isAdviser,
+            viewMode: _viewMode,
+            onViewModeChanged: (mode) {
+              setState(() {
+                _viewMode = mode;
+              });
+            },
+            activeTriageFilter: _triageFilter,
+            onTriageFilterChanged: (filter) {
+              setState(() {
+                _triageFilter = filter;
+              });
+            },
+            showViewToggle: showViewToggle,
           ),
           const SizedBox(height: 16),
           state.isLoading
@@ -163,12 +196,25 @@ class _TeamDeliverablesScreenState
                     child: CircularProgressIndicator(),
                   ),
                 )
-              : DeliverablesTablePane(
-                  state: state,
-                  isAdviser: widget.isAdviser,
-                  initialTeamId: widget.initialTeamId,
-                  initialTab: widget.initialTab,
-                ),
+              : (_viewMode == DeliverablesViewMode.matrix
+                  ? CohortSubmissionsMatrix(
+                      teams: filteredTeams,
+                      state: state,
+                      isAdviser: widget.isAdviser,
+                      onSelectTeam: (teamId) {
+                        setState(() {
+                          _activeTeamId = teamId;
+                          _viewMode = DeliverablesViewMode.dossier;
+                        });
+                      },
+                    )
+                  : DeliverablesTablePane(
+                      state: state,
+                      isAdviser: widget.isAdviser,
+                      initialTeamId: _activeTeamId ?? widget.initialTeamId,
+                      initialTab: widget.initialTab,
+                      activeTriageFilter: _triageFilter,
+                    )),
         ],
       ),
     );
@@ -186,3 +232,4 @@ class _TeamDeliverablesScreenState
     );
   }
 }
+

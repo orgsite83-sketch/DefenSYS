@@ -695,7 +695,6 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         Widget content = child;
         if (needsHorizontalScroll) {
           content = Scrollbar(
-            thumbVisibility: true,
             notificationPredicate: (notification) =>
                 notification.metrics.axis == Axis.horizontal,
             child: SingleChildScrollView(

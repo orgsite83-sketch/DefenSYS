@@ -230,9 +230,11 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
   }
 
   Future<void> _refreshVault() async {
+    final role = ref.read(authProvider).user?['role']?.toString();
     await Future.wait([
       ref.read(repositoryProvider.notifier).fetchForStudent(search: _searchQuery),
-      ref.read(dashboardProvider('student').notifier).fetchDashboardData(),
+      if (role == 'student')
+        ref.read(dashboardProvider('student').notifier).fetchDashboardData(),
     ]);
   }
 
@@ -506,7 +508,7 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Open Student Library · Read manuscripts, view peer remarks & leave reviews.',
+                  'Institutional Research Library · Read manuscripts, view peer remarks & leave reviews.',
                   style: TextStyle(
                     fontSize: 10.5,
                     color: Colors.brown.shade800,
@@ -926,7 +928,11 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
   // ── Bookshelf Grid View ──
   Widget _buildBookshelfGrid(List<VaultEntry> entries) {
     return LayoutBuilder(builder: (context, constraints) {
-      final crossAxisCount = constraints.maxWidth > 600 ? 4 : (constraints.maxWidth > 380 ? 3 : 2);
+      final crossAxisCount = constraints.maxWidth > 1200
+          ? 6
+          : (constraints.maxWidth > 850
+              ? 5
+              : (constraints.maxWidth > 600 ? 4 : (constraints.maxWidth > 380 ? 3 : 2)));
       final itemWidth = (constraints.maxWidth - ((crossAxisCount - 1) * 12)) / crossAxisCount;
       final itemHeight = itemWidth * 1.85;
 
@@ -1130,12 +1136,17 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _BookDetailsSheet(
-        entry: entry,
-        onReadPressed: () {
-          Navigator.pop(context);
-          _openReader(entry);
-        },
+      builder: (context) => Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: _BookDetailsSheet(
+            entry: entry,
+            onReadPressed: () {
+              Navigator.pop(context);
+              _openReader(entry);
+            },
+          ),
+        ),
       ),
     );
   }

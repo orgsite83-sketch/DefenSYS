@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/screens/web/shared/team_deliverables/deliverables_view_types.dart';
 
 int _asInt(dynamic value) {
   if (value == null) return 0;
@@ -129,12 +130,24 @@ class DeliverablesFilterBar extends ConsumerStatefulWidget {
   final CapstoneDeliverablesState state;
   final TextEditingController searchController;
   final bool isAdviser;
+  final DeliverablesViewMode viewMode;
+  final ValueChanged<DeliverablesViewMode>? onViewModeChanged;
+  final TeamTriageFilter activeTriageFilter;
+  final ValueChanged<TeamTriageFilter>? onTriageFilterChanged;
+  final Map<TeamTriageFilter, int>? triageCounts;
+  final bool showViewToggle;
 
   const DeliverablesFilterBar({
     super.key,
     required this.state,
     required this.searchController,
     required this.isAdviser,
+    this.viewMode = DeliverablesViewMode.dossier,
+    this.onViewModeChanged,
+    this.activeTriageFilter = TeamTriageFilter.all,
+    this.onTriageFilterChanged,
+    this.triageCounts,
+    this.showViewToggle = false,
   });
 
   @override
@@ -329,52 +342,266 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
       ),
     );
 
-    return Container(
-      decoration: _cardDecoration(),
-      padding: const EdgeInsets.all(16),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          if (constraints.maxWidth < 600) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                searchField,
-                const SizedBox(height: 12),
-                stageDropdown,
-                const SizedBox(height: 12),
-                statusDropdown,
-                const SizedBox(height: 12),
-                clearButton,
-              ],
-            );
-          } else if (constraints.maxWidth < 900) {
-            final calculatedWidth = (constraints.maxWidth - 48) / 2;
-            final dropdownWidth = calculatedWidth.clamp(0.0, double.infinity);
-            return Wrap(
-              spacing: 16,
-              runSpacing: 16,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SizedBox(width: double.infinity, child: searchField),
-                SizedBox(width: dropdownWidth, child: stageDropdown),
-                SizedBox(width: dropdownWidth, child: statusDropdown),
-                SizedBox(width: double.infinity, child: clearButton),
-              ],
-            );
-          }
-          return Row(
+    final filterFields = LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 600) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(child: searchField),
-              const SizedBox(width: 16),
-              SizedBox(width: 220, child: stageDropdown),
-              const SizedBox(width: 16),
-              SizedBox(width: 220, child: statusDropdown),
-              const SizedBox(width: 16),
+              searchField,
+              const SizedBox(height: 12),
+              stageDropdown,
+              const SizedBox(height: 12),
+              statusDropdown,
+              const SizedBox(height: 12),
               clearButton,
             ],
           );
-        },
+        } else if (constraints.maxWidth < 900) {
+          final calculatedWidth = (constraints.maxWidth - 48) / 2;
+          final dropdownWidth = calculatedWidth.clamp(0.0, double.infinity);
+          return Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(width: double.infinity, child: searchField),
+              SizedBox(width: dropdownWidth, child: stageDropdown),
+              SizedBox(width: dropdownWidth, child: statusDropdown),
+              SizedBox(width: double.infinity, child: clearButton),
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: searchField),
+            const SizedBox(width: 16),
+            SizedBox(width: 220, child: stageDropdown),
+            const SizedBox(width: 16),
+            SizedBox(width: 220, child: statusDropdown),
+            const SizedBox(width: 16),
+            clearButton,
+          ],
+        );
+      },
+    );
+
+    return Container(
+      decoration: _cardDecoration(),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          filterFields,
+          const SizedBox(height: 14),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          const SizedBox(height: 14),
+          _buildTriageAndToggleRow(),
+        ],
       ),
+    );
+  }
+
+  Widget _buildTriageChip({
+    required TeamTriageFilter filter,
+    required String label,
+    Color? dotColor,
+    IconData? icon,
+  }) {
+    final isSelected = widget.activeTriageFilter == filter;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          widget.onTriageFilterChanged?.call(filter);
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AppColors.maroon.withValues(alpha: 0.08)
+                : const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isSelected ? AppColors.maroon : const Color(0xFFE2E8F0),
+              width: isSelected ? 1.5 : 1.0,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (dotColor != null) ...[
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: dotColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              if (icon != null) ...[
+                Icon(
+                  icon,
+                  size: 13,
+                  color: isSelected ? AppColors.maroon : const Color(0xFF64748B),
+                ),
+                const SizedBox(width: 5),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                  color: isSelected ? AppColors.maroon : const Color(0xFF475569),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildViewToggle() {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+      ),
+      padding: const EdgeInsets.all(2.5),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _viewToggleButton(
+            mode: DeliverablesViewMode.matrix,
+            icon: Icons.table_chart_rounded,
+            label: 'Cohort Matrix',
+          ),
+          _viewToggleButton(
+            mode: DeliverablesViewMode.dossier,
+            icon: Icons.view_agenda_rounded,
+            label: 'Team Dossier',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _viewToggleButton({
+    required DeliverablesViewMode mode,
+    required IconData icon,
+    required String label,
+  }) {
+    final isActive = widget.viewMode == mode;
+    return InkWell(
+      onTap: () => widget.onViewModeChanged?.call(mode),
+      borderRadius: BorderRadius.circular(8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isActive ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          boxShadow: isActive
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: isActive ? AppColors.maroon : const Color(0xFF64748B),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.w600,
+                color: isActive ? AppColors.maroon : const Color(0xFF64748B),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTriageAndToggleRow() {
+    final counts = widget.triageCounts ??
+        DeliverablesTriageHelper.computeCounts(widget.state.teams);
+    final allCount = counts[TeamTriageFilter.all] ?? widget.state.teams.length;
+    final needsReviewCount = counts[TeamTriageFilter.needsReview] ?? 0;
+    final readyCount = counts[TeamTriageFilter.readyForDefense] ?? 0;
+    final overdueCount = counts[TeamTriageFilter.overdue] ?? 0;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 750;
+        final chips = Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _buildTriageChip(
+              filter: TeamTriageFilter.all,
+              label: 'All ($allCount)',
+            ),
+            _buildTriageChip(
+              filter: TeamTriageFilter.needsReview,
+              label: 'Needs Review ($needsReviewCount)',
+              dotColor: const Color(0xFFEF4444),
+            ),
+            _buildTriageChip(
+              filter: TeamTriageFilter.readyForDefense,
+              label: 'Ready for Defense ($readyCount)',
+              dotColor: const Color(0xFF10B981),
+            ),
+            _buildTriageChip(
+              filter: TeamTriageFilter.overdue,
+              label: 'Missing / Overdue ($overdueCount)',
+              dotColor: const Color(0xFFF59E0B),
+            ),
+          ],
+        );
+
+        if (isNarrow) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              chips,
+              if (widget.showViewToggle) ...[
+                const SizedBox(height: 12),
+                _buildViewToggle(),
+              ],
+            ],
+          );
+        }
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(child: chips),
+            if (widget.showViewToggle) ...[
+              const SizedBox(width: 12),
+              _buildViewToggle(),
+            ],
+          ],
+        );
+      },
     );
   }
 }

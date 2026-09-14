@@ -12,6 +12,7 @@ import 'package:defensys/screens/web/faculty/weekly_progress_reports_screen.dart
 import 'package:defensys/screens/web/shared/team_deliverables/dialogs/deliverable_submission_detail_modal.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/dialogs/grade_deliverable_modal.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/dialogs/wpr_management_dialogs.dart';
+import '../deliverables_view_types.dart';
 
 int parseAsInt(dynamic value) {
   if (value == null) return 0;
@@ -55,6 +56,7 @@ class DeliverablesTablePane extends ConsumerStatefulWidget {
   final bool isAdviser;
   final int? initialTeamId;
   final int? initialTab;
+  final TeamTriageFilter activeTriageFilter;
 
   const DeliverablesTablePane({
     super.key,
@@ -62,6 +64,7 @@ class DeliverablesTablePane extends ConsumerStatefulWidget {
     required this.isAdviser,
     this.initialTeamId,
     this.initialTab,
+    this.activeTriageFilter = TeamTriageFilter.all,
   });
 
   @override
@@ -1337,379 +1340,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
-  Widget _buildStagePipelineBar({
-    required Map<String, dynamic> team,
-    required List<Map<String, dynamic>> stages,
-    required String selectedStage,
-    required Map<String, dynamic> stagePayload,
-  }) {
-    final teamId = parseAsInt(team['id']);
-    final isPit = widget.state.scope == 'pit';
-    final currentStageName = team['current_stage']?.toString();
-
-    if (stages.isEmpty) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.info_outline, size: 20, color: Colors.grey.shade500),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                isPit
-                    ? 'No PIT events configured for ${team['year_level'] ?? 'this team'}.'
-                    : 'No defense stages configured for this academic term.',
-                style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header: Timeline title, click guide, unlock button & status badge
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.linear_scale_rounded,
-                    size: 16,
-                    color: AppColors.maroon,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    isPit ? 'PIT EVENT TIMELINE' : 'DEFENSE STAGE PIPELINE',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 11,
-                      color: AppColors.textSecondary,
-                      letterSpacing: 0.8,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFCBD5E1)),
-                    ),
-                    child: Text(
-                      isPit
-                          ? 'Click event to switch view'
-                          : 'Click stage to switch view',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (widget.state.scope == 'admin' && stagePayload['is_defense_done'] == true) ...[
-                    OutlinedButton.icon(
-                      onPressed: widget.state.isSaving
-                          ? null
-                          : () async {
-                              final success = await ref
-                                  .read(capstoneDeliverablesProvider.notifier)
-                                  .unlockDeliverables(
-                                    teamId: teamId,
-                                    stageLabel: selectedStage,
-                                  );
-                              if (success && mounted) {
-                                showInfoToast(
-                                  context,
-                                  stagePayload['admin_unlocked'] == true
-                                      ? 'Deliverables relocked.'
-                                      : 'Deliverables unlocked for resubmission.',
-                                );
-                              }
-                            },
-                      icon: Icon(
-                        stagePayload['admin_unlocked'] == true
-                            ? Icons.lock_outline
-                            : Icons.lock_open_outlined,
-                        size: 13,
-                      ),
-                      label: Text(
-                        stagePayload['admin_unlocked'] == true
-                            ? 'Relock'
-                            : 'Unlock for Resubmission',
-                        style: const TextStyle(fontSize: 11),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: stagePayload['admin_unlocked'] == true
-                            ? AppColors.danger
-                            : AppColors.maroon,
-                        side: BorderSide(
-                          color: stagePayload['admin_unlocked'] == true
-                              ? AppColors.danger
-                              : AppColors.maroon,
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  if (stagePayload['is_presentation_only'] == true) ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEEF2FF),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFC7D2FE)),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.record_voice_over_rounded, size: 12, color: Color(0xFF4F46E5)),
-                          SizedBox(width: 4),
-                          Text(
-                            'Oral / Demo Stage',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF4338CA),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  _buildStageStatusBadge(stagePayload),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // Stepper cards Wrap
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: stages.asMap().entries.map((entry) {
-              final idx = entry.key;
-              final item = entry.value;
-              final label = item['stage_label']?.toString() ?? '';
-              final isSelected = label == selectedStage;
-              final isTeamCurrent = label == currentStageName;
-
-              final isStageComplete = item['required_complete'] == true;
-              final isStageEndorsed = item['endorsed'] == true;
-              final isOfficiallyComplete = item['is_officially_complete'] == true;
-              final statusDetail = item['stage_status_detail']?.toString();
-              final isPassed = statusDetail == 'passed' || isOfficiallyComplete;
-
-              Color stepBg = isSelected
-                  ? AppColors.maroon
-                  : (isPassed || isStageEndorsed
-                      ? AppColors.success
-                      : (isStageComplete
-                          ? Colors.blue.shade600
-                          : (isTeamCurrent
-                              ? AppColors.maroon.withValues(alpha: 0.15)
-                              : const Color(0xFFE2E8F0))));
-              Color stepTextColor = isSelected || isPassed || isStageEndorsed || isStageComplete
-                  ? Colors.white
-                  : (isTeamCurrent ? AppColors.maroon : AppColors.textSecondary);
-
-              final showCurrentBadge = isTeamCurrent && (!isPassed || idx == stages.length - 1);
-
-              return Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () {
-                    setState(() {
-                      _cardSelectedStages[teamId] = label;
-                    });
-                  },
-                  borderRadius: BorderRadius.circular(10),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 160),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? Colors.white
-                          : (isTeamCurrent
-                              ? Colors.white
-                              : const Color(0xFFF1F5F9)),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: isSelected
-                            ? AppColors.maroon
-                            : (isTeamCurrent
-                                ? AppColors.maroon.withValues(alpha: 0.45)
-                                : const Color(0xFFCBD5E1)),
-                        width: isSelected ? 2.0 : (isTeamCurrent ? 1.5 : 1.0),
-                      ),
-                      boxShadow: isSelected
-                          ? [
-                              BoxShadow(
-                                color: AppColors.maroon.withValues(alpha: 0.12),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // Step number or check
-                        Container(
-                          width: 22,
-                          height: 22,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: stepBg,
-                          ),
-                          child: isPassed
-                              ? const Icon(Icons.check, size: 13, color: Colors.white)
-                              : (isStageEndorsed
-                                  ? const Icon(Icons.verified_rounded, size: 13, color: Colors.white)
-                                  : (isStageComplete
-                                      ? const Icon(Icons.check_circle_outline, size: 13, color: Colors.white)
-                                      : Text(
-                                          '${idx + 1}',
-                                          style: TextStyle(
-                                            fontSize: 10.5,
-                                            fontWeight: FontWeight.w800,
-                                            color: stepTextColor,
-                                          ),
-                                        ))),
-                        ),
-                        const SizedBox(width: 8),
-
-                        // Stage Name & Markers
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  label,
-                                  style: TextStyle(
-                                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                                    color: isSelected ? AppColors.maroon : AppColors.textPrimary,
-                                    fontSize: 12.5,
-                                  ),
-                                ),
-                                if (showCurrentBadge) ...[
-                                  const SizedBox(width: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.maroon,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: const Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.star_rounded, size: 9, color: Colors.white),
-                                        SizedBox(width: 2),
-                                        Text(
-                                          'CURRENT',
-                                          style: TextStyle(
-                                            fontSize: 8.5,
-                                            fontWeight: FontWeight.w900,
-                                            color: Colors.white,
-                                            letterSpacing: 0.4,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                                if (item['is_presentation_only'] == true) ...[
-                                  const SizedBox(width: 4),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFEFF6FF),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: const Color(0xFFBFDBFE)),
-                                    ),
-                                    child: const Text(
-                                      'ORAL',
-                                      style: TextStyle(
-                                        fontSize: 8,
-                                        fontWeight: FontWeight.w800,
-                                        color: Color(0xFF1D4ED8),
-                                        letterSpacing: 0.3,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                            if (isSelected) ...[
-                              const SizedBox(height: 2),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    width: 5,
-                                    height: 5,
-                                    decoration: const BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: AppColors.maroon,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  const Text(
-                                    'Viewing stage data',
-                                    style: TextStyle(
-                                      fontSize: 9.5,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.maroon,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildExpandedSection(Map<String, dynamic> team) {
     final teamId = parseAsInt(team['id']);
     final stages = _stageList(team);
@@ -2302,6 +1932,32 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     ],
                   ],
                 ),
+                if (DeliverablesTriageHelper.hasPendingReview(team)) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEE2E2),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: const Color(0xFFFECACA)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.rate_review_rounded, size: 10, color: Color(0xFFB91C1C)),
+                        SizedBox(width: 4),
+                        Text(
+                          'Pending Review',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFB91C1C),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -2310,13 +1966,25 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
-  Widget _buildTeamListCompact() {
+  Widget _buildTeamListCompact(List<Map<String, dynamic>> teams) {
+    if (teams.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24, horizontal: 8),
+        child: Center(
+          child: Text(
+            'No teams match this triage filter.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          ),
+        ),
+      );
+    }
     return ListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: widget.state.teams.length,
+      itemCount: teams.length,
       itemBuilder: (context, index) {
-        final team = widget.state.teams[index];
+        final team = teams[index];
         final teamId = parseAsInt(team['id']);
         final isSelected = teamId == _selectedTeamId;
         return _buildCompactTeamCard(team, isSelected);
@@ -2385,148 +2053,137 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
-  Widget _buildCompactRosterBanner(BuildContext context, Map<String, dynamic> team, Map<String, dynamic>? gradeRecord) {
-    final List<dynamic> members = team['members'] as List? ?? [];
-    final List<dynamic> peerGrades = gradeRecord?['peer_per_student'] as List? ?? [];
-
+  Widget _buildAvatarCluster(Map<String, dynamic> team, Map<String, dynamic>? gradeRecord) {
+    final List<dynamic> members = (team['members'] as List?) ?? [];
     if (members.isEmpty) return const SizedBox.shrink();
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    final visibleMembers = members.take(4).toList();
+    final remainingCount = members.length - visibleMembers.length;
+
+    return InkWell(
+      onTap: () => _showRosterDetailsModal(context, team, gradeRecord),
+      borderRadius: BorderRadius.circular(20),
+      child: Tooltip(
+        message: 'View Team Roster & Peer Scores (${members.length} members)',
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFCBD5E1)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                children: [
-                  const Icon(Icons.groups_outlined, size: 16, color: AppColors.maroon),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Team Roster (${members.length})',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-              InkWell(
-                onTap: () => _showRosterDetailsModal(context, team, gradeRecord),
-                borderRadius: BorderRadius.circular(4),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'View Details & Peer Scores',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.maroon,
+              SizedBox(
+                height: 24,
+                width: (visibleMembers.length * 16.0) + 8.0,
+                child: Stack(
+                  children: visibleMembers.asMap().entries.map((entry) {
+                    final idx = entry.key;
+                    final raw = entry.value;
+                    final m = raw is Map ? raw : {};
+                    final name = m['name']?.toString() ?? 'S';
+                    final role = m['role']?.toString() ?? 'member';
+                    final isLeader = role == 'leader';
+                    final initial = name.isNotEmpty ? name[0].toUpperCase() : 'S';
+
+                    return Positioned(
+                      left: idx * 16.0,
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isLeader ? AppColors.maroon : const Color(0xFF64748B),
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          initial,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                      SizedBox(width: 2),
-                      Icon(Icons.chevron_right, size: 14, color: AppColors.maroon),
-                    ],
-                  ),
+                    );
+                  }).toList(),
                 ),
               ),
+              const SizedBox(width: 4),
+              Text(
+                remainingCount > 0 ? '+${remainingCount + visibleMembers.length}' : '${members.length} ${members.length == 1 ? "Member" : "Members"}',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(width: 2),
+              const Icon(Icons.arrow_drop_down, size: 14, color: Color(0xFF64748B)),
             ],
           ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: members.map((rawMember) {
-              if (rawMember is! Map) return const SizedBox.shrink();
-              final member = Map<String, dynamic>.from(rawMember);
-              final studentId = member['id'];
-              final name = member['name']?.toString() ?? member['username']?.toString() ?? 'Student';
-              final role = member['role']?.toString() ?? 'member';
-              final isLeader = role == 'leader';
+        ),
+      ),
+    );
+  }
 
-              final peerDetails = peerGrades.firstWhere(
-                (g) => g is Map && g['student_id'] == studentId,
-                orElse: () => null,
-              );
-              final double? avgScore = parseAsDouble(peerDetails?['average_score']);
+  Widget _buildConsolidatedTeamHeader({
+    required BuildContext context,
+    required Map<String, dynamic> team,
+    required int teamId,
+    required List<Map<String, dynamic>> stages,
+    required String selectedStage,
+    required Map<String, dynamic> stagePayload,
+    required Map<String, dynamic>? gradeRecord,
+    required String? currentStage,
+  }) {
+    final isPit = widget.state.scope == 'pit';
 
-              final sanitizedName = name.trim().replaceAll(RegExp(r'\s+'), ' ');
-              final parts = sanitizedName.split(' ');
-              final initials = parts.isNotEmpty
-                  ? (parts.first.isNotEmpty ? parts.first[0] : '') +
-                      (parts.length > 1 && parts.last.isNotEmpty ? parts.last[0] : '')
-                  : '';
-
-              return Tooltip(
-                message: avgScore != null
-                    ? '$name • Peer Score: ${avgScore.toStringAsFixed(1)} / 5.0'
-                    : '$name (Click to view details)',
-                child: InkWell(
-                  onTap: () => _showRosterDetailsModal(context, team, gradeRecord),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: isLeader ? AppColors.maroon.withValues(alpha: 0.4) : const Color(0xFFCBD5E1),
-                        width: isLeader ? 1.5 : 1.0,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.02),
-                          blurRadius: 4,
-                          offset: const Offset(0, 1),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        CircleAvatar(
-                          radius: 10,
-                          backgroundColor: isLeader ? AppColors.maroon : const Color(0xFF64748B),
+                        Flexible(
                           child: Text(
-                            initials.toUpperCase(),
+                            team['name']?.toString() ?? '',
                             style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
+                              fontSize: 18,
                               fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
                             ),
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          name,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: isLeader ? FontWeight.bold : FontWeight.w500,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        if (isLeader) ...[
-                          const SizedBox(width: 6),
+                        if (currentStage != null && currentStage.isNotEmpty) ...[
+                          const SizedBox(width: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: AppColors.maroon.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(4),
+                              color: AppColors.maroon.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: AppColors.maroon.withValues(alpha: 0.2)),
                             ),
-                            child: const Text(
-                              'Leader',
-                              style: TextStyle(
-                                fontSize: 9,
+                            child: Text(
+                              isPit ? 'PIT: $currentStage' : currentStage,
+                              style: const TextStyle(
+                                fontSize: 10.5,
                                 fontWeight: FontWeight.bold,
                                 color: AppColors.maroon,
                               ),
@@ -2535,11 +2192,223 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                         ],
                       ],
                     ),
+                    const SizedBox(height: 2),
+                    Text(
+                      team['project_title']?.toString() ?? 'No Project Title',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              if (team['adviser_name']?.toString().isNotEmpty == true) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.person_outline, size: 14, color: AppColors.textSecondary),
+                      const SizedBox(width: 5),
+                      Text(
+                        'Adv: ${team['adviser_name']}',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              );
-            }).toList(),
+                const SizedBox(width: 8),
+              ],
+              _buildAvatarCluster(team, gradeRecord),
+            ],
           ),
+          if (stages.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: stages.asMap().entries.map((entry) {
+                        final idx = entry.key;
+                        final item = entry.value;
+                        final label = item['stage_label']?.toString() ?? 'Stage ${idx + 1}';
+                        final isSelected = label == selectedStage;
+                        final isCurrent = label == currentStage;
+                        final isPassed = item['status'] == 'passed';
+                        final isLast = idx == stages.length - 1;
+
+                        Color pillBg = Colors.white;
+                        Color pillBorder = const Color(0xFFE2E8F0);
+                        Color pillText = AppColors.textSecondary;
+
+                        if (isSelected) {
+                          pillBg = AppColors.maroon;
+                          pillBorder = AppColors.maroon;
+                          pillText = Colors.white;
+                        } else if (isPassed) {
+                          pillBg = const Color(0xFFF0FDF4);
+                          pillBorder = const Color(0xFFBBF7D0);
+                          pillText = const Color(0xFF15803D);
+                        } else if (isCurrent) {
+                          pillBg = AppColors.maroon.withValues(alpha: 0.05);
+                          pillBorder = AppColors.maroon.withValues(alpha: 0.3);
+                          pillText = AppColors.maroon;
+                        }
+
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            InkWell(
+                              onTap: () {
+                                setState(() {
+                                  _cardSelectedStages[teamId] = label;
+                                });
+                              },
+                              borderRadius: BorderRadius.circular(8),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: pillBg,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: pillBorder),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (isPassed && !isSelected)
+                                      const Padding(
+                                        padding: EdgeInsets.only(right: 5),
+                                        child: Icon(Icons.check_circle_rounded, size: 12, color: Color(0xFF15803D)),
+                                      )
+                                    else
+                                      Container(
+                                        width: 16,
+                                        height: 16,
+                                        alignment: Alignment.center,
+                                        margin: const EdgeInsets.only(right: 5),
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: isSelected ? Colors.white.withValues(alpha: 0.25) : const Color(0xFFE2E8F0),
+                                        ),
+                                        child: Text(
+                                          '${idx + 1}',
+                                          style: TextStyle(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                            color: isSelected ? Colors.white : const Color(0xFF475569),
+                                          ),
+                                        ),
+                                      ),
+                                    Text(
+                                      label,
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                        color: pillText,
+                                      ),
+                                    ),
+                                    if (isCurrent && !isSelected) ...[
+                                      const SizedBox(width: 4),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.maroon,
+                                          borderRadius: BorderRadius.circular(3),
+                                        ),
+                                        child: const Text(
+                                          'CURRENT',
+                                          style: TextStyle(
+                                            fontSize: 7.5,
+                                            fontWeight: FontWeight.w900,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                            if (!isLast)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 6),
+                                child: Icon(Icons.chevron_right, size: 14, color: Color(0xFFCBD5E1)),
+                              ),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                if (widget.state.scope == 'admin' && stagePayload['is_defense_done'] == true) ...[
+                  OutlinedButton.icon(
+                    onPressed: widget.state.isSaving
+                        ? null
+                        : () async {
+                            final success = await ref
+                                .read(capstoneDeliverablesProvider.notifier)
+                                .unlockDeliverables(
+                                  teamId: teamId,
+                                  stageLabel: selectedStage,
+                                );
+                            if (success && context.mounted) {
+                              showInfoToast(
+                                context,
+                                stagePayload['admin_unlocked'] == true
+                                    ? 'Deliverables relocked.'
+                                    : 'Deliverables unlocked for resubmission.',
+                              );
+                            }
+                          },
+                    icon: Icon(
+                      stagePayload['admin_unlocked'] == true
+                          ? Icons.lock_outline
+                          : Icons.lock_open_outlined,
+                      size: 13,
+                    ),
+                    label: Text(
+                      stagePayload['admin_unlocked'] == true ? 'Relock' : 'Unlock',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: stagePayload['admin_unlocked'] == true
+                          ? AppColors.danger
+                          : AppColors.maroon,
+                      side: BorderSide(
+                        color: stagePayload['admin_unlocked'] == true
+                            ? AppColors.danger
+                            : AppColors.maroon,
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                _buildStageStatusBadge(stagePayload),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -2573,109 +2442,15 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            team['name']?.toString() ?? '',
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                        ),
-                        if (currentStage != null && currentStage.isNotEmpty) ...[
-                          const SizedBox(width: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: AppColors.maroon.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: AppColors.maroon.withValues(alpha: 0.25)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 6,
-                                  height: 6,
-                                  decoration: const BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: AppColors.maroon,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  widget.state.scope == 'pit'
-                                      ? 'Active Event: $currentStage'
-                                      : 'Current Stage: $currentStage',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.maroon,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      team['project_title']?.toString() ?? 'No Project Title',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (team['adviser_name']?.toString().isNotEmpty == true) ...[
-                const SizedBox(width: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFCBD5E1)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.person_outline, size: 14, color: AppColors.textSecondary),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Adviser: ${team['adviser_name']}',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-          const SizedBox(height: 12),
-          _buildCompactRosterBanner(context, team, gradeRecord),
-          const SizedBox(height: 16),
-          _buildStagePipelineBar(
+          _buildConsolidatedTeamHeader(
+            context: context,
             team: team,
+            teamId: teamId,
             stages: stages,
             selectedStage: selectedStage,
             stagePayload: stagePayload,
+            gradeRecord: gradeRecord,
+            currentStage: currentStage,
           ),
           const SizedBox(height: 16),
           const Divider(color: Color(0xFFE2E8F0), height: 1),
@@ -2687,14 +2462,18 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   }
 
   Widget _buildDesktopLayout() {
-    final teamIds = widget.state.teams.map((t) => parseAsInt(t['id'])).toList();
+    final filteredTeams = widget.state.teams
+        .map((t) => Map<String, dynamic>.from(t))
+        .where((t) => DeliverablesTriageHelper.matchesFilter(t, widget.activeTriageFilter))
+        .toList();
+    final teamIds = filteredTeams.map((t) => parseAsInt(t['id'])).toList();
     if (_selectedTeamId == null || !teamIds.contains(_selectedTeamId)) {
       if (teamIds.isNotEmpty) {
         _selectedTeamId = teamIds.first;
       }
     }
 
-    final selectedTeam = widget.state.teams.firstWhere(
+    final selectedTeam = filteredTeams.firstWhere(
       (t) => parseAsInt(t['id']) == _selectedTeamId,
       orElse: () => <String, dynamic>{},
     );
@@ -2713,7 +2492,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 Padding(
                   padding: const EdgeInsets.only(left: 4, bottom: 8),
                   child: Text(
-                    'Teams (${widget.state.teams.length})',
+                    'Teams (${filteredTeams.length})',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
@@ -2721,7 +2500,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     ),
                   ),
                 ),
-                _buildTeamListCompact(),
+                _buildTeamListCompact(filteredTeams),
               ],
             ),
           ),
@@ -2737,7 +2516,11 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   }
 
   Widget _buildMobileLayout() {
-    final selectedTeam = widget.state.teams.firstWhere(
+    final filteredTeams = widget.state.teams
+        .map((t) => Map<String, dynamic>.from(t))
+        .where((t) => DeliverablesTriageHelper.matchesFilter(t, widget.activeTriageFilter))
+        .toList();
+    final selectedTeam = filteredTeams.firstWhere(
       (t) => parseAsInt(t['id']) == _selectedTeamId,
       orElse: () => <String, dynamic>{},
     );
@@ -2770,7 +2553,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 8),
           child: Text(
-            'Teams (${widget.state.teams.length})',
+            'Teams (${filteredTeams.length})',
             style: const TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 13,
@@ -2778,7 +2561,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             ),
           ),
         ),
-        _buildTeamListCompact(),
+        _buildTeamListCompact(filteredTeams),
       ],
     );
   }
