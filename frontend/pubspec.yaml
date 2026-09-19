@@ -113,6 +113,10 @@ flutter:
     - assets/ustp_header_banner.png
     - assets/ustp_sidebar.png
     - assets/ustp_footer_badge.png
+    - assets/images.png
+    - assets/logo-legacy.png
+    - assets/logo-ustp-trans.png
+    - assets/logo-ustp-white.png
 
   fonts:
     - family: Poppins
