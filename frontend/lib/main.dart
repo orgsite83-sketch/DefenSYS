@@ -8,6 +8,7 @@ import 'package:defensys/navigation/app_router.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/realtime_sync_service.dart';
 import 'package:defensys/services/session_keepalive_service.dart';
+import 'package:defensys/services/theme_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 
 void main() {
@@ -21,6 +22,7 @@ class DefenSYSApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(authProvider);
     final router = ref.watch(appRouterProvider);
+    final themeMode = ref.watch(themeModeProvider);
 
     return SessionKeepaliveHost(
       child: RealtimeSyncHost(
@@ -28,7 +30,9 @@ class DefenSYSApp extends ConsumerWidget {
           child: MaterialApp.router(
             title: 'DefenSYS',
             debugShowCheckedModeBanner: false,
-            theme: AppTheme.theme,
+            theme: AppTheme.lightTheme,
+            darkTheme: AppTheme.mistDarkTheme,
+            themeMode: themeMode,
             localizationsDelegates: const [
               AppLocalizations.delegate,
               GlobalMaterialLocalizations.delegate,

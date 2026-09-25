@@ -2159,6 +2159,7 @@ Color gradeScopeAccentColor(String scope) {
 
 /// KPI stat card aligned with Rubrics evaluation cards.
 Widget gradeCenterKpiStatCard({
+  BuildContext? context,
   required String title,
   required String value,
   required IconData icon,
@@ -2166,17 +2167,18 @@ Widget gradeCenterKpiStatCard({
   required Color iconBg,
   double progress = 1.0,
 }) {
+  final isDark = context != null && Theme.of(context).brightness == Brightness.dark;
   final clamped = progress.clamp(0.0, 1.0);
   return Container(
     height: 112,
     padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: isDark ? DefensysTokens.mistSurface : Colors.white,
       borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: const Color(0xFFE5E7EB)),
+      border: Border.all(color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withValues(alpha: 0.06),
+          color: isDark ? Colors.black.withValues(alpha: 0.25) : Colors.black.withValues(alpha: 0.06),
           blurRadius: 14,
           offset: const Offset(0, 5),
         ),
@@ -2188,7 +2190,7 @@ Widget gradeCenterKpiStatCard({
           width: 38,
           height: 38,
           decoration: BoxDecoration(
-            color: iconBg,
+            color: isDark ? accent.withValues(alpha: 0.18) : iconBg,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(icon, color: accent, size: 20),
@@ -2202,8 +2204,8 @@ Widget gradeCenterKpiStatCard({
                 value,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF0F2743),
+                style: TextStyle(
+                  color: isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F2743),
                   fontSize: 21,
                   fontWeight: FontWeight.w800,
                   height: 1,
@@ -2226,7 +2228,7 @@ Widget gradeCenterKpiStatCard({
                 child: LinearProgressIndicator(
                   value: clamped,
                   minHeight: 5,
-                  backgroundColor: const Color(0xFFE5E7EB),
+                  backgroundColor: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
                   color: accent,
                 ),
               ),
@@ -2238,14 +2240,20 @@ Widget gradeCenterKpiStatCard({
   );
 }
 
-Widget gradeCenterOnOffChip({required bool enabled}) {
-  final bg = enabled ? const Color(0xFFD1FAE5) : const Color(0xFFF3F4F6);
-  final fg = enabled ? const Color(0xFF059669) : const Color(0xFF9CA3AF);
+Widget gradeCenterOnOffChip({required bool enabled, BuildContext? context}) {
+  final isDark = context != null && Theme.of(context).brightness == Brightness.dark;
+  final bg = enabled
+      ? (isDark ? const Color(0xFF064E3B).withValues(alpha: 0.35) : const Color(0xFFD1FAE5))
+      : (isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6));
+  final fg = enabled
+      ? (isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
+      : (isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF9CA3AF));
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
     decoration: BoxDecoration(
       color: bg,
       borderRadius: BorderRadius.circular(999),
+      border: isDark && enabled ? Border.all(color: const Color(0xFF065F46)) : null,
     ),
     child: Text(
       enabled ? 'ON' : 'OFF',
@@ -2320,19 +2328,21 @@ Widget gradeCenterFilterField({
   required String label,
   required IconData icon,
   required Widget dropdown,
+  BuildContext? context,
 }) {
+  final isDark = context != null && Theme.of(context).brightness == Brightness.dark;
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     mainAxisSize: MainAxisSize.min,
     children: [
       Row(
         children: [
-          Icon(icon, size: 14, color: DefensysUi.steelGrey),
+          Icon(icon, size: 14, color: isDark ? DefensysTokens.textSecondaryDark : DefensysUi.steelGrey),
           const SizedBox(width: 4),
           Text(
             label,
-            style: const TextStyle(
-              color: Color(0xFF98A2B3),
+            style: TextStyle(
+              color: isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF98A2B3),
               fontSize: 10.5,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.2,
@@ -2346,14 +2356,15 @@ Widget gradeCenterFilterField({
   );
 }
 
-Widget gradeCenterFilterDropdownShell({required Widget child}) {
+Widget gradeCenterFilterDropdownShell({required Widget child, BuildContext? context}) {
+  final isDark = context != null && Theme.of(context).brightness == Brightness.dark;
   return Container(
     height: 40,
     padding: const EdgeInsets.symmetric(horizontal: 10),
     decoration: BoxDecoration(
-      color: const Color(0xFFF9FAFB),
+      color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF9FAFB),
       borderRadius: BorderRadius.circular(7),
-      border: Border.all(color: const Color(0xFFD1D5DB)),
+      border: Border.all(color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB)),
     ),
     child: child,
   );

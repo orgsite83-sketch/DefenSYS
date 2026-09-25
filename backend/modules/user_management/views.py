@@ -561,13 +561,13 @@ class BulkImportUsersMixin:
 
             if existing_user:
                 if existing_user.role == 'student' and context_semester is not None and year_level:
+                    update_defaults = {'year_level': year_level}
+                    if section:
+                        update_defaults['section'] = section
                     record, _ = StudentAcademicRecord.objects.update_or_create(
                         student=existing_user,
                         semester=context_semester,
-                        defaults={
-                            'year_level': year_level,
-                            'section': section,
-                        },
+                        defaults=update_defaults,
                     )
                     records_created.append(record)
                     updated_fields = []

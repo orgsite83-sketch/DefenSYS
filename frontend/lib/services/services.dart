@@ -16,6 +16,7 @@ export 'admin/repository_provider.dart';
 export 'app/dashboard_provider.dart';
 export 'app/app_navigator.dart';
 export 'app/unsaved_changes_provider.dart';
+export 'app/theme_provider.dart';
 
 // Auth Services
 export 'auth/auth_provider.dart';

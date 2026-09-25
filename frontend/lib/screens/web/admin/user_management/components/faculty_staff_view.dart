@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/user_management_provider.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/widgets/confirm_dialog.dart';
 
@@ -308,15 +309,23 @@ class _FacultyStaffViewState extends ConsumerState<FacultyStaffView> {
     required Color iconColor,
     required Color iconBg,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? DefensysTokens.mistSurface : Colors.white;
+    final borderColor = isDark ? DefensysTokens.mistBorder : _line;
+    final textTitle = isDark ? DefensysTokens.textSecondaryDark : _muted;
+    final textValue = isDark ? DefensysTokens.textPrimaryDark : _ink;
+    final textSub = isDark ? DefensysTokens.textSecondaryDark : _muted;
+    final actualIconBg = isDark ? iconColor.withValues(alpha: 0.18) : iconBg;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardBg,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _line),
+        border: Border.all(color: borderColor),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -328,7 +337,7 @@ class _FacultyStaffViewState extends ConsumerState<FacultyStaffView> {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: iconBg,
+              color: actualIconBg,
               borderRadius: BorderRadius.circular(9),
             ),
             child: Icon(icon, color: iconColor, size: 22),
@@ -341,27 +350,27 @@ class _FacultyStaffViewState extends ConsumerState<FacultyStaffView> {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w600,
-                    color: _muted,
+                    color: textTitle,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
-                    color: _ink,
+                    color: textValue,
                   ),
                 ),
                 const SizedBox(height: 1),
                 Text(
                   subtitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: _muted,
+                    color: textSub,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),

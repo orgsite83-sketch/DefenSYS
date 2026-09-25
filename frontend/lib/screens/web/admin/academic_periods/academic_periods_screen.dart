@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../services/academic_period_provider.dart';
+import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import '../widgets/defensys_admin_shell.dart';
@@ -23,6 +24,15 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
   static const _muted = DefensysUi.steelGrey;
   static const _maroon = DefensysUi.primaryMaroon;
   static const _green = Color(0xFF10B981);
+
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _borderColor => _isDark ? DefensysTokens.mistBorder : _line;
+  Color get _surfaceColor => _isDark ? DefensysTokens.mistSurface : Colors.white;
+  Color get _inkColor => _isDark ? const Color(0xFFF4F4F5) : _ink;
+  Color get _mutedColor => _isDark ? const Color(0xFFA1A1AA) : _muted;
+  Color get _panelBgColor => _isDark ? const Color(0xFF1B1B1F) : const Color(0xFFF9FAFB);
+  Color get _headerBgColor => _isDark ? const Color(0xFF18191E) : const Color(0xFFF0F1F4);
+  Color get _headerTextColor => _isDark ? const Color(0xFFA1A1AA) : const Color(0xFF5D6678);
 
   static const _terms = ['1st Semester', '2nd Semester', 'Summer'];
   static const _rowHeight = 45.0;
@@ -116,7 +126,14 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
   Widget _statusBanner(AcademicPeriodState state) {
     final active = state.activeSemester;
     final isActive = active != null;
-    final base = isActive ? DefensysUi.primaryMaroon : const Color(0xFF6B7280);
+    final isDark = _isDark;
+
+    final base = isActive
+        ? (isDark ? const Color(0xFF2E1014) : DefensysUi.primaryMaroon)
+        : (isDark ? const Color(0xFF1C1D22) : const Color(0xFF6B7280));
+    final borderColor = isDark
+        ? (isActive ? const Color(0xFF7F1D1D) : DefensysTokens.mistBorder)
+        : Colors.white.withValues(alpha: isActive ? 0.14 : 0.12);
 
     return Container(
       width: double.infinity,
@@ -124,12 +141,12 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
       decoration: BoxDecoration(
         color: base,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: isActive ? 0.14 : 0.12),
-        ),
+        border: Border.all(color: borderColor),
         boxShadow: [
           BoxShadow(
-            color: base.withValues(alpha: isActive ? 0.12 : 0.08),
+            color: isActive
+                ? (isDark ? const Color(0x66000000) : base.withValues(alpha: 0.12))
+                : (isDark ? const Color(0x44000000) : base.withValues(alpha: 0.08)),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -175,14 +192,17 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
               color: isActive
-                  ? const Color(0xFF10B981)
+                  ? (isDark ? const Color(0xFF064E3B) : const Color(0xFF10B981))
                   : Colors.white.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(999),
+              border: isDark && isActive
+                  ? Border.all(color: const Color(0xFF059669))
+                  : null,
             ),
             child: Text(
               isActive ? 'LIVE' : 'INACTIVE',
-              style: const TextStyle(
-                color: Colors.white,
+              style: TextStyle(
+                color: isDark && isActive ? const Color(0xFF34D399) : Colors.white,
                 fontSize: 11,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 1.1,
@@ -316,12 +336,12 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _line),
+        border: Border.all(color: _borderColor),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withValues(alpha: _isDark ? 0.25 : 0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -337,8 +357,8 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
-                    color: _ink,
+                  style: TextStyle(
+                    color: _inkColor,
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.15,
@@ -352,8 +372,12 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                   icon: const Icon(Icons.add_rounded, size: 18),
                   label: Text(label.replaceFirst(RegExp(r'^\+\s*'), '')),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: _ink,
-                    side: const BorderSide(color: Color(0xFFD1D5DB), width: 1),
+                    foregroundColor: _inkColor,
+                    side: BorderSide(
+                      color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB),
+                      width: 1,
+                    ),
+                    backgroundColor: _isDark ? const Color(0xFF28272D) : null,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -389,8 +413,13 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
     return Container(
       height: 51,
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F1F4),
+        color: _headerBgColor,
         borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: _isDark
+              ? DefensysTokens.mistBorder.withValues(alpha: 0.5)
+              : Colors.transparent,
+        ),
       ),
       child: Row(
         children: columns
@@ -403,8 +432,8 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                     alignment: Alignment.centerLeft,
                     child: Text(
                       column.label,
-                      style: const TextStyle(
-                        color: Color(0xFF5D6678),
+                      style: TextStyle(
+                        color: _headerTextColor,
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
                       ),
@@ -435,11 +464,15 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
       child: Container(
         height: _rowHeight,
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFFFF4F4) : Colors.white,
+          color: selected
+              ? (_isDark ? const Color(0xFF2C1619) : const Color(0xFFFFF4F4))
+              : _surfaceColor,
           border: Border(
-            bottom: const BorderSide(color: _line),
+            bottom: BorderSide(color: _borderColor),
             left: BorderSide(
-              color: selected ? _maroon : Colors.transparent,
+              color: selected
+                  ? (_isDark ? const Color(0xFFF87171) : _maroon)
+                  : Colors.transparent,
               width: selected ? 3 : 0,
             ),
           ),
@@ -452,18 +485,18 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 15),
                 child: RichText(
                   text: TextSpan(
-                    style: const TextStyle(
-                      color: _ink,
+                    style: TextStyle(
+                      color: _inkColor,
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
                     ),
                     children: [
                       TextSpan(text: year['label']?.toString() ?? 'Unknown'),
                       if (hasActive)
-                        const TextSpan(
+                        TextSpan(
                           text: ' • Active',
                           style: TextStyle(
-                            color: _green,
+                            color: _isDark ? const Color(0xFF34D399) : _green,
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
                           ),
@@ -479,8 +512,8 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 15),
                 child: Text(
                   semesters.length.toString(),
-                  style: const TextStyle(
-                    color: _ink,
+                  style: TextStyle(
+                    color: _inkColor,
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                   ),
@@ -494,12 +527,20 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.build_outlined, size: 16, color: _ink),
+                    Icon(
+                      Icons.build_outlined,
+                      size: 16,
+                      color: selected && _isDark
+                          ? const Color(0xFFFCA5A5)
+                          : _inkColor,
+                    ),
                     const SizedBox(width: 6),
                     Text(
                       selected ? 'Managing' : 'Manage',
-                      style: const TextStyle(
-                        color: _ink,
+                      style: TextStyle(
+                        color: selected && _isDark
+                            ? const Color(0xFFFCA5A5)
+                            : _inkColor,
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                       ),
@@ -524,9 +565,9 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
     return Container(
       height: _rowHeight,
       padding: const EdgeInsets.symmetric(horizontal: 15),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: _line)),
+      decoration: BoxDecoration(
+        color: _surfaceColor,
+        border: Border(bottom: BorderSide(color: _borderColor)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -535,8 +576,8 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
             flex: 150,
             child: Text(
               semester['label']?.toString() ?? 'Unknown semester',
-              style: const TextStyle(
-                color: _ink,
+              style: TextStyle(
+                color: _inkColor,
                 fontSize: 14,
                 fontWeight: FontWeight.w800,
               ),
@@ -556,7 +597,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
             child: DefensysUi.flatSwitch(
               value: isActive,
               scale: 0.88,
-              activeTrackColor: _maroon,
+              activeTrackColor: _isDark ? const Color(0xFFE11D48) : _maroon,
               onChanged: state.isSaving || semesterId == null
                   ? null
                   : (value) => _handleSemesterSwitch(semester, value),
@@ -582,12 +623,12 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _line),
+        border: Border.all(color: _borderColor),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: Colors.black.withValues(alpha: _isDark ? 0.25 : 0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -596,14 +637,18 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.rocket_launch_rounded, color: _maroon, size: 20),
-              SizedBox(width: 8),
+              Icon(
+                Icons.rocket_launch_rounded,
+                color: _isDark ? const Color(0xFFF87171) : _maroon,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
               Text(
                 'Capstone program',
                 style: TextStyle(
-                  color: _ink,
+                  color: _inkColor,
                   fontSize: 16,
                   fontWeight: FontWeight.w800,
                 ),
@@ -617,10 +662,14 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
               children: [
                 _capstoneChip(phaseLabel, emphasized: true),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Capstone-specific phase. PIT for 1st–3rd year cohorts is active during both terms.',
-                    style: TextStyle(color: _muted, fontSize: 12, height: 1.35),
+                    style: TextStyle(
+                      color: _mutedColor,
+                      fontSize: 12,
+                      height: 1.35,
+                    ),
                   ),
                 ),
               ],
@@ -642,8 +691,8 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                         (teamCreationOn
                             ? 'New capstone teams can be created on Student Teams.'
                             : 'Team creation follows the active term calendar.'),
-                    style: const TextStyle(
-                      color: _muted,
+                    style: TextStyle(
+                      color: _mutedColor,
                       fontSize: 12,
                       height: 1.35,
                     ),
@@ -652,14 +701,14 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
               ],
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 14),
-            child: Divider(height: 1, color: _line),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Divider(height: 1, color: _borderColor),
           ),
-          const Text(
+          Text(
             'Evaluation (term-wide)',
             style: TextStyle(
-              color: _ink,
+              color: _inkColor,
               fontSize: 13,
               fontWeight: FontWeight.w800,
             ),
@@ -732,8 +781,8 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
           width: 120,
           child: Text(
             label,
-            style: const TextStyle(
-              color: _muted,
+            style: TextStyle(
+              color: _mutedColor,
               fontSize: 12,
               fontWeight: FontWeight.w700,
             ),
@@ -756,9 +805,9 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: _panelBgColor,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _line),
+        border: Border.all(color: _borderColor),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -772,8 +821,8 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                     Flexible(
                       child: Text(
                         title,
-                        style: const TextStyle(
-                          color: _ink,
+                        style: TextStyle(
+                          color: _inkColor,
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
                         ),
@@ -786,12 +835,14 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                         child: InkWell(
                           borderRadius: BorderRadius.circular(999),
                           onTap: onHelpTap,
-                          child: const Padding(
-                            padding: EdgeInsets.all(2),
+                          child: Padding(
+                            padding: const EdgeInsets.all(2),
                             child: Icon(
                               Icons.help_outline_rounded,
                               size: 15,
-                              color: Color(0xFF94A3B8),
+                              color: _isDark
+                                  ? const Color(0xFF71717A)
+                                  : const Color(0xFF94A3B8),
                             ),
                           ),
                         ),
@@ -802,8 +853,8 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: const TextStyle(
-                    color: _muted,
+                  style: TextStyle(
+                    color: _mutedColor,
                     fontSize: 11.5,
                     height: 1.3,
                   ),
@@ -814,7 +865,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
           Switch(
             value: value,
             onChanged: enabled ? onChanged : null,
-            activeThumbColor: _maroon,
+            activeThumbColor: _isDark ? const Color(0xFFF87171) : _maroon,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
         ],
@@ -824,15 +875,31 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
 
   Widget _capstoneChip(String label, {bool emphasized = false}) {
     final isOpen = label == 'Capstone 1' || label == 'Open';
-    final bg = emphasized && isOpen
-        ? const Color(0xFFECFDF5)
-        : const Color(0xFFF3F4F6);
-    final fg = emphasized && isOpen
-        ? const Color(0xFF047857)
-        : const Color(0xFF5D6678);
-    final border = emphasized && isOpen
-        ? const Color(0xFF86EFAC)
-        : const Color(0xFFE5E7EB);
+    Color bg;
+    Color fg;
+    Color border;
+
+    if (_isDark) {
+      if (emphasized && isOpen) {
+        bg = const Color(0xFF064E3B).withValues(alpha: 0.4);
+        fg = const Color(0xFF34D399);
+        border = const Color(0xFF059669).withValues(alpha: 0.6);
+      } else {
+        bg = const Color(0xFF27272A);
+        fg = const Color(0xFFA1A1AA);
+        border = const Color(0xFF3F3F46);
+      }
+    } else {
+      bg = emphasized && isOpen
+          ? const Color(0xFFECFDF5)
+          : const Color(0xFFF3F4F6);
+      fg = emphasized && isOpen
+          ? const Color(0xFF047857)
+          : const Color(0xFF5D6678);
+      border = emphasized && isOpen
+          ? const Color(0xFF86EFAC)
+          : const Color(0xFFE5E7EB);
+    }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -872,10 +939,16 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
   }
 
   Widget _notice(String message, {bool warning = false}) {
-    final color = warning ? const Color(0xFFB45309) : const Color(0xFF047857);
+    final color = warning
+        ? (_isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309))
+        : (_isDark ? const Color(0xFF34D399) : const Color(0xFF047857));
     final background = warning
-        ? const Color(0xFFFFF7ED)
-        : const Color(0xFFECFDF5);
+        ? (_isDark
+            ? const Color(0xFF451A03).withValues(alpha: 0.5)
+            : const Color(0xFFFFF7ED))
+        : (_isDark
+            ? const Color(0xFF064E3B).withValues(alpha: 0.4)
+            : const Color(0xFFECFDF5));
 
     return Container(
       width: double.infinity,
@@ -1173,14 +1246,20 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFECFDF5),
+        color: _isDark
+            ? const Color(0xFF064E3B).withValues(alpha: 0.3)
+            : const Color(0xFFECFDF5),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFA7F3D0)),
+        border: Border.all(
+          color: _isDark
+              ? const Color(0xFF059669).withValues(alpha: 0.5)
+              : const Color(0xFFA7F3D0),
+        ),
       ),
-      child: const Text(
+      child: Text(
         'No unfinished workflows were found. This switch can continue normally.',
         style: TextStyle(
-          color: Color(0xFF047857),
+          color: _isDark ? const Color(0xFF34D399) : const Color(0xFF047857),
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -1197,25 +1276,35 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: blocking ? const Color(0xFFFFFBEB) : const Color(0xFFF9FAFB),
+        color: blocking
+            ? (_isDark
+                ? const Color(0xFF451A03).withValues(alpha: 0.35)
+                : const Color(0xFFFFFBEB))
+            : _panelBgColor,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: blocking ? const Color(0xFFFDE68A) : _line,
+          color: blocking
+              ? (_isDark
+                  ? const Color(0xFFB45309).withValues(alpha: 0.6)
+                  : const Color(0xFFFDE68A))
+              : _borderColor,
         ),
       ),
       child: Row(
         children: [
           Icon(
             blocking ? Icons.warning_amber_rounded : Icons.info_outline_rounded,
-            color: blocking ? const Color(0xFFD97706) : _muted,
+            color: blocking
+                ? (_isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706))
+                : _mutedColor,
             size: 19,
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               issue['message']?.toString() ?? 'Unfinished workflow',
-              style: const TextStyle(
-                color: _ink,
+              style: TextStyle(
+                color: _inkColor,
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
                 height: 1.3,

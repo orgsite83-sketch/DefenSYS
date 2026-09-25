@@ -1,5 +1,6 @@
 import 'package:defensys/services/project_archive_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:flutter/material.dart';
 
 typedef AuditSummaryCards = ProjectArchiveSummaryCards;
@@ -41,7 +42,6 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
-
   Widget _primaryButton({
     required IconData icon,
     required String label,
@@ -66,22 +66,39 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
   }
 
   Widget _metricCard({
+    required BuildContext context,
     required String title,
     required int value,
     required Color valueColor,
     required IconData icon,
     required Color iconTint,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final effectiveValueColor = isDark
+        ? (valueColor == const Color(0xFF0F172A)
+            ? DefensysTokens.textPrimaryDark
+            : (valueColor == const Color(0xFFB45309)
+                ? const Color(0xFFFBBF24)
+                : valueColor))
+        : valueColor;
+    final effectiveIconTint = isDark && iconTint == const Color(0xFF475569)
+        ? const Color(0xFFA1A1AA)
+        : (isDark && iconTint == AppColors.maroon ? const Color(0xFFF87171) : iconTint);
+
     return Container(
       height: 96,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDark ? DefensysTokens.mistSurface : Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(
+          color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.25)
+                : Colors.black.withValues(alpha: 0.03),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -101,7 +118,7 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: valueColor,
+                    color: effectiveValueColor,
                     fontSize: 26,
                     fontWeight: FontWeight.w800,
                     height: 1.0,
@@ -113,8 +130,8 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF64748B),
+                  style: TextStyle(
+                    color: isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,
                   ),
@@ -125,13 +142,13 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: iconTint.withValues(alpha: 0.14),
+              color: effectiveIconTint.withValues(alpha: isDark ? 0.22 : 0.14),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
               icon,
               size: 20,
-              color: iconTint,
+              color: effectiveIconTint,
             ),
           ),
         ],
@@ -139,7 +156,8 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(RepositoryAuditState state) {
+  Widget _buildHeader(RepositoryAuditState state, BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -147,10 +165,10 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Project Archive',
                 style: TextStyle(
-                  color: AppColors.maroon,
+                  color: isDark ? const Color(0xFFF87171) : AppColors.maroon,
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
                   height: 1.1,
@@ -160,8 +178,8 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 _headerSubtitle(state),
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
+                style: TextStyle(
+                  color: isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
@@ -176,8 +194,8 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
             icon: const Icon(Icons.tune_rounded, size: 15),
             label: const Text('Program Stage Access ▾'),
             style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.maroon,
-              side: const BorderSide(color: AppColors.maroon),
+              foregroundColor: isDark ? const Color(0xFFF87171) : AppColors.maroon,
+              side: BorderSide(color: isDark ? const Color(0xFFF87171) : AppColors.maroon),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -197,7 +215,7 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
     );
   }
 
-  Widget _buildStats(RepositoryAuditState state) {
+  Widget _buildStats(RepositoryAuditState state, BuildContext context) {
     final missingCount = _count(state, 'missing_required');
     if (_scopeKey(state) == 'admin' &&
         (state.type.isEmpty || state.type == 'capstone')) {
@@ -205,6 +223,7 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
         children: [
           Expanded(
             child: _metricCard(
+              context: context,
               title: state.deliverableId.isNotEmpty
                   ? 'Matching records'
                   : 'Total records',
@@ -217,6 +236,7 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
           const SizedBox(width: 14),
           Expanded(
             child: _metricCard(
+              context: context,
               title: 'Pre-defense',
               value: _count(state, 'pre_defense'),
               valueColor: const Color(0xFF0F172A),
@@ -227,6 +247,7 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
           const SizedBox(width: 14),
           Expanded(
             child: _metricCard(
+              context: context,
               title: 'Post-defense',
               value: _count(state, 'archive_submissions'),
               valueColor: const Color(0xFF0F172A),
@@ -237,6 +258,7 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
           const SizedBox(width: 14),
           Expanded(
             child: _metricCard(
+              context: context,
               title: 'Missing required',
               value: missingCount,
               valueColor: missingCount > 0
@@ -253,6 +275,7 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
       children: [
         Expanded(
           child: _metricCard(
+            context: context,
             title: 'Total Managed Records',
             value: _count(state, 'total'),
             valueColor: const Color(0xFF0F172A),
@@ -263,6 +286,7 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
         const SizedBox(width: 18),
         Expanded(
           child: _metricCard(
+            context: context,
             title: 'Needs Revision',
             value: _count(state, 'needs_revision'),
             valueColor: const Color(0xFFB45309),
@@ -273,6 +297,7 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
         const SizedBox(width: 18),
         Expanded(
           child: _metricCard(
+            context: context,
             title: 'Approved Archive Entries',
             value: _count(state, 'approved'),
             valueColor: const Color(0xFF0F172A),
@@ -284,9 +309,6 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
     );
   }
 
-
-
-
   @override
   Widget build(BuildContext context) {
     final showDeliverableChip =
@@ -294,9 +316,9 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildHeader(state),
+        _buildHeader(state, context),
         const SizedBox(height: 18),
-        _buildStats(state),
+        _buildStats(state, context),
         if (_scopeKey(state) == 'admin') ...[
           if (typeTabs != null || showDeliverableChip) ...[
             const SizedBox(height: 16),
@@ -312,7 +334,6 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
             ),
           ],
         ],
-
       ],
     );
   }

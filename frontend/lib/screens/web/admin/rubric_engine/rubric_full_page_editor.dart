@@ -6,6 +6,7 @@ import '../../../../services/rubric_engine_provider.dart';
 import '../../../../services/unsaved_changes_provider.dart';
 import '../../../../services/dashboard_provider.dart';
 import '../../../../theme/app_theme.dart';
+import '../../../../theme/defensys_tokens.dart';
 import '../../../../utils/unsaved_changes.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../widgets/defensys_admin_shell.dart';
@@ -77,6 +78,13 @@ class RubricFullPageEditor extends ConsumerStatefulWidget {
 }
 
 class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _surfaceColor => _isDark ? DefensysTokens.mistSurface : Colors.white;
+  Color get _borderColor => _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0);
+  Color get _textPrimaryColor => _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A);
+  Color get _textSecondaryColor => _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B);
+  Color get _subtleFillColor => _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9);
+
   late final TextEditingController _name;
   late String _scope;
   late String _evaluationType;
@@ -391,20 +399,20 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         fontSize: _fieldLabelSize,
         fontWeight: FontWeight.w800,
         letterSpacing: 0.45,
-        color: const Color(0xFF5D6678),
+        color: _textSecondaryColor,
       );
 
   /// Outlined input with **no** Material label on the border — use [_labeledControl] for the caption above.
   InputDecoration _outlineInputDec({String? hint}) {
-    const borderSide = BorderSide(color: Color(0xFFD1D5DB));
+    final borderSide = BorderSide(color: _borderColor);
     return InputDecoration(
       hintText: hint,
       filled: true,
-      fillColor: Colors.white,
+      fillColor: _subtleFillColor,
       isDense: true,
       hintStyle: TextStyle(
         fontFamily: DefensysUi.fontFamily,
-        color: const Color(0xFF9CA3AF),
+        color: _isDark ? const Color(0xFF71717A) : const Color(0xFF9CA3AF),
         fontSize: _bodySize,
       ),
       border: OutlineInputBorder(
@@ -417,7 +425,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
+        borderSide: BorderSide(color: DefensysTokens.maroonOf(context), width: 1.5),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
     );
@@ -436,15 +444,15 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   }
 
   InputDecoration _tableCellDec({required String hint}) {
-    const borderSide = BorderSide(color: Color(0xFFD1D5DB));
+    final borderSide = BorderSide(color: _borderColor);
     return InputDecoration(
       hintText: hint,
       filled: true,
-      fillColor: Colors.white,
+      fillColor: _subtleFillColor,
       isDense: true,
       hintStyle: TextStyle(
         fontFamily: DefensysUi.fontFamily,
-        color: const Color(0xFF9CA3AF),
+        color: _isDark ? const Color(0xFF71717A) : const Color(0xFF9CA3AF),
         fontSize: _helperSize,
       ),
       border: OutlineInputBorder(
@@ -457,7 +465,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
+        borderSide: BorderSide(color: DefensysTokens.maroonOf(context), width: 1.5),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
     );
@@ -467,18 +475,19 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     required IconData icon,
     required String title,
     required Widget child,
-    Color iconColor = AppColors.maroon,
+    Color? iconColor,
   }) {
+    final effectiveIconColor = iconColor ?? DefensysTokens.maroonOf(context);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE6E8EF)),
-        boxShadow: const [
+        border: Border.all(color: _borderColor),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x08000000),
+            color: Colors.black.withValues(alpha: _isDark ? 0.2 : 0.03),
             blurRadius: 10,
-            offset: Offset(0, 4),
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -489,7 +498,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
           children: [
             Row(
               children: [
-                Icon(icon, color: iconColor, size: 20),
+                Icon(icon, color: effectiveIconColor, size: 20),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -498,7 +507,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                       fontFamily: DefensysUi.fontFamily,
                       fontSize: _sectionTitleSize,
                       fontWeight: FontWeight.w900,
-                      color: AppColors.maroon,
+                      color: _isDark ? DefensysTokens.maroonLight : AppColors.maroon,
                     ),
                   ),
                 ),
@@ -518,13 +527,13 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       fontSize: _fieldLabelSize,
       fontWeight: FontWeight.w800,
       letterSpacing: 0.45,
-      color: AppColors.textSecondary,
+      color: _textSecondaryColor,
     );
     final isBoth = _targetType == 'both';
     return Container(
       padding: const EdgeInsets.only(bottom: 8),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: _borderColor)),
       ),
       child: Row(
         children: [
@@ -544,13 +553,13 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   TextStyle get _criterionInputStyle => TextStyle(
         fontFamily: DefensysUi.fontFamily,
         fontSize: _bodySize,
-        color: DefensysUi.textDark,
+        color: _textPrimaryColor,
       );
 
   TextStyle get _dropdownFieldStyle => TextStyle(
         fontFamily: DefensysUi.fontFamily,
         fontSize: _bodySize,
-        color: DefensysUi.textDark,
+        color: _textPrimaryColor,
       );
 
   Widget _criterionRow(
@@ -774,14 +783,14 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         builder: (dialogContext) {
           return AlertDialog(
             surfaceTintColor: Colors.transparent,
-            backgroundColor: Colors.white,
+            backgroundColor: _surfaceColor,
             title: Text(
               title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: DefensysUi.fontFamily,
                 fontWeight: FontWeight.bold,
                 fontSize: 16.5,
-                color: Color(0xFF111827),
+                color: _textPrimaryColor,
               ),
             ),
             content: ConstrainedBox(
@@ -794,10 +803,10 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                     status == 'published'
                         ? 'Are you sure you want to publish this rubric? Published rubrics can be assigned to defense stages and PIT events. You can continue editing criteria until defenses are scheduled or evaluations begin.'
                         : 'Are you sure you want to save this rubric draft?',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: DefensysUi.fontFamily,
                       fontSize: 13.5,
-                      color: Color(0xFF374151),
+                      color: _textSecondaryColor,
                       height: 1.4,
                     ),
                   ),
@@ -811,14 +820,14 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                   'Cancel',
                   style: TextStyle(
                     fontFamily: DefensysUi.fontFamily,
-                    color: Colors.grey[600],
+                    color: _textSecondaryColor,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: DefensysUi.primaryMaroon,
+                  backgroundColor: DefensysTokens.maroonOf(context),
                   foregroundColor: Colors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
@@ -961,16 +970,16 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(
-        color: DefensysUi.warningBg,
+        color: _isDark ? const Color(0xFF2E2214) : DefensysUi.warningBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: DefensysUi.warningBorder),
+        border: Border.all(color: _isDark ? const Color(0xFF78350F) : DefensysUi.warningBorder),
       ),
       child: Row(
         children: [
           Icon(
             Icons.lock_outline,
             size: 18,
-            color: DefensysUi.warningText,
+            color: _isDark ? const Color(0xFFFBBF24) : DefensysUi.warningText,
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -978,7 +987,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
               bannerText,
               style: TextStyle(
                 fontFamily: DefensysUi.fontFamily,
-                color: DefensysUi.warningText,
+                color: _isDark ? const Color(0xFFFDE68A) : DefensysUi.warningText,
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
               ),
@@ -1068,7 +1077,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         await _handleBack();
       },
       child: ColoredBox(
-      color: const Color(0xFFF3F4F6),
+      color: DefensysTokens.backgroundOf(context),
       child: SingleChildScrollView(
         padding: DefensysUi.contentPadding,
         child: Column(
@@ -1091,7 +1100,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                 icon: Icon(
                   Icons.arrow_back_rounded,
                   size: 16,
-                  color: DefensysUi.primaryMaroon,
+                  color: DefensysTokens.maroonOf(context),
                 ),
                 label: Text(
                   'Back to Evaluation Rubrics',
@@ -1099,13 +1108,13 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                     fontFamily: DefensysUi.fontFamily,
                     fontWeight: FontWeight.w600,
                     fontSize: 13,
-                    color: DefensysUi.primaryMaroon,
+                    color: DefensysTokens.maroonOf(context),
                   ),
                 ),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: DefensysUi.primaryMaroon,
-                  side: const BorderSide(color: Color(0xFFD1D5DB)),
-                  backgroundColor: Colors.white,
+                  foregroundColor: DefensysTokens.maroonOf(context),
+                  side: BorderSide(color: _borderColor),
+                  backgroundColor: _surfaceColor,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 14,
                     vertical: 10,
@@ -1476,12 +1485,12 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                               _markDirty();
                             },
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: DefensysUi.primaryMaroon,
-                              side: const BorderSide(
-                                color: DefensysUi.primaryMaroon,
+                              foregroundColor: DefensysTokens.maroonOf(context),
+                              side: BorderSide(
+                                color: DefensysTokens.maroonOf(context),
                                 width: 1.5,
                               ),
-                              backgroundColor: Colors.white,
+                              backgroundColor: _surfaceColor,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 12,
@@ -1570,13 +1579,13 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                       OutlinedButton(
                         onPressed: saving ? null : () => _save('draft'),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: DefensysUi.primaryMaroon,
+                          foregroundColor: DefensysTokens.maroonOf(context),
                           side: BorderSide(
                             color:
-                                DefensysUi.primaryMaroon.withValues(alpha: 0.85),
+                                DefensysTokens.maroonOf(context).withValues(alpha: 0.85),
                             width: 1.5,
                           ),
-                          backgroundColor: Colors.white,
+                          backgroundColor: _surfaceColor,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 18,
                             vertical: 12,
@@ -1612,7 +1621,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                           ),
                         ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: DefensysUi.primaryMaroon,
+                          backgroundColor: DefensysTokens.maroonOf(context),
                           foregroundColor: Colors.white,
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(
@@ -1741,6 +1750,12 @@ class _CloneRubricDialog extends StatefulWidget {
 }
 
 class _CloneRubricDialogState extends State<_CloneRubricDialog> {
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _surfaceColor => _isDark ? DefensysTokens.mistSurface : Colors.white;
+  Color get _borderColor => _isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB);
+  Color get _textPrimaryColor => _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF111827);
+  Color get _textSecondaryColor => _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF6B7280);
+
   String _searchQuery = '';
   String _selectedScope = 'all';
   String? _selectedSemester;
@@ -1781,12 +1796,12 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
       child: Container(
         width: isDesktop ? 950 : screenWidth * 0.9,
         height: 600,
-        color: Colors.white,
+        color: _surfaceColor,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildHeader(context),
-            const Divider(height: 1, color: Color(0xFFE5E7EB)),
+            Divider(height: 1, color: _borderColor),
             Expanded(
               child: isDesktop
                   ? Row(
@@ -1796,7 +1811,7 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                           flex: 11,
                           child: _buildLeftPane(filtered, semesters),
                         ),
-                        const VerticalDivider(width: 1, color: Color(0xFFE5E7EB)),
+                        VerticalDivider(width: 1, color: _borderColor),
                         Expanded(
                           flex: 12,
                           child: _buildRightPane(),
@@ -1809,7 +1824,7 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                           flex: 3,
                           child: _buildLeftPane(filtered, semesters),
                         ),
-                        const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                        Divider(height: 1, color: _borderColor),
                         Expanded(
                           flex: 2,
                           child: _buildRightPane(),
@@ -1826,20 +1841,20 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
   Widget _buildHeader(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      color: const Color(0xFFF9FAFB),
+      color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF9FAFB),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Select Rubric to Clone',
                 style: TextStyle(
                   fontFamily: DefensysUi.fontFamily,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: DefensysUi.primaryMaroon,
+                  color: DefensysTokens.maroonOf(context),
                 ),
               ),
               const SizedBox(height: 4),
@@ -1848,7 +1863,7 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                 style: TextStyle(
                   fontFamily: DefensysUi.fontFamily,
                   fontSize: 12,
-                  color: Color(0xFF4B5563),
+                  color: _textSecondaryColor,
                 ),
               ),
             ],
@@ -1870,17 +1885,22 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
         children: [
           TextField(
             onChanged: (val) => setState(() => _searchQuery = val),
-            style: const TextStyle(fontSize: 13, fontFamily: DefensysUi.fontFamily),
+            style: TextStyle(fontSize: 13, fontFamily: DefensysUi.fontFamily, color: _textPrimaryColor),
             decoration: InputDecoration(
               hintText: 'Search by name or semester...',
-              prefixIcon: const Icon(Icons.search, size: 18, color: Colors.grey),
+              hintStyle: TextStyle(color: _textSecondaryColor, fontSize: 13),
+              prefixIcon: Icon(Icons.search, size: 18, color: _textSecondaryColor),
               filled: true,
-              fillColor: const Color(0xFFF3F4F6),
+              fillColor: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6),
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide.none,
+                borderSide: BorderSide(color: _borderColor),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: _borderColor),
               ),
             ),
           ),
@@ -1897,25 +1917,26 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                  border: Border.all(color: _borderColor),
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String?>(
                     value: _selectedSemester,
-                    hint: const Text('All Semesters', style: TextStyle(fontSize: 11, fontFamily: DefensysUi.fontFamily)),
+                    dropdownColor: _surfaceColor,
+                    hint: Text('All Semesters', style: TextStyle(fontSize: 11, fontFamily: DefensysUi.fontFamily, color: _textSecondaryColor)),
                     isDense: true,
-                    style: const TextStyle(fontSize: 11, color: Colors.black, fontFamily: DefensysUi.fontFamily),
+                    style: TextStyle(fontSize: 11, color: _textPrimaryColor, fontFamily: DefensysUi.fontFamily),
                     onChanged: (val) => setState(() {
                       _selectedSemester = val;
                     }),
                     items: [
-                      const DropdownMenuItem<String?>(
+                      DropdownMenuItem<String?>(
                         value: null,
-                        child: Text('All Semesters'),
+                        child: Text('All Semesters', style: TextStyle(color: _textPrimaryColor)),
                       ),
                       ...semesters.map((s) => DropdownMenuItem<String?>(
                         value: s,
-                        child: Text(s),
+                        child: Text(s, style: TextStyle(color: _textPrimaryColor)),
                       )),
                     ],
                   ),
@@ -1929,7 +1950,7 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                 ? Center(
                     child: Text(
                       'No matching rubrics found',
-                      style: TextStyle(color: Colors.grey[500], fontSize: 13, fontFamily: DefensysUi.fontFamily),
+                      style: TextStyle(color: _textSecondaryColor, fontSize: 13, fontFamily: DefensysUi.fontFamily),
                     ),
                   )
                 : ListView.builder(
@@ -1953,10 +1974,10 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                           child: Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: isSelected ? DefensysUi.primaryMaroon.withValues(alpha: 0.05) : Colors.white,
+                              color: isSelected ? DefensysTokens.maroonOf(context).withValues(alpha: _isDark ? 0.2 : 0.05) : _surfaceColor,
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
-                                color: isSelected ? DefensysUi.primaryMaroon : const Color(0xFFE5E7EB),
+                                color: isSelected ? DefensysTokens.maroonOf(context) : _borderColor,
                                 width: isSelected ? 1.5 : 1,
                               ),
                             ),
@@ -1965,10 +1986,10 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                               children: [
                                 Text(
                                   r['name']?.toString() ?? '',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontWeight: FontWeight.w600,
                                     fontSize: 13.5,
-                                    color: Color(0xFF111827),
+                                    color: _textPrimaryColor,
                                     fontFamily: DefensysUi.fontFamily,
                                   ),
                                 ),
@@ -2050,10 +2071,10 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          color: active ? DefensysUi.primaryMaroon.withValues(alpha: 0.08) : Colors.transparent,
+          color: active ? DefensysTokens.maroonOf(context).withValues(alpha: 0.08) : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: active ? DefensysUi.primaryMaroon : const Color(0xFFD1D5DB),
+            color: active ? DefensysTokens.maroonOf(context) : _borderColor,
             width: active ? 1.2 : 1,
           ),
         ),
@@ -2062,7 +2083,7 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
           style: TextStyle(
             fontSize: 11,
             fontWeight: active ? FontWeight.w600 : FontWeight.normal,
-            color: active ? DefensysUi.primaryMaroon : const Color(0xFF4B5563),
+            color: active ? DefensysTokens.maroonOf(context) : _textSecondaryColor,
             fontFamily: DefensysUi.fontFamily,
           ),
         ),
@@ -2076,12 +2097,12 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.assignment_outlined, size: 54, color: Colors.grey[300]),
+            Icon(Icons.assignment_outlined, size: 54, color: _textSecondaryColor.withValues(alpha: 0.5)),
             const SizedBox(height: 12),
             Text(
               'Select a rubric template',
               style: TextStyle(
-                color: Colors.grey[500],
+                color: _textSecondaryColor,
                 fontSize: 13.5,
                 fontWeight: FontWeight.w600,
                 fontFamily: DefensysUi.fontFamily,
@@ -2092,7 +2113,7 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
               'Select a rubric from the list to preview its evaluation criteria.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.grey[400],
+                color: _textSecondaryColor,
                 fontSize: 11.5,
                 fontFamily: DefensysUi.fontFamily,
               ),
@@ -2114,7 +2135,7 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
     }
 
     return Container(
-      color: const Color(0xFFFAFAFA),
+      color: DefensysTokens.backgroundOf(context),
       padding: const EdgeInsets.all(20.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2130,10 +2151,10 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                       name,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF111827),
+                        color: _textPrimaryColor,
                         fontFamily: DefensysUi.fontFamily,
                       ),
                     ),
@@ -2142,7 +2163,7 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                       'Total Weight: ${totalWeight.toStringAsFixed(0)}% · ${criteria.length} Criteria',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey[600],
+                        color: _textSecondaryColor,
                         fontWeight: FontWeight.w500,
                         fontFamily: DefensysUi.fontFamily,
                       ),
@@ -2153,7 +2174,7 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
             ],
           ),
           const SizedBox(height: 16),
-          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+          Divider(height: 1, color: _borderColor),
           const SizedBox(height: 12),
           Expanded(
             child: ListView.builder(
@@ -2171,9 +2192,9 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: _surfaceColor,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                    border: Border.all(color: _borderColor),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2184,10 +2205,10 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                           Expanded(
                             child: Text(
                               critName,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
-                                color: Color(0xFF1F2937),
+                                color: _textPrimaryColor,
                                 fontFamily: DefensysUi.fontFamily,
                               ),
                             ),
@@ -2196,16 +2217,16 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFFF7ED),
+                              color: _isDark ? const Color(0xFF451A03) : const Color(0xFFFFF7ED),
                               borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: const Color(0xFFFFEDD5)),
+                              border: Border.all(color: _isDark ? const Color(0xFF9A3412) : const Color(0xFFFFEDD5)),
                             ),
                             child: Text(
                               'Weight: $weight%',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFFC2410C),
+                                color: _isDark ? const Color(0xFFFB923C) : const Color(0xFFC2410C),
                                 fontFamily: DefensysUi.fontFamily,
                               ),
                             ),
@@ -2218,7 +2239,7 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                           desc,
                           style: TextStyle(
                             fontSize: 11.5,
-                            color: Colors.grey[600],
+                            color: _textSecondaryColor,
                             height: 1.3,
                             fontFamily: DefensysUi.fontFamily,
                           ),
@@ -2227,13 +2248,13 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          Icon(Icons.assessment_outlined, size: 12, color: Colors.grey[500]),
+                          Icon(Icons.assessment_outlined, size: 12, color: _textSecondaryColor),
                           const SizedBox(width: 4),
                           Text(
                             'Scale: $scale (Max: $maxScore)',
                             style: TextStyle(
                               fontSize: 10.5,
-                              color: Colors.grey[500],
+                              color: _textSecondaryColor,
                               fontFamily: DefensysUi.fontFamily,
                             ),
                           ),
@@ -2241,15 +2262,15 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF3F4F6),
+                              color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6),
                               borderRadius: BorderRadius.circular(3),
                             ),
                             child: Text(
                               targetType,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 9.5,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF4B5563),
+                                color: _textSecondaryColor,
                                 fontFamily: DefensysUi.fontFamily,
                               ),
                             ),
@@ -2265,7 +2286,7 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
           const SizedBox(height: 16),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: DefensysUi.primaryMaroon,
+              backgroundColor: DefensysTokens.maroonOf(context),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(

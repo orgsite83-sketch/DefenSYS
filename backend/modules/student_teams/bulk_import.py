@@ -51,33 +51,146 @@ def _user_by_username_ref(raw, *, role=None):
     return queryset.first()
 
 
+def _users_matching_initial_and_surname(surname, initial, *, role=None):
+    norm_surname = normalize_name(surname)
+    norm_initial = normalize_name(initial.rstrip('.'))
+    if not norm_surname or not norm_initial:
+        return []
+    queryset = User.objects.all()
+    if role:
+        if isinstance(role, (list, tuple, set)):
+            queryset = queryset.filter(role__in=role)
+        else:
+            queryset = queryset.filter(role=role)
+    matches = []
+    for user in queryset:
+        user_last = normalize_name(user.last_name)
+        user_first = normalize_name(user.first_name)
+        if user_last == norm_surname and user_first.startswith(norm_initial):
+            matches.append(user)
+    return matches
+
+
+def _users_matching_surname_only(surname, *, role=None):
+    norm_surname = normalize_name(surname)
+    if not norm_surname:
+        return []
+    queryset = User.objects.all()
+    if role:
+        if isinstance(role, (list, tuple, set)):
+            queryset = queryset.filter(role__in=role)
+        else:
+            queryset = queryset.filter(role=role)
+    matches = []
+    for user in queryset:
+        if normalize_name(user.last_name) == norm_surname:
+            matches.append(user)
+    return matches
+
+
 def resolve_user_by_full_name(value, *, role=None, field_label='User'):
     """
-    Resolve a CSV reference by student/faculty ID (username) or full display name.
+    Resolve a CSV reference by student/faculty ID (username) or full display name,
+    with smart support for:
+    - Exact student/faculty ID
+    - Full name ("First Last")
+    - Inverted name with comma ("Last, First")
+    - Surname + Initial ("Garcia, M." / "M. Garcia")
+    - Unique surname within cohort ("Baguingco")
     Returns (user_or_none, error_message_or_none).
     """
     raw = (value or '').strip()
     if not raw:
         return None, None
 
+    # 1. By ID (username)
     by_username = _user_by_username_ref(raw, role=role)
     if by_username is not None:
         return by_username, None
 
+    # 2. Exact full display name
     matches = _users_matching_full_name(raw, role=role)
-    if not matches:
-        return None, f'{field_label} "{raw}": no user found with that name.'
+    if len(matches) == 1:
+        return matches[0], None
     if len(matches) > 1:
+        candidates = [f"{display_name(u)} ({u.username})" for u in matches]
         return None, (
-            f'{field_label} "{raw}": multiple users match that name. '
-            'Names must be unique in the system.'
+            f'{field_label} "{raw}": multiple users match that name ({", ".join(candidates)}). '
+            'Use Student ID to specify.'
         )
-    return matches[0], None
+
+    # 3. Inverted name with comma ("Last, First")
+    if ',' in raw:
+        parts = [p.strip() for p in raw.split(',', 1)]
+        last_part, first_part = parts[0], parts[1]
+
+        clean_initial = first_part.rstrip('.').strip()
+        if len(clean_initial) == 1 and clean_initial.isalpha():
+            initial_matches = _users_matching_initial_and_surname(last_part, clean_initial, role=role)
+            if len(initial_matches) == 1:
+                return initial_matches[0], None
+            if len(initial_matches) > 1:
+                candidates = [f"{display_name(u)} ({u.username})" for u in initial_matches]
+                return None, (
+                    f'{field_label} "{raw}": multiple users match surname "{last_part}" with initial "{clean_initial}" '
+                    f'({", ".join(candidates)}). Please specify full name or Student ID.'
+                )
+
+        inverted = f"{first_part} {last_part}"
+        inverted_matches = _users_matching_full_name(inverted, role=role)
+        if len(inverted_matches) == 1:
+            return inverted_matches[0], None
+        if len(inverted_matches) > 1:
+            candidates = [f"{display_name(u)} ({u.username})" for u in inverted_matches]
+            return None, (
+                f'{field_label} "{raw}": multiple users match that name ({", ".join(candidates)}). '
+                'Use Student ID to specify.'
+            )
+
+    # 4. Space-separated Initial + Surname ("M. Garcia" or "Garcia M.")
+    words = raw.split()
+    if len(words) == 2:
+        w0_clean = words[0].rstrip('.').strip()
+        w1_clean = words[1].rstrip('.').strip()
+        if len(w0_clean) == 1 and w0_clean.isalpha():
+            initial_matches = _users_matching_initial_and_surname(words[1], w0_clean, role=role)
+            if len(initial_matches) == 1:
+                return initial_matches[0], None
+            if len(initial_matches) > 1:
+                candidates = [f"{display_name(u)} ({u.username})" for u in initial_matches]
+                return None, (
+                    f'{field_label} "{raw}": multiple users match surname "{words[1]}" with initial "{w0_clean}" '
+                    f'({", ".join(candidates)}). Please specify full name or Student ID.'
+                )
+        elif len(w1_clean) == 1 and w1_clean.isalpha():
+            initial_matches = _users_matching_initial_and_surname(words[0], w1_clean, role=role)
+            if len(initial_matches) == 1:
+                return initial_matches[0], None
+            if len(initial_matches) > 1:
+                candidates = [f"{display_name(u)} ({u.username})" for u in initial_matches]
+                return None, (
+                    f'{field_label} "{raw}": multiple users match surname "{words[0]}" with initial "{w1_clean}" '
+                    f'({", ".join(candidates)}). Please specify full name or Student ID.'
+                )
+
+    # 5. Surname lookup (e.g. "Baguingco", "Dela Cruz", "Santos")
+    if not (',' in raw):
+        surname_matches = _users_matching_surname_only(raw, role=role)
+        if len(surname_matches) == 1:
+            return surname_matches[0], None
+        if len(surname_matches) > 1:
+            candidates = [f"{display_name(u)} ({u.username})" for u in surname_matches]
+            return None, (
+                f'{field_label} "{raw}": multiple users share the surname "{raw}" '
+                f'({", ".join(candidates)}). Please specify their first name or Student ID.'
+            )
+
+    return None, f'{field_label} "{raw}": no user found with that name.'
 
 
 def resolve_adviser(name_or_username):
     """
-    Resolve CSV adviser reference (full name or username/faculty ID) to a User and validation status.
+    Resolve CSV adviser reference (full name, surname, or username/faculty ID) to a User and validation status.
     Returns (user_or_none, status, display_name_or_empty).
     """
     raw = (name_or_username or '').strip()
@@ -93,17 +206,35 @@ def resolve_adviser(name_or_username):
 
     # 2. Try resolving by full name
     faculty_matches = _users_matching_full_name(raw, role=['faculty', 'admin'])
-    if len(faculty_matches) > 1:
-        return None, ADVISER_STATUS_USER_NOT_FOUND, ''
     if len(faculty_matches) == 1:
         user = faculty_matches[0]
         if not user.is_active:
             return None, ADVISER_STATUS_INACTIVE, display_name(user)
         return user, ADVISER_STATUS_VALID, display_name(user)
 
+    # 3. Try inverted name "Last, First"
+    if ',' in raw:
+        parts = [p.strip() for p in raw.split(',', 1)]
+        inverted = f"{parts[1]} {parts[0]}"
+        inv_matches = _users_matching_full_name(inverted, role=['faculty', 'admin'])
+        if len(inv_matches) == 1:
+            user = inv_matches[0]
+            if not user.is_active:
+                return None, ADVISER_STATUS_INACTIVE, display_name(user)
+            return user, ADVISER_STATUS_VALID, display_name(user)
+
+    # 4. Try single surname lookup for faculty
+    words = raw.split()
+    if len(words) == 1 and not (',' in raw):
+        sur_matches = _users_matching_surname_only(raw, role=['faculty', 'admin'])
+        if len(sur_matches) == 1:
+            user = sur_matches[0]
+            if not user.is_active:
+                return None, ADVISER_STATUS_INACTIVE, display_name(user)
+            return user, ADVISER_STATUS_VALID, display_name(user)
+
     all_matches = _users_matching_full_name(raw)
     if not all_matches:
-        # Check if username exists for ANY role (to return NOT_ADVISER if it's e.g. a student username)
         any_user = _user_by_username_ref(raw)
         if any_user:
             return None, ADVISER_STATUS_NOT_ADVISER, display_name(any_user)

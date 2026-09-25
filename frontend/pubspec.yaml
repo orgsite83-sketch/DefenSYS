@@ -58,6 +58,7 @@ dependencies:
 
   meta: ^1.17.0
   toastification: ^3.2.0
+  shadcn_ui: ^0.53.6
 dev_dependencies:
   flutter_test:
     sdk: flutter

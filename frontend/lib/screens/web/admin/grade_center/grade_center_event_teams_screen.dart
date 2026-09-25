@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../services/grade_center_provider.dart';
+import '../../../../theme/defensys_tokens.dart';
 import 'grade_center_shared.dart';
 import '../widgets/defensys_admin_shell.dart';
 
@@ -86,6 +87,7 @@ class _GradeCenterEventTeamsScreenState
     final double panelWeight = asDouble(weightsMap['panel']) ?? (isPit ? 80.0 : 50.0);
     final double adviserWeight = asDouble(weightsMap['adviser']) ?? (isPit ? 0.0 : 30.0);
     final double peerWeight = asDouble(weightsMap['peer']) ?? 20.0;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return SingleChildScrollView(
       padding: DefensysUi.contentPadding,
@@ -116,8 +118,10 @@ class _GradeCenterEventTeamsScreenState
               ),
               style: OutlinedButton.styleFrom(
                 foregroundColor: DefensysUi.primaryMaroon,
-                side: const BorderSide(color: Color(0xFFD1D5DB)),
-                backgroundColor: Colors.white,
+                side: BorderSide(
+                  color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB),
+                ),
+                backgroundColor: isDark ? DefensysTokens.mistInputFill : Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -129,10 +133,12 @@ class _GradeCenterEventTeamsScreenState
 
           // Stage Level Administrative Controls Banner
           Material(
-            color: Colors.white,
+            color: isDark ? DefensysTokens.mistSurface : Colors.white,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
-              side: const BorderSide(color: Color(0xFFE5E7EB)),
+              side: BorderSide(
+                color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
+              ),
             ),
             clipBehavior: Clip.antiAlias,
             child: IntrinsicHeight(
@@ -197,7 +203,7 @@ class _GradeCenterEventTeamsScreenState
           const SizedBox(height: 20),
 
           // Dual-Mode Segmented View Tabs
-          _buildViewModeTabs(grades.length),
+          _buildViewModeTabs(grades.length, isDark),
 
           const SizedBox(height: 16),
 
@@ -229,12 +235,14 @@ class _GradeCenterEventTeamsScreenState
               adviserWeight: adviserWeight,
               peerWeight: peerWeight,
               isLocked: isComplete,
+              isDark: isDark,
             )
           else
             _buildTeamOperationsView(
               grades: grades,
               showAdviser: showAdviser,
               isLocked: isComplete,
+              isDark: isDark,
             ),
 
           const SizedBox(height: 32),
@@ -246,13 +254,15 @@ class _GradeCenterEventTeamsScreenState
   // ==========================================
   // VIEW MODE SEGMENTED TABS
   // ==========================================
-  Widget _buildViewModeTabs(int teamCount) {
+  Widget _buildViewModeTabs(int teamCount, bool isDark) {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(
+          color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -262,6 +272,7 @@ class _GradeCenterEventTeamsScreenState
             icon: Icons.table_chart_rounded,
             label: 'Official University Master Grade Sheet',
             badge: 'Stage Matrix',
+            isDark: isDark,
           ),
           const SizedBox(width: 4),
           _viewModeTabItem(
@@ -269,6 +280,7 @@ class _GradeCenterEventTeamsScreenState
             icon: Icons.dashboard_outlined,
             label: 'Team Operations & Readiness',
             badge: '$teamCount Teams',
+            isDark: isDark,
           ),
         ],
       ),
@@ -280,6 +292,7 @@ class _GradeCenterEventTeamsScreenState
     required IconData icon,
     required String label,
     required String badge,
+    required bool isDark,
   }) {
     final isSelected = _activeViewIndex == index;
     return Material(
@@ -291,16 +304,20 @@ class _GradeCenterEventTeamsScreenState
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
-            color: isSelected ? Colors.white : Colors.transparent,
+            color: isSelected
+                ? (isDark ? DefensysTokens.mistSurface : Colors.white)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(7),
             boxShadow: isSelected
-                ? const [
-                    BoxShadow(
-                      color: Color(0x0C000000),
-                      blurRadius: 4,
-                      offset: Offset(0, 1.5),
-                    ),
-                  ]
+                ? (isDark
+                    ? null
+                    : const [
+                        BoxShadow(
+                          color: Color(0x0C000000),
+                          blurRadius: 4,
+                          offset: Offset(0, 1.5),
+                        ),
+                      ])
                 : null,
           ),
           child: Row(
@@ -309,7 +326,9 @@ class _GradeCenterEventTeamsScreenState
               Icon(
                 icon,
                 size: 15,
-                color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                color: isSelected
+                    ? (isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB))
+                    : (isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF64748B)),
               ),
               const SizedBox(width: 8),
               Text(
@@ -317,14 +336,18 @@ class _GradeCenterEventTeamsScreenState
                 style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                  color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                  color: isSelected
+                      ? (isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF0F172A))
+                      : (isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF64748B)),
                 ),
               ),
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                 decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFFEFF6FF) : const Color(0xFFE2E8F0),
+                  color: isSelected
+                      ? (isDark ? const Color(0xFF1E3A8A) : const Color(0xFFEFF6FF))
+                      : (isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
@@ -332,7 +355,9 @@ class _GradeCenterEventTeamsScreenState
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
-                    color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                    color: isSelected
+                        ? (isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB))
+                        : (isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF64748B)),
                   ),
                 ),
               ),
@@ -350,6 +375,7 @@ class _GradeCenterEventTeamsScreenState
     required List<Map<String, dynamic>> grades,
     required bool showAdviser,
     required bool isLocked,
+    required bool isDark,
   }) {
     final totalCount = grades.length;
     final totalPages = (totalCount / _teamRowsPerPage).ceil().clamp(1, double.infinity).toInt();
@@ -380,12 +406,13 @@ class _GradeCenterEventTeamsScreenState
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _teamsTableHeader(showAdviser: showAdviser),
+                        _teamsTableHeader(showAdviser: showAdviser, isDark: isDark),
                         ...displayedGrades.map(
                           (grade) => _teamRow(
                             grade,
                             showAdviser: showAdviser,
                             isLocked: isLocked,
+                            isDark: isDark,
                             onTap: () {
                               final gradeId = asInt(grade['id']);
                               if (gradeId != null) {
@@ -409,6 +436,7 @@ class _GradeCenterEventTeamsScreenState
             startIndex: startIndex,
             endIndex: endIndex,
             entityLabel: 'teams',
+            isDark: isDark,
             onRowsPerPageChanged: (newRpp) => setState(() {
               _teamRowsPerPage = newRpp;
               _teamCurrentPage = 0;
@@ -422,87 +450,87 @@ class _GradeCenterEventTeamsScreenState
     );
   }
 
-  Widget _teamsTableHeader({required bool showAdviser}) {
+  Widget _teamsTableHeader({required bool showAdviser, required bool isDark}) {
     return Container(
       height: 48,
-      decoration: const BoxDecoration(
-        color: Color(0xFFF0F1F4),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
+      decoration: BoxDecoration(
+        color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF0F1F4),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         children: [
-          const Expanded(
+          Expanded(
             flex: 3,
             child: Text(
               'Team & Approved Concept',
               style: TextStyle(
-                color: Color(0xFF5D6678),
+                color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF5D6678),
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
             ),
           ),
           if (showAdviser)
-            const Expanded(
+            Expanded(
               flex: 2,
               child: Text(
                 'Adviser',
                 style: TextStyle(
-                  color: Color(0xFF5D6678),
+                  color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF5D6678),
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
                 ),
               ),
             ),
-          const Expanded(
+          Expanded(
             child: Text(
               'Panel',
               style: TextStyle(
-                color: Color(0xFF5D6678),
+                color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF5D6678),
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
             ),
           ),
           if (showAdviser)
-            const Expanded(
+            Expanded(
               child: Text(
                 'Adviser Status',
                 style: TextStyle(
-                  color: Color(0xFF5D6678),
+                  color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF5D6678),
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
                 ),
               ),
             ),
-          const Expanded(
+          Expanded(
             flex: 2,
             child: Text(
               'Peer Evaluation',
               style: TextStyle(
-                color: Color(0xFF5D6678),
+                color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF5D6678),
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
             ),
           ),
-          const Expanded(
+          Expanded(
             child: Text(
               'Final Grade',
               style: TextStyle(
-                color: Color(0xFF5D6678),
+                color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF5D6678),
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
             ),
           ),
-          const Expanded(
+          Expanded(
             flex: 2,
             child: Text(
               'Status',
               style: TextStyle(
-                color: Color(0xFF5D6678),
+                color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF5D6678),
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
@@ -518,20 +546,25 @@ class _GradeCenterEventTeamsScreenState
     Map<String, dynamic> grade, {
     required bool showAdviser,
     required bool isLocked,
+    required bool isDark,
     required VoidCallback onTap,
   }) {
     final adviserName = grade['adviser_name']?.toString().trim() ?? '';
 
     return Material(
-      color: Colors.white,
+      color: isDark ? DefensysTokens.mistSurface : Colors.white,
       child: InkWell(
-        hoverColor: const Color(0xFFF9FAFB),
+        hoverColor: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF9FAFB),
         onTap: onTap,
         child: Container(
           constraints: const BoxConstraints(minHeight: 60),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
+              ),
+            ),
           ),
           child: Row(
             children: [
@@ -544,10 +577,16 @@ class _GradeCenterEventTeamsScreenState
                       Container(
                         padding: const EdgeInsets.all(5),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFECFDF5),
+                          color: isDark
+                              ? const Color(0xFF064E3B)
+                              : const Color(0xFFECFDF5),
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        child: const Icon(Icons.school_rounded, size: 14, color: Color(0xFF059669)),
+                        child: Icon(
+                          Icons.school_rounded,
+                          size: 14,
+                          color: isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
+                        ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
@@ -556,7 +595,9 @@ class _GradeCenterEventTeamsScreenState
                           style: TextStyle(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w600,
-                            color: adviserName.isNotEmpty ? const Color(0xFF1E293B) : const Color(0xFF94A3B8),
+                            color: adviserName.isNotEmpty
+                                ? (isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF1E293B))
+                                : (isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF94A3B8)),
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -582,9 +623,9 @@ class _GradeCenterEventTeamsScreenState
                 flex: 2,
                 child: gradeStatusChipWidget(grade),
               ),
-              const Icon(
+              Icon(
                 Icons.chevron_right_rounded,
-                color: Color(0xFF98A2B3),
+                color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF98A2B3),
                 size: 22,
               ),
             ],
@@ -605,6 +646,7 @@ class _GradeCenterEventTeamsScreenState
     required double adviserWeight,
     required double peerWeight,
     required bool isLocked,
+    required bool isDark,
   }) {
     // 1. Extract distinct panelists across all teams in this stage
     final stagePanelists = _extractStagePanelists(grades);
@@ -718,16 +760,20 @@ class _GradeCenterEventTeamsScreenState
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDark ? DefensysTokens.mistSurface : Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x05000000),
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
-        ],
+        border: Border.all(
+          color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+        ),
+        boxShadow: isDark
+            ? null
+            : const [
+                BoxShadow(
+                  color: Color(0x05000000),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -735,32 +781,40 @@ class _GradeCenterEventTeamsScreenState
           // Header Bar
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(11)),
-              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+            decoration: BoxDecoration(
+              color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
+              border: Border(
+                bottom: BorderSide(
+                  color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+                ),
+              ),
             ),
             child: Row(
               children: [
                 Container(
                   padding: const EdgeInsets.all(7),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
+                    color: isDark ? const Color(0xFF1E3A8A) : const Color(0xFFEFF6FF),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.table_chart_rounded, size: 16, color: Color(0xFF2563EB)),
+                  child: Icon(
+                    Icons.table_chart_rounded,
+                    size: 16,
+                    color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Official Stage Master Grade Sheet',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w800,
-                          color: Color(0xFF0F172A),
+                          color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF0F172A),
                           letterSpacing: -0.2,
                         ),
                       ),
@@ -769,7 +823,10 @@ class _GradeCenterEventTeamsScreenState
                         isPit
                             ? 'Complete University Grade Matrix · ${allStudentRows.length} Students across ${grades.length} Teams · Panel (${panelWeight.toStringAsFixed(0)}%) + Peer (${peerWeight.toStringAsFixed(0)}%)'
                             : 'Complete University Grade Matrix · ${allStudentRows.length} Students across ${grades.length} Teams · Panel (${panelWeight.toStringAsFixed(0)}%) + Adviser (${adviserWeight.toStringAsFixed(0)}%) + Peer (${peerWeight.toStringAsFixed(0)}%)',
-                        style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF64748B),
+                        ),
                       ),
                     ],
                   ),
@@ -797,7 +854,15 @@ class _GradeCenterEventTeamsScreenState
                     ),
                     child: DataTable(
                       showCheckboxColumn: false,
-                      headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+                      headingRowColor: WidgetStateProperty.all(
+                        isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
+                      ),
+                      dataRowColor: WidgetStateProperty.resolveWith((states) {
+                        if (states.contains(WidgetState.hovered)) {
+                          return isDark ? DefensysTokens.mistInputFill : const Color(0xFFF9FAFB);
+                        }
+                        return Colors.transparent;
+                      }),
                       dataRowMinHeight: 56,
                       dataRowMaxHeight: 64,
                       columnSpacing: dynamicSpacing,
@@ -805,63 +870,63 @@ class _GradeCenterEventTeamsScreenState
                       dividerThickness: 1,
                       columns: [
                         // 1. No.
-                        const DataColumn(
+                        DataColumn(
                           label: Text(
                             'No.',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.5,
-                              color: Color(0xFF475569),
+                              color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF475569),
                             ),
                           ),
                         ),
                         // 2. Team
-                        const DataColumn(
+                        DataColumn(
                           label: Text(
                             'Team',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.5,
-                              color: Color(0xFF475569),
+                              color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF475569),
                             ),
                           ),
                         ),
                         // 3. Approved Concept
-                        const DataColumn(
+                        DataColumn(
                           label: Text(
                             'Approved Concept',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.5,
-                              color: Color(0xFF475569),
+                              color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF475569),
                             ),
                           ),
                         ),
                         // 4. Adviser
                         if (!isPit)
-                          const DataColumn(
+                          DataColumn(
                             label: Text(
                               'Adviser',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 0.5,
-                                color: Color(0xFF475569),
+                                color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF475569),
                               ),
                             ),
                           ),
                         // 5. Names
-                        const DataColumn(
+                        DataColumn(
                           label: Text(
                             'Names',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.5,
-                              color: Color(0xFF475569),
+                              color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF475569),
                             ),
                           ),
                         ),
@@ -876,18 +941,18 @@ class _GradeCenterEventTeamsScreenState
                               children: [
                                 Text(
                                   'Panel $idx',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w800,
-                                    color: Color(0xFF2563EB),
+                                    color: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
                                   ),
                                 ),
                                 Text(
                                   pan.displayName,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w700,
-                                    color: Color(0xFF1E293B),
+                                    color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF1E293B),
                                   ),
                                 ),
                               ],
@@ -895,14 +960,14 @@ class _GradeCenterEventTeamsScreenState
                           );
                         }),
                         // 7. Average
-                        const DataColumn(
+                        DataColumn(
                           label: Text(
                             'Average',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.5,
-                              color: Color(0xFF1E293B),
+                              color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF1E293B),
                             ),
                           ),
                         ),
@@ -911,29 +976,31 @@ class _GradeCenterEventTeamsScreenState
                           label: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFEFF6FF),
+                              color: isDark ? const Color(0xFF1E3A8A) : const Color(0xFFEFF6FF),
                               borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: const Color(0xFF2563EB).withValues(alpha: 0.25)),
+                              border: Border.all(
+                                color: const Color(0xFF2563EB).withValues(alpha: isDark ? 0.5 : 0.25),
+                              ),
                             ),
                             child: Text(
                               'GRADE ${panelWeight.toStringAsFixed(0)}%',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w800,
-                                color: Color(0xFF2563EB),
+                                color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB),
                               ),
                             ),
                           ),
                         ),
                         // 9. Advisers Rating & 30% (DefenSYS Emerald)
                         if (!isPit && adviserWeight > 0) ...[
-                          const DataColumn(
+                          DataColumn(
                             label: Text(
                               "Adviser's Rating",
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w800,
-                                color: Color(0xFF1E293B),
+                                color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF1E293B),
                               ),
                             ),
                           ),
@@ -941,29 +1008,31 @@ class _GradeCenterEventTeamsScreenState
                             label: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFECFDF5),
+                                color: isDark ? const Color(0xFF064E3B) : const Color(0xFFECFDF5),
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: const Color(0xFF059669).withValues(alpha: 0.25)),
+                                border: Border.all(
+                                  color: const Color(0xFF059669).withValues(alpha: isDark ? 0.5 : 0.25),
+                                ),
                               ),
                               child: Text(
                                 '${adviserWeight.toStringAsFixed(0)}%',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.w800,
-                                  color: Color(0xFF059669),
+                                  color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF059669),
                                 ),
                               ),
                             ),
                           ),
                         ],
                         // 10. Peer Rating & 20% (Sky Blue)
-                        const DataColumn(
+                        DataColumn(
                           label: Text(
                             'Peer Rating',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w800,
-                              color: Color(0xFF1E293B),
+                              color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF1E293B),
                             ),
                           ),
                         ),
@@ -971,16 +1040,18 @@ class _GradeCenterEventTeamsScreenState
                           label: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF0F9FF),
+                              color: isDark ? const Color(0xFF075985) : const Color(0xFFF0F9FF),
                               borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.25)),
+                              border: Border.all(
+                                color: const Color(0xFF0284C7).withValues(alpha: isDark ? 0.5 : 0.25),
+                              ),
                             ),
                             child: Text(
                               '${peerWeight.toStringAsFixed(0)}%',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w800,
-                                color: Color(0xFF0284C7),
+                                color: isDark ? const Color(0xFF7DD3FC) : const Color(0xFF0284C7),
                               ),
                             ),
                           ),
@@ -990,16 +1061,18 @@ class _GradeCenterEventTeamsScreenState
                           label: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
+                              color: isDark ? DefensysTokens.mistSurface : const Color(0xFFF8FAFC),
                               borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: const Color(0xFFCBD5E1)),
+                              border: Border.all(
+                                color: isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1),
+                              ),
                             ),
-                            child: const Text(
+                            child: Text(
                               'TOTAL',
                               style: TextStyle(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w800,
-                                color: Color(0xFF0F172A),
+                                color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF0F172A),
                               ),
                             ),
                           ),
@@ -1009,8 +1082,9 @@ class _GradeCenterEventTeamsScreenState
                           label: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF0F172A),
+                              color: isDark ? DefensysTokens.mistInputFill : const Color(0xFF0F172A),
                               borderRadius: BorderRadius.circular(4),
+                              border: isDark ? Border.all(color: DefensysTokens.mistBorder) : null,
                             ),
                             child: const Text(
                               'FINAL GRADE',
@@ -1037,10 +1111,10 @@ class _GradeCenterEventTeamsScreenState
                             DataCell(
                               Text(
                                 '$no',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
-                                  color: Color(0xFF64748B),
+                                  color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF64748B),
                                 ),
                               ),
                             ),
@@ -1049,16 +1123,18 @@ class _GradeCenterEventTeamsScreenState
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFF1F5F9),
+                                  color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
                                   borderRadius: BorderRadius.circular(5),
-                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                  border: Border.all(
+                                    color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+                                  ),
                                 ),
                                 child: Text(
                                   s.teamName,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontWeight: FontWeight.w700,
                                     fontSize: 12,
-                                    color: Color(0xFF0F172A),
+                                    color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF0F172A),
                                   ),
                                 ),
                               ),
@@ -1069,10 +1145,10 @@ class _GradeCenterEventTeamsScreenState
                                 constraints: const BoxConstraints(maxWidth: 180),
                                 child: Text(
                                   s.projectTitle,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w500,
-                                    color: Color(0xFF334155),
+                                    color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF334155),
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -1083,10 +1159,10 @@ class _GradeCenterEventTeamsScreenState
                               DataCell(
                                 Text(
                                   s.adviserName,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
-                                    color: Color(0xFF475569),
+                                    color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF475569),
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -1098,10 +1174,10 @@ class _GradeCenterEventTeamsScreenState
                                 children: [
                                   Text(
                                     s.studentName,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontWeight: FontWeight.w700,
                                       fontSize: 12.5,
-                                      color: Color(0xFF0F172A),
+                                      color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF0F172A),
                                     ),
                                   ),
                                   if (s.isLeader) ...[
@@ -1109,13 +1185,19 @@ class _GradeCenterEventTeamsScreenState
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFFEF3C7),
+                                        color: isDark ? const Color(0xFF78350F) : const Color(0xFFFEF3C7),
                                         borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.3)),
+                                        border: Border.all(
+                                          color: const Color(0xFFF59E0B).withValues(alpha: isDark ? 0.5 : 0.3),
+                                        ),
                                       ),
-                                      child: const Text(
+                                      child: Text(
                                         'LEADER',
-                                        style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: Color(0xFFB45309)),
+                                        style: TextStyle(
+                                          fontSize: 8.5,
+                                          fontWeight: FontWeight.w800,
+                                          color: isDark ? const Color(0xFFFDE68A) : const Color(0xFFB45309),
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -1129,13 +1211,13 @@ class _GradeCenterEventTeamsScreenState
                                 score != null
                                     ? Text(
                                         '${score.toStringAsFixed(1)}%',
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 12.5,
                                           fontWeight: FontWeight.w600,
-                                          color: Color(0xFF334155),
+                                          color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF334155),
                                         ),
                                       )
-                                    : const Text('—', style: TextStyle(color: Color(0xFF94A3B8))),
+                                    : Text('—', style: TextStyle(color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF94A3B8))),
                               );
                             }),
                             // 7. Panel Average
@@ -1143,13 +1225,13 @@ class _GradeCenterEventTeamsScreenState
                               s.panelScore != null
                                   ? Text(
                                       '${s.panelScore!.toStringAsFixed(2)}%',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontWeight: FontWeight.w700,
                                         fontSize: 12.5,
-                                        color: Color(0xFF1E293B),
+                                        color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF1E293B),
                                       ),
                                     )
-                                  : const Text('—', style: TextStyle(color: Color(0xFF94A3B8))),
+                                  : Text('—', style: TextStyle(color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF94A3B8))),
                             ),
                             // 8. GRADE 50% (DefenSYS Blue Pill)
                             DataCell(
@@ -1157,20 +1239,22 @@ class _GradeCenterEventTeamsScreenState
                                   ? Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFEFF6FF),
+                                        color: isDark ? const Color(0xFF1E3A8A) : const Color(0xFFEFF6FF),
                                         borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: const Color(0xFF2563EB).withValues(alpha: 0.25)),
+                                        border: Border.all(
+                                          color: const Color(0xFF2563EB).withValues(alpha: isDark ? 0.5 : 0.25),
+                                        ),
                                       ),
                                       child: Text(
                                         s.panelContrib!.toStringAsFixed(2),
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 11.5,
                                           fontWeight: FontWeight.w800,
-                                          color: Color(0xFF2563EB),
+                                          color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB),
                                         ),
                                       ),
                                     )
-                                  : const Text('—', style: TextStyle(color: Color(0xFF94A3B8))),
+                                  : Text('—', style: TextStyle(color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF94A3B8))),
                             ),
                             // 9. Advisers Rating & 30% (DefenSYS Emerald Pill)
                             if (!isPit && adviserWeight > 0) ...[
@@ -1178,33 +1262,35 @@ class _GradeCenterEventTeamsScreenState
                                 s.adviserScore != null
                                     ? Text(
                                         '${s.adviserScore!.toStringAsFixed(2)}%',
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 12.5,
                                           fontWeight: FontWeight.w600,
-                                          color: Color(0xFF334155),
+                                          color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF334155),
                                         ),
                                       )
-                                    : const Text('—', style: TextStyle(color: Color(0xFF94A3B8))),
+                                    : Text('—', style: TextStyle(color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF94A3B8))),
                               ),
                               DataCell(
                                 s.adviserContrib != null
                                     ? Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFFECFDF5),
+                                          color: isDark ? const Color(0xFF064E3B) : const Color(0xFFECFDF5),
                                           borderRadius: BorderRadius.circular(4),
-                                          border: Border.all(color: const Color(0xFF059669).withValues(alpha: 0.25)),
+                                          border: Border.all(
+                                            color: const Color(0xFF059669).withValues(alpha: isDark ? 0.5 : 0.25),
+                                          ),
                                         ),
                                         child: Text(
                                           s.adviserContrib!.toStringAsFixed(2),
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 11.5,
                                             fontWeight: FontWeight.w800,
-                                            color: Color(0xFF059669),
+                                            color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF059669),
                                           ),
                                         ),
                                       )
-                                    : const Text('—', style: TextStyle(color: Color(0xFF94A3B8))),
+                                    : Text('—', style: TextStyle(color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF94A3B8))),
                               ),
                             ],
                             // 10. Peer Rating & 20% (Sky Blue Pill)
@@ -1212,33 +1298,35 @@ class _GradeCenterEventTeamsScreenState
                               s.peerScore != null
                                   ? Text(
                                       '${s.peerScore!.toStringAsFixed(2)}%',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 12.5,
                                         fontWeight: FontWeight.w600,
-                                        color: Color(0xFF334155),
+                                        color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF334155),
                                       ),
                                     )
-                                  : const Text('—', style: TextStyle(color: Color(0xFF94A3B8))),
+                                  : Text('—', style: TextStyle(color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF94A3B8))),
                             ),
                             DataCell(
                               s.peerContrib != null
                                   ? Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFF0F9FF),
+                                        color: isDark ? const Color(0xFF075985) : const Color(0xFFF0F9FF),
                                         borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: const Color(0xFF0284C7).withValues(alpha: 0.25)),
+                                        border: Border.all(
+                                          color: const Color(0xFF0284C7).withValues(alpha: isDark ? 0.5 : 0.25),
+                                        ),
                                       ),
                                       child: Text(
                                         s.peerContrib!.toStringAsFixed(2),
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 11.5,
                                           fontWeight: FontWeight.w800,
-                                          color: Color(0xFF0284C7),
+                                          color: isDark ? const Color(0xFF7DD3FC) : const Color(0xFF0284C7),
                                         ),
                                       ),
                                     )
-                                  : const Text('—', style: TextStyle(color: Color(0xFF94A3B8))),
+                                  : Text('—', style: TextStyle(color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF94A3B8))),
                             ),
                             // 11. TOTAL
                             DataCell(
@@ -1246,20 +1334,22 @@ class _GradeCenterEventTeamsScreenState
                                   ? Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFF8FAFC),
+                                        color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
                                         borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                                        border: Border.all(
+                                          color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+                                        ),
                                       ),
                                       child: Text(
                                         s.finalGrade!.toStringAsFixed(2),
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontWeight: FontWeight.w800,
                                           fontSize: 12.5,
-                                          color: Color(0xFF0F172A),
+                                          color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF0F172A),
                                         ),
                                       ),
                                     )
-                                  : const Text('—', style: TextStyle(color: Color(0xFF94A3B8))),
+                                  : Text('—', style: TextStyle(color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF94A3B8))),
                             ),
                             // 12. FINAL GRADE & STATUS
                             DataCell(
@@ -1269,17 +1359,17 @@ class _GradeCenterEventTeamsScreenState
                                       children: [
                                         Text(
                                           '${s.finalGrade!.toStringAsFixed(2)}%',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 13,
                                             fontWeight: FontWeight.w800,
-                                            color: Color(0xFF0F172A),
+                                            color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF0F172A),
                                           ),
                                         ),
                                         const SizedBox(width: 8),
-                                        _buildStatusBadgeCell(isPassed, s.finalGrade),
+                                        _buildStatusBadgeCell(isPassed, s.finalGrade, isDark),
                                       ],
                                     )
-                                  : const Text('—', style: TextStyle(color: Color(0xFF94A3B8))),
+                                  : Text('—', style: TextStyle(color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF94A3B8))),
                             ),
                           ],
                         );
@@ -1300,6 +1390,7 @@ class _GradeCenterEventTeamsScreenState
             startIndex: startIndex,
             endIndex: endIndex,
             entityLabel: 'students',
+            isDark: isDark,
             onRowsPerPageChanged: (newRpp) => setState(() {
               _masterRowsPerPage = newRpp;
               _masterCurrentPage = 0;
@@ -1321,15 +1412,20 @@ class _GradeCenterEventTeamsScreenState
     required int startIndex,
     required int endIndex,
     required String entityLabel,
+    required bool isDark,
     required ValueChanged<int> onRowsPerPageChanged,
     required ValueChanged<int> onPageChanged,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      decoration: const BoxDecoration(
-        color: Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(11)),
-        border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+      decoration: BoxDecoration(
+        color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(11)),
+        border: Border(
+          top: BorderSide(
+            color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+          ),
+        ),
       ),
       child: Row(
         children: [
@@ -1337,30 +1433,33 @@ class _GradeCenterEventTeamsScreenState
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
+              Text(
                 'Rows per page:',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF64748B),
+                  color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF64748B),
                 ),
               ),
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: isDark ? DefensysTokens.mistSurface : Colors.white,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                  border: Border.all(
+                    color: isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1),
+                  ),
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<int>(
                     value: rowsPerPage,
+                    dropdownColor: isDark ? DefensysTokens.mistSurface : Colors.white,
                     isDense: true,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF0F172A),
+                      color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF0F172A),
                     ),
                     items: _rowsPerPageOptions.map((n) {
                       return DropdownMenuItem<int>(
@@ -1379,10 +1478,10 @@ class _GradeCenterEventTeamsScreenState
                 totalCount == 0
                     ? 'Showing 0 of 0 $entityLabel'
                     : 'Showing ${startIndex + 1} - $endIndex of $totalCount $entityLabel',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF64748B),
+                  color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF64748B),
                 ),
               ),
             ],
@@ -1398,16 +1497,18 @@ class _GradeCenterEventTeamsScreenState
                 onPressed: currentPage > 0
                     ? () => onPageChanged(currentPage - 1)
                     : null,
-                color: const Color(0xFF0F172A),
-                disabledColor: const Color(0xFFCBD5E1),
+                color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF0F172A),
+                disabledColor: isDark
+                    ? DefensysTokens.mistTextSecondary.withValues(alpha: 0.3)
+                    : const Color(0xFFCBD5E1),
               ),
               const SizedBox(width: 4),
               Text(
                 'Page ${currentPage + 1} of $totalPages',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF0F172A),
+                  color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF0F172A),
                 ),
               ),
               const SizedBox(width: 4),
@@ -1417,8 +1518,10 @@ class _GradeCenterEventTeamsScreenState
                 onPressed: currentPage < totalPages - 1
                     ? () => onPageChanged(currentPage + 1)
                     : null,
-                color: const Color(0xFF0F172A),
-                disabledColor: const Color(0xFFCBD5E1),
+                color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF0F172A),
+                disabledColor: isDark
+                    ? DefensysTokens.mistTextSecondary.withValues(alpha: 0.3)
+                    : const Color(0xFFCBD5E1),
               ),
             ],
           ),
@@ -1427,17 +1530,19 @@ class _GradeCenterEventTeamsScreenState
     );
   }
 
-  Widget _buildStatusBadgeCell(bool isPassed, double? finalGrade) {
-    if (finalGrade == null) return const Text('—', style: TextStyle(color: Color(0xFF94A3B8)));
+  Widget _buildStatusBadgeCell(bool isPassed, double? finalGrade, bool isDark) {
+    if (finalGrade == null) return Text('—', style: TextStyle(color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF94A3B8)));
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
       decoration: BoxDecoration(
-        color: isPassed ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+        color: isPassed
+            ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFECFDF5))
+            : (isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFEF2F2)),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
           color: isPassed
-              ? const Color(0xFF059669).withValues(alpha: 0.25)
-              : const Color(0xFFDC2626).withValues(alpha: 0.25),
+              ? const Color(0xFF059669).withValues(alpha: isDark ? 0.5 : 0.25)
+              : const Color(0xFFDC2626).withValues(alpha: isDark ? 0.5 : 0.25),
         ),
       ),
       child: Row(
@@ -1446,7 +1551,9 @@ class _GradeCenterEventTeamsScreenState
           Icon(
             isPassed ? Icons.check_circle_rounded : Icons.cancel_rounded,
             size: 12,
-            color: isPassed ? const Color(0xFF059669) : const Color(0xFFDC2626),
+            color: isPassed
+                ? (isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
+                : (isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626)),
           ),
           const SizedBox(width: 4),
           Text(
@@ -1454,7 +1561,9 @@ class _GradeCenterEventTeamsScreenState
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w800,
-              color: isPassed ? const Color(0xFF059669) : const Color(0xFFDC2626),
+              color: isPassed
+                  ? (isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
+                  : (isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626)),
             ),
           ),
         ],

@@ -165,6 +165,14 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
   String _activeDelimiter = '_';
   final TextEditingController _customPrefixController = TextEditingController();
 
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _surfaceColor => _isDark ? DefensysTokens.mistSurface : Colors.white;
+  Color get _panelBgColor => _isDark ? DefensysTokens.mistPanel : const Color(0xFFF8FAFC);
+  Color get _inputFillColor => _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9);
+  Color get _borderColor => _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0);
+  Color get _textPrimaryColor => _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF1E293B);
+  Color get _textSecondaryColor => _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B);
+
   @override
   void initState() {
     super.initState();
@@ -360,119 +368,144 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
     final isPreset4 = currentTemplate == presetMilestone;
     final isPreset5 = currentTemplate == presetSemester;
 
+    final activeMaroon = _isDark ? const Color(0xFFF87171) : AppColors.maroon;
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: _panelBgColor,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: _borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Header Row: Title + Status Badge + Collapse/Expand Toggle
-          Row(
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 6,
             children: [
-              Container(
-                padding: const EdgeInsets.all(5),
-                decoration: BoxDecoration(
-                  color: AppColors.maroon.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Icon(Icons.archive_outlined, size: 15, color: AppColors.maroon),
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'Repository Archiving & Naming',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1E293B),
-                  fontFamily: DefensysTokens.fontFamily,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFECFDF5),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: const Color(0xFFA7F3D0)),
-                ),
-                child: const Text(
-                  '⚡ Auto-Renamed by System',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF059669),
-                    fontFamily: DefensysTokens.fontFamily,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: _isDark
+                          ? const Color(0xFF991B1B).withValues(alpha: 0.25)
+                          : AppColors.maroon.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(Icons.archive_outlined, size: 15, color: activeMaroon),
                   ),
-                ),
-              ),
-              const Spacer(),
-              // Classification Badge (Manuscript vs Supporting)
-              Tooltip(
-                message: isManuscript
-                    ? 'Primary Manuscript: DefenSYS defaults this to Project Title for clean archiving.'
-                    : 'Supporting Artifact: DefenSYS includes Deliverable Name to keep all files distinct.',
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: isManuscript ? const Color(0xFFEFF6FF) : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: isManuscript ? const Color(0xFFBFDBFE) : const Color(0xFFCBD5E1),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Repository Archiving & Naming',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: _textPrimaryColor,
+                      fontFamily: DefensysTokens.fontFamily,
                     ),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        isManuscript ? Icons.menu_book_rounded : Icons.attach_file_rounded,
-                        size: 13,
-                        color: isManuscript ? const Color(0xFF2563EB) : const Color(0xFF475569),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.3) : const Color(0xFFECFDF5),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: _isDark ? const Color(0xFF059669) : const Color(0xFFA7F3D0)),
+                    ),
+                    child: Text(
+                      '⚡ Auto-Renamed by System',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: _isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
+                        fontFamily: DefensysTokens.fontFamily,
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        isManuscript ? 'Primary Manuscript' : 'Supporting Artifact',
-                        style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                          color: isManuscript ? const Color(0xFF1D4ED8) : const Color(0xFF334155),
-                          fontFamily: DefensysTokens.fontFamily,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
+                ],
               ),
-              const SizedBox(width: 8),
-              InkWell(
-                onTap: () => setState(() => _isExpanded = !_isExpanded),
-                borderRadius: BorderRadius.circular(6),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        _isExpanded ? 'Hide Options' : 'Configure Format',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: _isExpanded ? AppColors.maroon : const Color(0xFF64748B),
-                          fontFamily: DefensysTokens.fontFamily,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Classification Badge (Manuscript vs Supporting)
+                  Tooltip(
+                    message: isManuscript
+                        ? 'Primary Manuscript: DefenSYS defaults this to Project Title for clean archiving.'
+                        : 'Supporting Artifact: DefenSYS includes Deliverable Name to keep all files distinct.',
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: isManuscript
+                            ? (_isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFEFF6FF))
+                            : (_isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9)),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: isManuscript
+                              ? (_isDark ? const Color(0xFF3B82F6) : const Color(0xFFBFDBFE))
+                              : _borderColor,
                         ),
                       ),
-                      const SizedBox(width: 2),
-                      Icon(
-                        _isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                        size: 15,
-                        color: _isExpanded ? AppColors.maroon : const Color(0xFF64748B),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isManuscript ? Icons.menu_book_rounded : Icons.attach_file_rounded,
+                            size: 13,
+                            color: isManuscript
+                                ? (_isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB))
+                                : (_isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569)),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            isManuscript ? 'Primary Manuscript' : 'Supporting Artifact',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: isManuscript
+                                  ? (_isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8))
+                                  : (_isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF334155)),
+                              fontFamily: DefensysTokens.fontFamily,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: () => setState(() => _isExpanded = !_isExpanded),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _isExpanded ? 'Hide Options' : 'Configure Format',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: _isExpanded ? activeMaroon : _textSecondaryColor,
+                              fontFamily: DefensysTokens.fontFamily,
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          Icon(
+                            _isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                            size: 15,
+                            color: _isExpanded ? activeMaroon : _textSecondaryColor,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -483,23 +516,23 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: _surfaceColor,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: collisionDetected ? const Color(0xFFF59E0B) : const Color(0xFFCBD5E1),
+                color: collisionDetected ? const Color(0xFFF59E0B) : _borderColor,
                 width: collisionDetected ? 1.5 : 1.0,
               ),
             ),
             child: Row(
               children: [
-                const Icon(Icons.description_outlined, size: 15, color: Color(0xFF64748B)),
+                Icon(Icons.description_outlined, size: 15, color: _textSecondaryColor),
                 const SizedBox(width: 6),
-                const Text(
+                Text(
                   'Preview Output: ',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF475569),
+                    color: _textSecondaryColor,
                     fontFamily: DefensysTokens.fontFamily,
                   ),
                 ),
@@ -511,7 +544,9 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
                       fontSize: 11.5,
                       fontFamily: 'monospace',
                       fontWeight: FontWeight.w700,
-                      color: collisionDetected ? const Color(0xFFB45309) : AppColors.maroon,
+                      color: collisionDetected
+                          ? (_isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309))
+                          : activeMaroon,
                     ),
                   ),
                 ),
@@ -525,21 +560,25 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
               decoration: BoxDecoration(
-                color: const Color(0xFFFFFBEB),
+                color: _isDark ? const Color(0xFF78350F).withValues(alpha: 0.25) : const Color(0xFFFFFBEB),
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFFDE68A)),
+                border: Border.all(color: _isDark ? const Color(0xFFB45309) : const Color(0xFFFDE68A)),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.shield_outlined, size: 14, color: Color(0xFFD97706)),
+                  Icon(
+                    Icons.shield_outlined,
+                    size: 14,
+                    color: _isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: RichText(
                       text: TextSpan(
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
-                          color: Color(0xFF92400E),
+                          color: _isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E),
                           height: 1.35,
                           fontFamily: DefensysTokens.fontFamily,
                         ),
@@ -563,17 +602,21 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
           ],
 
           const SizedBox(height: 5),
-          const Row(
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.info_outline_rounded, size: 13, color: Color(0xFF94A3B8)),
-              SizedBox(width: 5),
+              Icon(
+                Icons.info_outline_rounded,
+                size: 13,
+                color: _isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8),
+              ),
+              const SizedBox(width: 5),
               Expanded(
                 child: Text(
                   'DefenSYS formats repository files automatically upon upload. Students can upload their work under any filename without naming restrictions.',
                   style: TextStyle(
                     fontSize: 10.5,
-                    color: Color(0xFF64748B),
+                    color: _textSecondaryColor,
                     fontFamily: DefensysTokens.fontFamily,
                     height: 1.3,
                   ),
@@ -585,18 +628,18 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
           // Expanded Format Options
           if (_isExpanded) ...[
             const SizedBox(height: 10),
-            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            Divider(height: 1, color: _borderColor),
             const SizedBox(height: 10),
 
             // Presets Selector Header
             Row(
               children: [
-                const Text(
+                Text(
                   'Naming Pattern Presets',
                   style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF334155),
+                    color: _textPrimaryColor,
                     fontFamily: DefensysTokens.fontFamily,
                   ),
                 ),
@@ -607,7 +650,7 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
                     icon: const Icon(Icons.restart_alt_rounded, size: 13),
                     label: const Text('Reset to Recommended'),
                     style: TextButton.styleFrom(
-                      foregroundColor: AppColors.maroon,
+                      foregroundColor: activeMaroon,
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       visualDensity: VisualDensity.compact,
                       textStyle: const TextStyle(
@@ -675,33 +718,33 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: _surfaceColor,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                  border: Border.all(color: _borderColor),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.tune_rounded, size: 14, color: AppColors.maroon),
+                        Icon(Icons.tune_rounded, size: 14, color: activeMaroon),
                         const SizedBox(width: 6),
-                        const Text(
+                        Text(
                           'Visual Token Builder',
                           style: TextStyle(
                             fontSize: 11.5,
                             fontWeight: FontWeight.w800,
-                            color: Color(0xFF1E293B),
+                            color: _textPrimaryColor,
                             fontFamily: DefensysTokens.fontFamily,
                           ),
                         ),
                         const Spacer(),
-                        const Text(
+                        Text(
                           'Delimiter: ',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF64748B),
+                            color: _textSecondaryColor,
                             fontFamily: DefensysTokens.fontFamily,
                           ),
                         ),
@@ -718,17 +761,17 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
+                        color: _panelBgColor,
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Row(
                         children: [
-                          const Text(
+                          Text(
                             'Active Pattern: ',
                             style: TextStyle(
                               fontSize: 10.5,
                               fontWeight: FontWeight.w700,
-                              color: Color(0xFF64748B),
+                              color: _textSecondaryColor,
                               fontFamily: DefensysTokens.fontFamily,
                             ),
                           ),
@@ -739,7 +782,9 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
                                 fontSize: 11,
                                 fontFamily: 'monospace',
                                 fontWeight: FontWeight.w700,
-                                color: currentTemplate.isNotEmpty ? AppColors.maroon : const Color(0xFF94A3B8),
+                                color: currentTemplate.isNotEmpty
+                                    ? activeMaroon
+                                    : (_isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8)),
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -751,21 +796,21 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: Colors.white,
+                                  color: _surfaceColor,
                                   borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                                  border: Border.all(color: _borderColor),
                                 ),
-                                child: const Row(
+                                child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.backspace_outlined, size: 11, color: Color(0xFF64748B)),
-                                    SizedBox(width: 3),
+                                    Icon(Icons.backspace_outlined, size: 11, color: _textSecondaryColor),
+                                    const SizedBox(width: 3),
                                     Text(
                                       'Remove Last',
                                       style: TextStyle(
                                         fontSize: 10,
                                         fontWeight: FontWeight.w700,
-                                        color: Color(0xFF64748B),
+                                        color: _textSecondaryColor,
                                       ),
                                     ),
                                   ],
@@ -777,11 +822,11 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
                     ),
 
                     const SizedBox(height: 8),
-                    const Text(
+                    Text(
                       'Click to append token (no curly braces required):',
                       style: TextStyle(
                         fontSize: 10.5,
-                        color: Color(0xFF64748B),
+                        color: _textSecondaryColor,
                         fontFamily: DefensysTokens.fontFamily,
                       ),
                     ),
@@ -817,19 +862,23 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
                               enabled: !widget.isLocked,
                               decoration: InputDecoration(
                                 hintText: 'Optional Prefix (e.g. FINAL_, CS-DEPT_)',
-                                hintStyle: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                                hintStyle: TextStyle(
+                                  fontSize: 11,
+                                  color: _isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8),
+                                ),
                                 contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(6),
-                                  borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                  borderSide: BorderSide(color: _borderColor),
                                 ),
                                 enabledBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(6),
-                                  borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                  borderSide: BorderSide(color: _borderColor),
                                 ),
                               ),
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11.5,
+                                color: _textPrimaryColor,
                                 fontFamily: DefensysTokens.fontFamily,
                               ),
                             ),
@@ -844,7 +893,7 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
                                   _customPrefixController.clear();
                                 },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.maroon,
+                            backgroundColor: _isDark ? const Color(0xFF991B1B) : AppColors.maroon,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                             visualDensity: VisualDensity.compact,
@@ -873,6 +922,9 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
     required bool isSelected,
     required VoidCallback onSelected,
   }) {
+    final activeMaroon = _isDark ? const Color(0xFFF87171) : AppColors.maroon;
+    final activeTextMaroon = _isDark ? const Color(0xFFFCA5A5) : AppColors.maroon;
+
     return InkWell(
       onTap: widget.isLocked ? null : onSelected,
       borderRadius: BorderRadius.circular(8),
@@ -880,10 +932,14 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.maroon.withValues(alpha: 0.08) : Colors.white,
+          color: isSelected
+              ? (_isDark
+                  ? const Color(0xFF991B1B).withValues(alpha: 0.25)
+                  : AppColors.maroon.withValues(alpha: 0.08))
+              : _surfaceColor,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: isSelected ? AppColors.maroon : const Color(0xFFCBD5E1),
+            color: isSelected ? activeMaroon : _borderColor,
             width: isSelected ? 1.5 : 1.0,
           ),
         ),
@@ -895,7 +951,7 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (isSelected) ...[
-                  const Icon(Icons.check_circle_rounded, size: 12, color: AppColors.maroon),
+                  Icon(Icons.check_circle_rounded, size: 12, color: activeMaroon),
                   const SizedBox(width: 4),
                 ],
                 Text(
@@ -903,7 +959,9 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                    color: isSelected ? AppColors.maroon : const Color(0xFF334155),
+                    color: isSelected
+                        ? activeTextMaroon
+                        : (_isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF334155)),
                     fontFamily: DefensysTokens.fontFamily,
                   ),
                 ),
@@ -914,7 +972,9 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
               subtitle,
               style: TextStyle(
                 fontSize: 9.5,
-                color: isSelected ? AppColors.maroon.withValues(alpha: 0.85) : const Color(0xFF64748B),
+                color: isSelected
+                    ? activeTextMaroon.withValues(alpha: 0.85)
+                    : _textSecondaryColor,
                 fontFamily: DefensysTokens.fontFamily,
               ),
             ),
@@ -934,7 +994,9 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           decoration: BoxDecoration(
-            color: isCurrent ? AppColors.maroon : const Color(0xFFF1F5F9),
+            color: isCurrent
+                ? (_isDark ? const Color(0xFF991B1B) : AppColors.maroon)
+                : _inputFillColor,
             borderRadius: BorderRadius.circular(4),
           ),
           child: Text(
@@ -942,7 +1004,7 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w800,
-              color: isCurrent ? Colors.white : const Color(0xFF475569),
+              color: isCurrent ? Colors.white : _textSecondaryColor,
             ),
           ),
         ),
@@ -951,20 +1013,21 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
   }
 
   Widget _buildTokenPill(String label, String tokenKey, IconData icon) {
+    final activeMaroon = _isDark ? const Color(0xFFFCA5A5) : AppColors.maroon;
     return ActionChip(
       onPressed: widget.isLocked ? null : () => _insertToken(tokenKey),
-      avatar: Icon(icon, size: 13, color: AppColors.maroon),
+      avatar: Icon(icon, size: 13, color: activeMaroon),
       label: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          color: AppColors.maroon,
+          color: activeMaroon,
           fontFamily: DefensysTokens.fontFamily,
         ),
       ),
-      backgroundColor: Colors.white,
-      side: const BorderSide(color: Color(0xFFCBD5E1)),
+      backgroundColor: _surfaceColor,
+      side: BorderSide(color: _borderColor),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       visualDensity: VisualDensity.compact,

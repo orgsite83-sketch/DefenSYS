@@ -1400,4 +1400,67 @@ class UserManagementApiTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('year_level', response.data)
 
+    def test_bulk_import_by_year_level_without_section(self):
+        school_year = SchoolYear.objects.create(label='2037-2038')
+        semester = Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        response = self.client.post(
+            '/api/users/bulk-import/',
+            {
+                'student_context': {
+                    'semester_id': semester.id,
+                    'year_level': StudentAcademicRecord.SECOND_YEAR,
+                },
+                'users': [
+                    {
+                        'id_number': '2037-0001',
+                        'first_name': 'Kristine',
+                        'last_name': 'Dayap',
+                        'email': 'kristine@example.com',
+                        'role': 'student',
+                        'year_level': StudentAcademicRecord.SECOND_YEAR,
+                    },
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['created_count'], 1)
+        record = StudentAcademicRecord.objects.get(student__username='2037-0001', semester=semester)
+        self.assertEqual(record.year_level, StudentAcademicRecord.SECOND_YEAR)
+        self.assertEqual(record.section, '')
+
+        # Section assigned later (e.g. BSIT-2A)
+        record.section = 'BSIT-2A'
+        record.save()
+
+        # Re-importing without section should preserve existing section
+        reimport = self.client.post(
+            '/api/users/bulk-import/',
+            {
+                'student_context': {
+                    'semester_id': semester.id,
+                    'year_level': StudentAcademicRecord.SECOND_YEAR,
+                },
+                'users': [
+                    {
+                        'id_number': '2037-0001',
+                        'first_name': 'Kristine',
+                        'last_name': 'Dayap',
+                        'email': 'kristine@example.com',
+                        'role': 'student',
+                        'year_level': StudentAcademicRecord.SECOND_YEAR,
+                    },
+                ],
+            },
+            format='json',
+        )
+        self.assertIn(reimport.status_code, [200, 201])
+        record.refresh_from_db()
+        self.assertEqual(record.section, 'BSIT-2A')
+
+
 

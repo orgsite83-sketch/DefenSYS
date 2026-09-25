@@ -464,9 +464,9 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
           actions: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: DefensysTokens.surfaceOf(context),
               borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-              border: Border.all(color: DefensysTokens.border),
+              border: Border.all(color: DefensysTokens.borderOf(context)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -482,10 +482,10 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                 const SizedBox(width: 8),
                 Text(
                   '$totalReports Reports Ready for PDF Export',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: DefensysTokens.textDark,
+                    color: DefensysTokens.textPrimaryOf(context),
                   ),
                 ),
               ],
@@ -543,10 +543,10 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
         Container(
           padding: const EdgeInsets.all(7),
           decoration: BoxDecoration(
-            color: DefensysTokens.maroon.withValues(alpha: 0.08),
+            color: DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
           ),
-          child: Icon(icon, color: DefensysTokens.maroon, size: 16),
+          child: Icon(icon, color: DefensysTokens.maroonOf(context), size: 16),
         ),
         const SizedBox(width: 10),
         Column(
@@ -556,10 +556,10 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
-                    color: DefensysTokens.textDark,
+                    color: DefensysTokens.textPrimaryOf(context),
                     letterSpacing: 0.6,
                   ),
                 ),
@@ -567,15 +567,15 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1.5),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
+                    color: DefensysTokens.isDark(context) ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFF1F5F9),
                     borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
                   ),
                   child: Text(
                     '$count',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,
-                      color: DefensysTokens.steelGrey,
+                      color: DefensysTokens.textSecondaryOf(context),
                     ),
                   ),
                 ),
@@ -584,9 +584,9 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
             const SizedBox(height: 2),
             Text(
               subtitle,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11.5,
-                color: DefensysTokens.steelGrey,
+                color: DefensysTokens.textSecondaryOf(context),
               ),
             ),
           ],
@@ -653,9 +653,9 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-        border: Border.all(color: DefensysTokens.border),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: const [
           BoxShadow(
             color: Color(0x06000000),
@@ -682,24 +682,24 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                        color: DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
                       ),
-                      child: Icon(icon, color: DefensysTokens.maroon, size: 20),
+                      child: Icon(icon, color: DefensysTokens.maroonOf(context), size: 20),
                     ),
                     const Spacer(),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: DefensysTokens.gold.withValues(alpha: 0.15),
+                        color: DefensysTokens.goldOf(context).withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
                       ),
                       child: Text(
                         tag,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
-                          color: DefensysTokens.darkGold,
+                          color: DefensysTokens.goldOf(context),
                         ),
                       ),
                     ),
@@ -710,10 +710,10 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                 // Report Title
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    color: DefensysTokens.textDark,
+                    color: DefensysTokens.textPrimaryOf(context),
                     height: 1.25,
                   ),
                 ),
@@ -722,9 +722,9 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                 // Description
                 Text(
                   desc,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12.5,
-                    color: DefensysTokens.steelGrey,
+                    color: DefensysTokens.textSecondaryOf(context),
                     height: 1.45,
                   ),
                   maxLines: 3,
@@ -732,7 +732,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                 ),
                 const SizedBox(height: 18),
 
-                const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                Divider(height: 1, color: DefensysTokens.borderOf(context)),
                 const SizedBox(height: 14),
 
                 // Footer Row: Param Hint & Action Button
@@ -741,15 +741,15 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                     Expanded(
                       child: Row(
                         children: [
-                          const Icon(Icons.tune_rounded, size: 13, color: DefensysTokens.steelGrey),
+                          Icon(Icons.tune_rounded, size: 13, color: DefensysTokens.textSecondaryOf(context)),
                           const SizedBox(width: 5),
                           Flexible(
                             child: Text(
                               paramHint,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
-                                color: DefensysTokens.steelGrey,
+                                color: DefensysTokens.textSecondaryOf(context),
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -762,7 +762,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                       icon: const Icon(Icons.download_rounded, size: 14),
                       label: const Text('Export PDF'),
                       style: FilledButton.styleFrom(
-                        backgroundColor: DefensysTokens.maroon,
+                        backgroundColor: DefensysTokens.maroonOf(context),
                         foregroundColor: Colors.white,
                         textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1268,24 +1268,25 @@ String _extractInitials(String name) {
   return '${parts[0][0]}${parts[parts.length - 1][0]}'.toUpperCase();
 }
 
-InputDecoration _reportInputDecoration(String hint) {
+InputDecoration _reportInputDecoration(BuildContext context, String hint) {
   return InputDecoration(
     hintText: hint,
+    hintStyle: TextStyle(fontSize: 12.5, color: DefensysTokens.textSecondaryOf(context)),
     filled: true,
-    fillColor: const Color(0xFFF8FAFC),
+    fillColor: DefensysTokens.isDark(context) ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFF8FAFC),
     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
     isDense: true,
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-      borderSide: const BorderSide(color: DefensysTokens.border),
+      borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
     ),
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-      borderSide: const BorderSide(color: DefensysTokens.border),
+      borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-      borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.5),
+      borderSide: BorderSide(color: DefensysTokens.maroonOf(context), width: 1.5),
     ),
   );
 }
@@ -1356,7 +1357,7 @@ class _StudentPickerDialogState extends State<_StudentPickerDialog> {
     }).toList();
 
     return Dialog(
-      backgroundColor: Colors.white,
+      backgroundColor: DefensysTokens.surfaceOf(context),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       child: ConstrainedBox(
@@ -1369,42 +1370,42 @@ class _StudentPickerDialogState extends State<_StudentPickerDialog> {
             // Header
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: DefensysTokens.border)),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: DefensysTokens.borderOf(context))),
               ),
               child: Row(
                 children: [
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                      color: DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
                     ),
-                    child: const Icon(Icons.person_search_rounded, color: DefensysTokens.maroon, size: 20),
+                    child: Icon(Icons.person_search_rounded, color: DefensysTokens.maroonOf(context), size: 20),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Select Student Candidate',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
-                            color: DefensysTokens.textDark,
+                            color: DefensysTokens.textPrimaryOf(context),
                           ),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           '${filtered.length} of ${widget.students.length} candidates available',
-                          style: const TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
+                          style: TextStyle(fontSize: 11.5, color: DefensysTokens.textSecondaryOf(context)),
                         ),
                       ],
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close_rounded, size: 20, color: DefensysTokens.steelGrey),
+                    icon: Icon(Icons.close_rounded, size: 20, color: DefensysTokens.textSecondaryOf(context)),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
@@ -1419,30 +1420,31 @@ class _StudentPickerDialogState extends State<_StudentPickerDialog> {
                   TextField(
                     controller: _searchController,
                     autofocus: true,
+                    style: TextStyle(fontSize: 13, color: DefensysTokens.textPrimaryOf(context)),
                     decoration: InputDecoration(
                       hintText: 'Search by student ID (e.g. 4011), name, team, section...',
-                      hintStyle: const TextStyle(fontSize: 13, color: DefensysTokens.steelGrey),
-                      prefixIcon: const Icon(Icons.search_rounded, color: DefensysTokens.steelGrey, size: 20),
+                      hintStyle: TextStyle(fontSize: 13, color: DefensysTokens.textSecondaryOf(context)),
+                      prefixIcon: Icon(Icons.search_rounded, color: DefensysTokens.textSecondaryOf(context), size: 20),
                       suffixIcon: _searchController.text.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.clear_rounded, size: 18),
+                              icon: Icon(Icons.clear_rounded, size: 18, color: DefensysTokens.textSecondaryOf(context)),
                               onPressed: () => _searchController.clear(),
                             )
                           : null,
                       filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
+                      fillColor: DefensysTokens.isDark(context) ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFF8FAFC),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                        borderSide: const BorderSide(color: DefensysTokens.border),
+                        borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                        borderSide: const BorderSide(color: DefensysTokens.border),
+                        borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                        borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.5),
+                        borderSide: BorderSide(color: DefensysTokens.maroonOf(context), width: 1.5),
                       ),
                     ),
                   ),
@@ -1477,7 +1479,7 @@ class _StudentPickerDialogState extends State<_StudentPickerDialog> {
               ),
             ),
 
-            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+            Divider(height: 1, color: DefensysTokens.borderOf(context)),
 
             // Candidates List
             Expanded(
@@ -1490,21 +1492,21 @@ class _StudentPickerDialogState extends State<_StudentPickerDialog> {
                           children: [
                             Container(
                               padding: const EdgeInsets.all(16),
-                              decoration: const BoxDecoration(
-                                color: Color(0xFFF1F5F9),
+                              decoration: BoxDecoration(
+                                color: DefensysTokens.isDark(context) ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFF1F5F9),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.person_off_outlined, size: 36, color: DefensysTokens.steelGrey),
+                              child: Icon(Icons.person_off_outlined, size: 36, color: DefensysTokens.textSecondaryOf(context)),
                             ),
                             const SizedBox(height: 14),
-                            const Text(
+                            Text(
                               'No matching student candidates',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: DefensysTokens.textDark),
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: DefensysTokens.textPrimaryOf(context)),
                             ),
                             const SizedBox(height: 4),
-                            const Text(
+                            Text(
                               'Try adjusting your search keywords or resetting the section filter.',
-                              style: TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
+                              style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
                               textAlign: TextAlign.center,
                             ),
                             if (_searchController.text.isNotEmpty || _selectedSection.isNotEmpty) ...[
@@ -1512,7 +1514,7 @@ class _StudentPickerDialogState extends State<_StudentPickerDialog> {
                               TextButton.icon(
                                 icon: const Icon(Icons.refresh_rounded, size: 16),
                                 label: const Text('Reset Filters'),
-                                style: TextButton.styleFrom(foregroundColor: DefensysTokens.maroon),
+                                style: TextButton.styleFrom(foregroundColor: DefensysTokens.maroonOf(context)),
                                 onPressed: () {
                                   _searchController.clear();
                                   setState(() => _selectedSection = '');
@@ -1548,10 +1550,12 @@ class _StudentPickerDialogState extends State<_StudentPickerDialog> {
                               duration: const Duration(milliseconds: 120),
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                               decoration: BoxDecoration(
-                                color: isSelected ? DefensysTokens.maroon.withValues(alpha: 0.05) : const Color(0xFFF8FAFC),
+                                color: isSelected
+                                    ? DefensysTokens.maroonOf(context).withValues(alpha: 0.08)
+                                    : (DefensysTokens.isDark(context) ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFF8FAFC)),
                                 borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
                                 border: Border.all(
-                                  color: isSelected ? DefensysTokens.maroon : const Color(0xFFE2E8F0),
+                                  color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
                                   width: isSelected ? 1.5 : 1,
                                 ),
                               ),
@@ -1562,7 +1566,7 @@ class _StudentPickerDialogState extends State<_StudentPickerDialog> {
                                     width: 38,
                                     height: 38,
                                     decoration: BoxDecoration(
-                                      color: isSelected ? DefensysTokens.maroon : DefensysTokens.maroon.withValues(alpha: 0.1),
+                                      color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
                                       shape: BoxShape.circle,
                                     ),
                                     alignment: Alignment.center,
@@ -1571,7 +1575,7 @@ class _StudentPickerDialogState extends State<_StudentPickerDialog> {
                                       style: TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w800,
-                                        color: isSelected ? Colors.white : DefensysTokens.maroon,
+                                        color: isSelected ? Colors.white : DefensysTokens.maroonOf(context),
                                       ),
                                     ),
                                   ),
@@ -1590,7 +1594,7 @@ class _StudentPickerDialogState extends State<_StudentPickerDialog> {
                                                 style: TextStyle(
                                                   fontSize: 13.5,
                                                   fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
-                                                  color: DefensysTokens.textDark,
+                                                  color: DefensysTokens.textPrimaryOf(context),
                                                 ),
                                                 overflow: TextOverflow.ellipsis,
                                               ),
@@ -1599,7 +1603,7 @@ class _StudentPickerDialogState extends State<_StudentPickerDialog> {
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                                               decoration: BoxDecoration(
-                                                color: isSelected ? DefensysTokens.maroon : const Color(0xFF1E293B),
+                                                color: isSelected ? DefensysTokens.maroonOf(context) : (DefensysTokens.isDark(context) ? const Color(0xFF334155) : const Color(0xFF1E293B)),
                                                 borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                                               ),
                                               child: Text(
@@ -1616,15 +1620,15 @@ class _StudentPickerDialogState extends State<_StudentPickerDialog> {
                                               Container(
                                                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                                 decoration: BoxDecoration(
-                                                  color: DefensysTokens.gold.withValues(alpha: 0.2),
+                                                  color: DefensysTokens.goldOf(context).withValues(alpha: 0.2),
                                                   borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                                                 ),
-                                                child: const Text(
+                                                child: Text(
                                                   'LEADER',
                                                   style: TextStyle(
                                                     fontSize: 8.5,
                                                     fontWeight: FontWeight.w800,
-                                                    color: DefensysTokens.darkGold,
+                                                    color: DefensysTokens.goldOf(context),
                                                   ),
                                                 ),
                                               ),
@@ -1638,52 +1642,52 @@ class _StudentPickerDialogState extends State<_StudentPickerDialog> {
                                               Container(
                                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                                                 decoration: BoxDecoration(
-                                                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                                                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
                                                   borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                                                 ),
                                                 child: Row(
                                                   mainAxisSize: MainAxisSize.min,
                                                   children: [
-                                                    const Icon(Icons.groups_rounded, size: 11, color: DefensysTokens.maroon),
+                                                    Icon(Icons.groups_rounded, size: 11, color: DefensysTokens.maroonOf(context)),
                                                     const SizedBox(width: 3),
                                                     Text(
                                                       team['name']?.toString() ?? 'Team',
-                                                      style: const TextStyle(
+                                                      style: TextStyle(
                                                         fontSize: 10.5,
                                                         fontWeight: FontWeight.w700,
-                                                        color: DefensysTokens.maroon,
+                                                        color: DefensysTokens.maroonOf(context),
                                                       ),
                                                     ),
                                                   ],
                                                 ),
                                               ),
                                             ] else ...[
-                                              const Text(
+                                              Text(
                                                 'No Team Assigned',
-                                                style: TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
+                                                style: TextStyle(fontSize: 11, color: DefensysTokens.textSecondaryOf(context)),
                                               ),
                                             ],
                                             if (section != null && section.isNotEmpty) ...[
                                               const SizedBox(width: 6),
-                                              const Text('•', style: TextStyle(color: DefensysTokens.steelGrey)),
+                                              Text('•', style: TextStyle(color: DefensysTokens.textSecondaryOf(context))),
                                               const SizedBox(width: 6),
                                               Text(
                                                 section,
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   fontSize: 11,
                                                   fontWeight: FontWeight.w600,
-                                                  color: DefensysTokens.steelGrey,
+                                                  color: DefensysTokens.textSecondaryOf(context),
                                                 ),
                                               ),
                                             ],
                                             if (email.isNotEmpty) ...[
                                               const SizedBox(width: 6),
-                                              const Text('•', style: TextStyle(color: DefensysTokens.steelGrey)),
+                                              Text('•', style: TextStyle(color: DefensysTokens.textSecondaryOf(context))),
                                               const SizedBox(width: 6),
                                               Expanded(
                                                 child: Text(
                                                   email,
-                                                  style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
+                                                  style: TextStyle(fontSize: 11, color: DefensysTokens.textSecondaryOf(context)),
                                                   overflow: TextOverflow.ellipsis,
                                                 ),
                                               ),
@@ -1698,7 +1702,7 @@ class _StudentPickerDialogState extends State<_StudentPickerDialog> {
                                   const SizedBox(width: 10),
                                   Icon(
                                     isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-                                    color: isSelected ? DefensysTokens.maroon : const Color(0xFFCBD5E1),
+                                    color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
                                     size: 20,
                                   ),
                                 ],
@@ -1728,10 +1732,12 @@ class _StudentPickerDialogState extends State<_StudentPickerDialog> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
-            color: isSelected ? DefensysTokens.maroon : const Color(0xFFF1F5F9),
+            color: isSelected
+                ? DefensysTokens.maroonOf(context)
+                : (DefensysTokens.isDark(context) ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFF1F5F9)),
             borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
             border: Border.all(
-              color: isSelected ? DefensysTokens.maroon : const Color(0xFFE2E8F0),
+              color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
             ),
           ),
           child: Text(
@@ -1739,7 +1745,7 @@ class _StudentPickerDialogState extends State<_StudentPickerDialog> {
             style: TextStyle(
               fontSize: 11,
               fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-              color: isSelected ? Colors.white : DefensysTokens.steelGrey,
+              color: isSelected ? Colors.white : DefensysTokens.textSecondaryOf(context),
             ),
           ),
         ),
@@ -1809,7 +1815,7 @@ class _TeamPickerDialogState extends State<_TeamPickerDialog> {
     }).toList();
 
     return Dialog(
-      backgroundColor: Colors.white,
+      backgroundColor: DefensysTokens.surfaceOf(context),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       child: ConstrainedBox(
@@ -1822,42 +1828,42 @@ class _TeamPickerDialogState extends State<_TeamPickerDialog> {
             // Header
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: DefensysTokens.border)),
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: DefensysTokens.borderOf(context))),
               ),
               child: Row(
                 children: [
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                      color: DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
                     ),
-                    child: const Icon(Icons.groups_rounded, color: DefensysTokens.maroon, size: 20),
+                    child: Icon(Icons.groups_rounded, color: DefensysTokens.maroonOf(context), size: 20),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Select Student Team',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
-                            color: DefensysTokens.textDark,
+                            color: DefensysTokens.textPrimaryOf(context),
                           ),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           '${filtered.length} of ${widget.teams.length} teams available',
-                          style: const TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
+                          style: TextStyle(fontSize: 11.5, color: DefensysTokens.textSecondaryOf(context)),
                         ),
                       ],
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close_rounded, size: 20, color: DefensysTokens.steelGrey),
+                    icon: Icon(Icons.close_rounded, size: 20, color: DefensysTokens.textSecondaryOf(context)),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
@@ -1872,30 +1878,31 @@ class _TeamPickerDialogState extends State<_TeamPickerDialog> {
                   TextField(
                     controller: _searchController,
                     autofocus: true,
+                    style: TextStyle(fontSize: 13, color: DefensysTokens.textPrimaryOf(context)),
                     decoration: InputDecoration(
                       hintText: 'Search by team name, project title, leader, adviser, section...',
-                      hintStyle: const TextStyle(fontSize: 13, color: DefensysTokens.steelGrey),
-                      prefixIcon: const Icon(Icons.search_rounded, color: DefensysTokens.steelGrey, size: 20),
+                      hintStyle: TextStyle(fontSize: 13, color: DefensysTokens.textSecondaryOf(context)),
+                      prefixIcon: Icon(Icons.search_rounded, color: DefensysTokens.textSecondaryOf(context), size: 20),
                       suffixIcon: _searchController.text.isNotEmpty
                           ? IconButton(
-                              icon: const Icon(Icons.clear_rounded, size: 18),
+                              icon: Icon(Icons.clear_rounded, size: 18, color: DefensysTokens.textSecondaryOf(context)),
                               onPressed: () => _searchController.clear(),
                             )
                           : null,
                       filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
+                      fillColor: DefensysTokens.isDark(context) ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFF8FAFC),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                        borderSide: const BorderSide(color: DefensysTokens.border),
+                        borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                        borderSide: const BorderSide(color: DefensysTokens.border),
+                        borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                        borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.5),
+                        borderSide: BorderSide(color: DefensysTokens.maroonOf(context), width: 1.5),
                       ),
                     ),
                   ),
@@ -1930,7 +1937,7 @@ class _TeamPickerDialogState extends State<_TeamPickerDialog> {
               ),
             ),
 
-            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+            Divider(height: 1, color: DefensysTokens.borderOf(context)),
 
             // Teams List
             Expanded(
@@ -1943,21 +1950,21 @@ class _TeamPickerDialogState extends State<_TeamPickerDialog> {
                           children: [
                             Container(
                               padding: const EdgeInsets.all(16),
-                              decoration: const BoxDecoration(
-                                color: Color(0xFFF1F5F9),
+                              decoration: BoxDecoration(
+                                color: DefensysTokens.isDark(context) ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFF1F5F9),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(Icons.group_off_outlined, size: 36, color: DefensysTokens.steelGrey),
+                              child: Icon(Icons.group_off_outlined, size: 36, color: DefensysTokens.textSecondaryOf(context)),
                             ),
                             const SizedBox(height: 14),
-                            const Text(
+                            Text(
                               'No matching student teams',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: DefensysTokens.textDark),
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: DefensysTokens.textPrimaryOf(context)),
                             ),
                             const SizedBox(height: 4),
-                            const Text(
+                            Text(
                               'Try adjusting your search keywords or resetting the section filter.',
-                              style: TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
+                              style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
                               textAlign: TextAlign.center,
                             ),
                           ],
@@ -1988,10 +1995,12 @@ class _TeamPickerDialogState extends State<_TeamPickerDialog> {
                               duration: const Duration(milliseconds: 120),
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                               decoration: BoxDecoration(
-                                color: isSelected ? DefensysTokens.maroon.withValues(alpha: 0.05) : const Color(0xFFF8FAFC),
+                                color: isSelected
+                                    ? DefensysTokens.maroonOf(context).withValues(alpha: 0.08)
+                                    : (DefensysTokens.isDark(context) ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFF8FAFC)),
                                 borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
                                 border: Border.all(
-                                  color: isSelected ? DefensysTokens.maroon : const Color(0xFFE2E8F0),
+                                  color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
                                   width: isSelected ? 1.5 : 1,
                                 ),
                               ),
@@ -2001,13 +2010,13 @@ class _TeamPickerDialogState extends State<_TeamPickerDialog> {
                                     width: 38,
                                     height: 38,
                                     decoration: BoxDecoration(
-                                      color: isSelected ? DefensysTokens.maroon : DefensysTokens.maroon.withValues(alpha: 0.1),
+                                      color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
                                       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
                                     ),
                                     alignment: Alignment.center,
                                     child: Icon(
                                       Icons.groups_rounded,
-                                      color: isSelected ? Colors.white : DefensysTokens.maroon,
+                                      color: isSelected ? Colors.white : DefensysTokens.maroonOf(context),
                                       size: 20,
                                     ),
                                   ),
@@ -2025,7 +2034,7 @@ class _TeamPickerDialogState extends State<_TeamPickerDialog> {
                                                 style: TextStyle(
                                                   fontSize: 13.5,
                                                   fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
-                                                  color: DefensysTokens.textDark,
+                                                  color: DefensysTokens.textPrimaryOf(context),
                                                 ),
                                                 overflow: TextOverflow.ellipsis,
                                               ),
@@ -2035,7 +2044,7 @@ class _TeamPickerDialogState extends State<_TeamPickerDialog> {
                                               Container(
                                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                                                 decoration: BoxDecoration(
-                                                  color: isSelected ? DefensysTokens.maroon : DefensysTokens.maroon.withValues(alpha: 0.08),
+                                                  color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
                                                   borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                                                 ),
                                                 child: Text(
@@ -2043,7 +2052,7 @@ class _TeamPickerDialogState extends State<_TeamPickerDialog> {
                                                   style: TextStyle(
                                                     fontSize: 9.5,
                                                     fontWeight: FontWeight.w700,
-                                                    color: isSelected ? Colors.white : DefensysTokens.maroon,
+                                                    color: isSelected ? Colors.white : DefensysTokens.maroonOf(context),
                                                   ),
                                                 ),
                                               ),
@@ -2052,15 +2061,15 @@ class _TeamPickerDialogState extends State<_TeamPickerDialog> {
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                               decoration: BoxDecoration(
-                                                color: const Color(0xFFE2E8F0),
+                                                color: DefensysTokens.isDark(context) ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFE2E8F0),
                                                 borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                                               ),
                                               child: Text(
                                                 '${members.length} members',
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   fontSize: 9,
                                                   fontWeight: FontWeight.w600,
-                                                  color: DefensysTokens.steelGrey,
+                                                  color: DefensysTokens.textSecondaryOf(context),
                                                 ),
                                               ),
                                             ),
@@ -2069,10 +2078,10 @@ class _TeamPickerDialogState extends State<_TeamPickerDialog> {
                                         const SizedBox(height: 3),
                                         Text(
                                           projectTitle,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 11.5,
                                             fontWeight: FontWeight.w500,
-                                            color: DefensysTokens.textSecondary,
+                                            color: DefensysTokens.textSecondaryOf(context),
                                           ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
@@ -2080,7 +2089,7 @@ class _TeamPickerDialogState extends State<_TeamPickerDialog> {
                                         const SizedBox(height: 2),
                                         Text(
                                           'Leader: $leaderName • Adviser: $adviserName',
-                                          style: const TextStyle(fontSize: 10.5, color: DefensysTokens.steelGrey),
+                                          style: TextStyle(fontSize: 10.5, color: DefensysTokens.textSecondaryOf(context)),
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ],
@@ -2090,7 +2099,7 @@ class _TeamPickerDialogState extends State<_TeamPickerDialog> {
                                   const SizedBox(width: 10),
                                   Icon(
                                     isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-                                    color: isSelected ? DefensysTokens.maroon : const Color(0xFFCBD5E1),
+                                    color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
                                     size: 20,
                                   ),
                                 ],
@@ -2120,10 +2129,12 @@ class _TeamPickerDialogState extends State<_TeamPickerDialog> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
-            color: isSelected ? DefensysTokens.maroon : const Color(0xFFF1F5F9),
+            color: isSelected
+                ? DefensysTokens.maroonOf(context)
+                : (DefensysTokens.isDark(context) ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFF1F5F9)),
             borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
             border: Border.all(
-              color: isSelected ? DefensysTokens.maroon : const Color(0xFFE2E8F0),
+              color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
             ),
           ),
           child: Text(
@@ -2131,7 +2142,7 @@ class _TeamPickerDialogState extends State<_TeamPickerDialog> {
             style: TextStyle(
               fontSize: 11,
               fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-              color: isSelected ? Colors.white : DefensysTokens.steelGrey,
+              color: isSelected ? Colors.white : DefensysTokens.textSecondaryOf(context),
             ),
           ),
         ),
@@ -2158,8 +2169,6 @@ class _ReportExportConfigDialog extends StatefulWidget {
   final String? initialStudentId;
   final String? initialTeamId;
   final String initialScope;
-  final String? initialStage;
-  final String? initialPitEvent;
   final String initialLevel;
   final String initialYearLevel;
   final String initialRole;
@@ -2189,8 +2198,6 @@ class _ReportExportConfigDialog extends StatefulWidget {
     this.initialStudentId,
     this.initialTeamId,
     required this.initialScope,
-    this.initialStage,
-    this.initialPitEvent,
     required this.initialLevel,
     required this.initialYearLevel,
     required this.initialRole,
@@ -2313,8 +2320,8 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
     _selectedStudentId = widget.initialStudentId;
     _selectedTeamId = widget.initialTeamId;
     _selectedScope = widget.initialScope;
-    _selectedStage = widget.initialStage ?? '';
-    _selectedPitEvent = widget.initialPitEvent ?? '';
+    _selectedStage = '';
+    _selectedPitEvent = '';
     _selectedLevel = widget.initialLevel;
     _selectedYearLevel = widget.initialYearLevel;
     _selectedRole = widget.initialRole;
@@ -2448,7 +2455,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
     }
 
     return Dialog(
-      backgroundColor: Colors.white,
+      backgroundColor: DefensysTokens.surfaceOf(context),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       child: ConstrainedBox(
@@ -2461,10 +2468,10 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
             // 1. Modal Institutional Header
             Container(
               padding: const EdgeInsets.fromLTRB(22, 16, 20, 16),
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 border: Border(
-                  top: BorderSide(color: DefensysTokens.maroon, width: 4),
-                  bottom: BorderSide(color: DefensysTokens.border),
+                  top: BorderSide(color: DefensysTokens.maroonOf(context), width: 4),
+                  bottom: BorderSide(color: DefensysTokens.borderOf(context)),
                 ),
               ),
               child: Row(
@@ -2473,10 +2480,10 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                      color: DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
                     ),
-                    child: Icon(icon, color: DefensysTokens.maroon, size: 22),
+                    child: Icon(icon, color: DefensysTokens.maroonOf(context), size: 22),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -2488,10 +2495,10 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                             Flexible(
                               child: Text(
                                 title,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w800,
-                                  color: DefensysTokens.textDark,
+                                  color: DefensysTokens.textPrimaryOf(context),
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -2500,15 +2507,15 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                               decoration: BoxDecoration(
-                                color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                                color: DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
                                 borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                               ),
                               child: Text(
                                 tag,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 9.5,
                                   fontWeight: FontWeight.w800,
-                                  color: DefensysTokens.maroon,
+                                  color: DefensysTokens.maroonOf(context),
                                 ),
                               ),
                             ),
@@ -2517,7 +2524,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                         const SizedBox(height: 2),
                         Text(
                           desc,
-                          style: const TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
+                          style: TextStyle(fontSize: 11.5, color: DefensysTokens.textSecondaryOf(context)),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -2525,7 +2532,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close_rounded, size: 20, color: DefensysTokens.steelGrey),
+                    icon: Icon(Icons.close_rounded, size: 20, color: DefensysTokens.textSecondaryOf(context)),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
@@ -2547,7 +2554,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                   ),
 
                   // Vertical Separator
-                  const VerticalDivider(width: 1, thickness: 1, color: DefensysTokens.border),
+                  VerticalDivider(width: 1, thickness: 1, color: DefensysTokens.borderOf(context)),
 
                   // Right Pane: Live Data Preview
                   Expanded(
@@ -2623,19 +2630,19 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
             children: [
               Row(
                 children: [
-                  const Text(
+                  Text(
                     'SELECT TEAM',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
-                      color: DefensysTokens.steelGrey,
+                      color: DefensysTokens.textSecondaryOf(context),
                       letterSpacing: 0.5,
                     ),
                   ),
                   const Spacer(),
                   Text(
                     '${filtered.length} of ${widget.teamsState.teams.length}',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: DefensysTokens.steelGrey),
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: DefensysTokens.textSecondaryOf(context)),
                   ),
                 ],
               ),
@@ -2644,30 +2651,31 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                 height: 36,
                 child: TextField(
                   controller: _selectorSearchController,
+                  style: TextStyle(fontSize: 12, color: DefensysTokens.textPrimaryOf(context)),
                   decoration: InputDecoration(
                     hintText: 'Search team, project, leader...',
-                    hintStyle: const TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
-                    prefixIcon: const Icon(Icons.search_rounded, size: 16, color: DefensysTokens.steelGrey),
+                    hintStyle: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
+                    prefixIcon: Icon(Icons.search_rounded, size: 16, color: DefensysTokens.textSecondaryOf(context)),
                     suffixIcon: _selectorSearchController.text.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.clear_rounded, size: 14),
+                            icon: Icon(Icons.clear_rounded, size: 14, color: DefensysTokens.textSecondaryOf(context)),
                             onPressed: () => _selectorSearchController.clear(),
                           )
                         : null,
                     filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
+                    fillColor: DefensysTokens.isDark(context) ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFF8FAFC),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                      borderSide: const BorderSide(color: DefensysTokens.border),
+                      borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                      borderSide: const BorderSide(color: DefensysTokens.border),
+                      borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                      borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.2),
+                      borderSide: BorderSide(color: DefensysTokens.maroonOf(context), width: 1.2),
                     ),
                   ),
                 ),
@@ -2702,17 +2710,17 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
           ),
         ),
 
-        const Divider(height: 1, color: Color(0xFFF1F5F9)),
+        Divider(height: 1, color: DefensysTokens.borderOf(context)),
 
         // Selectable Teams List
         Expanded(
           child: filtered.isEmpty
-              ? const Center(
+              ? Center(
                   child: Padding(
-                    padding: EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(24),
                     child: Text(
                       'No matching teams found.',
-                      style: TextStyle(fontSize: 12.5, color: DefensysTokens.steelGrey),
+                      style: TextStyle(fontSize: 12.5, color: DefensysTokens.textSecondaryOf(context)),
                     ),
                   ),
                 )
@@ -2741,10 +2749,12 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                           duration: const Duration(milliseconds: 120),
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
-                            color: isSelected ? DefensysTokens.maroon.withValues(alpha: 0.05) : const Color(0xFFF8FAFC),
+                            color: isSelected
+                                ? DefensysTokens.maroonOf(context).withValues(alpha: 0.08)
+                                : (DefensysTokens.isDark(context) ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFF8FAFC)),
                             borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
                             border: Border.all(
-                              color: isSelected ? DefensysTokens.maroon : const Color(0xFFE2E8F0),
+                              color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
                               width: isSelected ? 1.5 : 1,
                             ),
                           ),
@@ -2754,13 +2764,13 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                                 width: 34,
                                 height: 34,
                                 decoration: BoxDecoration(
-                                  color: isSelected ? DefensysTokens.maroon : DefensysTokens.maroon.withValues(alpha: 0.1),
+                                  color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
                                   borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
                                 ),
                                 alignment: Alignment.center,
                                 child: Icon(
                                   Icons.groups_rounded,
-                                  color: isSelected ? Colors.white : DefensysTokens.maroon,
+                                  color: isSelected ? Colors.white : DefensysTokens.maroonOf(context),
                                   size: 18,
                                 ),
                               ),
@@ -2777,7 +2787,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                                             style: TextStyle(
                                               fontSize: 12.5,
                                               fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
-                                              color: DefensysTokens.textDark,
+                                              color: DefensysTokens.textPrimaryOf(context),
                                             ),
                                             overflow: TextOverflow.ellipsis,
                                           ),
@@ -2787,7 +2797,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                                           Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                                             decoration: BoxDecoration(
-                                              color: isSelected ? DefensysTokens.maroon : DefensysTokens.maroon.withValues(alpha: 0.08),
+                                              color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
                                               borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                                             ),
                                             child: Text(
@@ -2795,7 +2805,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                                               style: TextStyle(
                                                 fontSize: 8.5,
                                                 fontWeight: FontWeight.w700,
-                                                color: isSelected ? Colors.white : DefensysTokens.maroon,
+                                                color: isSelected ? Colors.white : DefensysTokens.maroonOf(context),
                                               ),
                                             ),
                                           ),
@@ -2805,14 +2815,14 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                                     const SizedBox(height: 2),
                                     Text(
                                       projectTitle,
-                                      style: const TextStyle(fontSize: 11, color: DefensysTokens.textSecondary),
+                                      style: TextStyle(fontSize: 11, color: DefensysTokens.textSecondaryOf(context)),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                     const SizedBox(height: 1),
                                     Text(
                                       'Leader: $leaderName',
-                                      style: const TextStyle(fontSize: 10, color: DefensysTokens.steelGrey),
+                                      style: TextStyle(fontSize: 10, color: DefensysTokens.textSecondaryOf(context)),
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
@@ -2821,7 +2831,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                               const SizedBox(width: 6),
                               Icon(
                                 isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-                                color: isSelected ? DefensysTokens.maroon : const Color(0xFFCBD5E1),
+                                color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
                                 size: 18,
                               ),
                             ],
@@ -2876,19 +2886,19 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
             children: [
               Row(
                 children: [
-                  const Text(
+                  Text(
                     'SELECT STUDENT CANDIDATE',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
-                      color: DefensysTokens.steelGrey,
+                      color: DefensysTokens.textSecondaryOf(context),
                       letterSpacing: 0.5,
                     ),
                   ),
                   const Spacer(),
                   Text(
                     '${filtered.length} of ${widget.allStudents.length}',
-                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: DefensysTokens.steelGrey),
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: DefensysTokens.textSecondaryOf(context)),
                   ),
                 ],
               ),
@@ -2897,30 +2907,31 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                 height: 36,
                 child: TextField(
                   controller: _selectorSearchController,
+                  style: TextStyle(fontSize: 12, color: DefensysTokens.textPrimaryOf(context)),
                   decoration: InputDecoration(
                     hintText: 'Search by ID (e.g. 4011), name, team...',
-                    hintStyle: const TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
-                    prefixIcon: const Icon(Icons.search_rounded, size: 16, color: DefensysTokens.steelGrey),
+                    hintStyle: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
+                    prefixIcon: Icon(Icons.search_rounded, size: 16, color: DefensysTokens.textSecondaryOf(context)),
                     suffixIcon: _selectorSearchController.text.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.clear_rounded, size: 14),
+                            icon: Icon(Icons.clear_rounded, size: 14, color: DefensysTokens.textSecondaryOf(context)),
                             onPressed: () => _selectorSearchController.clear(),
                           )
                         : null,
                     filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
+                    fillColor: DefensysTokens.isDark(context) ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFF8FAFC),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                      borderSide: const BorderSide(color: DefensysTokens.border),
+                      borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                      borderSide: const BorderSide(color: DefensysTokens.border),
+                      borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                      borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.2),
+                      borderSide: BorderSide(color: DefensysTokens.maroonOf(context), width: 1.2),
                     ),
                   ),
                 ),
@@ -2955,17 +2966,17 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
           ),
         ),
 
-        const Divider(height: 1, color: Color(0xFFF1F5F9)),
+        Divider(height: 1, color: DefensysTokens.borderOf(context)),
 
         // Selectable Students List
         Expanded(
           child: filtered.isEmpty
-              ? const Center(
+              ? Center(
                   child: Padding(
-                    padding: EdgeInsets.all(24),
+                    padding: const EdgeInsets.all(24),
                     child: Text(
                       'No matching candidates found.',
-                      style: TextStyle(fontSize: 12.5, color: DefensysTokens.steelGrey),
+                      style: TextStyle(fontSize: 12.5, color: DefensysTokens.textSecondaryOf(context)),
                     ),
                   ),
                 )
@@ -2996,10 +3007,12 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                           duration: const Duration(milliseconds: 120),
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                           decoration: BoxDecoration(
-                            color: isSelected ? DefensysTokens.maroon.withValues(alpha: 0.05) : const Color(0xFFF8FAFC),
+                            color: isSelected
+                                ? DefensysTokens.maroonOf(context).withValues(alpha: 0.08)
+                                : (DefensysTokens.isDark(context) ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFF8FAFC)),
                             borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
                             border: Border.all(
-                              color: isSelected ? DefensysTokens.maroon : const Color(0xFFE2E8F0),
+                              color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
                               width: isSelected ? 1.5 : 1,
                             ),
                           ),
@@ -3009,7 +3022,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                                 width: 34,
                                 height: 34,
                                 decoration: BoxDecoration(
-                                  color: isSelected ? DefensysTokens.maroon : DefensysTokens.maroon.withValues(alpha: 0.1),
+                                  color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
                                   shape: BoxShape.circle,
                                 ),
                                 alignment: Alignment.center,
@@ -3018,7 +3031,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w800,
-                                    color: isSelected ? Colors.white : DefensysTokens.maroon,
+                                    color: isSelected ? Colors.white : DefensysTokens.maroonOf(context),
                                   ),
                                 ),
                               ),
@@ -3035,7 +3048,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                                             style: TextStyle(
                                               fontSize: 12.5,
                                               fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
-                                              color: DefensysTokens.textDark,
+                                              color: DefensysTokens.textPrimaryOf(context),
                                             ),
                                             overflow: TextOverflow.ellipsis,
                                           ),
@@ -3044,7 +3057,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                                           decoration: BoxDecoration(
-                                            color: isSelected ? DefensysTokens.maroon : const Color(0xFF1E293B),
+                                            color: isSelected ? DefensysTokens.maroonOf(context) : (DefensysTokens.isDark(context) ? const Color(0xFF334155) : const Color(0xFF1E293B)),
                                             borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                                           ),
                                           child: Text(
@@ -3057,12 +3070,12 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                                           Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                                             decoration: BoxDecoration(
-                                              color: DefensysTokens.gold.withValues(alpha: 0.2),
+                                              color: DefensysTokens.goldOf(context).withValues(alpha: 0.2),
                                               borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                                             ),
-                                            child: const Text(
+                                            child: Text(
                                               'LEAD',
-                                              style: TextStyle(fontSize: 8, fontWeight: FontWeight.w800, color: DefensysTokens.darkGold),
+                                              style: TextStyle(fontSize: 8, fontWeight: FontWeight.w800, color: DefensysTokens.goldOf(context)),
                                             ),
                                           ),
                                         ],
@@ -3075,12 +3088,12 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                                           Expanded(
                                             child: Text(
                                               '${team['name']} ${section != null ? "• $section" : ""}',
-                                              style: const TextStyle(fontSize: 10.5, color: DefensysTokens.steelGrey),
+                                              style: TextStyle(fontSize: 10.5, color: DefensysTokens.textSecondaryOf(context)),
                                               overflow: TextOverflow.ellipsis,
                                             ),
                                           ),
                                         ] else ...[
-                                          const Text('No Team Assigned', style: TextStyle(fontSize: 10.5, color: DefensysTokens.steelGrey)),
+                                          Text('No Team Assigned', style: TextStyle(fontSize: 10.5, color: DefensysTokens.textSecondaryOf(context))),
                                         ],
                                       ],
                                     ),
@@ -3090,7 +3103,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                               const SizedBox(width: 6),
                               Icon(
                                 isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-                                color: isSelected ? DefensysTokens.maroon : const Color(0xFFCBD5E1),
+                                color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
                                 size: 18,
                               ),
                             ],
@@ -3115,12 +3128,12 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'EXPORT FILTERS',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w800,
-              color: DefensysTokens.steelGrey,
+              color: DefensysTokens.textSecondaryOf(context),
               letterSpacing: 0.5,
             ),
           ),
@@ -3133,7 +3146,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
             DropdownButtonFormField<String>(
               initialValue: _selectedSemesterId,
               isExpanded: true,
-              decoration: _reportInputDecoration('Choose semester...'),
+              decoration: _reportInputDecoration(context, 'Choose semester...'),
               items: semestersList.map((s) {
                 return DropdownMenuItem<String>(
                   value: s['id']?.toString(),
@@ -3153,9 +3166,9 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
             const _FormSectionLabel('ACADEMIC SCOPE'),
             const SizedBox(height: 6),
             DropdownButtonFormField<String>(
-              value: _selectedScope,
+              initialValue: _selectedScope,
               isExpanded: true,
-              decoration: _reportInputDecoration('Filter scope...'),
+              decoration: _reportInputDecoration(context, 'Filter scope...'),
               items: const [
                 DropdownMenuItem(value: '', child: Text('All Records (Capstone & PIT)', style: TextStyle(fontSize: 12.5))),
                 DropdownMenuItem(value: 'capstone', child: Text('Capstone Only', style: TextStyle(fontSize: 12.5))),
@@ -3183,9 +3196,9 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
               const _FormSectionLabel('CAPSTONE DEFENSE STAGE'),
               const SizedBox(height: 6),
               DropdownButtonFormField<String>(
-                value: _selectedStage,
+                initialValue: _selectedStage,
                 isExpanded: true,
-                decoration: _reportInputDecoration('Select stage...'),
+                decoration: _reportInputDecoration(context, 'Select stage...'),
                 items: [
                   const DropdownMenuItem(value: '', child: Text('All Capstone Stages', style: TextStyle(fontSize: 12.5))),
                   ...widget.capstoneStages.map((stg) {
@@ -3209,9 +3222,9 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
               const _FormSectionLabel('PIT EVENT / YEAR LEVEL'),
               const SizedBox(height: 6),
               DropdownButtonFormField<String>(
-                value: _selectedPitEvent,
+                initialValue: _selectedPitEvent,
                 isExpanded: true,
-                decoration: _reportInputDecoration('Select PIT event...'),
+                decoration: _reportInputDecoration(context, 'Select PIT event...'),
                 items: [
                   const DropdownMenuItem(value: '', child: Text('All PIT Events', style: TextStyle(fontSize: 12.5))),
                   ...widget.pitEvents.map((evt) {
@@ -3243,7 +3256,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
             DropdownButtonFormField<String>(
               initialValue: _selectedLevel,
               isExpanded: true,
-              decoration: _reportInputDecoration('Filter level...'),
+              decoration: _reportInputDecoration(context, 'Filter level...'),
               items: const [
                 DropdownMenuItem(value: '', child: Text('All Program Levels', style: TextStyle(fontSize: 12.5))),
                 DropdownMenuItem(value: 'capstone', child: Text('Capstone Teams', style: TextStyle(fontSize: 12.5))),
@@ -3260,7 +3273,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
             DropdownButtonFormField<String>(
               initialValue: _selectedYearLevel,
               isExpanded: true,
-              decoration: _reportInputDecoration('Filter year level...'),
+              decoration: _reportInputDecoration(context, 'Filter year level...'),
               items: const [
                 DropdownMenuItem(value: '', child: Text('All Year Levels', style: TextStyle(fontSize: 12.5))),
                 DropdownMenuItem(value: '3rd Year', child: Text('3rd Year', style: TextStyle(fontSize: 12.5))),
@@ -3281,7 +3294,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
             DropdownButtonFormField<String>(
               initialValue: _selectedRole,
               isExpanded: true,
-              decoration: _reportInputDecoration('Choose role...'),
+              decoration: _reportInputDecoration(context, 'Choose role...'),
               items: const [
                 DropdownMenuItem(value: '', child: Text('All Roles & Accounts', style: TextStyle(fontSize: 12.5))),
                 DropdownMenuItem(value: 'student', child: Text('Students Only', style: TextStyle(fontSize: 12.5))),
@@ -3307,9 +3320,10 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                   child: TextField(
                     controller: _startDateController,
                     readOnly: true,
-                    decoration: _reportInputDecoration('Start Date').copyWith(
+                    style: TextStyle(fontSize: 12.5, color: DefensysTokens.textPrimaryOf(context)),
+                    decoration: _reportInputDecoration(context, 'Start Date').copyWith(
                       suffixIcon: IconButton(
-                        icon: const Icon(Icons.calendar_today_outlined, size: 16),
+                        icon: Icon(Icons.calendar_today_outlined, size: 16, color: DefensysTokens.textSecondaryOf(context)),
                         onPressed: () async {
                           final picked = await showDatePicker(
                             context: context,
@@ -3333,9 +3347,10 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                   child: TextField(
                     controller: _endDateController,
                     readOnly: true,
-                    decoration: _reportInputDecoration('End Date').copyWith(
+                    style: TextStyle(fontSize: 12.5, color: DefensysTokens.textPrimaryOf(context)),
+                    decoration: _reportInputDecoration(context, 'End Date').copyWith(
                       suffixIcon: IconButton(
-                        icon: const Icon(Icons.calendar_today_outlined, size: 16),
+                        icon: Icon(Icons.calendar_today_outlined, size: 16, color: DefensysTokens.textSecondaryOf(context)),
                         onPressed: () async {
                           final picked = await showDatePicker(
                             context: context,
@@ -3362,7 +3377,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
             DropdownButtonFormField<String>(
               initialValue: _reportCategoryFilter,
               isExpanded: true,
-              decoration: _reportInputDecoration('Filter category...'),
+              decoration: _reportInputDecoration(context, 'Filter category...'),
               items: const [
                 DropdownMenuItem(value: '', child: Text('All Audit Categories', style: TextStyle(fontSize: 12.5))),
                 DropdownMenuItem(value: 'authentication', child: Text('Authentication & Access', style: TextStyle(fontSize: 12.5))),
@@ -3385,8 +3400,8 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
               icon: const Icon(Icons.refresh_rounded, size: 15),
               label: const Text('Reset All Filters'),
               style: OutlinedButton.styleFrom(
-                foregroundColor: DefensysTokens.maroon,
-                side: BorderSide(color: DefensysTokens.maroon.withValues(alpha: 0.3)),
+                foregroundColor: DefensysTokens.maroonOf(context),
+                side: BorderSide(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.3)),
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DefensysTokens.radiusMd)),
               ),
@@ -3426,20 +3441,20 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
               Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.person_search_rounded, size: 42, color: DefensysTokens.maroon),
+                child: Icon(Icons.person_search_rounded, size: 42, color: DefensysTokens.maroonOf(context)),
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 'Select a Student Candidate',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: DefensysTokens.textDark),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: DefensysTokens.textPrimaryOf(context)),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 'Choose a student candidate from the list on the left to preview individual grade breakdowns and peer multipliers.',
-                style: TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
+                style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -3456,20 +3471,20 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
               Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.groups_rounded, size: 42, color: DefensysTokens.maroon),
+                child: Icon(Icons.groups_rounded, size: 42, color: DefensysTokens.maroonOf(context)),
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 'Select a Student Team',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: DefensysTokens.textDark),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: DefensysTokens.textPrimaryOf(context)),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 'Choose a team from the list on the left to preview evaluation criteria, panel scores, and member grades.',
-                style: TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
+                style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -3522,10 +3537,12 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
-            color: isSelected ? DefensysTokens.maroon : const Color(0xFFF1F5F9),
+            color: isSelected
+                ? DefensysTokens.maroonOf(context)
+                : (DefensysTokens.isDark(context) ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFF1F5F9)),
             borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
             border: Border.all(
-              color: isSelected ? DefensysTokens.maroon : const Color(0xFFE2E8F0),
+              color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
             ),
           ),
           child: Text(
@@ -3533,7 +3550,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
             style: TextStyle(
               fontSize: 10,
               fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-              color: isSelected ? Colors.white : DefensysTokens.steelGrey,
+              color: isSelected ? Colors.white : DefensysTokens.textSecondaryOf(context),
             ),
           ),
         ),
@@ -3553,13 +3570,14 @@ class _ExecutiveTabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = DefensysTokens.isDark(context);
     return Container(
       height: 40,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -3602,6 +3620,7 @@ class _TabPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = DefensysTokens.isDark(context);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -3611,14 +3630,16 @@ class _TabPill extends StatelessWidget {
           duration: const Duration(milliseconds: 160),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
-            color: isSelected ? Colors.white : Colors.transparent,
+            color: isSelected
+                ? (isDark ? DefensysTokens.mistSurface : Colors.white)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
             boxShadow: isSelected
-                ? const [
+                ? [
                     BoxShadow(
-                      color: Color(0x0E000000),
+                      color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
                       blurRadius: 4,
-                      offset: Offset(0, 1),
+                      offset: const Offset(0, 1),
                     )
                   ]
                 : [],
@@ -3629,14 +3650,18 @@ class _TabPill extends StatelessWidget {
               Icon(
                 icon,
                 size: 15,
-                color: isSelected ? DefensysTokens.maroon : DefensysTokens.steelGrey,
+                color: isSelected
+                    ? DefensysTokens.maroonOf(context)
+                    : (isDark ? DefensysTokens.textSecondaryDark : DefensysTokens.steelGrey),
               ),
               const SizedBox(width: 8),
               Text(
                 label,
                 style: TextStyle(
                   fontFamily: DefensysTokens.fontFamily,
-                  color: isSelected ? DefensysTokens.maroon : DefensysTokens.textDark,
+                  color: isSelected
+                      ? DefensysTokens.maroonOf(context)
+                      : (isDark ? DefensysTokens.textPrimaryDark : DefensysTokens.textDark),
                   fontSize: 12.5,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
                 ),
@@ -3646,8 +3671,8 @@ class _TabPill extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? DefensysTokens.maroon.withValues(alpha: 0.1)
-                      : const Color(0xFFE2E8F0),
+                      ? DefensysTokens.maroonOf(context).withValues(alpha: 0.15)
+                      : (isDark ? DefensysTokens.mistInputFill : const Color(0xFFE2E8F0)),
                   borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
                 ),
                 child: Text(
@@ -3655,7 +3680,9 @@ class _TabPill extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 9.5,
                     fontWeight: FontWeight.w700,
-                    color: isSelected ? DefensysTokens.maroon : DefensysTokens.steelGrey,
+                    color: isSelected
+                        ? DefensysTokens.maroonOf(context)
+                        : (isDark ? DefensysTokens.textSecondaryDark : DefensysTokens.steelGrey),
                   ),
                 ),
               ),
@@ -3674,6 +3701,7 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = DefensysTokens.isDark(context);
     final total = _count(state.counts['filtered'], fallback: state.logs.length);
     final needsReview = _count(state.counts['needs_review']);
     final captured = _count(state.counts['captured']);
@@ -3687,9 +3715,9 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: const [
           BoxShadow(
             color: Color(0x05000000),
@@ -3714,14 +3742,14 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
                     CircularProgressIndicator(
                       value: readiness / 100,
                       strokeWidth: 3.5,
-                      backgroundColor: const Color(0xFFE2E8F0),
+                      backgroundColor: isDark ? const Color(0xFF2E2D34) : const Color(0xFFE2E8F0),
                       valueColor: AlwaysStoppedAnimation<Color>(
-                        isReady ? const Color(0xFF059669) : DefensysTokens.maroon,
+                        isReady ? const Color(0xFF10B981) : DefensysTokens.maroonOf(context),
                       ),
                     ),
                     Icon(
                       Icons.shield_outlined,
-                      color: isReady ? const Color(0xFF059669) : DefensysTokens.maroon,
+                      color: isReady ? const Color(0xFF10B981) : DefensysTokens.maroonOf(context),
                       size: 14,
                     ),
                   ],
@@ -3737,20 +3765,24 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
                     children: [
                       Text(
                         '$readiness%',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
-                          color: Color(0xFF0F172A),
+                          color: DefensysTokens.textPrimaryOf(context),
                         ),
                       ),
                       const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                         decoration: BoxDecoration(
-                          color: isReady ? const Color(0xFFECFDF5) : const Color(0xFFFEF3C7),
+                          color: isReady
+                              ? (isDark ? const Color(0x1F10B981) : const Color(0xFFECFDF5))
+                              : (isDark ? const Color(0x1FF59E0B) : const Color(0xFFFEF3C7)),
                           borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
                           border: Border.all(
-                            color: isReady ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A),
+                            color: isReady
+                                ? (isDark ? const Color(0x4D10B981) : const Color(0xFFA7F3D0))
+                                : (isDark ? const Color(0x4DF59E0B) : const Color(0xFFFDE68A)),
                           ),
                         ),
                         child: Text(
@@ -3758,18 +3790,20 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
-                            color: isReady ? const Color(0xFF065F46) : const Color(0xFF92400E),
+                            color: isReady
+                                ? (isDark ? const Color(0xFF34D399) : const Color(0xFF065F46))
+                                : (isDark ? const Color(0xFFFBBF24) : const Color(0xFF92400E)),
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const Text(
+                  Text(
                     'ISO 9001 Readiness',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF64748B),
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                     ),
                   ),
                 ],
@@ -3782,8 +3816,12 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
             value: '$needsReview',
             label: 'Open Findings',
             badgeText: needsReview == 0 ? 'Clear' : 'Needs Review',
-            badgeBg: needsReview == 0 ? const Color(0xFFECFDF5) : const Color(0xFFFEF3C7),
-            badgeFg: needsReview == 0 ? const Color(0xFF065F46) : const Color(0xFF92400E),
+            badgeBg: needsReview == 0
+                ? (isDark ? const Color(0x1F10B981) : const Color(0xFFECFDF5))
+                : (isDark ? const Color(0x1FF59E0B) : const Color(0xFFFEF3C7)),
+            badgeFg: needsReview == 0
+                ? (isDark ? const Color(0xFF34D399) : const Color(0xFF065F46))
+                : (isDark ? const Color(0xFFFBBF24) : const Color(0xFF92400E)),
           );
 
           final verifiedItem = _RibbonStatItem(
@@ -3791,8 +3829,8 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
             value: '$captured',
             label: 'Verified Evidence',
             badgeText: 'Logged',
-            badgeBg: const Color(0xFFF1F5F9),
-            badgeFg: const Color(0xFF475569),
+            badgeBg: isDark ? const Color(0xFF26252A) : const Color(0xFFF1F5F9),
+            badgeFg: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
           );
 
           final pendingItem = _RibbonStatItem(
@@ -3800,8 +3838,8 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
             value: '$needsReview',
             label: 'Pending Action',
             badgeText: needsReview == 0 ? 'Up to date' : 'Awaiting',
-            badgeBg: const Color(0xFFF1F5F9),
-            badgeFg: const Color(0xFF475569),
+            badgeBg: isDark ? const Color(0xFF26252A) : const Color(0xFFF1F5F9),
+            badgeFg: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
           );
 
           final ratioItem = Row(
@@ -3811,10 +3849,14 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
                 width: 28,
                 height: 28,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
+                  color: isDark ? const Color(0xFF26252A) : const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                 ),
-                child: const Icon(Icons.inventory_2_outlined, size: 15, color: Color(0xFF475569)),
+                child: Icon(
+                  Icons.inventory_2_outlined,
+                  size: 15,
+                  color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                ),
               ),
               const SizedBox(width: 8),
               Column(
@@ -3823,18 +3865,18 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
                 children: [
                   Text(
                     '$reviewed / $total',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14.5,
                       fontWeight: FontWeight.w800,
-                      color: Color(0xFF0F172A),
+                      color: DefensysTokens.textPrimaryOf(context),
                     ),
                   ),
-                  const Text(
+                  Text(
                     'Reviewed Ratio',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF64748B),
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
                     ),
                   ),
                 ],
@@ -3847,13 +3889,13 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 readinessItem,
-                _RibbonDivider(),
+                const _RibbonDivider(),
                 findingsItem,
-                _RibbonDivider(),
+                const _RibbonDivider(),
                 verifiedItem,
-                _RibbonDivider(),
+                const _RibbonDivider(),
                 pendingItem,
-                _RibbonDivider(),
+                const _RibbonDivider(),
                 ratioItem,
               ],
             );
@@ -3896,6 +3938,7 @@ class _RibbonStatItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = DefensysTokens.isDark(context);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -3903,10 +3946,14 @@ class _RibbonStatItem extends StatelessWidget {
           width: 28,
           height: 28,
           decoration: BoxDecoration(
-            color: const Color(0xFFF1F5F9),
+            color: isDark ? const Color(0xFF26252A) : const Color(0xFFF1F5F9),
             borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
           ),
-          child: Icon(icon, color: const Color(0xFF475569), size: 15),
+          child: Icon(
+            icon,
+            color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+            size: 15,
+          ),
         ),
         const SizedBox(width: 8),
         Column(
@@ -3918,10 +3965,10 @@ class _RibbonStatItem extends StatelessWidget {
               children: [
                 Text(
                   value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14.5,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F172A),
+                    color: DefensysTokens.textPrimaryOf(context),
                   ),
                 ),
                 const SizedBox(width: 5),
@@ -3944,10 +3991,10 @@ class _RibbonStatItem extends StatelessWidget {
             ),
             Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF64748B),
+                color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
               ),
             ),
           ],
@@ -3958,12 +4005,14 @@ class _RibbonStatItem extends StatelessWidget {
 }
 
 class _RibbonDivider extends StatelessWidget {
+  const _RibbonDivider();
+
   @override
   Widget build(BuildContext context) {
     return Container(
       width: 1,
       height: 26,
-      color: const Color(0xFFE2E8F0),
+      color: DefensysTokens.borderOf(context),
     );
   }
 }
@@ -4059,14 +4108,15 @@ class _CompactAuditFilterToolbar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final reportsState = ref.watch(reportsProvider);
     final filterCount = _activeFilterCount;
+    final isDark = DefensysTokens.isDark(context);
 
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-        border: Border.all(color: DefensysTokens.border),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: const [
           BoxShadow(
             color: Color(0x05000000),
@@ -4087,25 +4137,32 @@ class _CompactAuditFilterToolbar extends ConsumerWidget {
                   height: 38,
                   child: TextField(
                     controller: searchController,
-                    style: const TextStyle(fontSize: 13),
+                    style: TextStyle(fontSize: 13, color: DefensysTokens.textPrimaryOf(context)),
                     decoration: InputDecoration(
                       hintText: 'Search audit records by keywords, user, action, target ID...',
-                      hintStyle: const TextStyle(fontSize: 12.5, color: DefensysTokens.steelGrey),
+                      hintStyle: TextStyle(
+                        fontSize: 12.5,
+                        color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                        borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                        borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                        borderSide: const BorderSide(color: DefensysTokens.maroon),
+                        borderSide: BorderSide(color: DefensysTokens.maroonOf(context)),
                       ),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                       isDense: true,
-                      prefixIcon: const Icon(Icons.search_rounded, size: 18, color: DefensysTokens.steelGrey),
+                      prefixIcon: Icon(
+                        Icons.search_rounded,
+                        size: 18,
+                        color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                      ),
                       suffixIcon: searchController.text.isNotEmpty
                           ? InkWell(
                               onTap: () {
@@ -4113,7 +4170,11 @@ class _CompactAuditFilterToolbar extends ConsumerWidget {
                                 ref.read(systemAuditProvider.notifier).setSearch('');
                                 ref.read(systemAuditProvider.notifier).fetch();
                               },
-                              child: const Icon(Icons.close_rounded, size: 15, color: DefensysTokens.steelGrey),
+                              child: Icon(
+                                Icons.close_rounded,
+                                size: 15,
+                                color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                              ),
                             )
                           : null,
                     ),
@@ -4136,7 +4197,7 @@ class _CompactAuditFilterToolbar extends ConsumerWidget {
                           style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
                         ),
                         style: FilledButton.styleFrom(
-                          backgroundColor: DefensysTokens.maroon,
+                          backgroundColor: DefensysTokens.maroonOf(context),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           shape: RoundedRectangleBorder(
@@ -4153,8 +4214,8 @@ class _CompactAuditFilterToolbar extends ConsumerWidget {
                           style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                         ),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: DefensysTokens.textDark,
-                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          foregroundColor: DefensysTokens.textPrimaryOf(context),
+                          side: BorderSide(color: DefensysTokens.borderOf(context)),
                           padding: const EdgeInsets.symmetric(horizontal: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
@@ -4171,13 +4232,13 @@ class _CompactAuditFilterToolbar extends ConsumerWidget {
                   tooltip: 'Export Audit Register',
                   onSelected: onExport,
                   itemBuilder: (ctx) => [
-                    const PopupMenuItem(
+                    PopupMenuItem(
                       value: 'pdf',
                       child: Row(
                         children: [
-                          Icon(Icons.picture_as_pdf_outlined, size: 16, color: DefensysTokens.maroon),
-                          SizedBox(width: 8),
-                          Text('Export Register as PDF', style: TextStyle(fontSize: 12.5)),
+                          Icon(Icons.picture_as_pdf_outlined, size: 16, color: DefensysTokens.maroonOf(context)),
+                          const SizedBox(width: 8),
+                          const Text('Export Register as PDF', style: TextStyle(fontSize: 12.5)),
                         ],
                       ),
                     ),
@@ -4196,32 +4257,32 @@ class _CompactAuditFilterToolbar extends ConsumerWidget {
                     height: 38,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: DefensysTokens.surfaceOf(context),
                       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                      border: Border.all(color: DefensysTokens.maroon),
+                      border: Border.all(color: DefensysTokens.maroonOf(context)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (reportsState.isLoading)
-                          const SizedBox(
+                          SizedBox(
                             width: 14,
                             height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: DefensysTokens.maroon),
+                            child: CircularProgressIndicator(strokeWidth: 2, color: DefensysTokens.maroonOf(context)),
                           )
                         else ...[
-                          const Icon(Icons.download_rounded, size: 16, color: DefensysTokens.maroon),
+                          Icon(Icons.download_rounded, size: 16, color: DefensysTokens.maroonOf(context)),
                           const SizedBox(width: 6),
-                          const Text(
+                          Text(
                             'Export Register',
                             style: TextStyle(
                               fontSize: 12.5,
                               fontWeight: FontWeight.w700,
-                              color: DefensysTokens.maroon,
+                              color: DefensysTokens.maroonOf(context),
                             ),
                           ),
                           const SizedBox(width: 4),
-                          const Icon(Icons.arrow_drop_down_rounded, size: 18, color: DefensysTokens.maroon),
+                          Icon(Icons.arrow_drop_down_rounded, size: 18, color: DefensysTokens.maroonOf(context)),
                         ],
                       ],
                     ),
@@ -4239,12 +4300,12 @@ class _CompactAuditFilterToolbar extends ConsumerWidget {
               runSpacing: 6,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                const Text(
+                Text(
                   'Active filters:',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: DefensysTokens.steelGrey,
+                    color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
                   ),
                 ),
                 if (state.track.isNotEmpty || state.yearLevel.isNotEmpty)
@@ -4314,14 +4375,14 @@ class _CompactAuditFilterToolbar extends ConsumerWidget {
                     notifier.setEndDate('');
                     notifier.fetch();
                   },
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                     child: Text(
                       'Clear all',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: DefensysTokens.maroon,
+                        color: DefensysTokens.maroonOf(context),
                         decoration: TextDecoration.underline,
                       ),
                     ),
@@ -4472,8 +4533,10 @@ class _AuditFilterModalState extends State<_AuditFilterModal> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = DefensysTokens.isDark(context);
+
     return Dialog(
-      backgroundColor: Colors.white,
+      backgroundColor: DefensysTokens.surfaceOf(context),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520, maxHeight: 680),
@@ -4489,13 +4552,13 @@ class _AuditFilterModalState extends State<_AuditFilterModal> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                      color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                     ),
-                    child: const Icon(Icons.tune_rounded, color: DefensysTokens.maroon, size: 18),
+                    child: Icon(Icons.tune_rounded, color: DefensysTokens.maroonOf(context), size: 18),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -4504,15 +4567,15 @@ class _AuditFilterModalState extends State<_AuditFilterModal> {
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
-                            color: DefensysTokens.textDark,
+                            color: DefensysTokens.textPrimaryOf(context),
                           ),
                         ),
-                        SizedBox(height: 2),
+                        const SizedBox(height: 2),
                         Text(
                           'Refine records by scope, category, compliance status, or date range.',
                           style: TextStyle(
                             fontSize: 11.5,
-                            color: DefensysTokens.steelGrey,
+                            color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
                           ),
                         ),
                       ],
@@ -4526,7 +4589,7 @@ class _AuditFilterModalState extends State<_AuditFilterModal> {
                 ],
               ),
             ),
-            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            Divider(height: 1, color: DefensysTokens.borderOf(context)),
 
             // Modal Body Form
             Flexible(
@@ -4542,8 +4605,9 @@ class _AuditFilterModalState extends State<_AuditFilterModal> {
                       DropdownButtonFormField<String>(
                         initialValue: _scope,
                         isExpanded: true,
+                        dropdownColor: DefensysTokens.surfaceOf(context),
                         decoration: _modalInputDecoration('Select Academic Track'),
-                        style: const TextStyle(fontSize: 13, color: DefensysTokens.textDark),
+                        style: TextStyle(fontSize: 13, color: DefensysTokens.textPrimaryOf(context)),
                         items: const [
                           DropdownMenuItem(value: 'all', child: Text('All Academic Tracks')),
                           DropdownMenuItem(value: 'capstone', child: Text('Capstone Project')),
@@ -4562,15 +4626,15 @@ class _AuditFilterModalState extends State<_AuditFilterModal> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
+                          color: isDark ? const Color(0xFF26252A) : const Color(0xFFF8FAFC),
                           borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                          border: Border.all(color: DefensysTokens.border),
+                          border: Border.all(color: DefensysTokens.borderOf(context)),
                         ),
                         child: Text(
                           'PIT (${widget.user?['pit_lead_year'] ?? "N/A"})',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            color: DefensysTokens.textDark,
+                            color: DefensysTokens.textPrimaryOf(context),
                             fontSize: 12.5,
                           ),
                         ),
@@ -4584,8 +4648,9 @@ class _AuditFilterModalState extends State<_AuditFilterModal> {
                     DropdownButtonFormField<String>(
                       initialValue: _category,
                       isExpanded: true,
+                      dropdownColor: DefensysTokens.surfaceOf(context),
                       decoration: _modalInputDecoration('All Process Areas'),
-                      style: const TextStyle(fontSize: 13, color: DefensysTokens.textDark),
+                      style: TextStyle(fontSize: 13, color: DefensysTokens.textPrimaryOf(context)),
                       items: [
                         const DropdownMenuItem(value: '', child: Text('All Process Areas')),
                         ..._categoryOptions.map(
@@ -4605,8 +4670,9 @@ class _AuditFilterModalState extends State<_AuditFilterModal> {
                     DropdownButtonFormField<String>(
                       initialValue: _reviewStatus,
                       isExpanded: true,
+                      dropdownColor: DefensysTokens.surfaceOf(context),
                       decoration: _modalInputDecoration('All Statuses'),
-                      style: const TextStyle(fontSize: 13, color: DefensysTokens.textDark),
+                      style: TextStyle(fontSize: 13, color: DefensysTokens.textPrimaryOf(context)),
                       items: [
                         const DropdownMenuItem(value: '', child: Text('All Statuses')),
                         ...?((widget.state.options['review_statuses'] as List?)?.map(
@@ -4626,8 +4692,9 @@ class _AuditFilterModalState extends State<_AuditFilterModal> {
                     DropdownButtonFormField<String>(
                       initialValue: _action,
                       isExpanded: true,
+                      dropdownColor: DefensysTokens.surfaceOf(context),
                       decoration: _modalInputDecoration('All Action Types'),
-                      style: const TextStyle(fontSize: 13, color: DefensysTokens.textDark),
+                      style: TextStyle(fontSize: 13, color: DefensysTokens.textPrimaryOf(context)),
                       items: [
                         const DropdownMenuItem(value: '', child: Text('All Action Types')),
                         ...?((widget.state.options['actions'] as List?)?.map(
@@ -4671,9 +4738,13 @@ class _AuditFilterModalState extends State<_AuditFilterModal> {
                             controller: _startCtrl,
                             readOnly: true,
                             onTap: () => _pickDate(_startCtrl),
-                            style: const TextStyle(fontSize: 12.5),
+                            style: TextStyle(fontSize: 12.5, color: DefensysTokens.textPrimaryOf(context)),
                             decoration: _modalInputDecoration('Start Date (From)').copyWith(
-                              suffixIcon: const Icon(Icons.calendar_today_rounded, size: 15, color: DefensysTokens.steelGrey),
+                              suffixIcon: Icon(
+                                Icons.calendar_today_rounded,
+                                size: 15,
+                                color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                              ),
                             ),
                           ),
                         ),
@@ -4683,9 +4754,13 @@ class _AuditFilterModalState extends State<_AuditFilterModal> {
                             controller: _endCtrl,
                             readOnly: true,
                             onTap: () => _pickDate(_endCtrl),
-                            style: const TextStyle(fontSize: 12.5),
+                            style: TextStyle(fontSize: 12.5, color: DefensysTokens.textPrimaryOf(context)),
                             decoration: _modalInputDecoration('End Date (To)').copyWith(
-                              suffixIcon: const Icon(Icons.calendar_today_rounded, size: 15, color: DefensysTokens.steelGrey),
+                              suffixIcon: Icon(
+                                Icons.calendar_today_rounded,
+                                size: 15,
+                                color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                              ),
                             ),
                           ),
                         ),
@@ -4697,7 +4772,7 @@ class _AuditFilterModalState extends State<_AuditFilterModal> {
             ),
 
             // Modal Footer Actions
-            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            Divider(height: 1, color: DefensysTokens.borderOf(context)),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
@@ -4719,7 +4794,7 @@ class _AuditFilterModalState extends State<_AuditFilterModal> {
                     icon: const Icon(Icons.restart_alt_rounded, size: 15),
                     label: const Text('Reset All', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                     style: TextButton.styleFrom(
-                      foregroundColor: DefensysTokens.maroon,
+                      foregroundColor: DefensysTokens.maroonOf(context),
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                     ),
                   ),
@@ -4729,8 +4804,8 @@ class _AuditFilterModalState extends State<_AuditFilterModal> {
                       OutlinedButton(
                         onPressed: () => Navigator.pop(context),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: DefensysTokens.steelGrey,
-                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          foregroundColor: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                          side: BorderSide(color: DefensysTokens.borderOf(context)),
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
@@ -4754,7 +4829,7 @@ class _AuditFilterModalState extends State<_AuditFilterModal> {
                         icon: const Icon(Icons.check_rounded, size: 15),
                         label: const Text('Apply Filters', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                         style: FilledButton.styleFrom(
-                          backgroundColor: DefensysTokens.maroon,
+                          backgroundColor: DefensysTokens.maroonOf(context),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                           shape: RoundedRectangleBorder(
@@ -4775,20 +4850,24 @@ class _AuditFilterModalState extends State<_AuditFilterModal> {
   }
 
   InputDecoration _modalInputDecoration(String hint) {
+    final isDark = DefensysTokens.isDark(context);
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(fontSize: 12.5, color: DefensysTokens.steelGrey),
+      hintStyle: TextStyle(
+        fontSize: 12.5,
+        color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+      ),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        borderSide: const BorderSide(color: DefensysTokens.maroon),
+        borderSide: BorderSide(color: DefensysTokens.maroonOf(context)),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       isDense: true,
@@ -4805,10 +4884,10 @@ class _ModalSectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       title,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 11.5,
         fontWeight: FontWeight.w700,
-        color: DefensysTokens.textDark,
+        color: DefensysTokens.textPrimaryOf(context),
       ),
     );
   }
@@ -4827,6 +4906,7 @@ class _PresetChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = DefensysTokens.isDark(context);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -4835,10 +4915,12 @@ class _PresetChip extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
-            color: isClear ? DefensysTokens.dangerBg : const Color(0xFFF1F5F9),
+            color: isClear
+                ? DefensysTokens.dangerBg
+                : (isDark ? const Color(0xFF26252A) : const Color(0xFFF1F5F9)),
             borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
             border: Border.all(
-              color: isClear ? DefensysTokens.dangerBorder : const Color(0xFFE2E8F0),
+              color: isClear ? DefensysTokens.dangerBorder : DefensysTokens.borderOf(context),
             ),
           ),
           child: Text(
@@ -4846,7 +4928,9 @@ class _PresetChip extends StatelessWidget {
             style: TextStyle(
               fontSize: 10.5,
               fontWeight: FontWeight.w700,
-              color: isClear ? DefensysTokens.dangerText : DefensysTokens.steelGrey,
+              color: isClear
+                  ? DefensysTokens.dangerText
+                  : (isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey),
             ),
           ),
         ),
@@ -4866,28 +4950,28 @@ class _ActiveChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.only(left: 8, right: 3, top: 2, bottom: 2),
       decoration: BoxDecoration(
-        color: DefensysTokens.maroon.withValues(alpha: 0.08),
+        color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-        border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.2)),
+        border: Border.all(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 10.5,
               fontWeight: FontWeight.w700,
-              color: DefensysTokens.maroon,
+              color: DefensysTokens.maroonOf(context),
             ),
           ),
           const SizedBox(width: 2),
           InkWell(
             onTap: onDeleted,
             borderRadius: BorderRadius.circular(99),
-            child: const Padding(
-              padding: EdgeInsets.all(2),
-              child: Icon(Icons.close_rounded, size: 12, color: DefensysTokens.maroon),
+            child: Padding(
+              padding: const EdgeInsets.all(2),
+              child: Icon(Icons.close_rounded, size: 12, color: DefensysTokens.maroonOf(context)),
             ),
           ),
         ],
@@ -4903,13 +4987,14 @@ class _AuditTrailTable extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isDark = DefensysTokens.isDark(context);
     final selectedLog = state.selectedLog ?? (state.logs.isNotEmpty ? state.logs.first : null);
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-        border: Border.all(color: DefensysTokens.border),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: const [
           BoxShadow(
             color: Color(0x06000000),
@@ -4928,22 +5013,22 @@ class _AuditTrailTable extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.receipt_long_outlined,
-                  color: DefensysTokens.maroon,
+                  color: DefensysTokens.maroonOf(context),
                   size: 16,
                 ),
               ),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'Audit Trail Register',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w800,
-                  color: DefensysTokens.textDark,
+                  color: DefensysTokens.textPrimaryOf(context),
                 ),
               ),
               const Spacer(),
@@ -4951,15 +5036,15 @@ class _AuditTrailTable extends ConsumerWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
+                    color: isDark ? const Color(0xFF26252A) : const Color(0xFFF1F5F9),
                     borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
                   ),
                   child: Text(
                     '${state.totalCount} entries',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: DefensysTokens.steelGrey,
+                      color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
                     ),
                   ),
                 ),
@@ -4968,16 +5053,19 @@ class _AuditTrailTable extends ConsumerWidget {
           const SizedBox(height: 14),
 
           if (state.isLoading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 40),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40),
               child: Center(
                 child: Column(
                   children: [
-                    CircularProgressIndicator(strokeWidth: 2.5, color: DefensysTokens.maroon),
-                    SizedBox(height: 12),
+                    CircularProgressIndicator(strokeWidth: 2.5, color: DefensysTokens.maroonOf(context)),
+                    const SizedBox(height: 12),
                     Text(
                       'Loading audit logs...',
-                      style: TextStyle(color: DefensysTokens.steelGrey, fontSize: 12.5),
+                      style: TextStyle(
+                        color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                        fontSize: 12.5,
+                      ),
                     ),
                   ],
                 ),
@@ -5004,19 +5092,21 @@ class _AuditTrailTable extends ConsumerWidget {
               borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
               child: Container(
                 decoration: BoxDecoration(
-                  border: Border.all(color: DefensysTokens.border),
+                  border: Border.all(color: DefensysTokens.borderOf(context)),
                   borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
                 ),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: DataTable(
                     showCheckboxColumn: false,
-                    headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-                    headingTextStyle: const TextStyle(
+                    headingRowColor: WidgetStateProperty.all(
+                      isDark ? const Color(0xFF1E1D21) : const Color(0xFFF8FAFC),
+                    ),
+                    headingTextStyle: TextStyle(
                       fontFamily: DefensysTokens.fontFamily,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: DefensysTokens.steelGrey,
+                      color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
                       letterSpacing: 0.5,
                     ),
                     dataRowMinHeight: 48,
@@ -5035,12 +5125,14 @@ class _AuditTrailTable extends ConsumerWidget {
                         selected: false,
                         color: WidgetStateProperty.resolveWith((states) {
                           if (isSelected) {
-                            return const Color(0xFFF1F5F9);
+                            return isDark
+                                ? DefensysTokens.maroonOf(context).withValues(alpha: 0.16)
+                                : const Color(0xFFF1F5F9);
                           }
                           if (states.contains(WidgetState.hovered)) {
-                            return const Color(0xFFFAFAFA);
+                            return isDark ? const Color(0xFF28272D) : const Color(0xFFFAFAFA);
                           }
-                          return Colors.white;
+                          return isDark ? DefensysTokens.surfaceOf(context) : Colors.white;
                         }),
                         onSelectChanged: (_) =>
                             ref.read(systemAuditProvider.notifier).selectLog(log),
@@ -5055,14 +5147,16 @@ class _AuditTrailTable extends ConsumerWidget {
                                     height: 20,
                                     margin: const EdgeInsets.only(right: 6),
                                     decoration: BoxDecoration(
-                                      color: DefensysTokens.maroon,
+                                      color: DefensysTokens.maroonOf(context),
                                       borderRadius: BorderRadius.circular(2),
                                     ),
                                   ),
                                 Icon(
                                   Icons.schedule,
                                   size: 13,
-                                  color: isSelected ? DefensysTokens.maroon : DefensysTokens.steelGrey,
+                                  color: isSelected
+                                      ? DefensysTokens.maroonOf(context)
+                                      : (isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey),
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
@@ -5070,7 +5164,9 @@ class _AuditTrailTable extends ConsumerWidget {
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                                    color: isSelected ? DefensysTokens.maroon : DefensysTokens.textDark,
+                                    color: isSelected
+                                        ? DefensysTokens.maroonOf(context)
+                                        : DefensysTokens.textPrimaryOf(context),
                                   ),
                                 ),
                               ],
@@ -5084,23 +5180,23 @@ class _AuditTrailTable extends ConsumerWidget {
                               children: [
                                 CircleAvatar(
                                   radius: 11,
-                                  backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.1),
+                                  backgroundColor: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
                                   child: Text(
                                     (log['actor_name']?.toString() ?? 'S')[0].toUpperCase(),
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 9.5,
                                       fontWeight: FontWeight.bold,
-                                      color: DefensysTokens.maroon,
+                                      color: DefensysTokens.maroonOf(context),
                                     ),
                                   ),
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
                                   log['actor_name']?.toString() ?? 'System',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontWeight: FontWeight.w600,
                                     fontSize: 12,
-                                    color: DefensysTokens.textDark,
+                                    color: DefensysTokens.textPrimaryOf(context),
                                   ),
                                 ),
                               ],
@@ -5121,22 +5217,23 @@ class _AuditTrailTable extends ConsumerWidget {
               children: [
                 Row(
                   children: [
-                    const Text(
+                    Text(
                       'Rows: ',
                       style: TextStyle(
                         fontSize: 11.5,
-                        color: DefensysTokens.steelGrey,
+                        color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     DropdownButton<int>(
                       value: state.pageSize,
                       underline: const SizedBox(),
+                      dropdownColor: DefensysTokens.surfaceOf(context),
                       isDense: true,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
-                        color: DefensysTokens.textDark,
+                        color: DefensysTokens.textPrimaryOf(context),
                       ),
                       items: const [
                         DropdownMenuItem(value: 10, child: Text('10')),
@@ -5152,9 +5249,9 @@ class _AuditTrailTable extends ConsumerWidget {
                     const SizedBox(width: 12),
                     Text(
                       'Page ${state.currentPage} of ${state.totalPages}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11.5,
-                        color: DefensysTokens.steelGrey,
+                        color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
                       ),
                     ),
                   ],
@@ -5174,15 +5271,15 @@ class _AuditTrailTable extends ConsumerWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
+                        color: isDark ? const Color(0xFF26252A) : const Color(0xFFF1F5F9),
                         borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                       ),
                       child: Text(
                         '${state.currentPage} / ${state.totalPages}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 11,
-                          color: DefensysTokens.textDark,
+                          color: DefensysTokens.textPrimaryOf(context),
                         ),
                       ),
                     ),
@@ -5214,6 +5311,7 @@ class _ProcessAreaBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = DefensysTokens.isDark(context);
     IconData icon = Icons.folder_open_outlined;
     final lower = category.toLowerCase();
     String display = category.isEmpty ? 'General' : category;
@@ -5233,14 +5331,14 @@ class _ProcessAreaBadge extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 14, color: DefensysTokens.steelGrey),
+        Icon(icon, size: 14, color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey),
         const SizedBox(width: 6),
         Text(
           display,
-          style: const TextStyle(
+          style: TextStyle(
             fontWeight: FontWeight.w600,
             fontSize: 12,
-            color: DefensysTokens.textDark,
+            color: DefensysTokens.textPrimaryOf(context),
           ),
         ),
       ],
@@ -5255,20 +5353,21 @@ class _ActionTag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = DefensysTokens.isDark(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: isDark ? const Color(0xFF26252A) : const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: Text(
         action.isEmpty ? 'action.unknown' : action,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: 'monospace',
           fontSize: 11,
           fontWeight: FontWeight.w600,
-          color: Color(0xFF334155),
+          color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
         ),
       ),
     );
@@ -5282,6 +5381,7 @@ class _ReviewStatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = DefensysTokens.isDark(context);
     final status = log['review_status']?.toString() ?? '';
     final isReviewed = status == 'reviewed';
     final isNeedsReview = status == 'needs_review' || status == 'requires_reason';
@@ -5293,21 +5393,21 @@ class _ReviewStatusPill extends StatelessWidget {
     final String label;
 
     if (isReviewed) {
-      bg = const Color(0xFFECFDF5);
-      fg = const Color(0xFF065F46);
-      border = const Color(0xFFA7F3D0);
+      bg = isDark ? const Color(0x1F10B981) : const Color(0xFFECFDF5);
+      fg = isDark ? const Color(0xFF34D399) : const Color(0xFF065F46);
+      border = isDark ? const Color(0x4D10B981) : const Color(0xFFA7F3D0);
       icon = Icons.check_circle_outlined;
       label = 'Reviewed';
     } else if (isNeedsReview) {
-      bg = const Color(0xFFFEF3C7);
-      fg = const Color(0xFF92400E);
-      border = const Color(0xFFFDE68A);
+      bg = isDark ? const Color(0x1FF59E0B) : const Color(0xFFFEF3C7);
+      fg = isDark ? const Color(0xFFFBBF24) : const Color(0xFF92400E);
+      border = isDark ? const Color(0x4DF59E0B) : const Color(0xFFFDE68A);
       icon = Icons.pending_outlined;
       label = 'Needs Review';
     } else {
-      bg = const Color(0xFFF1F5F9);
-      fg = const Color(0xFF475569);
-      border = const Color(0xFFCBD5E1);
+      bg = isDark ? const Color(0xFF26252A) : const Color(0xFFF1F5F9);
+      fg = isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569);
+      border = isDark ? const Color(0xFF35343A) : const Color(0xFFCBD5E1);
       icon = Icons.task_alt_outlined;
       label = 'Captured';
     }
@@ -5609,11 +5709,13 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
       resourceSubhead = 'Account Governance & Role Permissions';
     }
 
+    final isDark = DefensysTokens.isDark(context);
+
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-        border: Border.all(color: DefensysTokens.border),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: const [
           BoxShadow(
             color: Color(0x06000000),
@@ -5632,23 +5734,23 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.description_outlined,
-                  color: DefensysTokens.maroon,
+                  color: DefensysTokens.maroonOf(context),
                   size: 16,
                 ),
               ),
               const SizedBox(width: 8),
-              const Expanded(
+              Expanded(
                 child: Text(
                   'Evidence Packet Review',
                   style: TextStyle(
                     fontSize: 14.5,
                     fontWeight: FontWeight.w800,
-                    color: DefensysTokens.textDark,
+                    color: DefensysTokens.textPrimaryOf(context),
                   ),
                 ),
               ),
@@ -5658,11 +5760,11 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
                     padding: const EdgeInsets.only(right: 6),
                     child: OutlinedButton.icon(
                       onPressed: widget.onExportSlip,
-                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 13, color: DefensysTokens.maroon),
+                      icon: Icon(Icons.picture_as_pdf_outlined, size: 13, color: DefensysTokens.maroonOf(context)),
                       label: const Text('Export Slip (PDF)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: DefensysTokens.maroon,
-                        side: const BorderSide(color: Color(0xFFCBD5E1)),
+                        foregroundColor: DefensysTokens.maroonOf(context),
+                        side: BorderSide(color: DefensysTokens.borderOf(context)),
                         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                         minimumSize: Size.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -5678,23 +5780,27 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
+                      color: isDark ? const Color(0xFF26252A) : const Color(0xFFF1F5F9),
                       borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                      border: Border.all(color: DefensysTokens.border),
+                      border: Border.all(color: DefensysTokens.borderOf(context)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           '#${item['id'] ?? '-'}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
-                            color: DefensysTokens.textDark,
+                            color: DefensysTokens.textPrimaryOf(context),
                           ),
                         ),
                         const SizedBox(width: 4),
-                        const Icon(Icons.copy_rounded, size: 11, color: DefensysTokens.steelGrey),
+                        Icon(
+                          Icons.copy_rounded,
+                          size: 11,
+                          color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                        ),
                       ],
                     ),
                   ),
@@ -5705,12 +5811,15 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
           const SizedBox(height: 14),
 
           if (item == null)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 36),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 36),
               child: Center(
                 child: Text(
                   'Select an audit record to inspect its detailed evidence packet.',
-                  style: TextStyle(color: DefensysTokens.steelGrey, fontSize: 12.5),
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                    fontSize: 12.5,
+                  ),
                 ),
               ),
             )
@@ -5732,8 +5841,10 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
                           icon: const Icon(Icons.undo_rounded, size: 14),
                           label: const Text('Revert to Needs Review', style: TextStyle(fontSize: 11.5)),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFFB45309),
-                            side: const BorderSide(color: Color(0xFFFDE68A)),
+                            foregroundColor: isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
+                            side: BorderSide(
+                              color: isDark ? const Color(0x4DF59E0B) : const Color(0xFFFDE68A),
+                            ),
                             padding: const EdgeInsets.symmetric(vertical: 8),
                           ),
                         )
@@ -5764,9 +5875,9 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: isDark ? const Color(0xFF26252A) : const Color(0xFFF8FAFC),
                 borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: DefensysTokens.borderOf(context)),
               ),
               child: Column(
                 children: [
@@ -5786,9 +5897,9 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: isDark ? const Color(0xFF26252A) : const Color(0xFFF8FAFC),
                 borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: DefensysTokens.borderOf(context)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -5798,10 +5909,10 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
                       Container(
                         padding: const EdgeInsets.all(7),
                         decoration: BoxDecoration(
-                          color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                          color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                         ),
-                        child: Icon(resourceIcon, size: 16, color: DefensysTokens.maroon),
+                        child: Icon(resourceIcon, size: 16, color: DefensysTokens.maroonOf(context)),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -5810,10 +5921,10 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
                           children: [
                             Text(
                               resourceHeadline,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.w700,
-                                color: DefensysTokens.textDark,
+                                color: DefensysTokens.textPrimaryOf(context),
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -5821,7 +5932,10 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
                             const SizedBox(height: 2),
                             Text(
                               resourceSubhead,
-                              style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -5831,7 +5945,7 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  Divider(height: 1, color: DefensysTokens.borderOf(context)),
                   const SizedBox(height: 8),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
@@ -5856,7 +5970,7 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
                             style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
                           ),
                           style: FilledButton.styleFrom(
-                            backgroundColor: DefensysTokens.maroon,
+                            backgroundColor: DefensysTokens.maroonOf(context),
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                             minimumSize: Size.zero,
@@ -5873,14 +5987,18 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
             // Audit Modifications & Attribute Changes
             Row(
               children: [
-                const Icon(Icons.compare_arrows_rounded, size: 14, color: DefensysTokens.steelGrey),
+                Icon(
+                  Icons.compare_arrows_rounded,
+                  size: 14,
+                  color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                ),
                 const SizedBox(width: 6),
-                const Text(
+                Text(
                   'AUDIT MODIFICATIONS & ATTRIBUTE CHANGES',
                   style: TextStyle(
                     fontSize: 10.5,
                     fontWeight: FontWeight.w800,
-                    color: DefensysTokens.steelGrey,
+                    color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
                     letterSpacing: 0.5,
                   ),
                 ),
@@ -5889,15 +6007,15 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                     decoration: BoxDecoration(
-                      color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                      color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
                     ),
                     child: Text(
                       '$changeCount modified',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 9.5,
                         fontWeight: FontWeight.w700,
-                        color: DefensysTokens.maroon,
+                        color: DefensysTokens.maroonOf(context),
                       ),
                     ),
                   ),
@@ -5992,6 +6110,7 @@ class _ArchiveFileEvidenceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = DefensysTokens.isDark(context);
     final newVals = log['new_values'] is Map ? Map<String, dynamic>.from(log['new_values']) : <String, dynamic>{};
     final oldVals = log['old_values'] is Map ? Map<String, dynamic>.from(log['old_values']) : <String, dynamic>{};
     final fileName = newVals['file_name']?.toString() ??
@@ -6009,9 +6128,9 @@ class _ArchiveFileEvidenceCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: const [
           BoxShadow(
             color: Color(0x05000000),
@@ -6031,10 +6150,10 @@ class _ArchiveFileEvidenceCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(7),
                   decoration: BoxDecoration(
-                    color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                    color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                   ),
-                  child: const Icon(Icons.picture_as_pdf_outlined, color: DefensysTokens.maroon, size: 18),
+                  child: Icon(Icons.picture_as_pdf_outlined, color: DefensysTokens.maroonOf(context), size: 18),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -6043,10 +6162,10 @@ class _ArchiveFileEvidenceCard extends StatelessWidget {
                     children: [
                       Text(
                         fileName,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w800,
-                          color: DefensysTokens.textDark,
+                          color: DefensysTokens.textPrimaryOf(context),
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -6054,7 +6173,10 @@ class _ArchiveFileEvidenceCard extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         '$fileSize • $status',
-                        style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                        ),
                       ),
                     ],
                   ),
@@ -6062,10 +6184,14 @@ class _ArchiveFileEvidenceCard extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                   decoration: BoxDecoration(
-                    color: replaced ? const Color(0xFFFEF3C7) : const Color(0xFFECFDF5),
+                    color: replaced
+                        ? (isDark ? const Color(0x1FF59E0B) : const Color(0xFFFEF3C7))
+                        : (isDark ? const Color(0x1F10B981) : const Color(0xFFECFDF5)),
                     borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
                     border: Border.all(
-                      color: replaced ? const Color(0xFFFDE68A) : const Color(0xFFA7F3D0),
+                      color: replaced
+                          ? (isDark ? const Color(0x4DF59E0B) : const Color(0xFFFDE68A))
+                          : (isDark ? const Color(0x4D10B981) : const Color(0xFFA7F3D0)),
                     ),
                   ),
                   child: Text(
@@ -6073,7 +6199,9 @@ class _ArchiveFileEvidenceCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 9.5,
                       fontWeight: FontWeight.w700,
-                      color: replaced ? const Color(0xFF92400E) : const Color(0xFF065F46),
+                      color: replaced
+                          ? (isDark ? const Color(0xFFFBBF24) : const Color(0xFF92400E))
+                          : (isDark ? const Color(0xFF34D399) : const Color(0xFF065F46)),
                     ),
                   ),
                 ),
@@ -6081,12 +6209,12 @@ class _ArchiveFileEvidenceCard extends StatelessWidget {
             ),
           ),
 
-          // Live Institutional Document / Manuscript Sheet Preview
+          // Live Institutional Document / Manuscript Sheet Preview (Paper-White Isolated)
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 12),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: Colors.white,
               borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
               border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
@@ -6179,7 +6307,7 @@ class _ArchiveFileEvidenceCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          Divider(height: 1, color: DefensysTokens.borderOf(context)),
 
           // Navigation & Action Footer
           Padding(
@@ -6189,15 +6317,19 @@ class _ArchiveFileEvidenceCard extends StatelessWidget {
               children: [
                 Text(
                   'Scope: ${track.toUpperCase()}',
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: DefensysTokens.steelGrey),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                  ),
                 ),
                 OutlinedButton.icon(
                   onPressed: () => onNavigate?.call(AdminRoutes.projectArchive),
                   icon: const Icon(Icons.open_in_new_rounded, size: 12),
                   label: const Text('Open in Project Archive ↗', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: DefensysTokens.maroon,
-                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    foregroundColor: DefensysTokens.maroonOf(context),
+                    side: BorderSide(color: DefensysTokens.borderOf(context)),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -6579,6 +6711,7 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = DefensysTokens.isDark(context);
     final oldMap = _asMap(widget.oldValues);
     final newMap = _asMap(widget.newValues);
 
@@ -6587,14 +6720,17 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
         width: double.infinity,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
+          color: isDark ? const Color(0xFF26252A) : const Color(0xFFF8FAFC),
           borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: DefensysTokens.borderOf(context)),
         ),
-        child: const Center(
+        child: Center(
           child: Text(
             'No attribute modifications recorded for this entry.',
-            style: TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+            ),
           ),
         ),
       );
@@ -6622,9 +6758,9 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -6632,23 +6768,27 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
           // Delta Header Strip
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(DefensysTokens.radiusMd)),
-              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E1D21) : const Color(0xFFF8FAFC),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(DefensysTokens.radiusMd)),
+              border: Border(bottom: BorderSide(color: DefensysTokens.borderOf(context))),
             ),
             child: Row(
               children: [
-                const Icon(Icons.compare_arrows_rounded, size: 15, color: DefensysTokens.steelGrey),
+                Icon(
+                  Icons.compare_arrows_rounded,
+                  size: 15,
+                  color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                ),
                 const SizedBox(width: 6),
                 Text(
                   isCreation
                       ? 'Initial State Snapshot (${newMap.length} attributes)'
                       : '${modifiedKeys.length} Modified ${modifiedKeys.length == 1 ? "Attribute" : "Attributes"}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,
-                    color: DefensysTokens.textDark,
+                    color: DefensysTokens.textPrimaryOf(context),
                   ),
                 ),
                 const Spacer(),
@@ -6665,17 +6805,17 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
                             _showUnchanged
                                 ? 'Hide ${unchangedKeys.length} unchanged'
                                 : '${unchangedKeys.length} unchanged',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 10.5,
                               fontWeight: FontWeight.w600,
-                              color: DefensysTokens.steelGrey,
+                              color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
                             ),
                           ),
                           const SizedBox(width: 2),
                           Icon(
                             _showUnchanged ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
                             size: 14,
-                            color: DefensysTokens.steelGrey,
+                            color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
                           ),
                         ],
                       ),
@@ -6701,10 +6841,10 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
                           width: 140,
                           child: Text(
                             attr.label,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
-                              color: DefensysTokens.steelGrey,
+                              color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
                             ),
                           ),
                         ),
@@ -6721,8 +6861,8 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
                                   fontSize: 11.5,
                                   fontWeight: FontWeight.w600,
                                   color: attr.isNullOrEmpty
-                                      ? DefensysTokens.steelGrey
-                                      : DefensysTokens.textDark,
+                                      ? (isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey)
+                                      : DefensysTokens.textPrimaryOf(context),
                                   fontStyle: attr.isNullOrEmpty ? FontStyle.italic : null,
                                 ),
                               ),
@@ -6730,17 +6870,17 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFF1F5F9),
+                                    color: isDark ? const Color(0xFF26252A) : const Color(0xFFF1F5F9),
                                     borderRadius: BorderRadius.circular(3),
-                                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                                    border: Border.all(color: DefensysTokens.borderOf(context)),
                                   ),
                                   child: Text(
                                     attr.idBadge!,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontFamily: 'monospace',
                                       fontSize: 9.5,
                                       fontWeight: FontWeight.w700,
-                                      color: DefensysTokens.steelGrey,
+                                      color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
                                     ),
                                   ),
                                 ),
@@ -6755,11 +6895,15 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
             )
           else ...[
             if (modifiedKeys.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(12),
+              Padding(
+                padding: const EdgeInsets.all(12),
                 child: Text(
                   'No field value deltas detected between snapshots.',
-                  style: TextStyle(fontSize: 11, color: DefensysTokens.steelGrey, fontStyle: FontStyle.italic),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                    fontStyle: FontStyle.italic,
+                  ),
                 ),
               )
             else
@@ -6776,9 +6920,9 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
                       margin: const EdgeInsets.only(bottom: 6),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
+                        color: isDark ? const Color(0xFF1E1D21) : const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        border: Border.all(color: DefensysTokens.borderOf(context)),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
@@ -6787,10 +6931,10 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
                             width: 130,
                             child: Text(
                               newAttr.label,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11.5,
                                 fontWeight: FontWeight.w700,
-                                color: DefensysTokens.textDark,
+                                color: DefensysTokens.textPrimaryOf(context),
                               ),
                             ),
                           ),
@@ -6802,7 +6946,7 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFF1F5F9),
+                                      color: isDark ? const Color(0xFF26252A) : const Color(0xFFF1F5F9),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Wrap(
@@ -6814,17 +6958,19 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
                                           style: TextStyle(
                                             fontFamily: oldAttr.isEntity ? null : 'monospace',
                                             fontSize: 11,
-                                            color: oldVal == null ? DefensysTokens.steelGrey : const Color(0xFF64748B),
+                                            color: oldVal == null
+                                                ? (isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey)
+                                                : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
                                             decoration: oldVal == null ? null : TextDecoration.lineThrough,
                                           ),
                                         ),
                                         if (oldAttr.idBadge != null)
                                           Text(
                                             '(${oldAttr.idBadge})',
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontFamily: 'monospace',
                                               fontSize: 9,
-                                              color: DefensysTokens.steelGrey,
+                                              color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
                                               decoration: TextDecoration.lineThrough,
                                             ),
                                           ),
@@ -6832,17 +6978,23 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
                                     ),
                                   ),
                                 ),
-                                const Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 6),
-                                  child: Icon(Icons.arrow_forward_rounded, size: 13, color: DefensysTokens.steelGrey),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                                  child: Icon(
+                                    Icons.arrow_forward_rounded,
+                                    size: 13,
+                                    color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                                  ),
                                 ),
                                 Expanded(
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFECFDF5),
+                                      color: isDark ? const Color(0x1F10B981) : const Color(0xFFECFDF5),
                                       borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: const Color(0xFFA7F3D0)),
+                                      border: Border.all(
+                                        color: isDark ? const Color(0x4D10B981) : const Color(0xFFA7F3D0),
+                                      ),
                                     ),
                                     child: Wrap(
                                       crossAxisAlignment: WrapCrossAlignment.center,
@@ -6854,23 +7006,25 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
                                             fontFamily: newAttr.isEntity ? null : 'monospace',
                                             fontSize: 11,
                                             fontWeight: FontWeight.w700,
-                                            color: newVal == null ? const Color(0xFF991B1B) : const Color(0xFF065F46),
+                                            color: newVal == null
+                                                ? (isDark ? const Color(0xFFF87171) : const Color(0xFF991B1B))
+                                                : (isDark ? const Color(0xFF34D399) : const Color(0xFF065F46)),
                                           ),
                                         ),
                                         if (newAttr.idBadge != null)
                                           Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                                             decoration: BoxDecoration(
-                                              color: const Color(0xFFD1FAE5),
+                                              color: isDark ? const Color(0x3310B981) : const Color(0xFFD1FAE5),
                                               borderRadius: BorderRadius.circular(3),
                                             ),
                                             child: Text(
                                               newAttr.idBadge!,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontFamily: 'monospace',
                                                 fontSize: 9,
                                                 fontWeight: FontWeight.w700,
-                                                color: Color(0xFF065F46),
+                                                color: isDark ? const Color(0xFF34D399) : const Color(0xFF065F46),
                                               ),
                                             ),
                                           ),
@@ -6890,20 +7044,20 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
 
             // Collapsible Unchanged Properties
             if (_showUnchanged && unchangedKeys.isNotEmpty) ...[
-              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+              Divider(height: 1, color: DefensysTokens.borderOf(context)),
               Padding(
                 padding: const EdgeInsets.all(10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 6),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
                       child: Text(
                         'UNCHANGED PROPERTIES',
                         style: TextStyle(
                           fontSize: 9.5,
                           fontWeight: FontWeight.w800,
-                          color: DefensysTokens.steelGrey,
+                          color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
                           letterSpacing: 0.5,
                         ),
                       ),
@@ -6918,9 +7072,9 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
                               width: 140,
                               child: Text(
                                 attr.label,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 10.5,
-                                  color: DefensysTokens.steelGrey,
+                                  color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
                                 ),
                               ),
                             ),
@@ -6934,16 +7088,16 @@ class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
                                     style: TextStyle(
                                       fontFamily: attr.isEntity ? null : 'monospace',
                                       fontSize: 10.5,
-                                      color: const Color(0xFF475569),
+                                      color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF475569),
                                     ),
                                   ),
                                   if (attr.idBadge != null)
                                     Text(
                                       attr.idBadge!,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontFamily: 'monospace',
                                         fontSize: 9,
-                                        color: DefensysTokens.steelGrey,
+                                        color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
                                       ),
                                     ),
                                 ],
@@ -6972,6 +7126,7 @@ class _DetailLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = DefensysTokens.isDark(context);
     final text = value?.toString().trim() ?? '';
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
@@ -6982,9 +7137,9 @@ class _DetailLine extends StatelessWidget {
             width: 110,
             child: Text(
               label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11.5,
-                color: DefensysTokens.steelGrey,
+                color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -6992,9 +7147,9 @@ class _DetailLine extends StatelessWidget {
           Expanded(
             child: Text(
               text.isEmpty ? '-' : text,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: DefensysTokens.textDark,
+                color: DefensysTokens.textPrimaryOf(context),
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -7021,9 +7176,9 @@ class _AuditMessage extends StatelessWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-        border: Border.all(color: DefensysTokens.border),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: DefensysEmptyState.table(
         icon: icon,
@@ -7044,10 +7199,10 @@ class _FormSectionLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       label,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 10.5,
         fontWeight: FontWeight.w800,
-        color: DefensysTokens.steelGrey,
+        color: DefensysTokens.textSecondaryOf(context),
         letterSpacing: 0.5,
       ),
     );

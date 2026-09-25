@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/academic/student_academic_records_provider.dart';
 import 'package:defensys/services/academic_period_provider.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/defensys_skeleton.dart';
 import 'package:defensys/widgets/feedback/empty_state.dart';
 
@@ -37,6 +38,7 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
   final List<int> _rowsPerPageOptions = const [10, 25, 50, 100];
 
   String _yearLevelFilter = 'ALL';
+  String _sectionFilter = 'ALL';
 
   @override
   void initState() {
@@ -70,6 +72,14 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
     var list = records;
     if (_yearLevelFilter != 'ALL') {
       list = list.where((r) => r['year_level']?.toString() == _yearLevelFilter).toList();
+    }
+    if (_sectionFilter == 'UNASSIGNED') {
+      list = list.where((r) {
+        final sec = r['section']?.toString().trim() ?? '';
+        return sec.isEmpty || sec.toUpperCase() == 'BSIT';
+      }).toList();
+    } else if (_sectionFilter != 'ALL') {
+      list = list.where((r) => (r['section']?.toString().trim() ?? '') == _sectionFilter).toList();
     }
     return list;
   }
@@ -223,6 +233,8 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
                   const SizedBox(width: 12),
                   _yearLevelDropdown(),
                   const SizedBox(width: 12),
+                  _sectionDropdown(state.records),
+                  const SizedBox(width: 12),
                   _schoolYearDropdown(state),
                   const SizedBox(width: 12),
                   _semesterDropdown(state),
@@ -233,6 +245,7 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
                       setState(() {
                         _page = 0;
                         _yearLevelFilter = 'ALL';
+                        _sectionFilter = 'ALL';
                       });
                       ref.read(studentAcademicRecordsProvider.notifier).fetchRecords(
                             search: '',
@@ -295,15 +308,23 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
     required Color iconColor,
     required Color iconBg,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? DefensysTokens.mistSurface : Colors.white;
+    final borderColor = isDark ? DefensysTokens.mistBorder : _line;
+    final textTitle = isDark ? DefensysTokens.textSecondaryDark : _muted;
+    final textValue = isDark ? DefensysTokens.textPrimaryDark : _ink;
+    final textSub = isDark ? DefensysTokens.textSecondaryDark : _muted;
+    final actualIconBg = isDark ? iconColor.withValues(alpha: 0.18) : iconBg;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardBg,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _line),
+        border: Border.all(color: borderColor),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -315,7 +336,7 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: iconBg,
+              color: actualIconBg,
               borderRadius: BorderRadius.circular(9),
             ),
             child: Icon(icon, color: iconColor, size: 22),
@@ -328,27 +349,27 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w600,
-                    color: _muted,
+                    color: textTitle,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   value,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
-                    color: _ink,
+                    color: textValue,
                   ),
                 ),
                 const SizedBox(height: 1),
                 Text(
                   subtitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: _muted,
+                    color: textSub,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -361,18 +382,24 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
   }
 
   Widget _yearLevelDropdown() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fillBg = isDark ? DefensysTokens.mistInputFill : const Color(0xFFF9FAFB);
+    final borderColor = isDark ? DefensysTokens.mistBorder : _line;
+    final textPrimary = isDark ? DefensysTokens.textPrimaryDark : _ink;
+
     return Container(
       height: 42,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: fillBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _line),
+        border: Border.all(color: borderColor),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: _yearLevelFilter,
-          style: const TextStyle(fontSize: 13, color: _ink, fontFamily: DefensysUi.fontFamily),
+          dropdownColor: isDark ? DefensysTokens.mistSurface : Colors.white,
+          style: TextStyle(fontSize: 13, color: textPrimary, fontFamily: DefensysUi.fontFamily),
           items: const [
             DropdownMenuItem(value: 'ALL', child: Text('All Year Levels')),
             DropdownMenuItem(value: '1st Year', child: Text('1st Year')),
@@ -384,6 +411,65 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
             if (val != null) {
               setState(() {
                 _yearLevelFilter = val;
+                _page = 0;
+              });
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionDropdown(List<Map<String, dynamic>> records) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fillBg = isDark ? DefensysTokens.mistInputFill : const Color(0xFFF9FAFB);
+    final borderColor = isDark ? DefensysTokens.mistBorder : _line;
+    final textPrimary = isDark ? DefensysTokens.textPrimaryDark : _ink;
+
+    final sections = <String>{};
+    for (final r in records) {
+      final sec = r['section']?.toString().trim() ?? '';
+      if (sec.isNotEmpty && sec.toUpperCase() != 'BSIT') {
+        sections.add(sec);
+      }
+    }
+    final sortedSections = sections.toList()..sort();
+
+    final validValues = {'ALL', 'UNASSIGNED', ...sortedSections};
+    final effectiveValue = validValues.contains(_sectionFilter) ? _sectionFilter : 'ALL';
+
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: fillBg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: effectiveValue,
+          dropdownColor: isDark ? DefensysTokens.mistSurface : Colors.white,
+          style: TextStyle(fontSize: 13, color: textPrimary, fontFamily: DefensysUi.fontFamily),
+          items: [
+            const DropdownMenuItem(value: 'ALL', child: Text('All Sections')),
+            const DropdownMenuItem(
+              value: 'UNASSIGNED',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.pending_actions_rounded, size: 14, color: Color(0xFFD97706)),
+                  SizedBox(width: 6),
+                  Text('Unassigned Section', style: TextStyle(color: Color(0xFFB45309), fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+            ...sortedSections.map((sec) => DropdownMenuItem(value: sec, child: Text(sec))),
+          ],
+          onChanged: (val) {
+            if (val != null) {
+              setState(() {
+                _sectionFilter = val;
                 _page = 0;
               });
             }
@@ -467,10 +553,11 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
   }
 
   Widget _tableHeader(List<_StudentColumnSpec> columns) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       height: 51,
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F1F4),
+        color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF0F1F4),
         borderRadius: BorderRadius.circular(5),
       ),
       child: Row(
@@ -480,6 +567,7 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
   }
 
   Widget _tableHeaderCell(_StudentColumnSpec column) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Expanded(
       flex: (column.flex * 100).round(),
       child: Container(
@@ -487,8 +575,8 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
         alignment: Alignment.centerLeft,
         child: Text(
           column.title,
-          style: const TextStyle(
-            color: Color(0xFF5D6678),
+          style: TextStyle(
+            color: isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF5D6678),
             fontSize: 12,
             fontWeight: FontWeight.w800,
           ),
@@ -509,6 +597,12 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
   }
 
   Widget _studentRow(Map<String, dynamic> r) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final rowBg = isDark ? DefensysTokens.mistSurface : Colors.white;
+    final borderColor = isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB);
+    final textPrimary = isDark ? DefensysTokens.textPrimaryDark : _ink;
+    final textSecondary = isDark ? DefensysTokens.textSecondaryDark : _muted;
+
     final yearLevel = r['year_level']?.toString() ?? 'Unassigned';
     final section = r['section']?.toString().trim() ?? '';
     final sem = r['semester']?.toString() ?? '';
@@ -518,9 +612,9 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
 
     return Container(
       height: 57,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+      decoration: BoxDecoration(
+        color: rowBg,
+        border: Border(bottom: BorderSide(color: borderColor)),
       ),
       child: Row(
         children: [
@@ -538,17 +632,17 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
                       r['student_name']?.toString() ??
                           r['student_username']?.toString() ??
                           'Student',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: _ink,
+                        color: textPrimary,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
                     Text(
                       r['student_username']?.toString() ?? '',
-                      style: const TextStyle(fontSize: 11.5, color: _muted),
+                      style: TextStyle(fontSize: 11.5, color: textSecondary),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
@@ -564,16 +658,16 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
+                  color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.35) : const Color(0xFFEFF6FF),
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFDBEAFE)),
+                  border: Border.all(color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.7) : const Color(0xFFDBEAFE)),
                 ),
                 child: Text(
                   yearLevel,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF1D4ED8),
+                    color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
                   ),
                 ),
               ),
@@ -585,15 +679,33 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  section.isEmpty ? '—' : section,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: _ink,
+                if (section.isEmpty || section.toUpperCase() == 'BSIT')
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF78350F).withValues(alpha: 0.35) : const Color(0xFFFFFBEB),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: isDark ? const Color(0xFF78350F).withValues(alpha: 0.7) : const Color(0xFFFDE68A)),
+                    ),
+                    child: Text(
+                      'Unassigned',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
+                      ),
+                    ),
+                  )
+                else
+                  Text(
+                    section,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: textPrimary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  overflow: TextOverflow.ellipsis,
-                ),
                 if (!isCapstone &&
                     r['instructor_name'] != null &&
                     r['instructor_name'].toString().trim().isNotEmpty) ...[
@@ -601,16 +713,16 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.co_present_rounded,
-                          size: 11, color: Color(0xFF16A34A)),
+                      Icon(Icons.co_present_rounded,
+                          size: 11, color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A)),
                       const SizedBox(width: 3),
                       Flexible(
                         child: Text(
                           '${r['instructor_name']}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
-                            color: Color(0xFF15803D),
+                            color: isDark ? const Color(0xFF4ADE80) : const Color(0xFF15803D),
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -625,7 +737,7 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
           _tableCell(
             Text(
               period,
-              style: const TextStyle(fontSize: 12.5, color: _muted),
+              style: TextStyle(fontSize: 12.5, color: textSecondary),
               overflow: TextOverflow.ellipsis,
             ),
             flex: 2.4,
@@ -644,7 +756,7 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
       mainAxisSize: MainAxisSize.min,
       children: [
         Tooltip(
-          message: 'View Student Details',
+          message: 'Student Details',
           waitDuration: const Duration(milliseconds: 300),
           child: InkWell(
             onTap: () => _showStudentHistory(r),

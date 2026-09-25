@@ -2,15 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../services/academic/curriculum_analytics_provider.dart';
 import '../../../../services/auth/auth_provider.dart';
-import '../../../../theme/app_theme.dart';
+import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/export/export.dart';
 import 'widgets/curriculum_academic_highlights.dart';
-import 'widgets/curriculum_circular_kpis.dart';
-import 'widgets/curriculum_cohort_progression_card.dart';
-import 'widgets/curriculum_multi_year_trajectory_card.dart';
 import 'widgets/curriculum_projects_donut.dart';
 import 'widgets/curriculum_radar_chart.dart';
-import 'widgets/curriculum_remediation_tracker_card.dart';
 import 'widgets/curriculum_rubric_matrix_dialog.dart';
 
 class CurriculumAnalyticsScreen extends ConsumerStatefulWidget {
@@ -23,8 +19,10 @@ class CurriculumAnalyticsScreen extends ConsumerStatefulWidget {
 
 class _CurriculumAnalyticsScreenState
     extends ConsumerState<CurriculumAnalyticsScreen> {
-  String _selectedScope = 'capstone'; // 'capstone', 'pit', 'all'
+  String _selectedScope = 'capstone'; // 'capstone' or 'pit'
   String _selectedStageFilter = 'all'; // 'all' or stage_id / label
+
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
 
   @override
   void initState() {
@@ -49,76 +47,56 @@ class _CurriculumAnalyticsScreenState
           _buildHeader(state),
           const SizedBox(height: 16),
 
-          // 2. Track Switcher (Capstone vs PIT vs Unified)
+          // 2. Track Switcher (Matching User Management)
           _buildTrackSwitcher(state),
-          const SizedBox(height: 18),
+          const SizedBox(height: 20),
 
           // Error / Success Banners
           if (state.error != null) ...[
-            _notice(Icons.error_outline_rounded, state.error!, AppColors.danger),
+            _notice(Icons.error_outline_rounded, state.error!, DefensysTokens.danger),
             const SizedBox(height: 14),
           ],
           if (state.message != null) ...[
-            _notice(Icons.check_circle_outline_rounded, state.message!, AppColors.success),
+            _notice(Icons.check_circle_outline_rounded, state.message!, DefensysTokens.success),
             const SizedBox(height: 14),
           ],
 
           if (state.isLoading)
-            const SizedBox(
+            SizedBox(
               height: 380,
               child: Center(
-                child: CircularProgressIndicator(color: AppColors.maroon),
+                child: CircularProgressIndicator(color: DefensysTokens.maroonOf(context)),
               ),
             )
           else ...[
             // =================================================================
-            // SECTION 0: ANNUAL COHORT & INSTITUTIONAL PROGRESSION (Unified)
-            // =================================================================
-            if (_selectedScope == 'all') ...[
-              _sectionHeader(
-                icon: Icons.auto_graph_rounded,
-                title: 'Annual Cohort & Institutional Progression',
-                subtitle:
-                    'Multi-year competency trajectory, 4-year cohort progression funnel, and CQI remediation tracking',
-              ),
-              const SizedBox(height: 14),
-
-              _buildProgressionOverviewSection(state),
-              const SizedBox(height: 32),
-            ],
-
-            // =================================================================
-            // SECTION 1: STUDENT COMPETENCY & DEFENSE OUTCOMES
+            // SECTION 1: STUDENTS PERFORMANCE
             // =================================================================
             _sectionHeader(
               icon: Icons.school_rounded,
-              title: 'Student Competency & Defense Outcomes',
+              title: 'Students Performance',
               subtitle:
-                  'Multi-axial rubric evaluations, benchmark achievement, and faculty consensus (${_scopeDisplayName(_selectedScope)})',
+                  'Rubric evaluations and benchmark progress for ${_scopeDisplayName(_selectedScope)}',
             ),
             const SizedBox(height: 14),
 
-            // Top Circular KPI Badges
-            _buildCircularKpis(state),
-            const SizedBox(height: 18),
-
             // Main Competency Card: Stage Pill Selector + Highlights + Radar Chart
             _buildCompetencySection(state),
-            const SizedBox(height: 32),
+            const SizedBox(height: 28),
 
             // =================================================================
             // SECTION 2: PROJECT DOMAINS & INDUSTRY TECH STACKS
             // =================================================================
             _sectionHeader(
               icon: Icons.category_rounded,
-              title: 'Project Domains & Industry Tech Stacks',
+              title: 'Project Domains & Tech Stacks',
               subtitle:
                   'Specialization domains and software frameworks extracted from deliverable repositories',
             ),
             const SizedBox(height: 14),
 
             _buildProjectsSection(state),
-            const SizedBox(height: 32),
+            const SizedBox(height: 24),
 
             // Footer Summary & Report Download
             _buildSummaryFooter(state),
@@ -143,45 +121,41 @@ class _CurriculumAnalyticsScreenState
         final titleBlock = Row(
           children: [
             Container(
-              width: 44,
-              height: 44,
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
-                color: AppColors.maroon,
+                color: DefensysTokens.maroonOf(context).withValues(alpha: _isDark ? 0.20 : 0.08),
                 borderRadius: BorderRadius.circular(10),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.maroon.withValues(alpha: 0.25),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
+                border: Border.all(
+                  color: DefensysTokens.maroonOf(context).withValues(alpha: _isDark ? 0.35 : 0.18),
+                ),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.insights_rounded,
-                color: Colors.white,
-                size: 24,
+                color: DefensysTokens.maroonOf(context),
+                size: 22,
               ),
             ),
             const SizedBox(width: 14),
-            const Expanded(
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'Curriculum & Performance Analytics',
                     style: TextStyle(
-                      color: AppColors.maroon,
+                      color: DefensysTokens.textPrimaryOf(context),
                       fontSize: 22,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
-                      height: 1.1,
+                      letterSpacing: -0.4,
+                      height: 1.15,
                     ),
                   ),
-                  SizedBox(height: 4),
+                  const SizedBox(height: 3),
                   Text(
                     'Student grades, defense results, and improvement recommendations',
                     style: TextStyle(
-                      color: AppColors.textSecondary,
+                      color: DefensysTokens.textSecondaryOf(context),
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
                     ),
@@ -243,24 +217,25 @@ class _CurriculumAnalyticsScreenState
       height: 38,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFD1D5DB)),
-        boxShadow: const [
+        border: Border.all(color: DefensysTokens.borderOf(context)),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x08000000),
+            color: _isDark ? const Color(0x33000000) : const Color(0x04000000),
             blurRadius: 4,
-            offset: Offset(0, 2),
+            offset: const Offset(0, 1),
           ),
         ],
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: selected.isEmpty ? null : selected,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded,
-              size: 18, color: AppColors.textPrimary),
-          style: const TextStyle(
-            color: AppColors.textPrimary,
+          icon: Icon(Icons.keyboard_arrow_down_rounded,
+              size: 18, color: DefensysTokens.textPrimaryOf(context)),
+          dropdownColor: DefensysTokens.panelOf(context),
+          style: TextStyle(
+            color: DefensysTokens.textPrimaryOf(context),
             fontSize: 12.5,
             fontWeight: FontWeight.w700,
           ),
@@ -270,9 +245,9 @@ class _CurriculumAnalyticsScreenState
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.calendar_today_rounded,
-                            size: 13, color: AppColors.textSecondary),
-                        const SizedBox(width: 6),
+                        Icon(Icons.calendar_today_rounded,
+                            size: 13, color: DefensysTokens.textSecondaryOf(context)),
+                        const SizedBox(width: 7),
                         Text('AY $year'),
                       ],
                     ),
@@ -292,125 +267,110 @@ class _CurriculumAnalyticsScreenState
   }
 
   // ---------------------------------------------------------------------------
-  // TRACK SWITCHER (CAPSTONE VS PIT VS UNIFIED)
+  // TRACK SWITCHER (USER MANAGEMENT STYLE COMPACT PILL TABS)
   // ---------------------------------------------------------------------------
 
   Widget _buildTrackSwitcher(CurriculumAnalyticsState state) {
-    final scopes = [
-      {
-        'key': 'capstone',
-        'label': 'Capstone Track',
-        'sublabel': '4th Year Defense Stages',
-        'icon': Icons.school_outlined,
-        'color': AppColors.maroon,
-      },
-      {
-        'key': 'pit',
-        'label': 'PIT Track',
-        'sublabel': '1st–3rd Year Events',
-        'icon': Icons.science_outlined,
-        'color': const Color(0xFF0284C7),
-      },
-      {
-        'key': 'all',
-        'label': 'Unified Overview',
-        'sublabel': 'Cross-Cohort Impact',
-        'icon': Icons.hub_outlined,
-        'color': const Color(0xFF475569),
-      },
-    ];
+    final isDark = DefensysTokens.isDark(context);
 
     return Container(
-      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.panelOf(context),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
+        border: Border.all(color: DefensysTokens.borderOf(context)),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x04000000),
-            blurRadius: 6,
-            offset: Offset(0, 2),
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isNarrow = constraints.maxWidth < 700;
-          return Row(
-            children: scopes.map((s) {
-              final isSelected = _selectedScope == s['key'];
-              final color = s['color'] as Color;
-              final icon = s['icon'] as IconData;
+      padding: const EdgeInsets.all(5),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildTabButton(
+            scopeKey: 'capstone',
+            label: 'Capstone Track',
+            badge: '4th Year',
+            icon: Icons.school_rounded,
+            state: state,
+          ),
+          const SizedBox(width: 6),
+          _buildTabButton(
+            scopeKey: 'pit',
+            label: 'PIT Track',
+            badge: '1st–3rd Year',
+            icon: Icons.science_rounded,
+            state: state,
+          ),
+        ],
+      ),
+    );
+  }
 
-              return Expanded(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () => _changeScope(s['key'] as String, state),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    padding:
-                        const EdgeInsets.symmetric(vertical: 9, horizontal: 8),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? color.withValues(alpha: 0.08)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: isSelected ? color : Colors.transparent,
-                        width: 1.2,
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              icon,
-                              size: 15,
-                              color: isSelected
-                                  ? color
-                                  : const Color(0xFF64748B),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              s['label'] as String,
-                              style: TextStyle(
-                                color: isSelected
-                                    ? color
-                                    : const Color(0xFF334155),
-                                fontSize: 13,
-                                fontWeight: isSelected
-                                    ? FontWeight.w800
-                                    : FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (!isNarrow) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            s['sublabel'] as String,
-                            style: TextStyle(
-                              color: isSelected
-                                  ? color.withValues(alpha: 0.8)
-                                  : const Color(0xFF94A3B8),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+  Widget _buildTabButton({
+    required String scopeKey,
+    required String label,
+    required String badge,
+    required IconData icon,
+    required CurriculumAnalyticsState state,
+  }) {
+    final isSelected = _selectedScope == scopeKey;
+    final isDark = DefensysTokens.isDark(context);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _changeScope(scopeKey, state),
+        borderRadius: BorderRadius.circular(8),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? DefensysTokens.maroonOf(context) : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 17,
+                color: isSelected ? Colors.white : DefensysTokens.textSecondaryOf(context),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                  color: isSelected ? Colors.white : DefensysTokens.textPrimaryOf(context),
+                  fontFamily: DefensysTokens.fontFamily,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? Colors.white.withValues(alpha: 0.22)
+                      : (isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  badge,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: isSelected ? Colors.white : DefensysTokens.textSecondaryOf(context),
                   ),
                 ),
-              );
-            }).toList(),
-          );
-        },
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -428,20 +388,8 @@ class _CurriculumAnalyticsScreenState
   }
 
   // ---------------------------------------------------------------------------
-  // SECTION 1: STUDENT COMPETENCY & DEFENSE OUTCOMES
+  // SECTION 1: STUDENTS PERFORMANCE
   // ---------------------------------------------------------------------------
-
-  Widget _buildCircularKpis(CurriculumAnalyticsState state) {
-    final kpiSummary = _mapOrEmpty(state.data['kpi_summary']);
-    final defenseFunnel = _mapOrEmpty(state.data['defense_funnel']);
-    final hasEvaluations = kpiSummary['has_evaluations'] == true;
-
-    return CurriculumCircularKpis(
-      kpiSummary: kpiSummary,
-      defenseFunnel: defenseFunnel,
-      hasEvaluations: hasEvaluations,
-    );
-  }
 
   Widget _buildCompetencySection(CurriculumAnalyticsState state) {
     final availableStages = _mapList(state.data['available_stages']);
@@ -544,41 +492,7 @@ class _CurriculumAnalyticsScreenState
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // SECTION 0: ANNUAL COHORT & INSTITUTIONAL PROGRESSION
-  // ---------------------------------------------------------------------------
 
-  Widget _buildProgressionOverviewSection(CurriculumAnalyticsState state) {
-    final longitudinal = _mapList(state.data['longitudinal_5year']);
-    final cohortProgression = _mapList(state.data['cohort_progression']);
-    final remediationTracker = _mapList(state.data['remediation_tracker']);
-    final activeYear = state.selectedAcademicYear.isNotEmpty
-        ? state.selectedAcademicYear
-        : '2024-2025';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // 1. Multi-Year Trajectory
-        CurriculumMultiYearTrajectoryCard(
-          longitudinalSeries: longitudinal,
-          activeAcademicYear: activeYear,
-        ),
-        const SizedBox(height: 18),
-
-        // 2. 4-Year Cohort Funnel
-        CurriculumCohortProgressionCard(
-          cohortProgression: cohortProgression,
-        ),
-        const SizedBox(height: 18),
-
-        // 3. CQI Remediation Tracker
-        CurriculumRemediationTrackerCard(
-          remediationTracker: remediationTracker,
-        ),
-      ],
-    );
-  }
 
   // ---------------------------------------------------------------------------
   // SECTION 2: PROJECT DOMAINS & INDUSTRY TECH STACKS
@@ -606,20 +520,20 @@ class _CurriculumAnalyticsScreenState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Row(
             children: [
-              const Icon(Icons.policy_rounded, size: 18, color: Color(0xFF64748B)),
+              Icon(Icons.policy_rounded, size: 18, color: _isDark ? const Color(0xFFA1A1AA) : const Color(0xFF64748B)),
               const SizedBox(width: 8),
               Text(
                 'Reporting Period: AY ${state.selectedAcademicYear.isNotEmpty ? state.selectedAcademicYear : "Active"} (${_scopeDisplayName(_selectedScope)})',
-                style: const TextStyle(fontSize: 12.5, color: Color(0xFF475569), fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 12.5, color: DefensysTokens.textSecondaryOf(context), fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -738,18 +652,18 @@ class _CurriculumAnalyticsScreenState
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: AppColors.maroon.withValues(alpha: 0.12),
+                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.auto_awesome_rounded,
-                    color: AppColors.maroon, size: 18),
+                child: Icon(Icons.auto_awesome_rounded,
+                    color: DefensysTokens.maroonOf(context), size: 18),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
-                      color: AppColors.maroon,
+                  style: TextStyle(
+                      color: DefensysTokens.maroonOf(context),
                       fontSize: 17,
                       fontWeight: FontWeight.w800),
                 ),
@@ -771,17 +685,17 @@ class _CurriculumAnalyticsScreenState
                     ),
                     child: Text(
                       summary,
-                      style: const TextStyle(
-                          color: Color(0xFF334155),
+                      style: TextStyle(
+                          color: _isDark ? const Color(0xFFA1A1AA) : const Color(0xFF334155),
                           fontSize: 13,
                           height: 1.4),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Key Recommendations',
                     style: TextStyle(
-                        color: AppColors.textPrimary,
+                        color: DefensysTokens.textPrimaryOf(context),
                         fontSize: 14,
                         fontWeight: FontWeight.w800),
                   ),
@@ -803,15 +717,15 @@ class _CurriculumAnalyticsScreenState
                                 children: [
                                   TextSpan(
                                     text: '$t: ',
-                                    style: const TextStyle(
-                                        color: AppColors.textPrimary,
+                                    style: TextStyle(
+                                        color: DefensysTokens.textPrimaryOf(context),
                                         fontWeight: FontWeight.w800,
                                         fontSize: 12.5),
                                   ),
                                   TextSpan(
                                     text: b,
-                                    style: const TextStyle(
-                                        color: Color(0xFF475569),
+                                    style: TextStyle(
+                                        color: _isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569),
                                         fontSize: 12.5),
                                   ),
                                 ],
@@ -836,7 +750,7 @@ class _CurriculumAnalyticsScreenState
                 Navigator.of(context).pop();
                 _openExportModal();
               },
-              style: FilledButton.styleFrom(backgroundColor: AppColors.maroon),
+              style: FilledButton.styleFrom(backgroundColor: DefensysTokens.maroonOf(context)),
               child: const Text('Export Official Proposal'),
             ),
           ],
@@ -861,10 +775,10 @@ class _CurriculumAnalyticsScreenState
           width: 32,
           height: 32,
           decoration: BoxDecoration(
-            color: AppColors.maroon.withValues(alpha: 0.08),
+            color: DefensysTokens.maroonOf(context).withValues(alpha: _isDark ? 0.18 : 0.08),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(icon, color: AppColors.maroon, size: 18),
+          child: Icon(icon, color: DefensysTokens.maroonOf(context), size: 18),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -873,8 +787,8 @@ class _CurriculumAnalyticsScreenState
             children: [
               Text(
                 title,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
+                style: TextStyle(
+                  color: DefensysTokens.textPrimaryOf(context),
                   fontSize: 17,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -0.2,
@@ -883,8 +797,8 @@ class _CurriculumAnalyticsScreenState
               const SizedBox(height: 2),
               Text(
                 subtitle,
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
+                style: TextStyle(
+                  color: DefensysTokens.textSecondaryOf(context),
                   fontSize: 12,
                 ),
               ),
@@ -905,7 +819,7 @@ class _CurriculumAnalyticsScreenState
       icon: Icon(icon, size: 16, color: Colors.white),
       label: Text(label),
       style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.maroon,
+        backgroundColor: DefensysTokens.maroonOf(context),
         foregroundColor: Colors.white,
         elevation: 0,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -922,12 +836,12 @@ class _CurriculumAnalyticsScreenState
   }) {
     return OutlinedButton.icon(
       onPressed: onTap,
-      icon: Icon(icon, size: 16, color: AppColors.textPrimary),
+      icon: Icon(icon, size: 16, color: DefensysTokens.textPrimaryOf(context)),
       label: Text(label),
       style: OutlinedButton.styleFrom(
-        backgroundColor: Colors.white,
-        foregroundColor: AppColors.textPrimary,
-        side: const BorderSide(color: Color(0xFFD1D5DB)),
+        backgroundColor: DefensysTokens.surfaceOf(context),
+        foregroundColor: DefensysTokens.textPrimaryOf(context),
+        side: BorderSide(color: DefensysTokens.borderOf(context)),
         elevation: 0,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -961,12 +875,11 @@ class _CurriculumAnalyticsScreenState
 
   String _scopeDisplayName(String scope) {
     switch (scope.toLowerCase()) {
-      case 'capstone':
-        return '4th Year Capstone';
       case 'pit':
-        return '1st-3rd Year PIT';
+        return '1st–3rd Year PIT';
+      case 'capstone':
       default:
-        return 'Unified Overview';
+        return '4th Year Capstone';
     }
   }
 
@@ -994,3 +907,5 @@ class _CurriculumAnalyticsScreenState
     return {};
   }
 }
+
+

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import '../../../../../theme/app_theme.dart';
+import '../../../../../theme/defensys_tokens.dart';
 import 'curriculum_radar_chart.dart';
 
-/// Scannable card placed directly beside the Radar Polygon / Competency Map.
-/// Summarizes academic strengths, remediation alerts, faculty consensus, and bottlenecks.
+/// Scannable card placed beside the Cohort Stages Benchmark Chart.
+/// Summarizes academic strengths, remediation alerts, faculty consensus, and bottlenecks
+/// using clean shadcn-style divided rows and semantic status badges.
 class CurriculumAcademicHighlights extends StatelessWidget {
   final List<RadarCriterionPoint> criteria;
   final Map<String, dynamic> kpiSummary;
@@ -22,6 +23,8 @@ class CurriculumAcademicHighlights extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = DefensysTokens.isDark(context);
+
     // 1. Identify Top Strength Criterion (highest score)
     final scoredCriteria = criteria
         .where((c) => c.combinedScore != null && c.combinedScore! > 0)
@@ -61,24 +64,24 @@ class CurriculumAcademicHighlights extends StatelessWidget {
     String alignmentStatus = 'Evaluating';
     String alignmentBadge = 'Evaluating';
     Color alignmentColor = const Color(0xFF059669);
-    Color alignmentBg = const Color(0xFFECFDF5);
+    Color alignmentBg = isDark ? const Color(0x20059669) : const Color(0xFFECFDF5);
 
     if (meanDiv != null) {
       if (meanDiv >= 15.0) {
         alignmentStatus = 'High Divergence (±${meanDiv.toStringAsFixed(1)}%)';
         alignmentBadge = 'High Variance';
         alignmentColor = const Color(0xFFDC2626);
-        alignmentBg = const Color(0xFFFEF2F2);
+        alignmentBg = isDark ? const Color(0x20DC2626) : const Color(0xFFFEF2F2);
       } else if (meanDiv >= 8.0) {
         alignmentStatus = 'Moderate Variance (±${meanDiv.toStringAsFixed(1)}%)';
         alignmentBadge = 'Moderate';
         alignmentColor = const Color(0xFFD97706);
-        alignmentBg = const Color(0xFFFFFBEB);
+        alignmentBg = isDark ? const Color(0x20D97706) : const Color(0xFFFFFBEB);
       } else {
         alignmentStatus = 'Strong Consensus (±${meanDiv.toStringAsFixed(1)}%)';
         alignmentBadge = 'Aligned';
         alignmentColor = const Color(0xFF059669);
-        alignmentBg = const Color(0xFFECFDF5);
+        alignmentBg = isDark ? const Color(0x20059669) : const Color(0xFFECFDF5);
       }
     }
 
@@ -89,14 +92,14 @@ class CurriculumAcademicHighlights extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
+        color: DefensysTokens.surfaceOf(context),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x04000000),
-            blurRadius: 6,
-            offset: Offset(0, 2),
+            color: isDark ? const Color(0x20000000) : const Color(0x04000000),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
           ),
         ],
       ),
@@ -110,62 +113,68 @@ class CurriculumAcademicHighlights extends StatelessWidget {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: AppColors.maroon.withValues(alpha: 0.08),
+                  color: DefensysTokens.maroonOf(context).withValues(alpha: isDark ? 0.20 : 0.08),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.insights_rounded,
-                  color: AppColors.maroon,
+                  color: DefensysTokens.maroonOf(context),
                   size: 18,
                 ),
               ),
               const SizedBox(width: 10),
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     'Academic Highlights',
                     style: TextStyle(
-                      fontSize: 15,
+                      fontSize: 14.5,
                       fontWeight: FontWeight.w800,
-                      color: Color(0xFF0F172A),
+                      color: DefensysTokens.textPrimaryOf(context),
+                      letterSpacing: -0.2,
                     ),
                   ),
-                  SizedBox(height: 2),
+                  const SizedBox(height: 1),
                   Text(
-                    'Core competency achievements and faculty consensus',
-                    style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                    'Rubric performance and evaluator alignment',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: DefensysTokens.textSecondaryOf(context),
+                    ),
                   ),
                 ],
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          const Divider(height: 1, color: Color(0xFFF1F5F9)),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          Divider(height: 1, color: DefensysTokens.borderOf(context)),
+          const SizedBox(height: 6),
 
           // 1. Top Strength
-          _highlightItem(
+          _highlightRow(
+            context: context,
             icon: Icons.workspace_premium_outlined,
             iconColor: const Color(0xFF059669),
-            iconBg: const Color(0xFFECFDF5),
-            title: 'TOP COMPETENCY AREA',
+            iconBg: isDark ? const Color(0x20059669) : const Color(0xFFECFDF5),
+            title: 'Top Competency Area',
             badgeText: topCriterion != null
-                ? '+${topDelta.toStringAsFixed(1)}% vs target'
+                ? '+${topDelta.toStringAsFixed(1)}%'
                 : 'Pending',
             badgeColor: const Color(0xFF059669),
-            badgeBg: const Color(0xFFECFDF5),
+            badgeBg: isDark ? const Color(0x20059669) : const Color(0xFFECFDF5),
             value: topCriterion != null
                 ? '${topCriterion.name.replaceAll('Visuals & Aida', 'Presentation & Visual Aids')} (${topScore.toStringAsFixed(1)}%)'
                 : 'Awaiting Evaluations',
-            subtitle: topCriterion != null
-                ? 'Highest average student rubric score in this cohort'
+            tooltip: topCriterion != null
+                ? 'Highest average student rubric score (+${topDelta.toStringAsFixed(1)}% vs target)'
                 : 'Evaluations will compute top performing criteria',
           ),
-          const SizedBox(height: 14),
+          Divider(height: 12, color: DefensysTokens.borderOf(context).withValues(alpha: 0.5)),
 
           // 2. Focus Area / Remediation
-          _highlightItem(
+          _highlightRow(
+            context: context,
             icon: hasRemediationNeed
                 ? Icons.error_outline_rounded
                 : Icons.check_circle_outline_rounded,
@@ -173,99 +182,100 @@ class CurriculumAcademicHighlights extends StatelessWidget {
                 ? const Color(0xFFDC2626)
                 : const Color(0xFF059669),
             iconBg: hasRemediationNeed
-                ? const Color(0xFFFEF2F2)
-                : const Color(0xFFECFDF5),
-            title: hasRemediationNeed
-                ? 'REMEDIATION FOCUS (<75%)'
-                : 'INSTITUTIONAL BENCHMARK',
+                ? (isDark ? const Color(0x20DC2626) : const Color(0xFFFEF2F2))
+                : (isDark ? const Color(0x20059669) : const Color(0xFFECFDF5)),
+            title: hasRemediationNeed ? 'Remediation Focus' : 'Institutional Benchmark',
             badgeText: lowestCriterion != null
                 ? (hasRemediationNeed
-                    ? '${lowestDelta.toStringAsFixed(1)}% deficit'
+                    ? '${lowestDelta.toStringAsFixed(1)}%'
                     : 'Target Met')
                 : 'Pending',
             badgeColor: hasRemediationNeed
                 ? const Color(0xFFDC2626)
                 : const Color(0xFF059669),
             badgeBg: hasRemediationNeed
-                ? const Color(0xFFFEF2F2)
-                : const Color(0xFFECFDF5),
+                ? (isDark ? const Color(0x20DC2626) : const Color(0xFFFEF2F2))
+                : (isDark ? const Color(0x20059669) : const Color(0xFFECFDF5)),
             value: lowestCriterion != null
                 ? '${lowestCriterion.name.replaceAll('Visuals & Aida', 'Presentation & Visual Aids')} (${lowestScore.toStringAsFixed(1)}%)'
                 : 'All Criteria Above Target',
-            subtitle: mappedCourse.isNotEmpty
+            tooltip: mappedCourse.isNotEmpty
                 ? 'Linked prerequisite course: $mappedCourse'
-                : (lowestCriterion != null && !hasRemediationNeed
-                    ? 'All evaluated criteria exceed 75% passing target'
-                    : 'Target benchmark is 75.0%'),
+                : 'Institutional benchmark standard is 75.0%',
           ),
-          const SizedBox(height: 14),
+          Divider(height: 12, color: DefensysTokens.borderOf(context).withValues(alpha: 0.5)),
 
           // 3. Faculty Evaluator Alignment
-          _highlightItem(
+          _highlightRow(
+            context: context,
             icon: Icons.balance_outlined,
             iconColor: alignmentColor,
             iconBg: alignmentBg,
-            title: 'FACULTY EVALUATOR CONSENSUS',
+            title: 'Evaluator Consensus',
             badgeText: alignmentBadge,
             badgeColor: alignmentColor,
             badgeBg: alignmentBg,
             value: alignmentStatus,
-            subtitle:
-                'Average difference between panelist and project adviser scores',
+            tooltip: 'Average score difference between panelist and adviser',
           ),
-          const SizedBox(height: 14),
+          Divider(height: 12, color: DefensysTokens.borderOf(context).withValues(alpha: 0.5)),
 
           // 4. Pipeline Bottleneck
-          _highlightItem(
+          _highlightRow(
+            context: context,
             icon: Icons.alt_route_rounded,
-            iconColor: const Color(0xFF475569),
-            iconBg: const Color(0xFFF1F5F9),
-            title: 'PIPELINE WORKLOAD BOTTLENECK',
+            iconColor: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569),
+            iconBg: DefensysTokens.surfaceHigherOf(context),
+            title: 'Pipeline Bottleneck',
             badgeText: bottleneckStage != 'None' ? 'Review Needed' : 'Balanced',
             badgeColor: bottleneckStage != 'None'
                 ? const Color(0xFFD97706)
-                : const Color(0xFF475569),
+                : DefensysTokens.textSecondaryOf(context),
             badgeBg: bottleneckStage != 'None'
-                ? const Color(0xFFFFFBEB)
-                : const Color(0xFFF1F5F9),
+                ? (isDark ? const Color(0x20D97706) : const Color(0xFFFFFBEB))
+                : DefensysTokens.surfaceHigherOf(context),
             value: bottleneckStage != 'None'
                 ? bottleneckStage
                 : 'Balanced Flow Across Stages',
-            subtitle: bottleneckStage != 'None'
+            tooltip: bottleneckStage != 'None'
                 ? 'Defense stage with highest redefense or revision volume'
                 : 'No excessive re-defense backlog detected across stages',
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
 
-          // Docked Full-Width Action Button with Arrow Affordance
+          // Docked Full-Width Action Button (Shadcn Outline Style)
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
               onPressed: onOpenMatrixDialog,
               style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.maroon,
-                side: const BorderSide(color: Color(0xFFCBD5E1), width: 1.0),
-                backgroundColor: const Color(0xFFF8FAFC),
+                foregroundColor: DefensysTokens.textPrimaryOf(context),
+                backgroundColor: DefensysTokens.surfaceHigherOf(context),
+                side: BorderSide(color: DefensysTokens.borderOf(context)),
+                elevation: 0,
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.table_chart_outlined, size: 15),
-                  SizedBox(width: 8),
+                  Icon(Icons.table_chart_outlined,
+                      size: 15, color: DefensysTokens.maroonOf(context)),
+                  const SizedBox(width: 8),
                   Text(
                     'View Granular Rubric Matrix',
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
+                      color: DefensysTokens.textPrimaryOf(context),
                     ),
                   ),
-                  SizedBox(width: 6),
-                  Icon(Icons.arrow_forward_rounded, size: 14),
+                  const SizedBox(width: 6),
+                  Icon(Icons.arrow_forward_rounded,
+                      size: 14, color: DefensysTokens.textSecondaryOf(context)),
                 ],
               ),
             ),
@@ -275,7 +285,8 @@ class CurriculumAcademicHighlights extends StatelessWidget {
     );
   }
 
-  Widget _highlightItem({
+  Widget _highlightRow({
+    required BuildContext context,
     required IconData icon,
     required Color iconColor,
     required Color iconBg,
@@ -284,82 +295,74 @@ class CurriculumAcademicHighlights extends StatelessWidget {
     required Color badgeColor,
     required Color badgeBg,
     required String value,
-    required String subtitle,
+    required String tooltip,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFF1F5F9)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: iconBg,
-              borderRadius: BorderRadius.circular(8),
+    return Tooltip(
+      message: tooltip,
+      waitDuration: const Duration(milliseconds: 350),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: iconBg,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: iconColor, size: 16),
             ),
-            child: Icon(icon, color: iconColor, size: 17),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                        color: Color(0xFF64748B),
-                      ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: DefensysTokens.textSecondaryOf(context),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: badgeBg,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        badgeText,
-                        style: TextStyle(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w700,
-                          color: badgeColor,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F172A),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style:
-                      const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                ),
-              ],
+                  const SizedBox(height: 2),
+                  Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: DefensysTokens.textPrimaryOf(context),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+              decoration: BoxDecoration(
+                color: badgeBg,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: badgeColor.withValues(alpha: 0.25),
+                  width: 0.8,
+                ),
+              ),
+              child: Text(
+                badgeText,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: badgeColor,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

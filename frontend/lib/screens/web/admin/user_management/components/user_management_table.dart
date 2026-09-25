@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/user_management_provider.dart';
-import 'package:defensys/widgets/defensys_skeleton.dart';
 import 'package:defensys/widgets/feedback/empty_state.dart';
+import 'package:defensys/widgets/table/table.dart';
 
 /// Card component displaying the search bar, role filters, users table, badges, and pagination controls.
 class UserManagementTable extends StatelessWidget {
@@ -41,84 +41,92 @@ class UserManagementTable extends StatelessWidget {
   final ValueChanged<Map<String, dynamic>>? onResetPassword;
   final ValueChanged<Map<String, dynamic>>? onDeleteUser;
 
-  static const List<_ColumnSpec> _columns = [
-    _ColumnSpec('User ID', 1.25),
-    _ColumnSpec('Full Name', 2.45),
-    _ColumnSpec('Email Address', 2.35),
-    _ColumnSpec('System Role', 2.35),
-    _ColumnSpec('Status', 1.55),
-    _ColumnSpec('Action', 1.1),
-  ];
-
   @override
   Widget build(BuildContext context) {
-    return DefensysCard(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  height: 42,
-                  child: _searchField(),
-                ),
+    return DefensysTableCard(
+      searchController: searchController,
+      searchHint: 'Search users by ID, name, email...',
+      isSearchEnabled: !state.isSaving,
+      onSearchSubmitted: onSearchSubmitted,
+      onSearchCleared: onClearFilters,
+      filterControls: [
+        _roleFilter(),
+        _clearButton(),
+      ],
+      pagination: DefensysTablePagination(
+        currentPage: currentPage,
+        totalItems: state.users.length,
+        rowsPerPage: rowsPerPage,
+        rowsPerPageOptions: rowsPerPageOptions,
+        itemLabel: 'users',
+        onPageChanged: onPageChanged,
+        onRowsPerPageChanged: onRowsPerPageChanged,
+      ),
+      child: DefensysDataTable<Map<String, dynamic>>(
+        items: visibleUsers,
+        isLoading: state.isLoading && state.users.isEmpty,
+        emptyState: _emptyRows(),
+        columns: [
+          DefensysTableColumn(
+            title: 'User ID',
+            flex: 1.25,
+            minWidth: 120,
+            cellBuilder: (context, user, _) => Text(
+              user['username']?.toString() ?? '',
+              style: const TextStyle(
+                color: DefensysUi.textDark,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
               ),
-              const SizedBox(width: 12),
-              _roleFilter(),
-              const SizedBox(width: 12),
-              _clearButton(),
-            ],
+            ),
           ),
-          const SizedBox(height: 20),
-          if (state.isLoading && state.users.isEmpty)
-            DefensysSkeleton.list(count: 6, rowHeight: 52)
-          else
-            _usersTable(),
-          const SizedBox(height: 19),
-          Container(height: 1, color: const Color(0xFFE5E7EB)),
-          const SizedBox(height: 15),
-          _pagination(),
+          DefensysTableColumn(
+            title: 'Full Name',
+            flex: 2.45,
+            minWidth: 180,
+            cellBuilder: (context, user, _) {
+              final name = (user['name']?.toString() ??
+                      '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}')
+                  .trim();
+              final displayName = name.isEmpty ? (user['username']?.toString() ?? '') : name;
+              return _bodyText(displayName);
+            },
+          ),
+          DefensysTableColumn(
+            title: 'Email Address',
+            flex: 2.35,
+            minWidth: 180,
+            cellBuilder: (context, user, _) => _bodyText(user['email']?.toString() ?? ''),
+          ),
+          DefensysTableColumn(
+            title: 'System Role',
+            flex: 2.35,
+            minWidth: 180,
+            cellBuilder: (context, user, _) => _roleBadge(user),
+          ),
+          DefensysTableColumn(
+            title: 'Status',
+            flex: 1.55,
+            minWidth: 120,
+            cellBuilder: (context, user, _) {
+              final isActive = user['is_active'] != false;
+              return DefensysStatusBadge.success(
+                label: isActive ? 'Active' : 'Inactive',
+                showDot: isActive,
+              );
+            },
+          ),
+          DefensysTableColumn(
+            title: 'Action',
+            flex: 1.1,
+            minWidth: 100,
+            cellBuilder: (context, user, _) => _rowActions(user),
+          ),
         ],
       ),
     );
   }
 
-  Widget _searchField() {
-    return TextField(
-      controller: searchController,
-      enabled: !state.isSaving,
-      style: const TextStyle(fontSize: 13),
-      decoration: InputDecoration(
-        prefixIcon: const Icon(
-          Icons.search_rounded,
-          color: DefensysUi.steelGrey,
-          size: 18,
-        ),
-        hintText: 'Search users by ID, name, email...',
-        hintStyle: const TextStyle(color: DefensysUi.steelGrey, fontSize: 13),
-        filled: true,
-        fillColor: const Color(0xFFF9FAFB),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 10,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: DefensysUi.primaryMaroon),
-        ),
-      ),
-      onSubmitted: onSearchSubmitted,
-    );
-  }
 
   Widget _clearButton() {
     final hasSearch = searchController.text.trim().isNotEmpty;
@@ -174,90 +182,7 @@ class UserManagementTable extends StatelessWidget {
     );
   }
 
-  Widget _usersTable() {
-    return Column(
-      children: [
-        _tableHeader(_columns),
-        if (visibleUsers.isEmpty)
-          _emptyRows()
-        else
-          ...visibleUsers.map((user) => _userRow(user)),
-      ],
-    );
-  }
 
-  Widget _tableHeader(List<_ColumnSpec> columns) {
-    return Container(
-      height: 51,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0F1F4),
-        borderRadius: BorderRadius.circular(5),
-      ),
-      child: Row(
-        children: columns.map((col) => _tableHeaderCell(col)).toList(),
-      ),
-    );
-  }
-
-  Widget _tableHeaderCell(_ColumnSpec column) {
-    return Expanded(
-      flex: (column.flex * 100).round(),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 15),
-        alignment: Alignment.centerLeft,
-        child: Text(
-          column.title,
-          style: const TextStyle(
-            color: Color(0xFF5D6678),
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _userRow(Map<String, dynamic> user) {
-    final name = (user['name']?.toString() ??
-            '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}')
-        .trim();
-    final displayName = name.isEmpty ? (user['username']?.toString() ?? '') : name;
-    final isActive = user['is_active'] != false;
-
-    return Container(
-      height: 57,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
-      ),
-      child: Row(
-        children: [
-          _tableCell(
-            Text(
-              user['username']?.toString() ?? '',
-              style: const TextStyle(
-                color: DefensysUi.textDark,
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            flex: 1.25,
-          ),
-          _tableCell(_bodyText(displayName), flex: 2.45),
-          _tableCell(_bodyText(user['email']?.toString() ?? ''), flex: 2.35),
-          _tableCell(_roleBadge(user), flex: 2.35),
-          _tableCell(
-            DefensysStatusBadge.success(
-              label: isActive ? 'Active' : 'Inactive',
-              showDot: isActive,
-            ),
-            flex: 1.55,
-          ),
-          _tableCell(_rowActions(user), flex: 1.1),
-        ],
-      ),
-    );
-  }
 
   List<Map<String, String>> _getIndividualRoles(Map<String, dynamic> user) {
     final role = user['role']?.toString() ?? 'student';
@@ -493,17 +418,6 @@ class UserManagementTable extends StatelessWidget {
     );
   }
 
-  Widget _tableCell(Widget child, {required double flex}) {
-    return Expanded(
-      flex: (flex * 100).round(),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 15),
-        alignment: Alignment.centerLeft,
-        child: child,
-      ),
-    );
-  }
-
   Widget _bodyText(String value) {
     return Text(
       value,
@@ -515,53 +429,5 @@ class UserManagementTable extends StatelessWidget {
       ),
     );
   }
-
-  Widget _pagination() {
-    final totalCount = state.users.length;
-    final totalPages = (totalCount / rowsPerPage).ceil();
-
-    return Row(
-      children: [
-        Text(
-          'Showing ${visibleUsers.isEmpty ? 0 : (currentPage * rowsPerPage) + 1} to '
-          '${(currentPage * rowsPerPage) + visibleUsers.length} of $totalCount users',
-          style: const TextStyle(fontSize: 13, color: DefensysUi.steelGrey),
-        ),
-        const Spacer(),
-        Row(
-          children: [
-            const Text('Rows per page: ', style: TextStyle(fontSize: 13, color: DefensysUi.steelGrey)),
-            DropdownButton<int>(
-              value: rowsPerPage,
-              underline: const SizedBox.shrink(),
-              items: rowsPerPageOptions.map((opt) {
-                return DropdownMenuItem(value: opt, child: Text('$opt'));
-              }).toList(),
-              onChanged: (v) {
-                if (v != null) onRowsPerPageChanged(v);
-              },
-            ),
-            const SizedBox(width: 16),
-            IconButton(
-              icon: const Icon(Icons.chevron_left_rounded),
-              onPressed: currentPage > 0 ? () => onPageChanged(currentPage - 1) : null,
-            ),
-            Text('${currentPage + 1} / ${totalPages == 0 ? 1 : totalPages}'),
-            IconButton(
-              icon: const Icon(Icons.chevron_right_rounded),
-              onPressed: currentPage < totalPages - 1
-                  ? () => onPageChanged(currentPage + 1)
-                  : null,
-            ),
-          ],
-        ),
-      ],
-    );
-  }
 }
 
-class _ColumnSpec {
-  const _ColumnSpec(this.title, this.flex);
-  final String title;
-  final double flex;
-}

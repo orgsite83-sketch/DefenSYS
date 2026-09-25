@@ -11,6 +11,8 @@ import '../../../../services/auth_provider.dart';
 import '../../../../config/api_config.dart';
 import '../../../../widgets/defensys_logo_mark.dart';
 import '../../faculty/e_signature_upload_dialog.dart';
+import '../../../../widgets/buttons/defensys_theme_toggle.dart';
+import '../../../../services/theme_provider.dart';
 
 export '../../../../widgets/status_badge.dart';
 
@@ -69,7 +71,8 @@ class DefensysUi {
 
   static TextStyle get tableCell => DefensysTokens.tableCell;
 
-  static BoxDecoration cardDecoration() => DefensysTokens.cardDecoration();
+  static BoxDecoration cardDecoration([BuildContext? context]) =>
+      DefensysTokens.cardDecoration(context);
 
   static const switchInactiveTrack = DefensysTokens.switchInactiveTrack;
 
@@ -106,8 +109,9 @@ class DefensysUi {
   }
 }
 
-class DefensysAdminShell extends StatelessWidget {
-  final DefensysAdminSection activeSection;
+class DefensysAdminShell extends StatefulWidget {
+  final DefensysAdminSection? activeSection;
+  final bool isProfileActive;
   final String activeSemesterLabel;
   final Widget child;
   final ValueChanged<DefensysAdminSection> onNavigate;
@@ -116,13 +120,27 @@ class DefensysAdminShell extends StatelessWidget {
 
   const DefensysAdminShell({
     super.key,
-    required this.activeSection,
+    this.activeSection,
+    this.isProfileActive = false,
     required this.activeSemesterLabel,
     required this.child,
     required this.onNavigate,
     required this.onLogout,
     this.scrollContent = true,
   });
+
+  @override
+  State<DefensysAdminShell> createState() => _DefensysAdminShellState();
+}
+
+class _DefensysAdminShellState extends State<DefensysAdminShell> {
+  bool _isCollapsed = false;
+
+  void _toggleCollapse() {
+    setState(() {
+      _isCollapsed = !_isCollapsed;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -133,7 +151,7 @@ class DefensysAdminShell extends StatelessWidget {
           final isWide = constraints.maxWidth >= DefensysUi.minDesktopWidth;
 
           void handleNavigate(DefensysAdminSection section) {
-            onNavigate(section);
+            widget.onNavigate(section);
             if (!isWide) {
               Navigator.of(context).pop();
             }
@@ -143,29 +161,32 @@ class DefensysAdminShell extends StatelessWidget {
             if (!isWide) {
               Navigator.of(context).pop();
             }
-            onLogout();
+            widget.onLogout();
           }
 
           final sidebar = _Sidebar(
-            activeSection: activeSection,
-            onNavigate: isWide ? onNavigate : handleNavigate,
+            activeSection: widget.activeSection,
+            isProfileActive: widget.isProfileActive,
+            onNavigate: isWide ? widget.onNavigate : handleNavigate,
             onLogout: handleLogout,
+            isCollapsed: isWide && _isCollapsed,
+            onToggleCollapse: isWide ? _toggleCollapse : null,
           );
 
           final contentColumn = Column(
             children: [
               _TopNav(
-                activeSemesterLabel: activeSemesterLabel,
+                activeSemesterLabel: widget.activeSemesterLabel,
                 showMenuButton: !isWide,
               ),
               Expanded(
                 child: OfflineBanner(
-                  child: scrollContent
+                  child: widget.scrollContent
                       ? SingleChildScrollView(
                           padding: DefensysUi.contentPadding,
-                          child: child,
+                          child: widget.child,
                         )
-                      : child,
+                      : widget.child,
                 ),
               ),
             ],
@@ -173,20 +194,24 @@ class DefensysAdminShell extends StatelessWidget {
 
           if (isWide) {
             return Scaffold(
-              backgroundColor: DefensysUi.bgLight,
+              backgroundColor: DefensysTokens.backgroundOf(context),
               body: Row(
                 children: [
-                  sidebar,
-                  Expanded(child: contentColumn),
+                  RepaintBoundary(child: sidebar),
+                  Expanded(
+                    child: RepaintBoundary(child: contentColumn),
+                  ),
                 ],
               ),
             );
           }
 
           return Scaffold(
-            backgroundColor: DefensysUi.bgLight,
+            backgroundColor: DefensysTokens.backgroundOf(context),
             drawer: Drawer(
               width: DefensysUi.sidebarWidth,
+              backgroundColor: DefensysTokens.panelOf(context),
+              surfaceTintColor: Colors.transparent,
               child: sidebar,
             ),
             body: contentColumn,
@@ -213,6 +238,7 @@ class DefensysPageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -223,13 +249,19 @@ class DefensysPageHeader extends StatelessWidget {
               Row(
                 children: [
                   if (icon != null) ...[
-                    Icon(icon, color: DefensysUi.primaryMaroon, size: 20),
+                    Icon(
+                      icon,
+                      color: isDark ? DefensysTokens.mistMaroon : DefensysUi.primaryMaroon,
+                      size: 20,
+                    ),
                     const SizedBox(width: 8),
                   ],
                   Flexible(
                     child: Text(
                       title,
-                      style: DefensysUi.pageTitle,
+                      style: DefensysUi.pageTitle.copyWith(
+                        color: isDark ? const Color(0xFFF4F4F5) : DefensysTokens.maroon,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -237,7 +269,12 @@ class DefensysPageHeader extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 4),
-              Text(subtitle, style: DefensysUi.subtitle),
+              Text(
+                subtitle,
+                style: DefensysUi.subtitle.copyWith(
+                  color: isDark ? const Color(0xFFA1A1AA) : DefensysTokens.textSecondary,
+                ),
+              ),
             ],
           ),
         ),
@@ -264,14 +301,14 @@ class DefensysCard extends StatelessWidget {
     return Container(
       height: height,
       padding: padding,
-      decoration: DefensysUi.cardDecoration(),
+      decoration: DefensysTokens.cardDecoration(context),
       clipBehavior: Clip.antiAlias,
       child: child,
     );
   }
 }
 
-class _TopNav extends ConsumerWidget {
+class _TopNav extends StatelessWidget {
   final String activeSemesterLabel;
   final bool showMenuButton;
 
@@ -281,16 +318,7 @@ class _TopNav extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(authProvider).user;
-    final displayName = user != null && user['name'] != null
-        ? user['name'] as String
-        : 'Administrator';
-
-    final avatarUrl = user?['avatar'] != null
-        ? ApiConfig.publicMediaUrl(user!['avatar'] as String)
-        : null;
-
+  Widget build(BuildContext context) {
     return Container(
       height: DefensysUi.topNavHeight,
       padding: EdgeInsets.only(
@@ -298,14 +326,13 @@ class _TopNav extends ConsumerWidget {
         right: 40,
       ),
       decoration: BoxDecoration(
-        color: DefensysUi.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
+        color: DefensysTokens.panelOf(context),
+        border: Border(
+          bottom: BorderSide(
+            color: DefensysTokens.borderOf(context),
+            width: 1,
           ),
-        ],
+        ),
       ),
       child: Row(
         children: [
@@ -318,59 +345,11 @@ class _TopNav extends ConsumerWidget {
             const SizedBox(width: 8),
           ],
           const Spacer(),
-          const SizedBox(width: 16),
           _SemesterPill(label: activeSemesterLabel),
-          const SizedBox(width: 20),
+          const SizedBox(width: 16),
           const _NotificationsBell(),
-          const SizedBox(width: 20),
-          InkWell(
-            borderRadius: BorderRadius.circular(20),
-            onTap: () => context.go('/admin/profile'),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: DefensysUi.primaryMaroon,
-                      shape: BoxShape.circle,
-                      image: avatarUrl != null
-                          ? DecorationImage(
-                              image: NetworkImage(avatarUrl),
-                              fit: BoxFit.cover,
-                            )
-                          : null,
-                    ),
-                    child: avatarUrl == null
-                        ? const Icon(
-                            Icons.admin_panel_settings_rounded,
-                            color: Colors.white,
-                            size: 19,
-                          )
-                        : null,
-                  ),
-                  const SizedBox(width: 14),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 180),
-                    child: Text(
-                      displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: DefensysUi.fontFamily,
-                        color: DefensysUi.textDark,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          const SizedBox(width: 10),
+          const DefensysThemeToggle(),
         ],
       ),
     );
@@ -405,6 +384,7 @@ class _NotificationsBellState extends ConsumerState<_NotificationsBell> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(notificationsProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Badge(
       isLabelVisible: state.unreadCount > 0,
@@ -416,11 +396,11 @@ class _NotificationsBellState extends ConsumerState<_NotificationsBell> {
           fontWeight: FontWeight.bold,
         ),
       ),
-      backgroundColor: DefensysUi.primaryMaroon,
+      backgroundColor: isDark ? DefensysTokens.mistMaroon : DefensysUi.primaryMaroon,
       child: IconButton(
-        icon: const Icon(
+        icon: Icon(
           Icons.notifications_outlined,
-          color: DefensysUi.steelGrey,
+          color: isDark ? const Color(0xFFA1A1AA) : DefensysUi.steelGrey,
           size: 23,
         ),
         tooltip: 'Notifications',
@@ -431,158 +411,323 @@ class _NotificationsBellState extends ConsumerState<_NotificationsBell> {
 }
 
 class _Sidebar extends StatelessWidget {
-  final DefensysAdminSection activeSection;
+  final DefensysAdminSection? activeSection;
+  final bool isProfileActive;
   final ValueChanged<DefensysAdminSection> onNavigate;
   final VoidCallback onLogout;
+  final bool isCollapsed;
+  final VoidCallback? onToggleCollapse;
 
   const _Sidebar({
-    required this.activeSection,
+    this.activeSection,
+    this.isProfileActive = false,
     required this.onNavigate,
     required this.onLogout,
+    this.isCollapsed = false,
+    this.onToggleCollapse,
   });
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+
+    final groups = <_NavGroup>[
+      _NavGroup(
+        title: 'Dashboard',
+        entries: [
+          _NavEntry(
+            section: DefensysAdminSection.overview,
+            icon: Icons.show_chart_rounded,
+            label: l10n.navOverview,
+          ),
+        ],
+      ),
+      _NavGroup(
+        title: 'Setup & Configuration',
+        entries: [
+          _NavEntry(
+            section: DefensysAdminSection.academicPeriods,
+            icon: Icons.calendar_month_rounded,
+            label: l10n.navAcademicPeriods,
+          ),
+          _NavEntry(
+            section: DefensysAdminSection.rubrics,
+            icon: Icons.checklist_rounded,
+            label: l10n.navRubricEngine,
+          ),
+          _NavEntry(
+            section: DefensysAdminSection.defenseStages,
+            icon: Icons.layers_rounded,
+            label: l10n.navDefenseStages,
+          ),
+        ],
+      ),
+      _NavGroup(
+        title: 'People & Teams',
+        entries: [
+          _NavEntry(
+            section: DefensysAdminSection.userManagement,
+            icon: Icons.manage_accounts_rounded,
+            label: l10n.navUserManagement,
+          ),
+          _NavEntry(
+            section: DefensysAdminSection.studentTeams,
+            icon: Icons.groups_rounded,
+            label: l10n.navStudentTeams,
+          ),
+        ],
+      ),
+      _NavGroup(
+        title: 'Defense Operations',
+        entries: [
+          _NavEntry(
+            section: DefensysAdminSection.defenseBoard,
+            icon: Icons.view_agenda_rounded,
+            label: l10n.navDefenseBoard,
+          ),
+          _NavEntry(
+            section: DefensysAdminSection.gradeCenter,
+            icon: Icons.grade_rounded,
+            label: l10n.navGradeCenter,
+          ),
+        ],
+      ),
+      _NavGroup(
+        title: 'Analytics & Audit',
+        entries: [
+          _NavEntry(
+            section: DefensysAdminSection.repositoryAudit,
+            icon: Icons.folder_rounded,
+            label: l10n.navRepositoryAudit,
+          ),
+          _NavEntry(
+            section: DefensysAdminSection.curriculumAnalytics,
+            icon: Icons.manage_search_rounded,
+            label: l10n.navCurriculumAnalytics,
+          ),
+          _NavEntry(
+            section: DefensysAdminSection.auditCompliance,
+            icon: Icons.verified_user_outlined,
+            label: 'Audit Trail',
+          ),
+        ],
+      ),
+    ];
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
-      width: DefensysUi.sidebarWidth,
-      color: DefensysUi.primaryMaroon,
+      width: isCollapsed ? 68.0 : DefensysUi.sidebarWidth,
+      decoration: BoxDecoration(
+        color: DefensysTokens.panelOf(context),
+        border: Border(
+          right: BorderSide(color: DefensysTokens.borderOf(context), width: 1),
+        ),
+      ),
       child: Column(
         children: [
-          Container(
-            height: 92,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                const _BrandSeal(size: 40),
-                const SizedBox(width: 14),
-                const Text(
-                  'DefenSYS',
-                  style: TextStyle(
-                    fontFamily: DefensysUi.fontFamily,
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
+          // Header / Brand area
+          if (isCollapsed)
+            SizedBox(
+              height: 64,
+              width: 68,
+              child: Center(
+                child: IconButton(
+                  icon: const _SidebarPanelIcon(size: 20),
+                  tooltip: 'Expand sidebar',
+                  splashRadius: 18,
+                  onPressed: onToggleCollapse,
                 ),
-              ],
+              ),
+            )
+          else
+            Container(
+              height: 64,
+              padding: const EdgeInsets.fromLTRB(14, 0, 10, 0),
+              child: Row(
+                children: [
+                  const _BrandSeal(size: 30),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                'DefenSYS',
+                                style: TextStyle(
+                                  fontFamily: DefensysUi.fontFamily,
+                                  color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.3,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.clip,
+                                softWrap: false,
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF28272D) : const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: DefensysTokens.borderOf(context),
+                                ),
+                              ),
+                              child: Text(
+                                'Admin',
+                                style: TextStyle(
+                                  fontFamily: DefensysUi.fontFamily,
+                                  color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569),
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Academic Portal',
+                          style: TextStyle(
+                            fontFamily: DefensysUi.fontFamily,
+                            color: isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.clip,
+                          softWrap: false,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (onToggleCollapse != null)
+                    IconButton(
+                      icon: const _SidebarPanelIcon(size: 18),
+                      tooltip: 'Collapse sidebar',
+                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(6),
+                      splashRadius: 16,
+                      onPressed: onToggleCollapse,
+                    ),
+                ],
+              ),
             ),
-          ),
-          Container(height: 1, color: Colors.white.withValues(alpha: 0.07)),
+
+          // Hairline divider below header
+          Divider(height: 1, thickness: 1, color: DefensysTokens.borderOf(context)),
+
+          // Scrollable Navigation List (Clean direct groups)
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.only(top: 16),
+              padding: const EdgeInsets.only(top: 8, bottom: 8),
               children: [
-                const _SectionHeader(title: 'Dashboard'),
-                _NavItem(
-                  section: DefensysAdminSection.overview,
-                  activeSection: activeSection,
-                  icon: Icons.show_chart_rounded,
-                  label: l10n.navOverview,
-                  onTap: onNavigate,
-                ),
-                const _SectionHeader(title: 'Setup & Configuration'),
-                _NavItem(
-                  section: DefensysAdminSection.academicPeriods,
-                  activeSection: activeSection,
-                  icon: Icons.calendar_month_rounded,
-                  label: l10n.navAcademicPeriods,
-                  onTap: onNavigate,
-                ),
-                _NavItem(
-                  section: DefensysAdminSection.rubrics,
-                  activeSection: activeSection,
-                  icon: Icons.checklist_rounded,
-                  label: l10n.navRubricEngine,
-                  onTap: onNavigate,
-                ),
-                _NavItem(
-                  section: DefensysAdminSection.defenseStages,
-                  activeSection: activeSection,
-                  icon: Icons.layers_rounded,
-                  label: l10n.navDefenseStages,
-                  onTap: onNavigate,
-                ),
-                const _SectionHeader(title: 'People & Teams'),
-                _NavItem(
-                  section: DefensysAdminSection.userManagement,
-                  activeSection: activeSection,
-                  icon: Icons.manage_accounts_rounded,
-                  label: l10n.navUserManagement,
-                  onTap: onNavigate,
-                ),
-                _NavItem(
-                  section: DefensysAdminSection.studentTeams,
-                  activeSection: activeSection,
-                  icon: Icons.groups_rounded,
-                  label: l10n.navStudentTeams,
-                  onTap: onNavigate,
-                ),
-                const _SectionHeader(title: 'Defense Operations'),
-                _NavItem(
-                  section: DefensysAdminSection.defenseBoard,
-                  activeSection: activeSection,
-                  icon: Icons.view_agenda_rounded,
-                  label: l10n.navDefenseBoard,
-                  onTap: onNavigate,
-                ),
-                _NavItem(
-                  section: DefensysAdminSection.gradeCenter,
-                  activeSection: activeSection,
-                  icon: Icons.grade_rounded,
-                  label: l10n.navGradeCenter,
-                  onTap: onNavigate,
-                ),
-                const _SectionHeader(title: 'Analytics & Audit'),
-                _NavItem(
-                  section: DefensysAdminSection.repositoryAudit,
-                  activeSection: activeSection,
-                  icon: Icons.folder_rounded,
-                  label: l10n.navRepositoryAudit,
-                  onTap: onNavigate,
-                ),
-                _NavItem(
-                  section: DefensysAdminSection.curriculumAnalytics,
-                  activeSection: activeSection,
-                  icon: Icons.manage_search_rounded,
-                  label: l10n.navCurriculumAnalytics,
-                  onTap: onNavigate,
-                ),
-                _NavItem(
-                  section: DefensysAdminSection.auditCompliance,
-                  activeSection: activeSection,
-                  icon: Icons.verified_user_outlined,
-                  label: 'Audit Trail',
-                  onTap: onNavigate,
-                ),
+                for (int i = 0; i < groups.length; i++) ...[
+                  if (i > 0)
+                    SizedBox(height: isCollapsed ? 8 : 20),
+                  _SectionHeader(
+                    title: groups[i].title,
+                    isCollapsed: isCollapsed,
+                    isFirst: i == 0,
+                  ),
+                  const SizedBox(height: 4),
+                  for (final e in groups[i].entries)
+                    _NavItem(
+                      section: e.section,
+                      activeSection: activeSection,
+                      icon: e.icon,
+                      label: e.label,
+                      onTap: onNavigate,
+                      isCollapsed: isCollapsed,
+                    ),
+                ],
               ],
             ),
           ),
-          Container(height: 1, color: Colors.white.withValues(alpha: 0.09)),
-          _UserProfileCard(onLogout: onLogout),
+
+          // Hairline divider above profile
+          Divider(height: 1, thickness: 1, color: DefensysTokens.borderOf(context)),
+
+          // User Profile Card
+          _UserProfileCard(
+            onLogout: onLogout,
+            isCollapsed: isCollapsed,
+            isActive: isProfileActive,
+          ),
         ],
       ),
     );
   }
 }
 
+class _NavGroup {
+  final String title;
+  final List<_NavEntry> entries;
+
+  const _NavGroup({
+    required this.title,
+    required this.entries,
+  });
+}
+
+class _NavEntry {
+  final DefensysAdminSection section;
+  final IconData icon;
+  final String label;
+
+  const _NavEntry({
+    required this.section,
+    required this.icon,
+    required this.label,
+  });
+}
+
 class _SectionHeader extends StatelessWidget {
   final String title;
+  final bool isCollapsed;
+  final bool isFirst;
 
-  const _SectionHeader({required this.title});
+  const _SectionHeader({
+    required this.title,
+    this.isCollapsed = false,
+    this.isFirst = false,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    if (isCollapsed) {
+      if (isFirst) {
+        return const SizedBox(height: 4);
+      }
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        child: Divider(height: 1, thickness: 1, color: DefensysTokens.borderOf(context)),
+      );
+    }
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+      padding: EdgeInsets.fromLTRB(16, isFirst ? 6 : 8, 16, 4),
       child: Text(
         title.toUpperCase(),
         style: TextStyle(
-          color: Colors.white.withValues(alpha: 0.45),
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.3,
+          fontFamily: DefensysUi.fontFamily,
+          color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF71717A),
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.8,
         ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
@@ -590,11 +735,18 @@ class _SectionHeader extends StatelessWidget {
 
 class _UserProfileCard extends ConsumerWidget {
   final VoidCallback onLogout;
+  final bool isCollapsed;
+  final bool isActive;
 
-  const _UserProfileCard({required this.onLogout});
+  const _UserProfileCard({
+    required this.onLogout,
+    this.isCollapsed = false,
+    this.isActive = false,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final user = ref.watch(authProvider).user;
     final displayName = user != null && user['name'] != null
         ? user['name'] as String
@@ -604,14 +756,183 @@ class _UserProfileCard extends ConsumerWidget {
         ? ApiConfig.publicMediaUrl(user!['avatar'] as String)
         : null;
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 12, 12, 16),
-      padding: const EdgeInsets.all(12),
+    final popupItems = <PopupMenuEntry<String>>[
+      PopupMenuItem(
+        value: 'profile',
+        height: 38,
+        child: Row(
+          children: [
+            Icon(
+              Icons.person_outline_rounded,
+              size: 16,
+              color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'Profile',
+              style: TextStyle(
+                fontFamily: DefensysUi.fontFamily,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+              ),
+            ),
+          ],
+        ),
+      ),
+      PopupMenuItem(
+        value: 'signature',
+        height: 38,
+        child: Row(
+          children: [
+            Icon(
+              Icons.draw_outlined,
+              size: 16,
+              color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'E-Signature',
+              style: TextStyle(
+                fontFamily: DefensysUi.fontFamily,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+              ),
+            ),
+          ],
+        ),
+      ),
+      PopupMenuItem(
+        value: 'theme',
+        height: 38,
+        child: Row(
+          children: [
+            Icon(
+              isDark ? Icons.light_mode_outlined : Icons.bedtime_outlined,
+              size: 16,
+              color: isDark ? DefensysTokens.mistGold : const Color(0xFF475569),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              isDark ? 'Light Mode' : 'Mist Dark',
+              style: TextStyle(
+                fontFamily: DefensysUi.fontFamily,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+              ),
+            ),
+          ],
+        ),
+      ),
+      const PopupMenuDivider(height: 1),
+      PopupMenuItem(
+        value: 'logout',
+        height: 38,
+        child: Row(
+          children: const [
+            Icon(Icons.logout_rounded, size: 16, color: Color(0xFFDC2626)),
+            SizedBox(width: 10),
+            Text(
+              'Log Out',
+              style: TextStyle(
+                fontFamily: DefensysUi.fontFamily,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFFDC2626),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ];
+
+    void handleSelect(String value) {
+      if (value == 'profile') {
+        context.go('/admin/profile');
+      } else if (value == 'signature') {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!context.mounted) return;
+          showDialog(
+            context: context,
+            builder: (context) => const ESignatureUploadDialog(),
+          );
+        });
+      } else if (value == 'theme') {
+        ref.read(themeModeProvider.notifier).toggleTheme();
+      } else if (value == 'logout') {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          onLogout();
+        });
+      }
+    }
+
+    final collapsedCard = Container(
+      margin: const EdgeInsets.fromLTRB(0, 8, 0, 12),
+      height: 54,
+      alignment: Alignment.center,
+      child: PopupMenuButton<String>(
+        tooltip: '$displayName (Admin)',
+        offset: const Offset(50, 0),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: DefensysTokens.borderOf(context), width: 1),
+        ),
+        color: DefensysTokens.panelOf(context),
+        elevation: 4,
+        onSelected: handleSelect,
+        itemBuilder: (context) => popupItems,
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: isActive
+                  ? (isDark ? DefensysTokens.mistMaroon : DefensysTokens.maroon)
+                  : (isDark
+                      ? DefensysTokens.mistMaroon.withValues(alpha: 0.4)
+                      : DefensysTokens.maroon.withValues(alpha: 0.25)),
+              width: isActive ? 2.0 : 1.5,
+            ),
+            color: isDark ? DefensysTokens.mistMaroon : DefensysTokens.maroon,
+            image: avatarUrl != null
+                ? DecorationImage(
+                    image: NetworkImage(avatarUrl),
+                    fit: BoxFit.cover,
+                  )
+                : null,
+          ),
+          child: avatarUrl == null
+              ? const Center(
+                  child: Icon(
+                    Icons.admin_panel_settings_rounded,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                )
+              : null,
+        ),
+      ),
+    );
+
+    final expandedCard = Container(
+      margin: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
+        color: isActive
+            ? (isDark
+                ? DefensysTokens.mistMaroon.withValues(alpha: 0.18)
+                : DefensysTokens.maroon.withValues(alpha: 0.08))
+            : (isDark ? const Color(0xFF28272D) : const Color(0xFFFAFAFA)),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.08),
+          color: isActive
+              ? (isDark
+                  ? DefensysTokens.mistMaroon.withValues(alpha: 0.5)
+                  : DefensysTokens.maroon.withValues(alpha: 0.35))
+              : DefensysTokens.borderOf(context),
           width: 1,
         ),
       ),
@@ -622,19 +943,24 @@ class _UserProfileCard extends ConsumerWidget {
               borderRadius: BorderRadius.circular(8),
               onTap: () => context.go('/admin/profile'),
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+                padding: const EdgeInsets.symmetric(vertical: 2),
                 child: Row(
                   children: [
                     Container(
-                      width: 36,
-                      height: 36,
+                      width: 32,
+                      height: 32,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: DefensysUi.accentGold.withValues(alpha: 0.5),
+                          color: (isDark
+                                  ? DefensysTokens.mistMaroon
+                                  : DefensysUi.primaryMaroon)
+                              .withValues(alpha: 0.35),
                           width: 1.5,
                         ),
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: isDark
+                            ? DefensysTokens.mistMaroon
+                            : DefensysUi.primaryMaroon,
                         image: avatarUrl != null
                             ? DecorationImage(
                                 image: NetworkImage(avatarUrl),
@@ -647,12 +973,12 @@ class _UserProfileCard extends ConsumerWidget {
                               child: Icon(
                                 Icons.admin_panel_settings_rounded,
                                 color: Colors.white,
-                                size: 18,
+                                size: 16,
                               ),
                             )
                           : null,
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -660,24 +986,32 @@ class _UserProfileCard extends ConsumerWidget {
                         children: [
                           Text(
                             displayName,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
+                            style: TextStyle(
+                              fontFamily: DefensysUi.fontFamily,
+                              color: isDark
+                                  ? const Color(0xFFF4F4F5)
+                                  : const Color(0xFF0F172A),
+                              fontSize: 12.5,
                               fontWeight: FontWeight.w700,
                             ),
                             maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            overflow: TextOverflow.clip,
+                            softWrap: false,
                           ),
-                          const SizedBox(height: 2),
-                          const Text(
+                          const SizedBox(height: 1),
+                          Text(
                             'Academic Portal',
                             style: TextStyle(
-                              color: Color(0xFF9CA3AF),
-                              fontSize: 11,
+                              fontFamily: DefensysUi.fontFamily,
+                              color: isDark
+                                  ? const Color(0xFFA1A1AA)
+                                  : const Color(0xFF64748B),
+                              fontSize: 10.5,
                               fontWeight: FontWeight.w500,
                             ),
                             maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            overflow: TextOverflow.clip,
+                            softWrap: false,
                           ),
                         ],
                       ),
@@ -687,115 +1021,227 @@ class _UserProfileCard extends ConsumerWidget {
               ),
             ),
           ),
-          Material(
-            color: Colors.transparent,
-            child: IconButton(
-              icon: const Icon(
-                Icons.draw_rounded,
-                color: Color(0xFFD1D5DB),
-                size: 18,
-              ),
-              tooltip: 'E-Signature',
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (context) => const ESignatureUploadDialog(),
-                );
-              },
-              constraints: const BoxConstraints(),
-              padding: const EdgeInsets.all(6),
-              splashRadius: 20,
+          PopupMenuButton<String>(
+            tooltip: 'Account options',
+            icon: Icon(
+              Icons.more_horiz_rounded,
+              color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF64748B),
+              size: 18,
             ),
-          ),
-          const SizedBox(width: 4),
-          Material(
-            color: Colors.transparent,
-            child: IconButton(
-              icon: const Icon(
-                Icons.logout_rounded,
-                color: Color(0xFFFCA5A5), // Soft red accent
-                size: 18,
-              ),
-              tooltip: 'Log Out',
-              onPressed: onLogout,
-              constraints: const BoxConstraints(),
-              padding: const EdgeInsets.all(6),
-              splashRadius: 20,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            splashRadius: 16,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: BorderSide(color: DefensysTokens.borderOf(context), width: 1),
             ),
+            color: DefensysTokens.panelOf(context),
+            elevation: 4,
+            offset: const Offset(0, -180),
+            onSelected: handleSelect,
+            itemBuilder: (context) => popupItems,
           ),
         ],
       ),
     );
+
+    if (isCollapsed) {
+      return SizedBox(
+        width: 68,
+        height: 74,
+        child: Center(
+          child: collapsedCard,
+        ),
+      );
+    }
+    return expandedCard;
   }
 }
 
-class _NavItem extends StatelessWidget {
+class _NavItem extends StatefulWidget {
   final DefensysAdminSection section;
-  final DefensysAdminSection activeSection;
+  final DefensysAdminSection? activeSection;
   final IconData icon;
   final String label;
   final IconData? trailing;
   final ValueChanged<DefensysAdminSection> onTap;
+  final bool isCollapsed;
 
   const _NavItem({
     required this.section,
-    required this.activeSection,
+    this.activeSection,
     required this.icon,
     required this.label,
     this.trailing,
     required this.onTap,
+    this.isCollapsed = false,
   });
 
   @override
+  State<_NavItem> createState() => _NavItemState();
+}
+
+class _NavItemState extends State<_NavItem> {
+  bool _isPressed = false;
+  bool _isHovered = false;
+
+  @override
+  void didUpdateWidget(covariant _NavItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.activeSection != oldWidget.activeSection) {
+      if (_isPressed && widget.activeSection == widget.section) {
+        _isPressed = false;
+      }
+    }
+  }
+
+  void _handleTapDown(TapDownDetails _) {
+    setState(() => _isPressed = true);
+  }
+
+  void _handleTapCancel() {
+    if (mounted) setState(() => _isPressed = false);
+  }
+
+  void _handleTapUp(TapUpDetails _) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _isPressed && widget.activeSection != widget.section) {
+        setState(() => _isPressed = false);
+      }
+    });
+  }
+
+  void _handleTap() {
+    widget.onTap(widget.section);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final selected = section == activeSection;
-    final color = selected ? DefensysUi.accentGold : const Color(0xFFD1D5DB);
-    final containerColor = selected
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.transparent;
+    final selected = widget.section == widget.activeSection;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final activeBg = isDark ? DefensysTokens.mistMaroon : DefensysTokens.maroon;
+    const activeColor = Colors.white;
+
+    final isHighlighted = selected || _isPressed;
+    final Color? bgColor;
+    if (isHighlighted) {
+      bgColor = activeBg;
+    } else if (_isHovered) {
+      bgColor = isDark ? const Color(0xFF28272D) : const Color(0xFFF4F4F5);
+    } else {
+      bgColor = null;
+    }
+
+    final textColor = isHighlighted
+        ? activeColor
+        : (isDark ? const Color(0xFFF4F4F5) : const Color(0xFF18181B));
+    final iconColor = isHighlighted
+        ? activeColor
+        : (isDark ? const Color(0xFFA1A1AA) : const Color(0xFF52525B));
+
+    if (widget.isCollapsed) {
+      return Tooltip(
+        message: widget.label,
+        waitDuration: const Duration(milliseconds: 300),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onEnter: (_) => setState(() => _isHovered = true),
+            onExit: (_) => setState(() => _isHovered = false),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: _handleTapDown,
+              onTapUp: _handleTapUp,
+              onTapCancel: _handleTapCancel,
+              onTap: _handleTap,
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Center(
+                  child: Icon(
+                    widget.icon,
+                    size: 18,
+                    color: iconColor,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Material(
-          color: containerColor,
-          child: InkWell(
-            onTap: () => onTap(section),
-            hoverColor: Colors.white.withValues(alpha: 0.05),
-            child: Container(
-              height: 46,
-              padding: const EdgeInsets.only(left: 10, right: 14),
-              child: Row(
-                children: [
-                  Container(
-                    width: 3,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: selected ? DefensysUi.accentGold : Colors.transparent,
-                      borderRadius: BorderRadius.circular(99),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 1.5),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: _handleTapDown,
+          onTapUp: _handleTapUp,
+          onTapCancel: _handleTapCancel,
+          onTap: _handleTap,
+          child: Container(
+            height: 38,
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 48,
+                  child: Center(
+                    child: Icon(
+                      widget.icon,
+                      size: 18,
+                      color: iconColor,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Icon(icon, color: color, size: 18),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      label,
-                      style: TextStyle(
-                        fontFamily: DefensysUi.fontFamily,
-                        color: color,
-                        fontSize: 13,
-                        fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                      ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            widget.label,
+                            style: TextStyle(
+                              fontFamily: DefensysUi.fontFamily,
+                              color: textColor,
+                              fontSize: 13,
+                              fontWeight: isHighlighted ? FontWeight.w600 : FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (widget.trailing != null) ...[
+                          const SizedBox(width: 6),
+                          Icon(
+                            widget.trailing,
+                            size: 16,
+                            color: isHighlighted
+                                ? Colors.white.withValues(alpha: 0.85)
+                                : (isDark
+                                    ? const Color(0xFF71717A)
+                                    : const Color(0xFF94A3B8)),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                  if (trailing != null) ...[
-                    const SizedBox(width: 8),
-                    Icon(trailing, color: color.withValues(alpha: 0.86), size: 18),
-                  ],
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -811,17 +1257,25 @@ class _SemesterPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
       decoration: BoxDecoration(
-        color: DefensysUi.successBg,
+        color: isDark
+            ? const Color(0xFF064E3B).withValues(alpha: 0.45)
+            : DefensysUi.successBg,
+        border: isDark
+            ? Border.all(
+                color: const Color(0xFF059669).withValues(alpha: 0.4),
+                width: 1)
+            : null,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: DefensysUi.fontFamily,
-          color: DefensysUi.successText,
+          color: isDark ? const Color(0xFF6EE7B7) : DefensysUi.successText,
           fontSize: 12,
           fontWeight: FontWeight.w700,
         ),
@@ -837,6 +1291,73 @@ class _BrandSeal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DefensysLogoMark(size: size);
+    return DefensysLogoMark(
+      size: size,
+      colorMode: DefensysLogoColorMode.brand,
+    );
   }
+}
+
+class _SidebarPanelIcon extends StatelessWidget {
+  final double size;
+  final Color color;
+
+  const _SidebarPanelIcon({
+    this.size = 18,
+    this.color = const Color(0xFF64748B),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(
+        size: Size(size, size),
+        painter: _SidebarPanelPainter(color: color),
+      ),
+    );
+  }
+}
+
+class _SidebarPanelPainter extends CustomPainter {
+  final Color color;
+
+  _SidebarPanelPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final strokeWidth = size.width * 0.088;
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true;
+
+    final rect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+        strokeWidth / 2,
+        strokeWidth / 2,
+        size.width - strokeWidth,
+        size.height - strokeWidth,
+      ),
+      Radius.circular(size.width * 0.22),
+    );
+
+    // Outer rounded rectangle
+    canvas.drawRRect(rect, paint);
+
+    // Inner vertical divider (left pane separator)
+    final lineX = size.width * 0.35;
+    canvas.drawLine(
+      Offset(lineX, strokeWidth / 2),
+      Offset(lineX, size.height - strokeWidth / 2),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_SidebarPanelPainter oldDelegate) => oldDelegate.color != color;
 }

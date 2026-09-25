@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 
 Widget buildSecondaryButton({
   required IconData icon,
   required String label,
   required VoidCallback? onTap,
+  BuildContext? context,
 }) {
+  final isDark = context != null && Theme.of(context).brightness == Brightness.dark;
   return SizedBox(
     height: 42,
     child: OutlinedButton.icon(
@@ -14,8 +17,8 @@ Widget buildSecondaryButton({
       icon: Icon(icon, size: 16),
       label: Text(label),
       style: OutlinedButton.styleFrom(
-        foregroundColor: DefensysUi.textDark,
-        side: const BorderSide(color: Color(0xFFE2E8F0)),
+        foregroundColor: isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark,
+        side: BorderSide(color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         padding: const EdgeInsets.symmetric(horizontal: 18),
         textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
@@ -76,6 +79,7 @@ class StudentTeamsHeaderActions extends StatelessWidget {
           icon: Icons.output_rounded,
           label: 'Bulk Import',
           onTap: canTapActions ? onBulkImport : null,
+          context: context,
         ),
         const SizedBox(width: 14),
         buildPrimaryButton(
@@ -104,31 +108,42 @@ class StudentTeamsSearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return SizedBox(
       height: 43,
       child: TextField(
         controller: controller,
         enabled: !isSaving,
-        style: const TextStyle(fontSize: 13),
+        style: TextStyle(
+          fontSize: 13,
+          color: isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark,
+        ),
         decoration: InputDecoration(
           prefixIcon: const Icon(Icons.search_rounded, color: DefensysUi.steelGrey, size: 19),
           hintText: isPitContext
               ? 'Search by project title or leader...'
               : 'Search by project title, leader, or adviser...',
-          hintStyle: const TextStyle(color: DefensysUi.steelGrey, fontSize: 13),
+          hintStyle: TextStyle(
+            color: isDark ? DefensysTokens.textSecondaryDark : DefensysUi.steelGrey,
+            fontSize: 13,
+          ),
           filled: true,
-          fillColor: const Color(0xFFF3F4F6),
+          fillColor: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 14,
             vertical: 10,
           ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+            borderSide: BorderSide(
+              color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB),
+            ),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+            borderSide: BorderSide(
+              color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB),
+            ),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
@@ -178,22 +193,28 @@ class StudentTeamsLevelFilter extends StatelessWidget {
         ? currentLevel
         : 'Capstone';
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fillBg = isDark ? DefensysTokens.mistInputFill : Colors.white;
+    final borderColor = isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB);
+    final textPrimary = isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark;
+
     return Container(
       width: 220,
       height: 43,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: fillBg,
         borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: const Color(0xFFD1D5DB)),
+        border: Border.all(color: borderColor),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: safeValue,
+          dropdownColor: isDark ? DefensysTokens.mistSurface : Colors.white,
           isExpanded: true,
           icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-          style: const TextStyle(
-            color: DefensysUi.textDark,
+          style: TextStyle(
+            color: textPrimary,
             fontFamily: DefensysUi.fontFamily,
             fontSize: 12.5,
             fontWeight: FontWeight.w500,
@@ -222,6 +243,11 @@ class PitTeamScopeToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fillBg = isDark ? DefensysTokens.mistInputFill : Colors.white;
+    final borderColor = isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB);
+    final textPrimary = isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark;
+
     return Row(
       children: [
         Container(
@@ -229,17 +255,18 @@ class PitTeamScopeToggle extends StatelessWidget {
           height: 42,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: fillBg,
             borderRadius: BorderRadius.circular(7),
-            border: Border.all(color: const Color(0xFFD1D5DB)),
+            border: Border.all(color: borderColor),
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               value: teamListScope == 'active' ? 'active' : 'history',
+              dropdownColor: isDark ? DefensysTokens.mistSurface : Colors.white,
               isExpanded: true,
               icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-              style: const TextStyle(
-                color: DefensysUi.textDark,
+              style: TextStyle(
+                color: textPrimary,
                 fontFamily: DefensysUi.fontFamily,
                 fontSize: 12.5,
                 fontWeight: FontWeight.w500,
@@ -260,8 +287,8 @@ class PitTeamScopeToggle extends StatelessWidget {
             icon: const Icon(Icons.refresh_rounded, size: 17),
             label: const Text('Clear'),
             style: OutlinedButton.styleFrom(
-              foregroundColor: DefensysUi.textDark,
-              side: const BorderSide(color: Color(0xFFD1D5DB)),
+              foregroundColor: textPrimary,
+              side: BorderSide(color: borderColor),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
               padding: const EdgeInsets.symmetric(horizontal: 18),
               textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
@@ -287,6 +314,11 @@ class PitYearLevelDropdownFilter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fillBg = isDark ? DefensysTokens.mistInputFill : Colors.white;
+    final borderColor = isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB);
+    final textPrimary = isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark;
+
     const items = [
       DropdownMenuItem<String?>(value: null, child: Text('All Year Levels')),
       DropdownMenuItem<String?>(value: '1st Year', child: Text('1st Year')),
@@ -299,17 +331,18 @@ class PitYearLevelDropdownFilter extends StatelessWidget {
       height: 43,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: fillBg,
         borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: const Color(0xFFD1D5DB)),
+        border: Border.all(color: borderColor),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String?>(
           value: currentYearLevel,
+          dropdownColor: isDark ? DefensysTokens.mistSurface : Colors.white,
           isExpanded: true,
           icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-          style: const TextStyle(
-            color: DefensysUi.textDark,
+          style: TextStyle(
+            color: textPrimary,
             fontFamily: DefensysUi.fontFamily,
             fontSize: 12.5,
             fontWeight: FontWeight.w500,
@@ -340,6 +373,11 @@ class PitEventDropdownFilter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fillBg = isDark ? DefensysTokens.mistInputFill : Colors.white;
+    final borderColor = isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB);
+    final textPrimary = isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark;
+
     final filtered = pitEvents.where((e) {
       if (selectedYearLevel == null || selectedYearLevel!.isEmpty) return true;
       final y = e['year_level']?.toString();
@@ -368,17 +406,18 @@ class PitEventDropdownFilter extends StatelessWidget {
       height: 43,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: fillBg,
         borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: const Color(0xFFD1D5DB)),
+        border: Border.all(color: borderColor),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String?>(
           value: safeValue,
+          dropdownColor: isDark ? DefensysTokens.mistSurface : Colors.white,
           isExpanded: true,
           icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-          style: const TextStyle(
-            color: DefensysUi.textDark,
+          style: TextStyle(
+            color: textPrimary,
             fontFamily: DefensysUi.fontFamily,
             fontSize: 12.5,
             fontWeight: FontWeight.w500,

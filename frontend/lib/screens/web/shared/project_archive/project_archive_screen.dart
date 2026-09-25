@@ -1,5 +1,6 @@
 import 'package:defensys/services/project_archive_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -57,8 +58,6 @@ class _ProjectArchiveScreenState
     }
   }
 
-
-
   Widget _notice(IconData icon, String text, Color color) {
     return Container(
       width: double.infinity,
@@ -79,6 +78,7 @@ class _ProjectArchiveScreenState
   }
 
   Widget _buildTypeTabs(RepositoryAuditState state) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     Widget segment(String label, String typeValue, bool selected) {
       return InkWell(
         onTap: state.isSaving
@@ -95,15 +95,22 @@ class _ProjectArchiveScreenState
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
           decoration: BoxDecoration(
-            color: selected ? Colors.white : Colors.transparent,
+            color: selected
+                ? (isDark ? DefensysTokens.mistSurface : Colors.white)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
             border: selected
-                ? Border.all(color: const Color(0xFFE2E8F0))
+                ? Border.all(
+                    color: isDark
+                        ? DefensysTokens.mistBorder
+                        : const Color(0xFFE2E8F0))
                 : Border.all(color: Colors.transparent),
             boxShadow: selected
                 ? [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
+                      color: isDark
+                          ? Colors.black.withValues(alpha: 0.25)
+                          : Colors.black.withValues(alpha: 0.04),
                       blurRadius: 4,
                       offset: const Offset(0, 1),
                     ),
@@ -113,7 +120,9 @@ class _ProjectArchiveScreenState
           child: Text(
             label,
             style: TextStyle(
-              color: selected ? AppColors.maroon : const Color(0xFF64748B),
+              color: selected
+                  ? (isDark ? const Color(0xFFF87171) : AppColors.maroon)
+                  : (isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B)),
               fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
               fontSize: 13,
             ),
@@ -125,9 +134,10 @@ class _ProjectArchiveScreenState
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(
+            color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -143,18 +153,30 @@ class _ProjectArchiveScreenState
   }
 
   Widget _buildDeliverableFilterChip(RepositoryAuditState state) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final summary = state.deliverableSummary;
     final label = summary['label']?.toString() ?? state.deliverableId;
     return Row(
       children: [
         Chip(
-          avatar: const Icon(
+          backgroundColor: isDark ? DefensysTokens.mistInputFill : null,
+          side: isDark ? const BorderSide(color: DefensysTokens.mistBorder) : null,
+          avatar: Icon(
             Icons.filter_alt,
             size: 16,
-            color: AppColors.maroon,
+            color: isDark ? const Color(0xFFF87171) : AppColors.maroon,
           ),
-          label: Text('Filtered: $label'),
-          deleteIcon: const Icon(Icons.close, size: 16),
+          label: Text(
+            'Filtered: $label',
+            style: TextStyle(
+              color: isDark ? DefensysTokens.textPrimaryDark : null,
+            ),
+          ),
+          deleteIcon: Icon(
+            Icons.close,
+            size: 16,
+            color: isDark ? DefensysTokens.textSecondaryDark : null,
+          ),
           onDeleted: state.isSaving
               ? null
               : () {
@@ -167,8 +189,8 @@ class _ProjectArchiveScreenState
         if (summary.isNotEmpty)
           Text(
             '${summary['uploaded_count']} uploaded · ${summary['missing_count']} missing',
-            style: const TextStyle(
-              color: AppColors.textSecondary,
+            style: TextStyle(
+              color: isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),

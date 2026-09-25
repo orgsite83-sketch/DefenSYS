@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import '../models/schedule_import_models.dart';
 
@@ -364,6 +365,10 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     }
   }
 
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _textPrimary => _isDark ? DefensysTokens.mistTextPrimary : AppColors.textPrimary;
+  Color get _textSecondary => _isDark ? DefensysTokens.mistTextSecondary : AppColors.textSecondary;
+
   Widget _schedulerCard({
     required Widget child,
     EdgeInsetsGeometry padding = const EdgeInsets.all(20),
@@ -371,14 +376,18 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _isDark ? DefensysTokens.mistSurface : Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFEAECF0)),
-        boxShadow: const [
+        border: Border.all(
+          color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFEAECF0),
+        ),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x08101828),
+            color: _isDark
+                ? Colors.black.withValues(alpha: 0.25)
+                : const Color(0x08101828),
             blurRadius: 8,
-            offset: Offset(0, 2),
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -392,8 +401,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       children: [
         Text(
           label,
-          style: const TextStyle(
-            color: Color(0xFF344054),
+          style: TextStyle(
+            color: _isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF344054),
             fontSize: 13,
             fontWeight: FontWeight.w700,
           ),
@@ -411,18 +420,27 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     return InputDecoration(
       isDense: true,
       hintText: hintText,
-      hintStyle: const TextStyle(color: Color(0xFF98A2B3), fontSize: 14),
+      hintStyle: TextStyle(
+        color: _isDark
+            ? DefensysTokens.mistTextSecondary.withValues(alpha: 0.6)
+            : const Color(0xFF98A2B3),
+        fontSize: 14,
+      ),
       filled: true,
-      fillColor: Colors.white,
+      fillColor: _isDark ? DefensysTokens.mistInputFill : Colors.white,
       suffixIcon: suffixIcon,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFD0D5DD)),
+        borderSide: BorderSide(
+          color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFD0D5DD),
+        ),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFD0D5DD)),
+        borderSide: BorderSide(
+          color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFD0D5DD),
+        ),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
@@ -432,15 +450,37 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   }
 
   Widget _softBadge(String text, Color bg, Color fg) {
+    Color effectiveBg = bg;
+    Color effectiveFg = fg;
+    if (_isDark) {
+      if (fg == const Color(0xFF175CD3)) {
+        effectiveBg = const Color(0xFF1E3A8A).withValues(alpha: 0.35);
+        effectiveFg = const Color(0xFF93C5FD);
+      } else if (fg == const Color(0xFF027A48)) {
+        effectiveBg = const Color(0xFF064E3B).withValues(alpha: 0.35);
+        effectiveFg = const Color(0xFF6EE7B7);
+      } else if (fg == const Color(0xFF92400E) || fg == const Color(0xFFB45309)) {
+        effectiveBg = const Color(0xFF78350F).withValues(alpha: 0.35);
+        effectiveFg = const Color(0xFFFCD34D);
+      } else if (fg == const Color(0xFFB42318) ||
+          fg == const Color(0xFFEF4444) ||
+          fg == const Color(0xFFF04438)) {
+        effectiveBg = const Color(0xFF7F1D1D).withValues(alpha: 0.35);
+        effectiveFg = const Color(0xFFFCA5A5);
+      } else {
+        effectiveBg = DefensysTokens.mistInputFill;
+        effectiveFg = DefensysTokens.mistTextSecondary;
+      }
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: bg,
+        color: effectiveBg,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
         text,
-        style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w700),
+        style: TextStyle(color: effectiveFg, fontSize: 11, fontWeight: FontWeight.w700),
       ),
     );
   }
@@ -462,11 +502,18 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           builder: (context, child) {
             return Theme(
               data: Theme.of(context).copyWith(
-                colorScheme: const ColorScheme.light(
-                  primary: AppColors.maroon,
-                  onPrimary: Colors.white,
-                  onSurface: AppColors.textPrimary,
-                ),
+                colorScheme: _isDark
+                    ? const ColorScheme.dark(
+                        primary: AppColors.maroon,
+                        onPrimary: Colors.white,
+                        surface: DefensysTokens.mistSurface,
+                        onSurface: DefensysTokens.mistTextPrimary,
+                      )
+                    : const ColorScheme.light(
+                        primary: AppColors.maroon,
+                        onPrimary: Colors.white,
+                        onSurface: AppColors.textPrimary,
+                      ),
               ),
               child: child!,
             );
@@ -486,11 +533,12 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       child: IgnorePointer(
         child: TextFormField(
           controller: controller,
+          style: TextStyle(color: _textPrimary, fontSize: 14),
           decoration: _schedulerInputDecoration(
-            suffixIcon: const Icon(
+            suffixIcon: Icon(
               Icons.calendar_today_outlined,
               size: 18,
-              color: Color(0xFF667085),
+              color: _isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085),
             ),
           ),
         ),
@@ -520,11 +568,18 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           builder: (context, child) {
             return Theme(
               data: Theme.of(context).copyWith(
-                colorScheme: const ColorScheme.light(
-                  primary: AppColors.maroon,
-                  onPrimary: Colors.white,
-                  onSurface: AppColors.textPrimary,
-                ),
+                colorScheme: _isDark
+                    ? const ColorScheme.dark(
+                        primary: AppColors.maroon,
+                        onPrimary: Colors.white,
+                        surface: DefensysTokens.mistSurface,
+                        onSurface: DefensysTokens.mistTextPrimary,
+                      )
+                    : const ColorScheme.light(
+                        primary: AppColors.maroon,
+                        onPrimary: Colors.white,
+                        onSurface: AppColors.textPrimary,
+                      ),
               ),
               child: child!,
             );
@@ -546,11 +601,12 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       child: IgnorePointer(
         child: TextFormField(
           controller: controller,
+          style: TextStyle(color: _textPrimary, fontSize: 14),
           decoration: _schedulerInputDecoration(
-            suffixIcon: const Icon(
+            suffixIcon: Icon(
               Icons.access_time_outlined,
               size: 18,
-              color: Color(0xFF667085),
+              color: _isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085),
             ),
           ),
         ),
@@ -583,19 +639,27 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         margin: const EdgeInsets.only(top: 8),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: const Color(0xFFFEF3F2),
+          color: _isDark
+              ? const Color(0xFF7F1D1D).withValues(alpha: 0.25)
+              : const Color(0xFFFEF3F2),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFFECDCA)),
+          border: Border.all(
+            color: _isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFECDCA),
+          ),
         ),
         child: Row(
           children: [
-            const Icon(Icons.info_outline, size: 16, color: Color(0xFFD92D20)),
+            Icon(
+              Icons.info_outline,
+              size: 16,
+              color: _isDark ? const Color(0xFFF87171) : const Color(0xFFD92D20),
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 'This stage is marked officially complete. Scheduling new defenses for this stage is disabled.',
-                style: const TextStyle(
-                  color: Color(0xFFB42318),
+                style: TextStyle(
+                  color: _isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB42318),
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -611,19 +675,27 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         margin: const EdgeInsets.only(top: 8),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: const Color(0xFFFFFAEB),
+          color: _isDark
+              ? const Color(0xFF78350F).withValues(alpha: 0.25)
+              : const Color(0xFFFFFAEB),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFFEDF89)),
+          border: Border.all(
+            color: _isDark ? const Color(0xFF78350F) : const Color(0xFFFEDF89),
+          ),
         ),
         child: Row(
           children: [
-            const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFDC6803)),
+            Icon(
+              Icons.warning_amber_rounded,
+              size: 16,
+              color: _isDark ? const Color(0xFFFBBF24) : const Color(0xFFDC6803),
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 'No teams are currently ready for ${targetStage['label'] ?? 'this stage'}. Teams must have pre-defense deliverables approved by their instructor.',
-                style: const TextStyle(
-                  color: Color(0xFFB54708),
+                style: TextStyle(
+                  color: _isDark ? const Color(0xFFFCD34D) : const Color(0xFFB54708),
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -641,16 +713,20 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(
+          color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+        ),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xFFEEF2F6),
+              color: _isDark
+                  ? DefensysTokens.mistSurface
+                  : const Color(0xFFEEF2F6),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, size: 18, color: AppColors.maroon),
@@ -662,8 +738,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
               children: [
                 Text(
                   label,
-                  style: const TextStyle(
-                    color: Color(0xFF64748B),
+                  style: TextStyle(
+                    color: _textSecondary,
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                   ),
@@ -671,8 +747,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                 const SizedBox(height: 2),
                 Text(
                   value,
-                  style: const TextStyle(
-                    color: Color(0xFF1E293B),
+                  style: TextStyle(
+                    color: _textPrimary,
                     fontSize: 14,
                     fontWeight: FontWeight.w800,
                   ),
@@ -708,8 +784,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                 children: [
                   Expanded(
                     child: Row(
-                      children: const [
-                        CircleAvatar(
+                      children: [
+                        const CircleAvatar(
                           radius: 12,
                           backgroundColor: AppColors.maroon,
                           child: Text(
@@ -721,14 +797,14 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                             ),
                           ),
                         ),
-                        SizedBox(width: 10),
+                        const SizedBox(width: 10),
                         Flexible(
                           child: Text(
                             'Step 1: Set Up Defense Schedule',
                             style: TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w900,
-                              color: AppColors.textPrimary,
+                              color: _textPrimary,
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -742,13 +818,17 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFEECEC),
+                      color: _isDark
+                          ? const Color(0xFF7F1D1D).withValues(alpha: 0.3)
+                          : const Color(0xFFFEECEC),
                       borderRadius: BorderRadius.circular(999),
                     ),
-                    child: const Text(
+                    child: Text(
                       'Required First',
                       style: TextStyle(
-                        color: Color(0xFFEF4444),
+                        color: _isDark
+                            ? const Color(0xFFFCA5A5)
+                            : const Color(0xFFEF4444),
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
                       ),
@@ -757,14 +837,17 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                 ],
               ),
               const SizedBox(height: 10),
-              const Divider(height: 1),
+              Divider(
+                height: 1,
+                color: _isDark ? DefensysTokens.mistBorder : null,
+              ),
               const SizedBox(height: 20),
               Text(
                 widget.scope == 'pit'
                     ? 'Choose the PIT event, date, room, start time, and slot duration for this batch. Then generate the plan to prepare consecutive slots.'
                     : 'Choose the shared stage, date, room, start time, and slot duration for this batch. Then generate the plan to prepare consecutive slots.',
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
+                style: TextStyle(
+                  color: _textSecondary,
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
                 ),
@@ -775,12 +858,18 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                   'Stage *',
                   DropdownButtonFormField<int?>(
                     value: stageId,
+                    dropdownColor:
+                        _isDark ? DefensysTokens.mistSurface : Colors.white,
+                    style: TextStyle(color: _textPrimary, fontSize: 14),
                     decoration: _schedulerInputDecoration(),
                     items: stages
                         .map(
                           (stage) => DropdownMenuItem<int?>(
                             value: asInt(stage['id']),
-                            child: Text(stage['label']?.toString() ?? ''),
+                            child: Text(
+                              stage['label']?.toString() ?? '',
+                              style: TextStyle(color: _textPrimary),
+                            ),
                           ),
                         )
                         .toList(),
@@ -802,17 +891,23 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
+                    color: _isDark
+                        ? DefensysTokens.mistInputFill
+                        : const Color(0xFFF8FAFC),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE4E7EC)),
+                    border: Border.all(
+                      color: _isDark
+                          ? DefensysTokens.mistBorder
+                          : const Color(0xFFE4E7EC),
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'PIT event setup (this batch)',
                         style: TextStyle(
-                          color: Color(0xFF344054),
+                          color: _textPrimary,
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
                         ),
@@ -821,9 +916,14 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                       _labeledField(
                         'Event name *',
                         DropdownButtonFormField<String>(
-                          value: state.pitEvents.any((e) => e['event_name'] == widget.eventController.text)
+                          value: state.pitEvents.any((e) =>
+                                  e['event_name'] == widget.eventController.text)
                               ? widget.eventController.text
                               : null,
+                          dropdownColor: _isDark
+                              ? DefensysTokens.mistSurface
+                              : Colors.white,
+                          style: TextStyle(color: _textPrimary, fontSize: 14),
                           decoration: _schedulerInputDecoration(
                             hintText: 'Select PIT event',
                           ),
@@ -831,7 +931,10 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                             final name = e['event_name']?.toString() ?? '';
                             return DropdownMenuItem<String>(
                               value: name,
-                              child: Text(name),
+                              child: Text(
+                                name,
+                                style: TextStyle(color: _textPrimary),
+                              ),
                             );
                           }).toList(),
                           onChanged: (val) {
@@ -957,12 +1060,12 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'Available Panelists (*)',
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: FontWeight.w800,
-                                color: AppColors.textPrimary,
+                                color: _textPrimary,
                               ),
                             ),
                             const SizedBox(height: 2),
@@ -970,7 +1073,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                               'Select panelists to assign to generated slots.',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Colors.grey.shade600,
+                                color: _textSecondary,
                               ),
                             ),
                           ],
@@ -1016,10 +1119,10 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                           minimumSize: Size.zero,
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
-                        child: const Text(
+                        child: Text(
                           'Clear All',
                           style: TextStyle(
-                            color: Color(0xFF667085),
+                            color: _isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085),
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
@@ -1052,7 +1155,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                                     selected ? FontWeight.w700 : FontWeight.w500,
                                 color: selected
                                     ? AppColors.maroon
-                                    : const Color(0xFF344054),
+                                    : (_isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF344054)),
                               ),
                             ),
                             selected: selected,
@@ -1072,15 +1175,15 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                                     }
                                     widget.onPanelistsChanged(copy);
                                   },
-                            backgroundColor: const Color(0xFFF8FAFC),
-                            selectedColor: const Color(0xFFFEECEC),
+                            backgroundColor: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
+                            selectedColor: _isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.3) : const Color(0xFFFEECEC),
                             checkmarkColor: AppColors.maroon,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                               side: BorderSide(
                                 color: selected
                                     ? AppColors.maroon
-                                    : const Color(0xFFE2E8F0),
+                                    : (_isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
                               ),
                             ),
                           );
@@ -1090,19 +1193,19 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                   ),
                   if (widget.selectedPanelistIds.isNotEmpty) ...[
                     const SizedBox(height: 16),
-                    const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                    Divider(height: 1, color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFF1F5F9)),
                     const SizedBox(height: 14),
                     Wrap(
                       crossAxisAlignment: WrapCrossAlignment.center,
                       spacing: 6,
                       runSpacing: 4,
                       children: [
-                        const Text(
+                        Text(
                           '👑 Presiding Panel Chair',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w800,
-                            color: Color(0xFF92400E),
+                            color: _isDark ? const Color(0xFFFCD34D) : const Color(0xFF92400E),
                           ),
                         ),
                         Container(
@@ -1111,13 +1214,13 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFEF3C7),
+                            color: _isDark ? const Color(0xFF78350F).withValues(alpha: 0.35) : const Color(0xFFFEF3C7),
                             borderRadius: BorderRadius.circular(4),
                           ),
-                          child: const Text(
+                          child: Text(
                             'Verdict Authority',
                             style: TextStyle(
-                              color: Color(0xFFB45309),
+                              color: _isDark ? const Color(0xFFFCD34D) : const Color(0xFFB45309),
                               fontSize: 10,
                               fontWeight: FontWeight.w700,
                             ),
@@ -1126,9 +1229,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                       ],
                     ),
                     const SizedBox(height: 4),
-                    const Text(
+                    Text(
                       'Choose which panelist presides and issues the official stage verdict.',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      style: TextStyle(fontSize: 12, color: _textSecondary),
                     ),
                     const SizedBox(height: 10),
                     Wrap(
@@ -1148,7 +1251,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: isChair ? FontWeight.w800 : FontWeight.w500,
-                              color: isChair ? const Color(0xFF92400E) : const Color(0xFF344054),
+                              color: isChair
+                                  ? (_isDark ? const Color(0xFFFCD34D) : const Color(0xFF92400E))
+                                  : (_isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF344054)),
                             ),
                           ),
                           selected: isChair,
@@ -1157,12 +1262,12 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                               setState(() => _selectedChairId = id);
                             }
                           },
-                          backgroundColor: const Color(0xFFF8FAFC),
-                          selectedColor: const Color(0xFFFEF3C7),
+                          backgroundColor: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
+                          selectedColor: _isDark ? const Color(0xFF78350F).withValues(alpha: 0.35) : const Color(0xFFFEF3C7),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                             side: BorderSide(
-                              color: isChair ? const Color(0xFFF59E0B) : const Color(0xFFE2E8F0),
+                              color: isChair ? const Color(0xFFF59E0B) : (_isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
                               width: isChair ? 1.5 : 1.0,
                             ),
                           ),
@@ -1186,12 +1291,12 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
+                              Text(
                                 'Available Documenters (Optional)',
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w800,
-                                  color: AppColors.textPrimary,
+                                  color: _textPrimary,
                                 ),
                               ),
                               const SizedBox(height: 2),
@@ -1199,7 +1304,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                                 'Select a documenter to record minutes for this batch.',
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: Colors.grey.shade600,
+                                  color: _textSecondary,
                                 ),
                               ),
                             ],
@@ -1231,10 +1336,10 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
-                          child: const Text(
+                          child: Text(
                             'Clear Documenter',
                             style: TextStyle(
-                              color: Color(0xFF667085),
+                              color: _isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085),
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                             ),
@@ -1244,13 +1349,13 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                     ],
                     const SizedBox(height: 10),
                     if (state.documenters.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Text(
                           'No documenters available.',
                           style: TextStyle(
                             fontSize: 13,
-                            color: AppColors.textSecondary,
+                            color: _textSecondary,
                             fontStyle: FontStyle.italic,
                           ),
                         ),
@@ -1280,7 +1385,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                                   ? AppColors.maroon
                                   : (isPanelist
                                       ? const Color(0xFF94A3B8)
-                                      : const Color(0xFF64748B)),
+                                      : (_isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF64748B))),
                             ),
                             label: Text(
                               isPanelist ? '$name (Panelist)' : name,
@@ -1293,7 +1398,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                                     ? AppColors.maroon
                                     : (isPanelist
                                         ? const Color(0xFF94A3B8)
-                                        : const Color(0xFF344054)),
+                                        : (_isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF344054))),
                                 decoration: isPanelist
                                     ? TextDecoration.lineThrough
                                     : null,
@@ -1306,15 +1411,15 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                                     widget.onDocumenterChanged
                                         ?.call(val ? id : null);
                                   },
-                            backgroundColor: const Color(0xFFF8FAFC),
-                            selectedColor: const Color(0xFFFEECEC),
+                            backgroundColor: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
+                            selectedColor: _isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.3) : const Color(0xFFFEECEC),
                             checkmarkColor: AppColors.maroon,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                               side: BorderSide(
                                 color: selected
                                     ? AppColors.maroon
-                                    : const Color(0xFFE2E8F0),
+                                    : (_isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
                               ),
                             ),
                           );
@@ -1329,12 +1434,12 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Schedule Overview',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary,
+                      color: _textPrimary,
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -1394,10 +1499,14 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   Widget _planTableHeader(List<String> headers) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
-        color: Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
-        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+      decoration: BoxDecoration(
+        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+        border: Border(
+          bottom: BorderSide(
+            color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+          ),
+        ),
       ),
       child: Row(
         children: headers
@@ -1405,8 +1514,10 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
               (h) => Expanded(
                 child: Text(
                   h,
-                  style: const TextStyle(
-                    color: Color(0xFF475467),
+                  style: TextStyle(
+                    color: _isDark
+                        ? DefensysTokens.mistTextSecondary
+                        : const Color(0xFF475467),
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
@@ -1432,8 +1543,14 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     return Container(
       key: key,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: _isDark
+                ? DefensysTokens.mistBorder.withValues(alpha: 0.5)
+                : const Color(0xFFF1F5F9),
+          ),
+        ),
       ),
       child: Row(
         children: [
@@ -1441,8 +1558,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             width: 32,
             child: Text(
               '${index + 1}',
-              style: const TextStyle(
-                color: Color(0xFF64748B),
+              style: TextStyle(
+                color: _textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
               ),
@@ -1451,8 +1568,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           Expanded(
             child: Text(
               team,
-              style: const TextStyle(
-                color: Color(0xFF1E293B),
+              style: TextStyle(
+                color: _textPrimary,
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
               ),
@@ -1461,8 +1578,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           Expanded(
             child: Text(
               stage,
-              style: const TextStyle(
-                color: Color(0xFF475467),
+              style: TextStyle(
+                color: _textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -1471,8 +1588,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           Expanded(
             child: Text(
               '$date $time',
-              style: const TextStyle(
-                color: Color(0xFF475467),
+              style: TextStyle(
+                color: _textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -1481,8 +1598,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           Expanded(
             child: Text(
               room,
-              style: const TextStyle(
-                color: Color(0xFF475467),
+              style: TextStyle(
+                color: _textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -1493,8 +1610,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
               panel,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFF475467),
+              style: TextStyle(
+                color: _textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -1521,8 +1638,14 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: _isDark
+                ? DefensysTokens.mistBorder.withValues(alpha: 0.5)
+                : const Color(0xFFF1F5F9),
+          ),
+        ),
       ),
       child: Row(
         children: [
@@ -1530,8 +1653,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             width: 32,
             child: Text(
               '${index + 1}',
-              style: const TextStyle(
-                color: Color(0xFF64748B),
+              style: TextStyle(
+                color: _textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
               ),
@@ -1540,8 +1663,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           Expanded(
             child: Text(
               team,
-              style: const TextStyle(
-                color: Color(0xFF1E293B),
+              style: TextStyle(
+                color: _textPrimary,
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
               ),
@@ -1550,8 +1673,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           Expanded(
             child: Text(
               stage,
-              style: const TextStyle(
-                color: Color(0xFF475467),
+              style: TextStyle(
+                color: _textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -1560,8 +1683,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           Expanded(
             child: Text(
               '$date $time',
-              style: const TextStyle(
-                color: Color(0xFF475467),
+              style: TextStyle(
+                color: _textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -1570,8 +1693,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           Expanded(
             child: Text(
               room,
-              style: const TextStyle(
-                color: Color(0xFF475467),
+              style: TextStyle(
+                color: _textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -1582,8 +1705,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
               panel,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Color(0xFF475467),
+              style: TextStyle(
+                color: _textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -1622,10 +1745,10 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Row(
                   children: [
-                    CircleAvatar(
+                    const CircleAvatar(
                       radius: 12,
                       backgroundColor: AppColors.maroon,
                       child: Text(
@@ -1637,13 +1760,13 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                         ),
                       ),
                     ),
-                    SizedBox(width: 10),
+                    const SizedBox(width: 10),
                     Text(
                       'Step 2: Review & Arrange Teams',
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w900,
-                        color: AppColors.textPrimary,
+                        color: _textPrimary,
                       ),
                     ),
                   ],
@@ -1657,12 +1780,12 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             ],
           ),
           const SizedBox(height: 10),
-          const Divider(height: 1),
+          Divider(height: 1, color: _isDark ? DefensysTokens.mistBorder : null),
           const SizedBox(height: 16),
-          const Text(
+          Text(
             'Review the generated slot sequence. You can reorder teams or remove individual slots before finalizing.',
             style: TextStyle(
-              color: AppColors.textSecondary,
+              color: _textSecondary,
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
@@ -1721,6 +1844,11 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                   widget.onShowFinalPreviewChanged(false);
                 },
                 style: OutlinedButton.styleFrom(
+                  backgroundColor: _isDark ? DefensysTokens.mistInputFill : Colors.white,
+                  foregroundColor: _isDark ? DefensysTokens.mistTextPrimary : AppColors.textPrimary,
+                  side: BorderSide(
+                    color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1),
+                  ),
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -1764,10 +1892,10 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Row(
                   children: [
-                    CircleAvatar(
+                    const CircleAvatar(
                       radius: 12,
                       backgroundColor: AppColors.maroon,
                       child: Text(
@@ -1779,13 +1907,13 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                         ),
                       ),
                     ),
-                    SizedBox(width: 10),
+                    const SizedBox(width: 10),
                     Text(
                       'Step 3: Final Schedule Preview',
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w900,
-                        color: AppColors.textPrimary,
+                        color: _textPrimary,
                       ),
                     ),
                   ],
@@ -1799,12 +1927,12 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             ],
           ),
           const SizedBox(height: 10),
-          const Divider(height: 1),
+          Divider(height: 1, color: _isDark ? DefensysTokens.mistBorder : null),
           const SizedBox(height: 16),
-          const Text(
+          Text(
             'Final verification. Confirm all details below. Click "Publish & Save Schedule" to persist these slots.',
             style: TextStyle(
-              color: AppColors.textSecondary,
+              color: _textSecondary,
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
@@ -1844,6 +1972,11 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
               OutlinedButton.icon(
                 onPressed: () => widget.onShowFinalPreviewChanged(false),
                 style: OutlinedButton.styleFrom(
+                  backgroundColor: _isDark ? DefensysTokens.mistInputFill : Colors.white,
+                  foregroundColor: _isDark ? DefensysTokens.mistTextPrimary : AppColors.textPrimary,
+                  side: BorderSide(
+                    color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1),
+                  ),
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),

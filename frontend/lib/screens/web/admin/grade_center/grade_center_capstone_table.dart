@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../services/grade_center_provider.dart';
+import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/dialogs/confirm_dialog.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import 'grade_center_shared.dart';
@@ -84,6 +85,8 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                 ? 'Overview of all Capstone and PIT grade groups for the active term.'
                 : 'Manage grading by defense stage for the active term.'));
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return DefensysCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -106,18 +109,18 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                     children: [
                       Text(
                         effectiveTitle,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w800,
-                          color: DefensysUi.textDark,
+                          color: isDark ? DefensysTokens.mistTextPrimary : DefensysUi.textDark,
                         ),
                       ),
                       const SizedBox(height: 3),
                       Text(
                         effectiveSubtitle,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12.5,
-                          color: DefensysUi.steelGrey,
+                          color: isDark ? DefensysTokens.mistTextSecondary : DefensysUi.steelGrey,
                           height: 1.35,
                         ),
                       ),
@@ -207,35 +210,42 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                 ),
                 if (termLabel.isNotEmpty) ...[
                   const SizedBox(width: 10),
-                  _headerPill(termLabel),
+                  _headerPill(termLabel, context: context),
                 ],
                 const SizedBox(width: 8),
                 _headerPill(
                   rows.isEmpty
                       ? '0 stages'
                       : '1–${rows.length} of ${rows.length} ${isAll ? 'groups' : 'stages'}',
+                  context: context,
                 ),
               ],
             ),
           ),
-          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+          Divider(
+            height: 1,
+            color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-            child: _filterToolbar(),
+            child: _filterToolbar(context),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(24, 10, 24, 16),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 10, 24, 16),
             child: Text(
               'Open a stage to view teams, edit scores, and mark officially complete.',
               style: TextStyle(
-                color: Color(0xFF98A2B3),
+                color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF98A2B3),
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
                 height: 1.35,
               ),
             ),
           ),
-          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+          Divider(
+            height: 1,
+            color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
+          ),
           if ((scope == 'capstone' || scope == 'all') &&
               unscheduledCapstoneTeamCount(state) > 0) ...[
             Padding(
@@ -245,32 +255,37 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
               ),
             ),
           ],
-          _tableBody(rows),
+          _tableBody(rows, context),
         ],
       ),
     );
   }
 
-  Widget _headerPill(String text) {
+  Widget _headerPill(String text, {BuildContext? context}) {
+    final isDark =
+        context != null && Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(
+          color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
+        ),
       ),
       child: Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          color: Color(0xFF5D6678),
+          color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF5D6678),
         ),
       ),
     );
   }
 
-  Widget _filterToolbar() {
+  Widget _filterToolbar(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
@@ -280,7 +295,11 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
             child: gradeCenterFilterField(
               label: 'Scope',
               icon: Icons.layers_outlined,
-              dropdown: gradeCenterFilterDropdownShell(child: scopeFilter),
+              context: context,
+              dropdown: gradeCenterFilterDropdownShell(
+                context: context,
+                child: scopeFilter,
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -290,7 +309,11 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
           child: gradeCenterFilterField(
             label: 'Year level',
             icon: Icons.school_outlined,
-            dropdown: gradeCenterFilterDropdownShell(child: yearLevelFilter),
+            context: context,
+            dropdown: gradeCenterFilterDropdownShell(
+              context: context,
+              child: yearLevelFilter,
+            ),
           ),
         ),
         const SizedBox(width: 12),
@@ -299,7 +322,11 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
           child: gradeCenterFilterField(
             label: 'Status',
             icon: Icons.flag_outlined,
-            dropdown: gradeCenterFilterDropdownShell(child: statusFilter),
+            context: context,
+            dropdown: gradeCenterFilterDropdownShell(
+              context: context,
+              child: statusFilter,
+            ),
           ),
         ),
         const SizedBox(width: 12),
@@ -308,31 +335,39 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
           child: gradeCenterFilterField(
             label: 'Search',
             icon: Icons.search_rounded,
+            context: context,
             dropdown: SizedBox(
               height: 40,
               child: TextField(
                 controller: searchController,
                 enabled: !state.isSaving,
-                style: const TextStyle(fontSize: 13),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark ? DefensysTokens.mistTextPrimary : DefensysUi.textDark,
+                ),
                 decoration: InputDecoration(
                   hintText: 'Search teams...',
-                  hintStyle: const TextStyle(
-                    color: DefensysUi.steelGrey,
+                  hintStyle: TextStyle(
+                    color: isDark ? DefensysTokens.mistTextSecondary : DefensysUi.steelGrey,
                     fontSize: 12.5,
                   ),
                   filled: true,
-                  fillColor: const Color(0xFFF9FAFB),
+                  fillColor: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF9FAFB),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 10,
                   ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(7),
-                    borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+                    borderSide: BorderSide(
+                      color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB),
+                    ),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(7),
-                    borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+                    borderSide: BorderSide(
+                      color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB),
+                    ),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(7),
@@ -353,7 +388,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     );
   }
 
-  Widget _tableBody(List<CapstoneStageRow> rows) {
+  Widget _tableBody(List<CapstoneStageRow> rows, BuildContext context) {
     final isPit = scope == 'pit';
     final isAll = scope == 'all';
     if (state.isLoading || (stagesLoading && stages.isEmpty)) {
@@ -391,10 +426,10 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
       );
     }
 
-    return _stageCardsList(rows);
+    return _stageCardsList(rows, context);
   }
 
-  Widget _stageCardsList(List<CapstoneStageRow> rows) {
+  Widget _stageCardsList(List<CapstoneStageRow> rows, BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
       child: Column(
@@ -402,14 +437,15 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
         children: [
           for (int i = 0; i < rows.length; i++) ...[
             if (i > 0) const SizedBox(height: 14),
-            _stageMilestoneCard(rows[i]),
+            _stageMilestoneCard(rows[i], context),
           ],
         ],
       ),
     );
   }
 
-  Widget _stageMilestoneCard(CapstoneStageRow row) {
+  Widget _stageMilestoneCard(CapstoneStageRow row, BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final order = row.displayOrder > 0 ? row.displayOrder : 1;
     final isComplete = row.isOfficiallyComplete;
     final rowScope = row.groupKey.split('|').first;
@@ -430,19 +466,21 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDark ? DefensysTokens.mistSurface : Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: isComplete
-              ? const Color(0xFFA7F3D0)
-              : const Color(0xFFE5E7EB),
+              ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFA7F3D0))
+              : (isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: isComplete
-                ? const Color(0xFF047857).withValues(alpha: 0.04)
-                : Colors.black.withValues(alpha: 0.025),
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.25)
+                : (isComplete
+                    ? const Color(0xFF047857).withValues(alpha: 0.04)
+                    : Colors.black.withValues(alpha: 0.025)),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -465,8 +503,8 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                     children: [
                       Text(
                         scope == 'all' ? row.title : row.label,
-                        style: const TextStyle(
-                          color: DefensysUi.textDark,
+                        style: TextStyle(
+                          color: isDark ? DefensysTokens.mistTextPrimary : DefensysUi.textDark,
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
                           letterSpacing: -0.2,
@@ -476,8 +514,8 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                         const SizedBox(height: 3),
                         Text(
                           row.description,
-                          style: const TextStyle(
-                            color: Color(0xFF667085),
+                          style: TextStyle(
+                            color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085),
                             fontSize: 12,
                             height: 1.35,
                           ),
@@ -498,7 +536,10 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
             child: _stageEvaluationSnapshot(row),
           ),
 
-          const Divider(height: 1, color: Color(0xFFF2F4F7)),
+          Divider(
+            height: 1,
+            color: isDark ? DefensysTokens.mistBorder : const Color(0xFFF2F4F7),
+          ),
 
           // Bottom Action Bar: Guidance Note + Actions (More & Main Milestone Button)
           Padding(
@@ -517,8 +558,8 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                               : Icons.info_outline_rounded,
                           size: 14,
                           color: isComplete
-                              ? const Color(0xFF047857)
-                              : const Color(0xFF667085),
+                              ? (isDark ? const Color(0xFF34D399) : const Color(0xFF047857))
+                              : (isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085)),
                         ),
                         const SizedBox(width: 6),
                         Expanded(
@@ -530,8 +571,8 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                                     : 'Schedule defenses in Defense Scheduler to begin collecting evaluations.'),
                             style: TextStyle(
                               color: isComplete
-                                  ? const Color(0xFF047857)
-                                  : const Color(0xFF667085),
+                                  ? (isDark ? const Color(0xFF34D399) : const Color(0xFF047857))
+                                  : (isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085)),
                               fontSize: 11.5,
                               fontWeight: isComplete
                                   ? FontWeight.w600
@@ -555,8 +596,8 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                           'Peer grading open',
                           style: TextStyle(
                             color: isComplete
-                                ? const Color(0xFF98A2B3)
-                                : const Color(0xFF344054),
+                                ? (isDark ? DefensysTokens.mistTextSecondary.withValues(alpha: 0.5) : const Color(0xFF98A2B3))
+                                : (isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF344054)),
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
@@ -589,17 +630,17 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                         width: 36,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: isDark ? DefensysTokens.mistInputFill : Colors.white,
                           borderRadius: BorderRadius.circular(7),
                           border: Border.all(
-                            color: const Color(0xFFD0D5DD),
+                            color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD0D5DD),
                             width: 1,
                           ),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.visibility_outlined,
                           size: 17,
-                          color: Color(0xFF344054),
+                          color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF344054),
                         ),
                       ),
                     ),
@@ -629,10 +670,10 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                       icon: const Icon(Icons.replay_rounded, size: 14),
                       label: const Text('Reopen Stage'),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFF344054),
-                        backgroundColor: Colors.white,
-                        side: const BorderSide(
-                          color: Color(0xFFD0D5DD),
+                        foregroundColor: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF344054),
+                        backgroundColor: isDark ? DefensysTokens.mistInputFill : Colors.white,
+                        side: BorderSide(
+                          color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD0D5DD),
                           width: 1,
                         ),
                         shape: RoundedRectangleBorder(
@@ -718,23 +759,25 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
         final isNarrow = constraints.maxWidth < 650;
 
         final teamCard = _snapshotTile(
           icon: Icons.groups_outlined,
-          iconColor: const Color(0xFF475467),
+          iconColor: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF475467),
           label: 'ENROLLED TEAMS',
           value: '${row.teamCount} ${row.teamCount == 1 ? 'Team' : 'Teams'}',
           subtitle: hasTeams
               ? '$readyCount of ${row.teamCount} grading-ready'
               : 'No teams scheduled',
+          isDark: isDark,
         );
 
         final readinessCard = _snapshotTile(
           icon: isComplete ? Icons.verified_rounded : Icons.fact_check_outlined,
           iconColor: isComplete
-              ? const Color(0xFF047857)
-              : const Color(0xFFD97706),
+              ? (isDark ? const Color(0xFF34D399) : const Color(0xFF047857))
+              : (isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706)),
           label: 'EVALUATION READINESS',
           value: isComplete
               ? '100% Finalized'
@@ -746,6 +789,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
               : (hasTeams
                   ? 'Grading in progress'
                   : 'No active defense slots'),
+          isDark: isDark,
         );
 
         final componentsCard = _snapshotComponentsTile(
@@ -763,6 +807,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
               : 'Disabled',
           isComplete: isComplete,
           showAdviser: !isPitRow,
+          isDark: isDark,
         );
 
         if (isNarrow) {
@@ -798,13 +843,16 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     required String label,
     required String value,
     required String subtitle,
+    bool isDark = false,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF9FAFB),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFEAECF0)),
+        border: Border.all(
+          color: isDark ? DefensysTokens.mistBorder : const Color(0xFFEAECF0),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -815,8 +863,8 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
               const SizedBox(width: 5),
               Text(
                 label,
-                style: const TextStyle(
-                  color: Color(0xFF667085),
+                style: TextStyle(
+                  color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085),
                   fontSize: 9.5,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.4,
@@ -827,8 +875,8 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
           const SizedBox(height: 4),
           Text(
             value,
-            style: const TextStyle(
-              color: DefensysUi.textDark,
+            style: TextStyle(
+              color: isDark ? DefensysTokens.mistTextPrimary : DefensysUi.textDark,
               fontSize: 13,
               fontWeight: FontWeight.w800,
             ),
@@ -836,8 +884,8 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
           const SizedBox(height: 1.5),
           Text(
             subtitle,
-            style: const TextStyle(
-              color: Color(0xFF667085),
+            style: TextStyle(
+              color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085),
               fontSize: 11,
               height: 1.3,
             ),
@@ -855,25 +903,32 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     required String peerText,
     required bool isComplete,
     bool showAdviser = true,
+    bool isDark = false,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF9FAFB),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFEAECF0)),
+        border: Border.all(
+          color: isDark ? DefensysTokens.mistBorder : const Color(0xFFEAECF0),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.checklist_rounded, size: 13.5, color: Color(0xFF475467)),
-              SizedBox(width: 5),
+              Icon(
+                Icons.checklist_rounded,
+                size: 13.5,
+                color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF475467),
+              ),
+              const SizedBox(width: 5),
               Text(
                 'EVALUATION COMPONENTS',
                 style: TextStyle(
-                  color: Color(0xFF667085),
+                  color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085),
                   fontSize: 9.5,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.4,
@@ -884,13 +939,13 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
           const SizedBox(height: 5),
           Row(
             children: [
-              _componentMiniPill('Panel', panelText),
+              _componentMiniPill('Panel', panelText, isDark: isDark),
               if (showAdviser && adviserText != null) ...[
                 const SizedBox(width: 4),
-                _componentMiniPill('Adviser', adviserText),
+                _componentMiniPill('Adviser', adviserText, isDark: isDark),
               ],
               const SizedBox(width: 4),
-              _componentMiniPill('Peer', peerText),
+              _componentMiniPill('Peer', peerText, isDark: isDark),
             ],
           ),
         ],
@@ -898,16 +953,20 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     );
   }
 
-  Widget _componentMiniPill(String name, String status) {
+  Widget _componentMiniPill(String name, String status, {bool isDark = false}) {
     final isDone = status.contains('done') || status == 'Complete';
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
         decoration: BoxDecoration(
-          color: isDone ? const Color(0xFFECFDF5) : Colors.white,
+          color: isDone
+              ? (isDark ? const Color(0xFF064E3B).withValues(alpha: 0.35) : const Color(0xFFECFDF5))
+              : (isDark ? DefensysTokens.mistSurface : Colors.white),
           borderRadius: BorderRadius.circular(4),
           border: Border.all(
-            color: isDone ? const Color(0xFFA7F3D0) : const Color(0xFFD0D5DD),
+            color: isDone
+                ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFA7F3D0))
+                : (isDark ? DefensysTokens.mistBorder : const Color(0xFFD0D5DD)),
             width: 0.8,
           ),
         ),
@@ -916,7 +975,9 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
             Text(
               name,
               style: TextStyle(
-                color: isDone ? const Color(0xFF047857) : const Color(0xFF344054),
+                color: isDone
+                    ? (isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857))
+                    : (isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF344054)),
                 fontSize: 9.5,
                 fontWeight: FontWeight.w700,
               ),
@@ -926,7 +987,9 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
             Text(
               status,
               style: TextStyle(
-                color: isDone ? const Color(0xFF059669) : const Color(0xFF667085),
+                color: isDone
+                    ? (isDark ? const Color(0xFFA7F3D0) : const Color(0xFF059669))
+                    : (isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085)),
                 fontSize: 8.5,
                 fontWeight: FontWeight.w600,
               ),
@@ -977,6 +1040,7 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return DefensysCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -1001,18 +1065,18 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
                     children: [
                       Text(
                         title,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w800,
-                          color: DefensysUi.textDark,
+                          color: isDark ? DefensysTokens.mistTextPrimary : DefensysUi.textDark,
                         ),
                       ),
                       const SizedBox(height: 3),
                       Text(
                         subtitle,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12.5,
-                          color: DefensysUi.steelGrey,
+                          color: isDark ? DefensysTokens.mistTextSecondary : DefensysUi.steelGrey,
                           height: 1.35,
                         ),
                       ),
@@ -1022,7 +1086,7 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
               ],
             ),
           ),
-          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+          Divider(height: 1, color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
             child: Row(
@@ -1034,7 +1098,9 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
                     child: gradeCenterFilterField(
                       label: 'Scope',
                       icon: Icons.layers_outlined,
+                      context: context,
                       dropdown: gradeCenterFilterDropdownShell(
+                        context: context,
                         child: scopeFilter,
                       ),
                     ),
@@ -1046,7 +1112,9 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
                   child: gradeCenterFilterField(
                     label: 'Year level',
                     icon: Icons.school_outlined,
+                    context: context,
                     dropdown: gradeCenterFilterDropdownShell(
+                      context: context,
                       child: yearLevelFilter,
                     ),
                   ),
@@ -1057,7 +1125,9 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
                   child: gradeCenterFilterField(
                     label: 'Status',
                     icon: Icons.flag_outlined,
+                    context: context,
                     dropdown: gradeCenterFilterDropdownShell(
+                      context: context,
                       child: statusFilter,
                     ),
                   ),
@@ -1068,34 +1138,38 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
                   child: gradeCenterFilterField(
                     label: 'Search',
                     icon: Icons.search_rounded,
+                    context: context,
                     dropdown: SizedBox(
                       height: 40,
                       child: TextField(
                         controller: searchController,
                         enabled: !state.isSaving,
-                        style: const TextStyle(fontSize: 13),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isDark ? DefensysTokens.mistTextPrimary : DefensysUi.textDark,
+                        ),
                         decoration: InputDecoration(
                           hintText: 'Search teams...',
-                          hintStyle: const TextStyle(
-                            color: DefensysUi.steelGrey,
+                          hintStyle: TextStyle(
+                            color: isDark ? DefensysTokens.mistTextSecondary : DefensysUi.steelGrey,
                             fontSize: 12.5,
                           ),
                           filled: true,
-                          fillColor: const Color(0xFFF9FAFB),
+                          fillColor: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF9FAFB),
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 12,
                             vertical: 10,
                           ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(7),
-                            borderSide: const BorderSide(
-                              color: Color(0xFFD1D5DB),
+                            borderSide: BorderSide(
+                              color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB),
                             ),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(7),
-                            borderSide: const BorderSide(
-                              color: Color(0xFFD1D5DB),
+                            borderSide: BorderSide(
+                              color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB),
                             ),
                           ),
                           focusedBorder: OutlineInputBorder(
@@ -1116,19 +1190,19 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
               ],
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(24, 10, 24, 16),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 10, 24, 16),
             child: Text(
               'Open a stage to view teams, edit scores, and mark officially complete.',
               style: TextStyle(
-                color: Color(0xFF98A2B3),
+                color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF98A2B3),
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
                 height: 1.35,
               ),
             ),
           ),
-          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+          Divider(height: 1, color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
             child: listContent,

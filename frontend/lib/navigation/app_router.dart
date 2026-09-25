@@ -235,19 +235,25 @@ List<RouteBase> _adminRoutes() {
       path: '/admin',
       redirect: (_, state) => _redirectAdminParentOnly(state),
       routes: [
-        GoRoute(path: 'overview', builder: (_, __) => const SizedBox.shrink()),
+        GoRoute(
+          path: 'overview',
+          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+        ),
         GoRoute(
           path: 'profile',
-          builder: (_, __) => const ProfileScreen(),
+          pageBuilder: (_, __) => const NoTransitionPage(child: ProfileScreen()),
         ),
         GoRoute(
           path: 'academic-periods',
-          builder: (_, __) => const SizedBox.shrink(),
+          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
         ),
-        GoRoute(path: 'users', builder: (_, __) => const SizedBox.shrink()),
+        GoRoute(
+          path: 'users',
+          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+        ),
         GoRoute(
           path: 'student-teams',
-          builder: (_, __) => const SizedBox.shrink(),
+          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
           routes: [
             GoRoute(
               path: ':teamId',
@@ -260,11 +266,11 @@ List<RouteBase> _adminRoutes() {
         ),
         GoRoute(
           path: 'student-records',
-          builder: (_, __) => const SizedBox.shrink(),
+          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
         ),
         GoRoute(
           path: 'grade-center',
-          builder: (_, __) => const SizedBox.shrink(),
+          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
           routes: [
             GoRoute(
               path: 'grades/:gradeId',
@@ -284,7 +290,7 @@ List<RouteBase> _adminRoutes() {
         ),
         GoRoute(
           path: 'rubrics',
-          builder: (_, __) => const SizedBox.shrink(),
+          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
           routes: [
             GoRoute(
               path: ':rubricId/edit',
@@ -297,37 +303,37 @@ List<RouteBase> _adminRoutes() {
         ),
         GoRoute(
           path: 'project-archive',
-          builder: (_, __) => const SizedBox.shrink(),
+          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
         ),
         GoRoute(
           path: 'repository-audit',
-          builder: (_, __) => const SizedBox.shrink(),
+          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
         ),
         GoRoute(
           path: 'curriculum-analytics',
-          builder: (_, __) => const SizedBox.shrink(),
+          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
         ),
         GoRoute(
           path: 'audit-compliance',
-          builder: (_, __) => const SizedBox.shrink(),
+          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
         ),
         GoRoute(
           path: 'defense-scheduler',
-          builder: (_, __) => const SizedBox.shrink(),
+          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
         ),
         GoRoute(
           path: 'defense-board',
-          builder: (_, __) => const SizedBox.shrink(),
+          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
           routes: [
             GoRoute(
               path: 'import',
-              builder: (_, __) => const SizedBox.shrink(),
+              pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
             ),
           ],
         ),
         GoRoute(
           path: 'defense-stages',
-          builder: (_, __) => const SizedBox.shrink(),
+          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
           routes: [
             GoRoute(
               path: ':stageId/edit',

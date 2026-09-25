@@ -8,6 +8,7 @@ import '../../../../services/defense_stages_provider.dart';
 import '../../../../services/rubric_engine_provider.dart';
 import '../../../../services/unsaved_changes_provider.dart';
 import '../../../../theme/app_theme.dart';
+import '../../../../theme/defensys_tokens.dart';
 import '../../../../utils/unsaved_changes.dart';
 import '../../../../widgets/widgets.dart';
 import '../../../../widgets/repository/repository_archive_naming_panel.dart';
@@ -42,6 +43,14 @@ class _DefenseStageEditorScreenState
   final _panel = TextEditingController(text: '50');
   final _adviser = TextEditingController(text: '30');
   final _peer = TextEditingController(text: '20');
+
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _surfaceColor => _isDark ? DefensysTokens.mistSurface : Colors.white;
+  Color get _panelBgColor => _isDark ? DefensysTokens.mistPanel : const Color(0xFFF8FAFC);
+  Color get _inputFillColor => _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC);
+  Color get _borderColor => _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0);
+  Color get _textPrimaryColor => _isDark ? DefensysTokens.textPrimaryDark : AppColors.textPrimary;
+  Color get _textSecondaryColor => _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary;
 
   int _orderPosition = 1;
   late int _activeTab;
@@ -375,8 +384,8 @@ class _DefenseStageEditorScreenState
           enabled: false,
           child: Text(
             '${r['name']} (Assigned to: ${assignedStageLabel ?? "Another Stage"})',
-            style: const TextStyle(
-              color: Color(0xFF9CA3AF),
+            style: TextStyle(
+              color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF9CA3AF),
               fontStyle: FontStyle.italic,
             ),
           ),
@@ -385,7 +394,12 @@ class _DefenseStageEditorScreenState
 
       return DropdownMenuItem<int>(
         value: id,
-        child: Text(r['name']?.toString() ?? ''),
+        child: Text(
+          r['name']?.toString() ?? '',
+          style: TextStyle(
+            color: _textPrimaryColor,
+          ),
+        ),
       );
     }).toList();
 
@@ -393,16 +407,26 @@ class _DefenseStageEditorScreenState
     if (currentId != null && !items.any((item) => item.value == currentId)) {
       items.add(DropdownMenuItem<int>(
         value: currentId,
-        child: Text(currentName ?? 'Rubric #$currentId'),
+        child: Text(
+          currentName ?? 'Rubric #$currentId',
+          style: TextStyle(
+            color: _textPrimaryColor,
+          ),
+        ),
       ));
     }
 
     // Always allow unselecting
     items.insert(
       0,
-      const DropdownMenuItem<int>(
+      DropdownMenuItem<int>(
         value: null,
-        child: Text('None (No Rubric)'),
+        child: Text(
+          'None (No Rubric)',
+          style: TextStyle(
+            color: _textSecondaryColor,
+          ),
+        ),
       ),
     );
 
@@ -469,23 +493,33 @@ class _DefenseStageEditorScreenState
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
+        color: _isDark
+            ? const Color(0xFF1E3A8A).withValues(alpha: 0.25)
+            : const Color(0xFFEFF6FF),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFBFDBFE)),
+        border: Border.all(
+          color: _isDark
+              ? const Color(0xFF3B82F6).withValues(alpha: 0.4)
+              : const Color(0xFFBFDBFE),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.task_alt_rounded, color: Color(0xFF1D4ED8), size: 20),
+          Icon(
+            Icons.task_alt_rounded,
+            color: _isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8),
+            size: 20,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Defense Stage Completed (Read-Only)',
                   style: TextStyle(
-                    color: Color(0xFF1E40AF),
+                    color: _isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF),
                     fontSize: 14,
                     fontWeight: FontWeight.w900,
                   ),
@@ -494,8 +528,8 @@ class _DefenseStageEditorScreenState
                 Text(
                   _lockReason ??
                       'This defense stage is completed and preserved because defenses have been scheduled or officially completed for this semester.',
-                  style: const TextStyle(
-                    color: Color(0xFF1D4ED8),
+                  style: TextStyle(
+                    color: _isDark ? const Color(0xFFBFDBFE) : const Color(0xFF1D4ED8),
                     fontSize: 12.5,
                     height: 1.35,
                     fontWeight: FontWeight.w500,
@@ -523,9 +557,9 @@ class _DefenseStageEditorScreenState
     final stageTitle = _stage?['label']?.toString() ?? 'Edit Defense Stage';
 
     if (_loading) {
-      return const ColoredBox(
-        color: Color(0xFFF3F4F6),
-        child: Center(
+      return ColoredBox(
+        color: _isDark ? DefensysTokens.mistBackground : const Color(0xFFF3F4F6),
+        child: const Center(
           child: CircularProgressIndicator(color: AppColors.maroon),
         ),
       );
@@ -545,7 +579,7 @@ class _DefenseStageEditorScreenState
         await _handleBack();
       },
       child: ColoredBox(
-        color: const Color(0xFFF3F4F6),
+        color: _isDark ? DefensysTokens.mistBackground : const Color(0xFFF3F4F6),
         child: SingleChildScrollView(
           padding: DefensysUi.contentPadding,
           child: Column(
@@ -557,23 +591,25 @@ class _DefenseStageEditorScreenState
                 subtitle: 'Configure lifecycle sequence, role grading weights, and submission requirements.',
                 actions: OutlinedButton.icon(
                   onPressed: _saving ? null : _handleBack,
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.arrow_back_rounded,
                     size: 16,
-                    color: DefensysUi.primaryMaroon,
+                    color: _isDark ? const Color(0xFFF87171) : DefensysUi.primaryMaroon,
                   ),
-                  label: const Text(
+                  label: Text(
                     'Back to Defense Stages Setup',
                     style: TextStyle(
                       fontFamily: DefensysUi.fontFamily,
                       fontWeight: FontWeight.w600,
                       fontSize: 13,
-                      color: DefensysUi.primaryMaroon,
+                      color: _isDark ? const Color(0xFFF87171) : DefensysUi.primaryMaroon,
                     ),
                   ),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: DefensysUi.primaryMaroon,
-                    side: const BorderSide(color: DefensysUi.primaryMaroon),
+                    foregroundColor: _isDark ? const Color(0xFFF87171) : DefensysUi.primaryMaroon,
+                    side: BorderSide(
+                      color: _isDark ? const Color(0xFFF87171).withValues(alpha: 0.6) : DefensysUi.primaryMaroon,
+                    ),
                   ),
                 ),
               ),
@@ -587,16 +623,18 @@ class _DefenseStageEditorScreenState
               // Main Tabbed Editor Card
               Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: _surfaceColor,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+                  border: Border.all(color: _borderColor),
+                  boxShadow: _isDark
+                      ? null
+                      : [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -612,7 +650,7 @@ class _DefenseStageEditorScreenState
                         onTabSelected: (tab) => setState(() => _activeTab = tab),
                       ),
                     ),
-                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                    Divider(height: 1, color: _borderColor),
 
                     // Tab Content
                     Padding(
@@ -632,6 +670,7 @@ class _DefenseStageEditorScreenState
                                     child: TextField(
                                       controller: _label,
                                       readOnly: _isLocked,
+                                      style: TextStyle(color: _textPrimaryColor),
                                       decoration: _inputDecoration(
                                         labelText: 'Stage Name',
                                         hintText: 'e.g. Concept Proposal, Colloquium, Final Defense',
@@ -645,6 +684,7 @@ class _DefenseStageEditorScreenState
                                     child: TextField(
                                       controller: _code,
                                       readOnly: _isLocked,
+                                      style: TextStyle(color: _textPrimaryColor),
                                       decoration: _inputDecoration(
                                         labelText: 'Stage Code',
                                         hintText: 'e.g. CAPS101',
@@ -659,9 +699,9 @@ class _DefenseStageEditorScreenState
                               Container(
                                 padding: const EdgeInsets.all(16),
                                 decoration: BoxDecoration(
-                                  color: Colors.white,
+                                  color: _panelBgColor,
                                   borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                  border: Border.all(color: _borderColor),
                                 ),
                                 child: _buildPositionSelector(),
                               ),
@@ -671,6 +711,7 @@ class _DefenseStageEditorScreenState
                                 readOnly: _isLocked,
                                 minLines: 2,
                                 maxLines: 4,
+                                style: TextStyle(color: _textPrimaryColor),
                                 decoration: _inputDecoration(
                                   labelText: 'Stage Description (Optional)',
                                   hintText: 'Provide brief guidance or objectives for this defense milestone...',
@@ -680,23 +721,23 @@ class _DefenseStageEditorScreenState
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFF8FAFC),
+                                  color: _panelBgColor,
                                   borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                  border: Border.all(color: _borderColor),
                                 ),
                                 child: SwitchListTile(
                                   contentPadding: EdgeInsets.zero,
-                                  title: const Text(
+                                  title: Text(
                                     'Published Stage',
                                     style: TextStyle(
                                       fontWeight: FontWeight.w700,
                                       fontSize: 13.5,
-                                      color: AppColors.textPrimary,
+                                      color: _textPrimaryColor,
                                     ),
                                   ),
-                                  subtitle: const Text(
+                                  subtitle: Text(
                                     'When active, this stage is part of the live capstone defense sequence.',
-                                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                                    style: TextStyle(fontSize: 12, color: _textSecondaryColor),
                                   ),
                                   activeTrackColor: AppColors.maroon,
                                   value: _isActive,
@@ -719,44 +760,52 @@ class _DefenseStageEditorScreenState
                               Container(
                                 padding: const EdgeInsets.all(18),
                                 decoration: BoxDecoration(
-                                  color: Colors.white,
+                                  color: _panelBgColor,
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                  border: Border.all(color: _borderColor),
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
                                       children: [
-                                        const Icon(Icons.pie_chart_outline_rounded, size: 18, color: AppColors.maroon),
+                                        Icon(
+                                          Icons.pie_chart_outline_rounded,
+                                          size: 18,
+                                          color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
+                                        ),
                                         const SizedBox(width: 8),
-                                        const Text(
+                                        Text(
                                           'Role Weight Distribution',
                                           style: TextStyle(
                                             fontSize: 15,
                                             fontWeight: FontWeight.w800,
-                                            color: AppColors.textPrimary,
+                                            color: _textPrimaryColor,
                                           ),
                                         ),
                                         const Spacer(),
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                           decoration: BoxDecoration(
-                                            color: const Color(0xFFF1F5F9),
+                                            color: _inputFillColor,
                                             borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                                            border: Border.all(color: _borderColor),
                                           ),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              const Icon(Icons.calendar_today_rounded, size: 12, color: Color(0xFF475569)),
+                                              Icon(
+                                                Icons.calendar_today_rounded,
+                                                size: 12,
+                                                color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
+                                              ),
                                               const SizedBox(width: 5),
                                               Text(
                                                 activeSemesterName,
-                                                style: const TextStyle(
+                                                style: TextStyle(
                                                   fontSize: 12,
                                                   fontWeight: FontWeight.w700,
-                                                  color: Color(0xFF475569),
+                                                  color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
                                                 ),
                                               ),
                                             ],
@@ -765,9 +814,9 @@ class _DefenseStageEditorScreenState
                                       ],
                                     ),
                                     const SizedBox(height: 6),
-                                    const Text(
+                                    Text(
                                       'How Panel, Adviser, and Peer scores combine for this defense milestone. Defaults are 50 / 30 / 20.',
-                                      style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                                      style: TextStyle(fontSize: 13, color: _textSecondaryColor),
                                     ),
                                     const SizedBox(height: 16),
                                     _buildWeightDistributionBar(panelVal, adviserVal, peerVal),
@@ -779,10 +828,15 @@ class _DefenseStageEditorScreenState
                                             controller: _panel,
                                             readOnly: _isLocked,
                                             keyboardType: TextInputType.number,
+                                            style: TextStyle(color: _textPrimaryColor),
                                             decoration: _inputDecoration(
                                               labelText: 'Panel %',
                                               hintText: '50',
-                                              prefixIcon: const Icon(Icons.gavel_rounded, size: 16, color: AppColors.maroon),
+                                              prefixIcon: Icon(
+                                                Icons.gavel_rounded,
+                                                size: 16,
+                                                color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
+                                              ),
                                             ),
                                             onChanged: (_) => setState(() {}),
                                           ),
@@ -793,6 +847,7 @@ class _DefenseStageEditorScreenState
                                             controller: _adviser,
                                             readOnly: _isLocked,
                                             keyboardType: TextInputType.number,
+                                            style: TextStyle(color: _textPrimaryColor),
                                             decoration: _inputDecoration(
                                               labelText: 'Adviser %',
                                               hintText: '30',
@@ -807,6 +862,7 @@ class _DefenseStageEditorScreenState
                                             controller: _peer,
                                             readOnly: _isLocked,
                                             keyboardType: TextInputType.number,
+                                            style: TextStyle(color: _textPrimaryColor),
                                             decoration: _inputDecoration(
                                               labelText: 'Peer %',
                                               hintText: '20',
@@ -825,7 +881,7 @@ class _DefenseStageEditorScreenState
                                         icon: const Icon(Icons.restore_rounded, size: 15),
                                         label: const Text('Reset to standard 50 / 30 / 20'),
                                         style: TextButton.styleFrom(
-                                          foregroundColor: const Color(0xFF475569),
+                                          foregroundColor: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
                                           textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                                         ),
                                       ),
@@ -848,23 +904,27 @@ class _DefenseStageEditorScreenState
                                   return Container(
                                     padding: const EdgeInsets.all(18),
                                     decoration: BoxDecoration(
-                                      color: Colors.white,
+                                      color: _panelBgColor,
                                       borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                                      border: Border.all(color: _borderColor),
                                     ),
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Row(
                                           children: [
-                                            const Icon(Icons.assignment_outlined, size: 18, color: AppColors.maroon),
+                                            Icon(
+                                              Icons.assignment_outlined,
+                                              size: 18,
+                                              color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
+                                            ),
                                             const SizedBox(width: 8),
-                                            const Text(
+                                            Text(
                                               'Evaluation Rubrics Attachment',
                                               style: TextStyle(
                                                 fontSize: 15,
                                                 fontWeight: FontWeight.w800,
-                                                color: AppColors.textPrimary,
+                                                color: _textPrimaryColor,
                                               ),
                                             ),
                                             const Spacer(),
@@ -873,8 +933,10 @@ class _DefenseStageEditorScreenState
                                               icon: const Icon(Icons.open_in_new_rounded, size: 14),
                                               label: const Text('Manage Evaluation Rubrics'),
                                               style: OutlinedButton.styleFrom(
-                                                foregroundColor: AppColors.maroon,
-                                                side: const BorderSide(color: Color(0xFFCBD5E1)),
+                                                foregroundColor: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
+                                                side: BorderSide(
+                                                  color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1),
+                                                ),
                                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                                 shape: RoundedRectangleBorder(
                                                   borderRadius: BorderRadius.circular(8),
@@ -885,29 +947,39 @@ class _DefenseStageEditorScreenState
                                           ],
                                         ),
                                         const SizedBox(height: 8),
-                                        const Text(
+                                        Text(
                                           'Assign published Capstone rubrics to evaluate each role (optional; can attach later before defense scheduling).',
-                                          style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+                                          style: TextStyle(fontSize: 12.5, color: _textSecondaryColor),
                                         ),
                                         if (hasNoRubricsAtAll) ...[
                                           const SizedBox(height: 12),
                                           Container(
                                             padding: const EdgeInsets.all(12),
                                             decoration: BoxDecoration(
-                                              color: const Color(0xFFFFFBEB),
+                                              color: _isDark
+                                                  ? const Color(0xFF78350F).withValues(alpha: 0.25)
+                                                  : const Color(0xFFFFFBEB),
                                               borderRadius: BorderRadius.circular(8),
-                                              border: Border.all(color: const Color(0xFFFDE68A)),
+                                              border: Border.all(
+                                                color: _isDark
+                                                    ? const Color(0xFFD97706).withValues(alpha: 0.4)
+                                                    : const Color(0xFFFDE68A),
+                                              ),
                                             ),
                                             child: Row(
                                               children: [
-                                                const Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFB45309)),
+                                                Icon(
+                                                  Icons.warning_amber_rounded,
+                                                  size: 18,
+                                                  color: _isDark ? const Color(0xFFFCD34D) : const Color(0xFFB45309),
+                                                ),
                                                 const SizedBox(width: 10),
-                                                const Expanded(
+                                                Expanded(
                                                   child: Text(
                                                     'No published Capstone rubrics found for this semester. Create and publish rubrics in Evaluation Rubrics so they can be attached here.',
                                                     style: TextStyle(
                                                       fontSize: 12,
-                                                      color: Color(0xFF92400E),
+                                                      color: _isDark ? const Color(0xFFFCD34D) : const Color(0xFF92400E),
                                                       fontWeight: FontWeight.w600,
                                                     ),
                                                   ),
@@ -935,9 +1007,15 @@ class _DefenseStageEditorScreenState
                                         const SizedBox(height: 16),
                                         DropdownButtonFormField<int>(
                                           initialValue: _panelRubricId,
+                                          dropdownColor: _surfaceColor,
+                                          style: TextStyle(color: _textPrimaryColor, fontSize: 13),
                                           decoration: _inputDecoration(
                                             labelText: 'Panel Rubric',
-                                            prefixIcon: const Icon(Icons.gavel_rounded, size: 16, color: AppColors.maroon),
+                                            prefixIcon: Icon(
+                                              Icons.gavel_rounded,
+                                              size: 16,
+                                              color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
+                                            ),
                                           ),
                                           items: _buildRubricDropdownItems(
                                             'panel',
@@ -956,6 +1034,8 @@ class _DefenseStageEditorScreenState
                                         const SizedBox(height: 14),
                                         DropdownButtonFormField<int>(
                                           initialValue: _adviserRubricId,
+                                          dropdownColor: _surfaceColor,
+                                          style: TextStyle(color: _textPrimaryColor, fontSize: 13),
                                           decoration: _inputDecoration(
                                             labelText: 'Adviser Rubric',
                                             prefixIcon: const Icon(Icons.school_rounded, size: 16, color: Color(0xFFD97706)),
@@ -977,6 +1057,8 @@ class _DefenseStageEditorScreenState
                                         const SizedBox(height: 14),
                                         DropdownButtonFormField<int>(
                                           initialValue: _peerRubricId,
+                                          dropdownColor: _surfaceColor,
+                                          style: TextStyle(color: _textPrimaryColor, fontSize: 13),
                                           decoration: _inputDecoration(
                                             labelText: 'Peer Rubric',
                                             prefixIcon: const Icon(Icons.people_outline_rounded, size: 16, color: Color(0xFF0D9488)),
@@ -1094,7 +1176,7 @@ class _DefenseStageEditorScreenState
                           TextButton(
                             onPressed: _saving ? null : _handleBack,
                             style: TextButton.styleFrom(
-                              foregroundColor: const Color(0xFF64748B),
+                              foregroundColor: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
                               textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                             ),
                             child: Text(_isLocked ? 'Back to Setup' : 'Cancel'),
@@ -1108,8 +1190,8 @@ class _DefenseStageEditorScreenState
                               icon: const Icon(Icons.arrow_back_rounded, size: 15),
                               label: const Text('Back'),
                               style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFF334155),
-                                side: const BorderSide(color: Color(0xFFCBD5E1)),
+                                foregroundColor: _isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF334155),
+                                side: BorderSide(color: _borderColor),
                                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                                 textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                               ),
@@ -1127,7 +1209,7 @@ class _DefenseStageEditorScreenState
                                 _activeTab == 0 ? 'Next: Grading & Rubrics' : 'Next: Deliverables',
                               ),
                               style: FilledButton.styleFrom(
-                                backgroundColor: AppColors.maroon,
+                                backgroundColor: _isDark ? DefensysTokens.maroon : AppColors.maroon,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                                 textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
@@ -1145,19 +1227,19 @@ class _DefenseStageEditorScreenState
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFF1F5F9),
+                                color: _inputFillColor,
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFFCBD5E1)),
+                                border: Border.all(color: _borderColor),
                               ),
-                              child: const Row(
+                              child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.lock_outline, size: 16, color: Color(0xFF64748B)),
-                                  SizedBox(width: 6),
+                                  Icon(Icons.lock_outline, size: 16, color: _textSecondaryColor),
+                                  const SizedBox(width: 6),
                                   Text(
                                     'Read-Only Mode',
                                     style: TextStyle(
-                                      color: Color(0xFF64748B),
+                                      color: _textSecondaryColor,
                                       fontSize: 13,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -1189,7 +1271,7 @@ class _DefenseStageEditorScreenState
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -1230,10 +1312,12 @@ class _DefenseStageEditorScreenState
                     decoration: BoxDecoration(
                       color: activeTab == 2
                           ? Colors.white.withValues(alpha: 0.25)
-                          : const Color(0xFFEFF6FF),
+                          : (_isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFEFF6FF)),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                        color: activeTab == 2 ? Colors.white.withValues(alpha: 0.4) : const Color(0xFFBFDBFE),
+                        color: activeTab == 2
+                            ? Colors.white.withValues(alpha: 0.4)
+                            : (_isDark ? const Color(0xFF3B82F6).withValues(alpha: 0.4) : const Color(0xFFBFDBFE)),
                       ),
                     ),
                     child: Text(
@@ -1241,7 +1325,9 @@ class _DefenseStageEditorScreenState
                       style: TextStyle(
                         fontSize: 9.5,
                         fontWeight: FontWeight.w700,
-                        color: activeTab == 2 ? Colors.white : const Color(0xFF1D4ED8),
+                        color: activeTab == 2
+                            ? Colors.white
+                            : (_isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8)),
                       ),
                     ),
                   )
@@ -1251,7 +1337,7 @@ class _DefenseStageEditorScreenState
                         decoration: BoxDecoration(
                           color: activeTab == 2
                               ? Colors.white.withValues(alpha: 0.25)
-                              : const Color(0xFFE2E8F0),
+                              : (_isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
@@ -1259,7 +1345,9 @@ class _DefenseStageEditorScreenState
                           style: TextStyle(
                             fontSize: 10.5,
                             fontWeight: FontWeight.bold,
-                            color: activeTab == 2 ? Colors.white : AppColors.textPrimary,
+                            color: activeTab == 2
+                                ? Colors.white
+                                : (_isDark ? DefensysTokens.mistTextPrimary : AppColors.textPrimary),
                           ),
                         ),
                       )
@@ -1306,7 +1394,9 @@ class _DefenseStageEditorScreenState
               Icon(
                 icon,
                 size: 15,
-                color: isSelected ? Colors.white : const Color(0xFF64748B),
+                color: isSelected
+                    ? Colors.white
+                    : (_isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B)),
               ),
               const SizedBox(width: 6),
               Flexible(
@@ -1317,7 +1407,9 @@ class _DefenseStageEditorScreenState
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                    color: isSelected ? Colors.white : const Color(0xFF334155),
+                    color: isSelected
+                        ? Colors.white
+                        : (_isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF334155)),
                   ),
                 ),
               ),
@@ -1348,33 +1440,33 @@ class _DefenseStageEditorScreenState
       prefixIcon: prefixIcon,
       suffixIcon: suffixIcon,
       isDense: true,
-      labelStyle: const TextStyle(
+      labelStyle: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w500,
-        color: AppColors.textSecondary,
+        color: _textSecondaryColor,
       ),
-      hintStyle: const TextStyle(
+      hintStyle: TextStyle(
         fontSize: 12.5,
-        color: Color(0xFF94A3B8),
+        color: _isDark ? DefensysTokens.textSecondaryDark.withValues(alpha: 0.6) : const Color(0xFF94A3B8),
       ),
-      helperStyle: const TextStyle(
+      helperStyle: TextStyle(
         fontSize: 11,
-        color: Color(0xFF64748B),
+        color: _textSecondaryColor,
       ),
       filled: true,
-      fillColor: const Color(0xFFF8FAFC),
+      fillColor: _inputFillColor,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        borderSide: BorderSide(color: _borderColor),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        borderSide: BorderSide(color: _borderColor),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
+        borderSide: BorderSide(color: _isDark ? const Color(0xFFF87171) : AppColors.maroon, width: 1.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
@@ -1382,7 +1474,7 @@ class _DefenseStageEditorScreenState
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
+        borderSide: BorderSide(color: _isDark ? const Color(0xFFF87171) : AppColors.maroon, width: 1.5),
       ),
     );
   }
@@ -1398,10 +1490,14 @@ class _DefenseStageEditorScreenState
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isValid ? const Color(0xFFF8FAFC) : const Color(0xFFFEF2F2),
+        color: isValid
+            ? (_isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC))
+            : (_isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.25) : const Color(0xFFFEF2F2)),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: isValid ? const Color(0xFFE2E8F0) : const Color(0xFFFECACA),
+          color: isValid
+              ? _borderColor
+              : (_isDark ? const Color(0xFFEF4444).withValues(alpha: 0.4) : const Color(0xFFFECACA)),
         ),
       ),
       child: Column(
@@ -1415,7 +1511,9 @@ class _DefenseStageEditorScreenState
                   Icon(
                     isValid ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
                     size: 15,
-                    color: isValid ? const Color(0xFF059669) : AppColors.danger,
+                    color: isValid
+                        ? (_isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
+                        : (_isDark ? const Color(0xFFF87171) : AppColors.danger),
                   ),
                   const SizedBox(width: 6),
                   Text(
@@ -1423,7 +1521,9 @@ class _DefenseStageEditorScreenState
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
-                      color: isValid ? const Color(0xFF059669) : AppColors.danger,
+                      color: isValid
+                          ? (_isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
+                          : (_isDark ? const Color(0xFFF87171) : AppColors.danger),
                     ),
                   ),
                 ],
@@ -1433,7 +1533,9 @@ class _DefenseStageEditorScreenState
                 style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w800,
-                  color: isValid ? const Color(0xFF059669) : AppColors.danger,
+                  color: isValid
+                      ? (_isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
+                      : (_isDark ? const Color(0xFFF87171) : AppColors.danger),
                 ),
               ),
             ],
@@ -1444,7 +1546,7 @@ class _DefenseStageEditorScreenState
             child: Container(
               height: 10,
               width: double.infinity,
-              color: const Color(0xFFE2E8F0),
+              color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
               child: (total > 0)
                   ? Row(
                       children: [
@@ -1506,17 +1608,17 @@ class _DefenseStageEditorScreenState
         const SizedBox(width: 5),
         Text(
           '$label: ',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 11.5,
-            color: AppColors.textSecondary,
+            color: _textSecondaryColor,
             fontWeight: FontWeight.w500,
           ),
         ),
         Text(
           value,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 11.5,
-            color: AppColors.textPrimary,
+            color: _textPrimaryColor,
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -1529,30 +1631,36 @@ class _DefenseStageEditorScreenState
       padding: const EdgeInsets.all(16),
       margin: const EdgeInsets.only(bottom: 20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _panelBgColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: _borderColor),
+        boxShadow: _isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.tune_rounded, size: 18, color: AppColors.maroon),
+              Icon(
+                Icons.tune_rounded,
+                size: 18,
+                color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
+              ),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'Stage Submission Mode',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+                  color: _textPrimaryColor,
                 ),
               ),
             ],
@@ -1609,6 +1717,17 @@ class _DefenseStageEditorScreenState
     required bool selected,
     required VoidCallback? onTap,
   }) {
+    final isPres = title.contains('Presentation');
+    final activeBg = isPres
+        ? (_isDark ? const Color(0xFF064E3B).withValues(alpha: 0.3) : const Color(0xFFF0FDF4))
+        : (_isDark ? const Color(0xFF4C0519).withValues(alpha: 0.35) : const Color(0xFFFAF5FF));
+    final activeBorder = isPres
+        ? (_isDark ? const Color(0xFF10B981) : const Color(0xFF22C55E))
+        : (_isDark ? const Color(0xFFF87171) : AppColors.maroon);
+    final activeIconColor = isPres
+        ? (_isDark ? const Color(0xFF34D399) : const Color(0xFF16A34A))
+        : (_isDark ? const Color(0xFFF87171) : AppColors.maroon);
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
@@ -1616,18 +1735,10 @@ class _DefenseStageEditorScreenState
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: selected
-              ? (title.contains('Presentation')
-                  ? const Color(0xFFF0FDF4)
-                  : const Color(0xFFFAF5FF))
-              : const Color(0xFFF8FAFC),
+          color: selected ? activeBg : _inputFillColor,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: selected
-                ? (title.contains('Presentation')
-                    ? const Color(0xFF22C55E)
-                    : AppColors.maroon)
-                : const Color(0xFFE2E8F0),
+            color: selected ? activeBorder : _borderColor,
             width: selected ? 1.5 : 1.0,
           ),
         ),
@@ -1638,10 +1749,8 @@ class _DefenseStageEditorScreenState
               selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
               size: 18,
               color: selected
-                  ? (title.contains('Presentation')
-                      ? const Color(0xFF16A34A)
-                      : AppColors.maroon)
-                  : const Color(0xFF94A3B8),
+                  ? activeIconColor
+                  : (_isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF94A3B8)),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -1650,15 +1759,15 @@ class _DefenseStageEditorScreenState
                 children: [
                   Row(
                     children: [
-                      Icon(icon, size: 15, color: AppColors.textPrimary),
+                      Icon(icon, size: 15, color: _textPrimaryColor),
                       const SizedBox(width: 6),
                       Flexible(
                         child: Text(
                           title,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary,
+                            color: _textPrimaryColor,
                           ),
                         ),
                       ),
@@ -1667,9 +1776,9 @@ class _DefenseStageEditorScreenState
                   const SizedBox(height: 4),
                   Text(
                     description,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11.5,
-                      color: AppColors.textSecondary,
+                      color: _textSecondaryColor,
                       height: 1.3,
                     ),
                   ),
@@ -1687,9 +1796,11 @@ class _DefenseStageEditorScreenState
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0FDF4),
+        color: _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.25) : const Color(0xFFF0FDF4),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFBBF7D0)),
+        border: Border.all(
+          color: _isDark ? const Color(0xFF059669).withValues(alpha: 0.4) : const Color(0xFFBBF7D0),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1699,17 +1810,17 @@ class _DefenseStageEditorScreenState
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFDCFCE7),
+                  color: _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.5) : const Color(0xFFDCFCE7),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.campaign_rounded,
-                  color: Color(0xFF15803D),
+                  color: _isDark ? const Color(0xFF34D399) : const Color(0xFF15803D),
                   size: 24,
                 ),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1718,15 +1829,15 @@ class _DefenseStageEditorScreenState
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF14532D),
+                        color: _isDark ? const Color(0xFF6EE7B7) : const Color(0xFF14532D),
                       ),
                     ),
-                    SizedBox(height: 2),
+                    const SizedBox(height: 2),
                     Text(
                       'This milestone does not require document submissions.',
                       style: TextStyle(
                         fontSize: 12.5,
-                        color: Color(0xFF166534),
+                        color: _isDark ? const Color(0xFFA7F3D0) : const Color(0xFF166534),
                       ),
                     ),
                   ],
@@ -1735,13 +1846,13 @@ class _DefenseStageEditorScreenState
             ],
           ),
           const SizedBox(height: 14),
-          const Text(
+          Text(
             '• Students will not be prompted to upload manuscripts or archive files for this stage.\n'
             '• Advisers can endorse teams directly based on verbal presentation or demo readiness.\n'
             '• Administrators can schedule defenses freely once endorsed.',
             style: TextStyle(
               fontSize: 12.5,
-              color: Color(0xFF166534),
+              color: _isDark ? const Color(0xFFA7F3D0) : const Color(0xFF166534),
               height: 1.5,
             ),
           ),
@@ -1764,11 +1875,25 @@ class _DefenseStageEditorScreenState
     required List<Map<String, dynamic>> items,
     required bool isPost,
   }) {
+    final effectiveAccent = _isDark
+        ? (isPost ? const Color(0xFFF87171) : const Color(0xFF60A5FA))
+        : accentColor;
+    final effectiveBgHeader = _isDark
+        ? (isPost
+            ? const Color(0xFF7F1D1D).withValues(alpha: 0.25)
+            : const Color(0xFF1E3A8A).withValues(alpha: 0.25))
+        : bgHeaderColor;
+    final effectiveBorder = _isDark
+        ? (isPost
+            ? const Color(0xFFEF4444).withValues(alpha: 0.35)
+            : const Color(0xFF3B82F6).withValues(alpha: 0.35))
+        : borderColor;
+
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _panelBgColor,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: _borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1776,13 +1901,13 @@ class _DefenseStageEditorScreenState
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: bgHeaderColor,
+              color: effectiveBgHeader,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(9)),
-              border: Border(bottom: BorderSide(color: borderColor)),
+              border: Border(bottom: BorderSide(color: effectiveBorder)),
             ),
             child: Row(
               children: [
-                Icon(icon, size: 17, color: accentColor),
+                Icon(icon, size: 17, color: effectiveAccent),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
@@ -1795,14 +1920,14 @@ class _DefenseStageEditorScreenState
                             style: TextStyle(
                               fontSize: 13.5,
                               fontWeight: FontWeight.w800,
-                              color: accentColor,
+                              color: effectiveAccent,
                             ),
                           ),
                           const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
                             decoration: BoxDecoration(
-                              color: accentColor.withValues(alpha: 0.12),
+                              color: effectiveAccent.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Text(
@@ -1810,7 +1935,7 @@ class _DefenseStageEditorScreenState
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
-                                color: accentColor,
+                                color: effectiveAccent,
                               ),
                             ),
                           ),
@@ -1819,9 +1944,9 @@ class _DefenseStageEditorScreenState
                       const SizedBox(height: 2),
                       Text(
                         subtitle,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11.5,
-                          color: AppColors.textSecondary,
+                          color: _textSecondaryColor,
                         ),
                       ),
                     ],
@@ -1833,8 +1958,8 @@ class _DefenseStageEditorScreenState
                     icon: const Icon(Icons.add, size: 14),
                     label: Text(buttonText),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: accentColor,
-                      side: BorderSide(color: accentColor.withValues(alpha: 0.4)),
+                      foregroundColor: effectiveAccent,
+                      side: BorderSide(color: effectiveAccent.withValues(alpha: 0.4)),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
                     ),
@@ -1851,9 +1976,9 @@ class _DefenseStageEditorScreenState
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
+                        color: _inputFillColor,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        border: Border.all(color: _borderColor),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -1861,15 +1986,15 @@ class _DefenseStageEditorScreenState
                           Icon(
                             isPost ? Icons.inventory_2_outlined : Icons.folder_open_rounded,
                             size: 16,
-                            color: const Color(0xFF94A3B8),
+                            color: _textSecondaryColor,
                           ),
                           const SizedBox(width: 8),
                           Flexible(
                             child: Text(
                               emptyPlaceholderText,
                               textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                color: Color(0xFF64748B),
+                              style: TextStyle(
+                                color: _textSecondaryColor,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
                               ),
@@ -1914,16 +2039,20 @@ class _DefenseStageEditorScreenState
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: accentColor.withValues(alpha: 0.2)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 3,
-            offset: const Offset(0, 1),
-          ),
-        ],
+        border: Border.all(
+          color: _isDark ? _borderColor : accentColor.withValues(alpha: 0.2),
+        ),
+        boxShadow: _isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 3,
+                  offset: const Offset(0, 1),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1931,13 +2060,13 @@ class _DefenseStageEditorScreenState
           // 1. Distinct Item Header
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.only(
+            decoration: BoxDecoration(
+              color: _inputFillColor,
+              borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(9),
                 topRight: Radius.circular(9),
               ),
-              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              border: Border(bottom: BorderSide(color: _borderColor)),
             ),
             child: Row(
               children: [
@@ -1955,7 +2084,7 @@ class _DefenseStageEditorScreenState
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
-                      color: accentColor,
+                      color: _isDark ? (_isDark && isPost ? const Color(0xFFF87171) : const Color(0xFF60A5FA)) : accentColor,
                     ),
                   ),
                 ),
@@ -1965,10 +2094,10 @@ class _DefenseStageEditorScreenState
                     labelController.text.trim().isNotEmpty
                         ? 'Deliverable #$index • ${labelController.text.trim()}'
                         : 'Deliverable #$index',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+                      color: _textPrimaryColor,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -2020,7 +2149,7 @@ class _DefenseStageEditorScreenState
                               ? 'e.g. Final Manuscript PDF, Source Code Zip'
                               : 'e.g. Manuscript Draft, Endorsement Form',
                         ),
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _textPrimaryColor),
                         onChanged: (v) {
                           item['label'] = v.trim();
                           _markDirty();
@@ -2033,16 +2162,17 @@ class _DefenseStageEditorScreenState
                       height: 44,
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        color: _inputFillColor,
+                        border: Border.all(color: _borderColor),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: DropdownButtonHideUnderline(
                         child: DropdownButton<String>(
                           value: currentFormat,
+                          dropdownColor: _surfaceColor,
                           isDense: true,
                           borderRadius: BorderRadius.circular(8),
-                          style: const TextStyle(fontSize: 12, color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+                          style: TextStyle(fontSize: 12, color: _textPrimaryColor, fontWeight: FontWeight.w600),
                           items: _deliverableFormatDropdownItems(),
                           onChanged: _isLocked
                               ? null
@@ -2060,8 +2190,8 @@ class _DefenseStageEditorScreenState
                       height: 44,
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        color: _inputFillColor,
+                        border: Border.all(color: _borderColor),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
@@ -2079,12 +2209,12 @@ class _DefenseStageEditorScreenState
                                   },
                           ),
                           const SizedBox(width: 2),
-                          const Text(
+                          Text(
                             'Required',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary,
+                              color: _textPrimaryColor,
                             ),
                           ),
                         ],
@@ -2110,19 +2240,19 @@ class _DefenseStageEditorScreenState
                               },
                       ),
                       const SizedBox(width: 4),
-                      const Text(
+                      Text(
                         'Defense Material (Visible to Defense Panelists)',
                         style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
+                          color: _textPrimaryColor,
                         ),
                       ),
                       const SizedBox(width: 6),
-                      const Tooltip(
+                      Tooltip(
                         message: 'Evaluated by defense panelists (uncheck for administrative forms).',
-                        constraints: BoxConstraints(maxWidth: 240),
-                        child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
+                        constraints: const BoxConstraints(maxWidth: 240),
+                        child: Icon(Icons.help_outline_rounded, size: 14, color: _textSecondaryColor),
                       ),
                     ],
                   ),
@@ -2145,52 +2275,57 @@ class _DefenseStageEditorScreenState
                               },
                       ),
                       const SizedBox(width: 4),
-                      const Text(
+                      Text(
                         'Restricted (Private Institutional Archive)',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
+                          color: _textPrimaryColor,
                         ),
                       ),
                       const SizedBox(width: 4),
-                      const Tooltip(
+                      Tooltip(
                         message: 'Private for faculty and admin records only; hidden from students.',
-                        constraints: BoxConstraints(maxWidth: 240),
-                        child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
+                        constraints: const BoxConstraints(maxWidth: 240),
+                        child: Icon(Icons.help_outline_rounded, size: 14, color: _textSecondaryColor),
                       ),
                       const Spacer(),
-                      const Icon(Icons.rule_rounded, size: 15, color: AppColors.maroon),
+                      Icon(
+                        Icons.rule_rounded,
+                        size: 15,
+                        color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
+                      ),
                       const SizedBox(width: 6),
-                      const Text(
+                      Text(
                         'Submission Rule:',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
+                          color: _textPrimaryColor,
                         ),
                       ),
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
+                          color: _inputFillColor,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFFCBD5E1)),
+                          border: Border.all(color: _borderColor),
                         ),
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<String>(
                             value: item['verdict_condition']?.toString() == 'revisions_only' ? 'revisions_only' : 'all_pass',
+                            dropdownColor: _surfaceColor,
                             isDense: true,
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-                            items: const [
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _textPrimaryColor),
+                            items: [
                               DropdownMenuItem(
                                 value: 'all_pass',
-                                child: Text('Required for All Passing Teams'),
+                                child: Text('Required for All Passing Teams', style: TextStyle(color: _textPrimaryColor)),
                               ),
                               DropdownMenuItem(
                                 value: 'revisions_only',
-                                child: Text('Only for Approved with Revisions'),
+                                child: Text('Only for Approved with Revisions', style: TextStyle(color: _textPrimaryColor)),
                               ),
                             ],
                             onChanged: _isLocked
@@ -2205,14 +2340,14 @@ class _DefenseStageEditorScreenState
                         ),
                       ),
                       const SizedBox(width: 6),
-                      const Tooltip(
+                      Tooltip(
                         message:
                             '• All Passing: Required for all teams that pass the defense (e.g., Final Manuscript).\n'
                             '• Revisions Only: Only required if the team passed with revisions (e.g., Revision Matrix).',
-                        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        textStyle: TextStyle(fontSize: 12, color: Colors.white, height: 1.35),
-                        constraints: BoxConstraints(maxWidth: 320),
-                        child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        textStyle: const TextStyle(fontSize: 12, color: Colors.white, height: 1.35),
+                        constraints: const BoxConstraints(maxWidth: 320),
+                        child: Icon(Icons.help_outline_rounded, size: 14, color: _textSecondaryColor),
                       ),
                     ],
                   ),
@@ -2244,15 +2379,15 @@ class _DefenseStageEditorScreenState
   }
 
   List<DropdownMenuItem<String>> _deliverableFormatDropdownItems() {
-    return const [
+    return [
       DropdownMenuItem(
         value: 'any',
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.all_inclusive, size: 14, color: Colors.blueGrey),
-            SizedBox(width: 6),
-            Text('Any File Type'),
+            const Icon(Icons.all_inclusive, size: 14, color: Colors.blueGrey),
+            const SizedBox(width: 6),
+            Text('Any File Type', style: TextStyle(color: _textPrimaryColor)),
           ],
         ),
       ),
@@ -2261,9 +2396,9 @@ class _DefenseStageEditorScreenState
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.picture_as_pdf_outlined, size: 14, color: Color(0xFFEF4444)),
-            SizedBox(width: 6),
-            Text('PDF Document (.pdf)'),
+            const Icon(Icons.picture_as_pdf_outlined, size: 14, color: Color(0xFFEF4444)),
+            const SizedBox(width: 6),
+            Text('PDF Document (.pdf)', style: TextStyle(color: _textPrimaryColor)),
           ],
         ),
       ),
@@ -2272,9 +2407,9 @@ class _DefenseStageEditorScreenState
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.video_library_outlined, size: 14, color: Color(0xFF8B5CF6)),
-            SizedBox(width: 6),
-            Text('Video (.mp4, .mov)'),
+            const Icon(Icons.video_library_outlined, size: 14, color: Color(0xFF8B5CF6)),
+            const SizedBox(width: 6),
+            Text('Video (.mp4, .mov)', style: TextStyle(color: _textPrimaryColor)),
           ],
         ),
       ),
@@ -2283,9 +2418,9 @@ class _DefenseStageEditorScreenState
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.image_outlined, size: 14, color: Color(0xFF06B6D4)),
-            SizedBox(width: 6),
-            Text('Image / Poster (.png, .jpg)'),
+            const Icon(Icons.image_outlined, size: 14, color: Color(0xFF06B6D4)),
+            const SizedBox(width: 6),
+            Text('Image / Poster (.png, .jpg)', style: TextStyle(color: _textPrimaryColor)),
           ],
         ),
       ),
@@ -2294,9 +2429,9 @@ class _DefenseStageEditorScreenState
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.slideshow_outlined, size: 14, color: Color(0xFFEA580C)),
-            SizedBox(width: 6),
-            Text('Slides (.pptx, .ppt)'),
+            const Icon(Icons.slideshow_outlined, size: 14, color: Color(0xFFEA580C)),
+            const SizedBox(width: 6),
+            Text('Slides (.pptx, .ppt)', style: TextStyle(color: _textPrimaryColor)),
           ],
         ),
       ),
@@ -2305,9 +2440,9 @@ class _DefenseStageEditorScreenState
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.description_outlined, size: 14, color: Color(0xFF2563EB)),
-            SizedBox(width: 6),
-            Text('Word / Doc (.docx, .doc)'),
+            const Icon(Icons.description_outlined, size: 14, color: Color(0xFF2563EB)),
+            const SizedBox(width: 6),
+            Text('Word / Doc (.docx, .doc)', style: TextStyle(color: _textPrimaryColor)),
           ],
         ),
       ),
@@ -2316,9 +2451,9 @@ class _DefenseStageEditorScreenState
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.table_chart_outlined, size: 14, color: Color(0xFF10B981)),
-            SizedBox(width: 6),
-            Text('Spreadsheet (.xlsx, .csv)'),
+            const Icon(Icons.table_chart_outlined, size: 14, color: Color(0xFF10B981)),
+            const SizedBox(width: 6),
+            Text('Spreadsheet (.xlsx, .csv)', style: TextStyle(color: _textPrimaryColor)),
           ],
         ),
       ),
@@ -2327,9 +2462,9 @@ class _DefenseStageEditorScreenState
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.folder_zip_outlined, size: 14, color: Color(0xFF64748B)),
-            SizedBox(width: 6),
-            Text('Archive (.zip, .rar)'),
+            const Icon(Icons.folder_zip_outlined, size: 14, color: Color(0xFF64748B)),
+            const SizedBox(width: 6),
+            Text('Archive (.zip, .rar)', style: TextStyle(color: _textPrimaryColor)),
           ],
         ),
       ),
@@ -2338,9 +2473,9 @@ class _DefenseStageEditorScreenState
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.audiotrack_outlined, size: 14, color: Color(0xFFF43F5E)),
-            SizedBox(width: 6),
-            Text('Audio (.mp3, .wav)'),
+            const Icon(Icons.audiotrack_outlined, size: 14, color: Color(0xFFF43F5E)),
+            const SizedBox(width: 6),
+            Text('Audio (.mp3, .wav)', style: TextStyle(color: _textPrimaryColor)),
           ],
         ),
       ),
@@ -2352,13 +2487,17 @@ class _DefenseStageEditorScreenState
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: warning ? const Color(0xFFFFFBEB) : const Color(0xFFF0F9FF),
+        color: warning
+            ? (_isDark ? const Color(0xFF78350F).withValues(alpha: 0.3) : const Color(0xFFFFFBEB))
+            : (_isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFF0F9FF)),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: warning ? const Color(0xFFF59E0B) : const Color(0xFFBAE6FD),
+          color: warning
+              ? (_isDark ? const Color(0xFFF59E0B).withValues(alpha: 0.5) : const Color(0xFFF59E0B))
+              : (_isDark ? const Color(0xFF38BDF8).withValues(alpha: 0.5) : const Color(0xFFBAE6FD)),
         ),
       ),
-      child: Text(message, style: const TextStyle(fontSize: 13)),
+      child: Text(message, style: TextStyle(fontSize: 13, color: _textPrimaryColor)),
     );
   }
 

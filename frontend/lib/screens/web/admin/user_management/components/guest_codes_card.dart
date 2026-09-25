@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/user_management_provider.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/clipboard_copy.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/widgets/feedback/empty_state.dart';
@@ -63,6 +64,9 @@ class GuestCodesCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A);
+    final textSecondary = isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B);
     final active = _guestCount(state, 'active');
     final total = _guestCount(state, 'total');
 
@@ -78,33 +82,33 @@ class GuestCodesCard extends StatelessWidget {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFFBEB),
+                    color: isDark ? const Color(0xFF78350F).withValues(alpha: 0.35) : const Color(0xFFFFFBEB),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFFDE68A)),
+                    border: Border.all(color: isDark ? const Color(0xFF78350F).withValues(alpha: 0.7) : const Color(0xFFFDE68A)),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.school_rounded,
-                    color: Color(0xFFB45309),
+                    color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
                     size: 20,
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         'Guest Evaluator Access Codes',
                         style: TextStyle(
-                          color: Color(0xFF0F172A),
+                          color: textPrimary,
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      SizedBox(height: 2),
+                      const SizedBox(height: 2),
                       Text(
                         'Temporary evaluation passes and academic credentials for external defense panelists',
-                        style: TextStyle(color: Color(0xFF64748B), fontSize: 12.5),
+                        style: TextStyle(color: textSecondary, fontSize: 12.5),
                       ),
                     ],
                   ),
@@ -115,14 +119,14 @@ class GuestCodesCard extends StatelessWidget {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFFFBEB),
+                    color: isDark ? const Color(0xFF78350F).withValues(alpha: 0.35) : const Color(0xFFFFFBEB),
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: const Color(0xFFFDE68A)),
+                    border: Border.all(color: isDark ? const Color(0xFF78350F).withValues(alpha: 0.7) : const Color(0xFFFDE68A)),
                   ),
                   child: Text(
                     '$active active / $total total',
-                    style: const TextStyle(
-                      color: Color(0xFFB45309),
+                    style: TextStyle(
+                      color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                     ),
@@ -131,7 +135,7 @@ class GuestCodesCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 20),
-            _tableHeader(const [
+            _tableHeader(context, const [
               _ColumnSpec('Code', 1.2),
               _ColumnSpec('Evaluator Credentials', 3.0),
               _ColumnSpec('Defense Schedule', 2.1),
@@ -149,23 +153,28 @@ class GuestCodesCard extends StatelessWidget {
     );
   }
 
-  Widget _tableHeader(List<_ColumnSpec> columns) {
+  Widget _tableHeader(BuildContext context, List<_ColumnSpec> columns) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final headerBg = isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC);
+    final borderColor = isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0);
+    final textSecondary = isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B);
+
     return Container(
       height: 42,
-      decoration: const BoxDecoration(
-        color: Color(0xFFF8FAFC),
+      decoration: BoxDecoration(
+        color: headerBg,
         border: Border(
-          top: BorderSide(color: Color(0xFFE2E8F0)),
-          bottom: BorderSide(color: Color(0xFFE2E8F0), width: 1.5),
+          top: BorderSide(color: borderColor),
+          bottom: BorderSide(color: borderColor, width: 1.5),
         ),
       ),
       child: Row(
-        children: columns.map((col) => _tableHeaderCell(col)).toList(),
+        children: columns.map((col) => _tableHeaderCell(col, textSecondary)).toList(),
       ),
     );
   }
 
-  Widget _tableHeaderCell(_ColumnSpec column) {
+  Widget _tableHeaderCell(_ColumnSpec column, Color textColor) {
     return Expanded(
       flex: (column.flex * 10).toInt(),
       child: Container(
@@ -173,8 +182,8 @@ class GuestCodesCard extends StatelessWidget {
         alignment: Alignment.centerLeft,
         child: Text(
           column.title.toUpperCase(),
-          style: const TextStyle(
-            color: Color(0xFF64748B),
+          style: TextStyle(
+            color: textColor,
             fontSize: 11,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.6,
@@ -199,6 +208,13 @@ class GuestCodesCard extends StatelessWidget {
     UserManagementState state,
     Map<String, dynamic> guestCode,
   ) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final rowBg = isDark ? DefensysTokens.mistSurface : Colors.white;
+    final borderColor = isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0);
+    final textPrimary = isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A);
+    final textSecondary = isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B);
+    final subtleFill = isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC);
+
     final code = guestCode['code']?.toString() ?? '';
     final isActive = guestCode['is_active'] == true;
     final id = _asInt(guestCode['id']);
@@ -209,14 +225,14 @@ class GuestCodesCard extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+      decoration: BoxDecoration(
+        color: rowBg,
+        border: Border(bottom: BorderSide(color: borderColor)),
       ),
       child: Row(
         children: [
           // Code Column
-          _tableCell(_codePill(code), flex: 1.2),
+          _tableCell(_codePill(code, isDark: isDark), flex: 1.2),
 
           // Evaluator Identity Cell
           _tableCell(
@@ -226,15 +242,15 @@ class GuestCodesCard extends StatelessWidget {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFEF3C7),
+                    color: isDark ? const Color(0xFF78350F).withValues(alpha: 0.35) : const Color(0xFFFEF3C7),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFFDE68A)),
+                    border: Border.all(color: isDark ? const Color(0xFF78350F).withValues(alpha: 0.7) : const Color(0xFFFDE68A)),
                   ),
                   child: Center(
                     child: Text(
                       info.initials,
-                      style: const TextStyle(
-                        color: Color(0xFFB45309),
+                      style: TextStyle(
+                        color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
                         fontSize: 13,
                         fontWeight: FontWeight.w800,
                       ),
@@ -249,8 +265,8 @@ class GuestCodesCard extends StatelessWidget {
                     children: [
                       Text(
                         info.displayName,
-                        style: const TextStyle(
-                          color: Color(0xFF0F172A),
+                        style: TextStyle(
+                          color: textPrimary,
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
                         ),
@@ -260,8 +276,8 @@ class GuestCodesCard extends StatelessWidget {
                         (info.affiliation != null && info.affiliation!.isNotEmpty)
                             ? info.affiliation!
                             : (email.isNotEmpty ? email : 'External Panelist'),
-                        style: const TextStyle(
-                          color: Color(0xFF64748B),
+                        style: TextStyle(
+                          color: textSecondary,
                           fontSize: 11.5,
                         ),
                         maxLines: 1,
@@ -280,14 +296,14 @@ class GuestCodesCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: subtleFill,
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: borderColor),
               ),
               child: Text(
                 scheduleLabel.isEmpty ? 'Scheduled Defense' : scheduleLabel,
-                style: const TextStyle(
-                  color: Color(0xFF334155),
+                style: TextStyle(
+                  color: isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF334155),
                   fontSize: 11.5,
                   fontWeight: FontWeight.w600,
                 ),
@@ -302,7 +318,7 @@ class GuestCodesCard extends StatelessWidget {
           _tableCell(
             Text(
               _formatTimestamp(guestCode['created_at']),
-              style: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
+              style: TextStyle(color: textSecondary, fontSize: 12),
             ),
             flex: 1.2,
           ),
@@ -346,18 +362,18 @@ class GuestCodesCard extends StatelessWidget {
     );
   }
 
-  Widget _codePill(String code) {
+  Widget _codePill(String code, {bool isDark = false}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFCBD5E1)),
+        border: Border.all(color: isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1)),
       ),
       child: SelectableText(
         code.isEmpty ? 'N/A' : code,
-        style: const TextStyle(
-          color: Color(0xFF0F172A),
+        style: TextStyle(
+          color: isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
           fontSize: 12,
           fontWeight: FontWeight.w800,
           letterSpacing: 1.1,

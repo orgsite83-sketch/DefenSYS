@@ -59,6 +59,13 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   ScheduleImportDraft? _savedImportDraft;
   bool _showScheduleBulkImport = false;
 
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _surfaceColor => _isDark ? DefensysTokens.mistSurface : Colors.white;
+  Color get _panelBgColor => _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC);
+  Color get _borderColor => _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0);
+  Color get _textPrimaryColor => _isDark ? DefensysTokens.textPrimaryDark : AppColors.textPrimary;
+  Color get _textSecondaryColor => _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary;
+
   @override
   void initState() {
     super.initState();
@@ -264,7 +271,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     final cp = DefensysUi.contentPadding;
 
     return Scaffold(
-      backgroundColor: DefensysUi.bgLight,
+      backgroundColor: _isDark ? DefensysTokens.mistBackground : DefensysUi.bgLight,
       body: RefreshIndicator(
         color: AppColors.maroon,
         onRefresh: () async {
@@ -438,24 +445,24 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
     if (totalReady > 0) {
       readinessBadge = '$totalReady Ready';
-      badgeColor = const Color(0xFFDEF7EC);
-      badgeTextColor = const Color(0xFF03543F);
+      badgeColor = _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.5) : const Color(0xFFDEF7EC);
+      badgeTextColor = _isDark ? const Color(0xFF6EE7B7) : const Color(0xFF03543F);
     } else if (totalCompleted > 0) {
       readinessBadge = 'Complete';
-      badgeColor = const Color(0xFFDEF7EC);
-      badgeTextColor = const Color(0xFF03543F);
+      badgeColor = _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.5) : const Color(0xFFDEF7EC);
+      badgeTextColor = _isDark ? const Color(0xFF6EE7B7) : const Color(0xFF03543F);
     } else {
       readinessBadge = '$totalPending Pending';
-      badgeColor = const Color(0xFFFEF3C7);
-      badgeTextColor = const Color(0xFF92400E);
+      badgeColor = _isDark ? const Color(0xFF78350F).withValues(alpha: 0.5) : const Color(0xFFFEF3C7);
+      badgeTextColor = _isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E);
     }
 
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: _borderColor),
       ),
       child: Wrap(
         spacing: 4,
@@ -465,8 +472,8 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             title: 'Defense Schedules',
             icon: Icons.calendar_month_rounded,
             countBadge: '$scheduleCount',
-            badgeColor: const Color(0xFFE2E8F0),
-            badgeTextColor: const Color(0xFF334155),
+            badgeColor: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+            badgeTextColor: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF334155),
             isSelected: currentView == DefenseOperationsView.schedules,
             onTap: () => ref
                 .read(defenseBoardActiveViewProvider.notifier)
@@ -497,6 +504,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     required bool isSelected,
     required VoidCallback onTap,
   }) {
+    final activeTextColor = _isDark ? const Color(0xFFF87171) : AppColors.maroon;
+    final inactiveTextColor = _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B);
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(9),
@@ -504,12 +514,12 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
+          color: isSelected ? _surfaceColor : Colors.transparent,
           borderRadius: BorderRadius.circular(9),
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
+                    color: Colors.black.withValues(alpha: _isDark ? 0.25 : 0.06),
                     blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),
@@ -522,7 +532,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             Icon(
               icon,
               size: 17,
-              color: isSelected ? AppColors.maroon : const Color(0xFF64748B),
+              color: isSelected ? activeTextColor : inactiveTextColor,
             ),
             const SizedBox(width: 8),
             Text(
@@ -530,14 +540,14 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               style: TextStyle(
                 fontSize: 13.5,
                 fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected ? AppColors.maroon : const Color(0xFF64748B),
+                color: isSelected ? activeTextColor : inactiveTextColor,
               ),
             ),
             const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
               decoration: BoxDecoration(
-                color: isSelected ? badgeColor : const Color(0xFFE2E8F0),
+                color: isSelected ? badgeColor : (_isDark ? DefensysTokens.mistSurface : const Color(0xFFE2E8F0)),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
@@ -545,7 +555,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w800,
-                  color: isSelected ? badgeTextColor : const Color(0xFF64748B),
+                  color: isSelected ? badgeTextColor : inactiveTextColor,
                 ),
               ),
             ),
@@ -564,9 +574,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
+        color: _isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFEFF6FF),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF93C5FD)),
+        border: Border.all(color: _isDark ? const Color(0xFF2563EB).withValues(alpha: 0.5) : const Color(0xFF93C5FD)),
       ),
       child: Row(
         children: [
@@ -579,10 +589,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           Expanded(
             child: Text(
               'Unfinished schedule import draft — $rowCount staged ${rowCount == 1 ? 'slot' : 'slots'} · Saved at $timeStr',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF1E3A8A),
+                color: _isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E3A8A),
               ),
             ),
           ),
@@ -618,8 +628,8 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             },
             style: OutlinedButton.styleFrom(
               foregroundColor: const Color(0xFFDC2626),
-              side: const BorderSide(color: Color(0xFFFCA5A5)),
-              backgroundColor: Colors.white,
+              side: BorderSide(color: _isDark ? const Color(0xFF991B1B) : const Color(0xFFFCA5A5)),
+              backgroundColor: _isDark ? DefensysTokens.mistSurface : Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -642,9 +652,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       margin: const EdgeInsets.only(bottom: 20),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFECFDF5),
+        color: _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.3) : const Color(0xFFECFDF5),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFA7F3D0)),
+        border: Border.all(color: _isDark ? const Color(0xFF059669).withValues(alpha: 0.5) : const Color(0xFFA7F3D0)),
       ),
       child: Row(
         children: [
@@ -657,10 +667,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           Expanded(
             child: Text(
               '$readyCount ${readyCount == 1 ? 'team has' : 'teams have'} met all deliverable requirements and ${readyCount == 1 ? 'is' : 'are'} ready for defense scheduling.',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF065F46),
+                color: _isDark ? const Color(0xFFA7F3D0) : const Color(0xFF065F46),
               ),
             ),
           ),
@@ -671,13 +681,13 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   .read(defenseBoardActiveViewProvider.notifier)
                   .setView(DefenseOperationsView.readiness);
             },
-            icon: const Icon(Icons.arrow_forward_rounded, size: 15, color: Color(0xFF047857)),
-            label: const Text(
+            icon: Icon(Icons.arrow_forward_rounded, size: 15, color: _isDark ? const Color(0xFF34D399) : const Color(0xFF047857)),
+            label: Text(
               'Open Readiness Queue',
               style: TextStyle(
                 fontSize: 12.5,
                 fontWeight: FontWeight.w800,
-                color: Color(0xFF047857),
+                color: _isDark ? const Color(0xFF34D399) : const Color(0xFF047857),
               ),
             ),
           ),
@@ -695,23 +705,23 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
+            color: _isDark ? DefensysTokens.mistSurface : const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: _borderColor),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  const Icon(Icons.tune_rounded, size: 16, color: Color(0xFF64748B)),
+                  Icon(Icons.tune_rounded, size: 16, color: _textSecondaryColor),
                   const SizedBox(width: 6),
-                  const Text(
+                  Text(
                     'Target Defense Milestone / Event:',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF64748B),
+                      color: _textSecondaryColor,
                       letterSpacing: 0.2,
                     ),
                   ),
@@ -721,7 +731,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                       height: 28,
                       padding: const EdgeInsets.all(2),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFE2E8F0),
+                        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFE2E8F0),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Row(
@@ -738,9 +748,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               const SizedBox(height: 10),
               if (scope == 'capstone') ...[
                 if (schedState.defenseStages.isEmpty)
-                  const Text(
+                  Text(
                     'No defense stages configured. Go to Defense Stages Setup to create milestones.',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                    style: TextStyle(fontSize: 12, color: _textSecondaryColor),
                   )
                 else
                   Wrap(
@@ -771,16 +781,16 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
                       if (readyCountForStage > 0) {
                         badgeText = '$readyCountForStage ready';
-                        badgeColor = const Color(0xFFDEF7EC);
-                        badgeTextColor = const Color(0xFF03543F);
+                        badgeColor = _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.5) : const Color(0xFFDEF7EC);
+                        badgeTextColor = _isDark ? const Color(0xFF6EE7B7) : const Color(0xFF03543F);
                       } else if (completedCountForStage > 0) {
                         badgeText = 'Complete';
-                        badgeColor = const Color(0xFFDEF7EC);
-                        badgeTextColor = const Color(0xFF03543F);
+                        badgeColor = _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.5) : const Color(0xFFDEF7EC);
+                        badgeTextColor = _isDark ? const Color(0xFF6EE7B7) : const Color(0xFF03543F);
                       } else {
                         badgeText = '$pendingCountForStage pending';
-                        badgeColor = const Color(0xFFFEF3C7);
-                        badgeTextColor = const Color(0xFF92400E);
+                        badgeColor = _isDark ? const Color(0xFF78350F).withValues(alpha: 0.5) : const Color(0xFFFEF3C7);
+                        badgeTextColor = _isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E);
                       }
 
                       return _stageFilterPill(
@@ -799,9 +809,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   ),
               ] else ...[
                 if (schedState.pitEvents.isEmpty)
-                  const Text(
+                  Text(
                     'No PIT events configured for this term.',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                    style: TextStyle(fontSize: 12, color: _textSecondaryColor),
                   )
                 else
                   Wrap(
@@ -829,16 +839,16 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
                       if (readyCountForEvent > 0) {
                         badgeText = '$readyCountForEvent ready';
-                        badgeColor = const Color(0xFFDEF7EC);
-                        badgeTextColor = const Color(0xFF03543F);
+                        badgeColor = _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.5) : const Color(0xFFDEF7EC);
+                        badgeTextColor = _isDark ? const Color(0xFF6EE7B7) : const Color(0xFF03543F);
                       } else if (completedCountForEvent > 0) {
                         badgeText = 'Complete';
-                        badgeColor = const Color(0xFFDEF7EC);
-                        badgeTextColor = const Color(0xFF03543F);
+                        badgeColor = _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.5) : const Color(0xFFDEF7EC);
+                        badgeTextColor = _isDark ? const Color(0xFF6EE7B7) : const Color(0xFF03543F);
                       } else {
                         badgeText = '$pendingCountForEvent pending';
-                        badgeColor = const Color(0xFFFEF3C7);
-                        badgeTextColor = const Color(0xFF92400E);
+                        badgeColor = _isDark ? const Color(0xFF78350F).withValues(alpha: 0.5) : const Color(0xFFFEF3C7);
+                        badgeTextColor = _isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E);
                       }
 
                       return _stageFilterPill(
@@ -878,10 +888,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.maroon : Colors.white,
+          color: isSelected ? AppColors.maroon : (_isDark ? DefensysTokens.mistInputFill : Colors.white),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
-            color: isSelected ? AppColors.maroon : const Color(0xFFCBD5E1),
+            color: isSelected ? AppColors.maroon : _borderColor,
             width: isSelected ? 1.5 : 1.0,
           ),
           boxShadow: isSelected
@@ -902,7 +912,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               style: TextStyle(
                 fontSize: 12.5,
                 fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected ? Colors.white : AppColors.textPrimary,
+                color: isSelected ? Colors.white : _textPrimaryColor,
               ),
             ),
             const SizedBox(width: 8),
@@ -940,7 +950,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
+          color: isSelected ? (_isDark ? DefensysTokens.mistSurface : Colors.white) : Colors.transparent,
           borderRadius: BorderRadius.circular(4),
         ),
         child: Text(
@@ -948,7 +958,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           style: TextStyle(
             fontSize: 11,
             fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-            color: isSelected ? AppColors.maroon : const Color(0xFF64748B),
+            color: isSelected ? (_isDark ? const Color(0xFFF87171) : AppColors.maroon) : _textSecondaryColor,
           ),
         ),
       ),
@@ -1040,20 +1050,20 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
+              Row(
                 children: [
                   Icon(
                     Icons.view_agenda_outlined,
-                    color: AppColors.maroon,
+                    color: _isDark ? DefensysTokens.textPrimaryDark : AppColors.maroon,
                     size: 24,
                   ),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 8),
                   Text(
                     'Defense Operations',
                     style: TextStyle(
                       fontSize: 21,
                       fontWeight: FontWeight.w800,
-                      color: AppColors.maroon,
+                      color: _isDark ? DefensysTokens.textPrimaryDark : AppColors.maroon,
                       height: 1.1,
                     ),
                   ),
@@ -1063,9 +1073,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               Text(
                 state.activeSemester?['display_name']?.toString() ??
                     'Live defense schedule, room timetable, and session operations.',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 15,
-                  color: AppColors.textSecondary,
+                  color: _textSecondaryColor,
                   height: 1.35,
                 ),
               ),
@@ -1087,26 +1097,26 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   onPressed: _openManualScheduleDialog,
                   style: OutlinedButton.styleFrom(
                     elevation: 0,
-                    foregroundColor: const Color(0xFF334155),
-                    side: const BorderSide(color: Color(0xFFCBD5E1)),
-                    backgroundColor: Colors.white,
+                    foregroundColor: _textPrimaryColor,
+                    side: BorderSide(color: _borderColor),
+                    backgroundColor: _surfaceColor,
                     padding:
                         const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.edit_calendar_outlined,
                     size: 16,
-                    color: Color(0xFF64748B),
+                    color: _textSecondaryColor,
                   ),
-                  label: const Text(
+                  label: Text(
                     'Manual Schedule',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
-                      color: Color(0xFF334155),
+                      color: _textPrimaryColor,
                     ),
                   ),
                 ),
@@ -1118,29 +1128,29 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   onPressed: _openImportScheduleDialog,
                   style: OutlinedButton.styleFrom(
                     elevation: 0,
-                    foregroundColor: const Color(0xFF92400E),
-                    side: const BorderSide(color: Color(0xFFFCD34D)),
-                    backgroundColor: const Color(0xFFFFFBEB),
+                    foregroundColor: _isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E),
+                    side: BorderSide(color: _isDark ? const Color(0xFFB45309).withValues(alpha: 0.6) : const Color(0xFFFCD34D)),
+                    backgroundColor: _isDark ? const Color(0xFF78350F).withValues(alpha: 0.3) : const Color(0xFFFFFBEB),
                     padding:
                         const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
                   ),
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.upload_file_rounded,
                     size: 16,
-                    color: Color(0xFFB45309),
+                    color: _isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
                   ),
                   label: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text(
+                      Text(
                         'Import Schedule',
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 13,
-                          color: Color(0xFF92400E),
+                          color: _isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E),
                         ),
                       ),
                       if (_hasImportDraft) ...[
@@ -1148,7 +1158,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFB45309),
+                            color: _isDark ? const Color(0xFFD97706) : const Color(0xFFB45309),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Text(
@@ -1310,14 +1320,14 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       height: 94,
       padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
+        border: Border.all(color: _borderColor),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x06000000),
+            color: Colors.black.withValues(alpha: _isDark ? 0.2 : 0.03),
             blurRadius: 12,
-            offset: Offset(0, 4),
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -1327,7 +1337,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.12),
+              color: iconColor.withValues(alpha: _isDark ? 0.2 : 0.12),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(icon, color: iconColor, size: 24),
@@ -1342,10 +1352,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   customValueText ?? '$value',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
-                    color: AppColors.textPrimary,
+                    color: _textPrimaryColor,
                     letterSpacing: -0.5,
                   ),
                 ),
@@ -1354,9 +1364,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
-                    color: AppColors.textSecondary,
+                    color: _textSecondaryColor,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -1375,14 +1385,14 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
+        border: Border.all(color: _borderColor),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x06000000),
+            color: Colors.black.withValues(alpha: _isDark ? 0.2 : 0.03),
             blurRadius: 12,
-            offset: Offset(0, 4),
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -1457,7 +1467,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -1493,6 +1503,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     required IconData icon,
   }) {
     final isSelected = state.scope == scopeValue;
+    final activeTextColor = _isDark ? const Color(0xFFF87171) : AppColors.maroon;
 
     return Material(
       color: Colors.transparent,
@@ -1512,17 +1523,17 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
-            color: isSelected ? Colors.white : Colors.transparent,
+            color: isSelected ? (_isDark ? DefensysTokens.mistSurface : Colors.white) : Colors.transparent,
             borderRadius: BorderRadius.circular(9),
             boxShadow: isSelected
-                ? const [
+                ? [
                     BoxShadow(
-                      color: Color(0x0F000000),
+                      color: Colors.black.withValues(alpha: _isDark ? 0.25 : 0.06),
                       blurRadius: 6,
-                      offset: Offset(0, 2),
+                      offset: const Offset(0, 2),
                     ),
                   ]
-                : null,
+              : null,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1530,7 +1541,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               Icon(
                 icon,
                 size: 15,
-                color: isSelected ? AppColors.maroon : AppColors.textSecondary,
+                color: isSelected ? activeTextColor : _textSecondaryColor,
               ),
               const SizedBox(width: 6),
               Text(
@@ -1538,7 +1549,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                  color: isSelected ? AppColors.maroon : AppColors.textSecondary,
+                  color: isSelected ? activeTextColor : _textSecondaryColor,
                 ),
               ),
             ],
@@ -1580,18 +1591,18 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         key: ValueKey('adviser_filter_${state.scope}'),
         initialValue: currentValue,
         decoration: _inputDecoration(
-          prefixIcon: const Icon(Icons.person_outline_rounded, color: AppColors.textSecondary, size: 18),
+          prefixIcon: Icon(Icons.person_outline_rounded, color: _textSecondaryColor, size: 18),
         ),
-        dropdownColor: Colors.white,
+        dropdownColor: _surfaceColor,
         borderRadius: BorderRadius.circular(12),
         isExpanded: true,
         items: [
-          const DropdownMenuItem<String>(
+          DropdownMenuItem<String>(
             value: '',
             child: Text(
               'All Advisers',
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _textPrimaryColor),
             ),
           ),
           ...adviserMap.entries.map(
@@ -1600,7 +1611,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               child: Text(
                 entry.value,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _textPrimaryColor),
               ),
             ),
           ),
@@ -1649,18 +1660,18 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         key: ValueKey('section_filter_${state.scope}'),
         initialValue: currentValue,
         decoration: _inputDecoration(
-          prefixIcon: const Icon(Icons.school_outlined, color: AppColors.textSecondary, size: 18),
+          prefixIcon: Icon(Icons.school_outlined, color: _textSecondaryColor, size: 18),
         ),
-        dropdownColor: Colors.white,
+        dropdownColor: _surfaceColor,
         borderRadius: BorderRadius.circular(12),
         isExpanded: true,
         items: [
-          const DropdownMenuItem<String>(
+          DropdownMenuItem<String>(
             value: '',
             child: Text(
               'All Sections',
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _textPrimaryColor),
             ),
           ),
           ...sectionMap.entries.map(
@@ -1669,7 +1680,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               child: Text(
                 entry.value,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _textPrimaryColor),
               ),
             ),
           ),
@@ -1697,20 +1708,20 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       icon: Icon(
         isAllCollapsed ? Icons.unfold_more_rounded : Icons.unfold_less_rounded,
         size: 16,
-        color: DefensysTokens.textDark,
+        color: _textPrimaryColor,
       ),
       label: Text(
         isAllCollapsed ? 'Expand All' : 'Collapse All',
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: DefensysTokens.fontFamilyInter,
           fontSize: 12,
           fontWeight: FontWeight.w600,
-          color: DefensysTokens.textDark,
+          color: _textPrimaryColor,
         ),
       ),
       style: OutlinedButton.styleFrom(
-        side: const BorderSide(color: Color(0xFFE2E8F0)),
-        backgroundColor: Colors.white,
+        side: BorderSide(color: _borderColor),
+        backgroundColor: _surfaceColor,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
@@ -1757,9 +1768,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         key: ValueKey('stage_or_event_${state.scope}'),
         initialValue: currentValue,
         decoration: _inputDecoration(
-          prefixIcon: Icon(icon, color: AppColors.textSecondary, size: 18),
+          prefixIcon: Icon(icon, color: _textSecondaryColor, size: 18),
         ),
-        dropdownColor: Colors.white,
+        dropdownColor: _surfaceColor,
         borderRadius: BorderRadius.circular(12),
         isExpanded: true,
         items: [
@@ -1768,7 +1779,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             child: Text(
               defaultLabel,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _textPrimaryColor),
             ),
           ),
           ...options.map(
@@ -1777,7 +1788,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               child: Text(
                 opt,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _textPrimaryColor),
               ),
             ),
           ),
@@ -1808,20 +1819,20 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       child: DropdownButtonFormField<String>(
         initialValue: currentValue,
         decoration: _inputDecoration(
-          prefixIcon: const Icon(Icons.filter_list_rounded, color: AppColors.textSecondary, size: 18),
+          prefixIcon: Icon(Icons.filter_list_rounded, color: _textSecondaryColor, size: 18),
         ),
-        dropdownColor: Colors.white,
+        dropdownColor: _surfaceColor,
         borderRadius: BorderRadius.circular(12),
         isExpanded: true,
         items: [
-          const DropdownMenuItem<String>(
+          DropdownMenuItem<String>(
             value: '',
-            child: Text('All Statuses', overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            child: Text('All Statuses', overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _textPrimaryColor)),
           ),
           ...statuses.map(
             (status) => DropdownMenuItem<String>(
               value: status,
-              child: Text(_statusLabel(status), overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              child: Text(_statusLabel(status), overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _textPrimaryColor)),
             ),
           ),
         ],
@@ -1846,13 +1857,13 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       child: TextField(
         controller: _searchController,
         textInputAction: TextInputAction.search,
-        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _textPrimaryColor),
         decoration: _inputDecoration(
           hintText: 'Search team or room...',
-          prefixIcon: const Icon(Icons.search_rounded, color: AppColors.textSecondary, size: 20),
+          prefixIcon: Icon(Icons.search_rounded, color: _textSecondaryColor, size: 20),
           suffixIcon: _searchController.text.isNotEmpty
               ? IconButton(
-                  icon: const Icon(Icons.clear_rounded, size: 18, color: AppColors.textSecondary),
+                  icon: Icon(Icons.clear_rounded, size: 18, color: _textSecondaryColor),
                   onPressed: () {
                     _searchController.clear();
                     ref.read(defenseBoardProvider.notifier).fetchBoard(
@@ -1943,14 +1954,14 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       margin: const EdgeInsets.only(bottom: 16),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
+        border: Border.all(color: _borderColor),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x06000000),
+            color: Colors.black.withValues(alpha: _isDark ? 0.2 : 0.03),
             blurRadius: 14,
-            offset: Offset(0, 4),
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -1978,7 +1989,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     final isDocUnassigned = group.documenterName.isEmpty;
 
     return Material(
-      color: Colors.white,
+      color: _surfaceColor,
       child: InkWell(
         onTap: () {
           setState(() {
@@ -1990,9 +2001,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           });
         },
         child: Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             border: Border(
-              bottom: BorderSide(color: Color(0xFFEDF2F7), width: 1),
+              bottom: BorderSide(color: _borderColor, width: 1),
             ),
           ),
           child: IntrinsicHeight(
@@ -2019,7 +2030,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
-                                color: accentColor.withValues(alpha: 0.10),
+                                color: accentColor.withValues(alpha: _isDark ? 0.2 : 0.10),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
@@ -2037,11 +2048,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                             // Stage Label
                             Text(
                               group.stageLabel,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontFamily: DefensysTokens.fontFamilyInter,
                                 fontSize: 15,
                                 fontWeight: FontWeight.w700,
-                                color: DefensysTokens.textPrimary,
+                                color: _textPrimaryColor,
                                 letterSpacing: -0.2,
                               ),
                             ),
@@ -2050,48 +2061,48 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFF8FAFC),
+                                color: _panelBgColor,
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                                border: Border.all(color: _borderColor),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(
+                                  Icon(
                                     Icons.calendar_today_rounded,
                                     size: 13,
-                                    color: DefensysTokens.steelGrey,
+                                    color: _textSecondaryColor,
                                   ),
                                   const SizedBox(width: 6),
                                   Text(
                                     group.scheduledDate,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontFamily: DefensysTokens.fontFamilyInter,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
-                                      color: DefensysTokens.textDark,
+                                      color: _textPrimaryColor,
                                     ),
                                   ),
-                                  const Padding(
-                                    padding: EdgeInsets.symmetric(horizontal: 8),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8),
                                     child: Text(
                                       '•',
-                                      style: TextStyle(color: Color(0xFFCBD5E1), fontSize: 12),
+                                      style: TextStyle(color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1), fontSize: 12),
                                     ),
                                   ),
-                                  const Icon(
+                                  Icon(
                                     Icons.place_rounded,
                                     size: 14,
-                                    color: DefensysTokens.steelGrey,
+                                    color: _textSecondaryColor,
                                   ),
                                   const SizedBox(width: 4),
                                   Text(
                                     group.room,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontFamily: DefensysTokens.fontFamilyInter,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
-                                      color: DefensysTokens.textDark,
+                                      color: _textPrimaryColor,
                                     ),
                                   ),
                                 ],
@@ -2102,9 +2113,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFF8FAFC),
+                                color: _panelBgColor,
                                 borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                                border: Border.all(color: _borderColor),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -2120,11 +2131,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                                   const SizedBox(width: 6),
                                   Text(
                                     '${group.schedules.length} ${group.schedules.length == 1 ? 'Team' : 'Teams'}',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontFamily: DefensysTokens.fontFamilyInter,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w700,
-                                      color: DefensysTokens.textDark,
+                                      color: _textPrimaryColor,
                                     ),
                                   ),
                                 ],
@@ -2135,13 +2146,13 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                             Container(
                               padding: const EdgeInsets.all(4),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFF1F5F9),
+                                color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Icon(
                                 isCollapsed ? Icons.expand_more_rounded : Icons.expand_less_rounded,
                                 size: 18,
-                                color: DefensysTokens.steelGrey,
+                                color: _textSecondaryColor,
                               ),
                             ),
                           ],
@@ -2160,36 +2171,36 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFF1F5F9),
+                                    color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
-                                  child: const Text(
+                                  child: Text(
                                     'PANEL',
                                     style: TextStyle(
                                       fontFamily: DefensysTokens.fontFamilyInter,
                                       fontSize: 10,
                                       fontWeight: FontWeight.w700,
                                       letterSpacing: 0.5,
-                                      color: DefensysTokens.steelGrey,
+                                      color: _textSecondaryColor,
                                     ),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
                                   group.panelNames.isNotEmpty ? group.panelNames : 'No panel assigned',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontFamily: DefensysTokens.fontFamilyInter,
                                     fontSize: 13,
                                     fontWeight: FontWeight.w500,
-                                    color: DefensysTokens.textPrimary,
+                                    color: _textPrimaryColor,
                                   ),
                                 ),
                               ],
                             ),
                             if (!isPit) ...[
-                              const Text(
+                              Text(
                                 '•',
-                                style: TextStyle(color: Color(0xFFCBD5E1), fontSize: 14),
+                                style: TextStyle(color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1), fontSize: 14),
                               ),
                               Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -2197,17 +2208,17 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFF1F5F9),
+                                      color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
-                                    child: const Text(
+                                    child: Text(
                                       'DOCUMENTER',
                                       style: TextStyle(
                                         fontFamily: DefensysTokens.fontFamilyInter,
                                         fontSize: 10,
                                         fontWeight: FontWeight.w700,
                                         letterSpacing: 0.5,
-                                        color: DefensysTokens.steelGrey,
+                                        color: _textSecondaryColor,
                                       ),
                                     ),
                                   ),
@@ -2215,10 +2226,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                     decoration: BoxDecoration(
-                                      color: isDocUnassigned ? DefensysTokens.warningBg : const Color(0xFFF8FAFC),
+                                      color: isDocUnassigned ? DefensysTokens.warningBg : _panelBgColor,
                                       borderRadius: BorderRadius.circular(4),
                                       border: Border.all(
-                                        color: isDocUnassigned ? DefensysTokens.warningBorder : const Color(0xFFE2E8F0),
+                                        color: isDocUnassigned ? DefensysTokens.warningBorder : _borderColor,
                                       ),
                                     ),
                                     child: Text(
@@ -2227,7 +2238,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                                         fontFamily: DefensysTokens.fontFamilyInter,
                                         fontSize: 12,
                                         fontWeight: isDocUnassigned ? FontWeight.w600 : FontWeight.w500,
-                                        color: isDocUnassigned ? DefensysTokens.warningText : DefensysTokens.textPrimary,
+                                        color: isDocUnassigned ? DefensysTokens.warningText : _textPrimaryColor,
                                       ),
                                     ),
                                   ),
@@ -2268,10 +2279,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         // Sub-table Header (Refined Uppercase Small-Caps)
         Container(
           height: 38,
-          decoration: const BoxDecoration(
-            color: Color(0xFFF8FAFC),
+          decoration: BoxDecoration(
+            color: _panelBgColor,
             border: Border(
-              bottom: BorderSide(color: Color(0xFFE2E8F0), width: 1),
+              bottom: BorderSide(color: _borderColor, width: 1),
             ),
           ),
           child: Row(
@@ -2290,7 +2301,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           physics: const NeverScrollableScrollPhysics(),
           itemCount: paginatedSchedules.length,
           separatorBuilder: (_, __) =>
-              const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
+              Divider(height: 1, thickness: 1, color: _borderColor),
           itemBuilder: (context, index) {
             final schedule = paginatedSchedules[index];
             final projectTitle = schedule['project_title']?.toString() ?? '';
@@ -2307,26 +2318,26 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
+                        color: _panelBgColor,
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        border: Border.all(color: _borderColor),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.access_time_rounded,
                             size: 13,
-                            color: DefensysTokens.steelGrey,
+                            color: _textSecondaryColor,
                           ),
                           const SizedBox(width: 5),
                           Text(
                             _shortTime(schedule['start_time']),
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontFamily: DefensysTokens.fontFamilyInter,
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
-                              color: DefensysTokens.textDark,
+                              color: _textPrimaryColor,
                             ),
                           ),
                         ],
@@ -2347,11 +2358,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                             schedule['team_name']?.toString() ?? '',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontFamily: DefensysTokens.fontFamilyInter,
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
-                              color: DefensysTokens.textPrimary,
+                              color: _textPrimaryColor,
                             ),
                           ),
                           if (projectTitle.isNotEmpty) ...[
@@ -2360,10 +2371,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                               projectTitle,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontFamily: DefensysTokens.fontFamilyInter,
                                 fontSize: 12,
-                                color: DefensysTokens.textSecondary,
+                                color: _textSecondaryColor,
                               ),
                             ),
                           ],
@@ -2372,18 +2383,18 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.person_outline_rounded, size: 12, color: DefensysTokens.steelGrey),
+                                Icon(Icons.person_outline_rounded, size: 12, color: _textSecondaryColor),
                                 const SizedBox(width: 3),
                                 Flexible(
                                   child: Text(
                                     'Adviser: $adviserName',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontFamily: DefensysTokens.fontFamilyInter,
                                       fontSize: 11,
                                       fontWeight: FontWeight.w600,
-                                      color: DefensysTokens.steelGrey,
+                                      color: _textSecondaryColor,
                                     ),
                                   ),
                                 ),
@@ -2394,15 +2405,15 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.school_outlined, size: 12, color: DefensysTokens.steelGrey),
+                                Icon(Icons.school_outlined, size: 12, color: _textSecondaryColor),
                                 const SizedBox(width: 3),
                                 Text(
                                   'Section: $section',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontFamily: DefensysTokens.fontFamilyInter,
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,
-                                    color: DefensysTokens.steelGrey,
+                                    color: _textSecondaryColor,
                                   ),
                                 ),
                               ],
@@ -2459,10 +2470,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     return Container(
       height: 42,
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: const BoxDecoration(
-        color: Color(0xFFF8FAFC),
+      decoration: BoxDecoration(
+        color: _panelBgColor,
         border: Border(
-          top: BorderSide(color: Color(0xFFE2E8F0), width: 1),
+          top: BorderSide(color: _borderColor, width: 1),
         ),
       ),
       child: Row(
@@ -2470,18 +2481,18 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         children: [
           Text(
             'Showing $startIdx–$endIdx of $totalTeams teams',
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: DefensysTokens.fontFamilyInter,
               fontSize: 12,
               fontWeight: FontWeight.w500,
-              color: DefensysTokens.steelGrey,
+              color: _textSecondaryColor,
             ),
           ),
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               IconButton(
-                icon: const Icon(Icons.chevron_left_rounded, size: 18),
+                icon: Icon(Icons.chevron_left_rounded, size: 18, color: _textSecondaryColor),
                 splashRadius: 14,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
@@ -2497,16 +2508,16 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Text(
                   'Page ${currentPage + 1} of $totalPages',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: DefensysTokens.fontFamilyInter,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: DefensysTokens.textDark,
+                    color: _textPrimaryColor,
                   ),
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.chevron_right_rounded, size: 18),
+                icon: Icon(Icons.chevron_right_rounded, size: 18, color: _textSecondaryColor),
                 splashRadius: 14,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
@@ -2554,9 +2565,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               margin: const EdgeInsets.only(bottom: 10),
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: _panelBgColor,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE9EDF4)),
+                border: Border.all(color: _borderColor),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2566,17 +2577,17 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: _surfaceColor,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFFCBD5E1)),
+                          border: Border.all(color: _borderColor),
                         ),
                         child: Text(
                           _shortTime(schedule['start_time']),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: DefensysTokens.fontFamilyInter,
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
-                            color: DefensysTokens.textPrimary,
+                            color: _textPrimaryColor,
                           ),
                         ),
                       ),
@@ -2589,11 +2600,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                             child: Text(
                               teamName,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontFamily: DefensysTokens.fontFamilyInter,
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
-                                color: DefensysTokens.textPrimary,
+                                color: _textPrimaryColor,
                               ),
                             ),
                           ),
@@ -2606,10 +2617,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                     const SizedBox(height: 4),
                     Text(
                       projectTitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: DefensysTokens.fontFamilyInter,
                         fontSize: 12,
-                        color: DefensysTokens.textSecondary,
+                        color: _textSecondaryColor,
                       ),
                     ),
                   ],
@@ -2618,15 +2629,15 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.person_outline_rounded, size: 13, color: DefensysTokens.steelGrey),
+                        Icon(Icons.person_outline_rounded, size: 13, color: _textSecondaryColor),
                         const SizedBox(width: 4),
                         Text(
                           'Adviser: $adviserName',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: DefensysTokens.fontFamilyInter,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: DefensysTokens.steelGrey,
+                            color: _textSecondaryColor,
                           ),
                         ),
                       ],
@@ -2636,15 +2647,15 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.school_outlined, size: 13, color: DefensysTokens.steelGrey),
+                        Icon(Icons.school_outlined, size: 13, color: _textSecondaryColor),
                         const SizedBox(width: 4),
                         Text(
                           'Section: $section',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: DefensysTokens.fontFamilyInter,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: DefensysTokens.steelGrey,
+                            color: _textSecondaryColor,
                           ),
                         ),
                       ],
@@ -2701,9 +2712,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           tooltip: 'View Defense Details',
           splashRadius: 18,
           iconSize: 18,
-          color: DefensysTokens.steelGrey,
+          color: _textSecondaryColor,
           style: IconButton.styleFrom(
-            hoverColor: const Color(0xFFF1F5F9),
+            hoverColor: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
           ),
           onPressed: () => _showDefenseDetailsDialog(schedule, group),
           icon: const Icon(Icons.info_outline_rounded),
@@ -2746,6 +2757,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
+        backgroundColor: _surfaceColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
@@ -2758,9 +2770,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: _surfaceColor,
                   border: Border(
-                    bottom: const BorderSide(color: Color(0xFFE2E8F0)),
+                    bottom: BorderSide(color: _borderColor),
                     left: BorderSide(color: accentColor, width: 4),
                   ),
                 ),
@@ -2769,7 +2781,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: accentColor.withValues(alpha: 0.10),
+                        color: accentColor.withValues(alpha: _isDark ? 0.2 : 0.10),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
@@ -2789,25 +2801,25 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                         children: [
                           Text(
                             group.stageLabel,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
-                              color: DefensysTokens.textPrimary,
+                              color: _textPrimaryColor,
                             ),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             '${group.scheduledDate} • $startTime ($slotDuration min) • ${group.room}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: DefensysTokens.textSecondary,
+                              color: _textSecondaryColor,
                             ),
                           ),
                         ],
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close_rounded, size: 20, color: DefensysTokens.steelGrey),
+                      icon: Icon(Icons.close_rounded, size: 20, color: _textSecondaryColor),
                       onPressed: () => Navigator.pop(ctx),
                       splashRadius: 18,
                     ),
@@ -2826,24 +2838,24 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
+                          color: _panelBgColor,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                          border: Border.all(color: _borderColor),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
                               children: [
-                                const Icon(Icons.groups_rounded, size: 18, color: DefensysTokens.steelGrey),
+                                Icon(Icons.groups_rounded, size: 18, color: _textSecondaryColor),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     teamName,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w700,
-                                      color: DefensysTokens.textPrimary,
+                                      color: _textPrimaryColor,
                                     ),
                                   ),
                                 ),
@@ -2851,16 +2863,16 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: Colors.white,
+                                      color: _surfaceColor,
                                       borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                                      border: Border.all(color: _borderColor),
                                     ),
                                     child: Text(
                                       teamLevel,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 11,
                                         fontWeight: FontWeight.w600,
-                                        color: DefensysTokens.textDark,
+                                        color: _textPrimaryColor,
                                       ),
                                     ),
                                   ),
@@ -2869,14 +2881,14 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                             const SizedBox(height: 6),
                             Text(
                               projectTitle,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 13,
-                                color: DefensysTokens.textSecondary,
+                                color: _textSecondaryColor,
                                 height: 1.4,
                               ),
                             ),
                             if (adviserName.isNotEmpty || section.isNotEmpty || leaderName.isNotEmpty) ...[
-                              const Divider(height: 20, color: Color(0xFFE2E8F0)),
+                              Divider(height: 20, color: _borderColor),
                               Wrap(
                                 spacing: 18,
                                 runSpacing: 6,
@@ -2885,27 +2897,27 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                                     Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        const Icon(Icons.person_outline_rounded, size: 14, color: DefensysTokens.steelGrey),
+                                        Icon(Icons.person_outline_rounded, size: 14, color: _textSecondaryColor),
                                         const SizedBox(width: 4),
-                                        Text('Adviser: $adviserName', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: DefensysTokens.textDark)),
+                                        Text('Adviser: $adviserName', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _textPrimaryColor)),
                                       ],
                                     ),
                                   if (section.isNotEmpty)
                                     Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        const Icon(Icons.school_outlined, size: 14, color: DefensysTokens.steelGrey),
+                                        Icon(Icons.school_outlined, size: 14, color: _textSecondaryColor),
                                         const SizedBox(width: 4),
-                                        Text('Section: $section', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: DefensysTokens.textDark)),
+                                        Text('Section: $section', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _textPrimaryColor)),
                                       ],
                                     ),
                                   if (leaderName.isNotEmpty)
                                     Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        const Icon(Icons.star_outline_rounded, size: 14, color: DefensysTokens.steelGrey),
+                                        Icon(Icons.star_outline_rounded, size: 14, color: _textSecondaryColor),
                                         const SizedBox(width: 4),
-                                        Text('Leader: $leaderName', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: DefensysTokens.textDark)),
+                                        Text('Leader: $leaderName', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _textPrimaryColor)),
                                       ],
                                     ),
                                 ],
@@ -2916,13 +2928,13 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                       ),
                       const SizedBox(height: 16),
                       // Defense Committee Section
-                      const Text(
+                      Text(
                         'DEFENSE COMMITTEE',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.6,
-                          color: DefensysTokens.steelGrey,
+                          color: _textSecondaryColor,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -2930,49 +2942,49 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: _surfaceColor,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                          border: Border.all(color: _borderColor),
                         ),
                         child: Column(
                           children: [
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Icon(Icons.people_outline_rounded, size: 16, color: DefensysTokens.steelGrey),
+                                Icon(Icons.people_outline_rounded, size: 16, color: _textSecondaryColor),
                                 const SizedBox(width: 8),
-                                const Text(
+                                Text(
                                   'Panelists: ',
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
-                                    color: DefensysTokens.textDark,
+                                    color: _textPrimaryColor,
                                   ),
                                 ),
                                 Expanded(
                                   child: Text(
                                     group.panelNames.isNotEmpty ? group.panelNames : 'None assigned',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 13,
-                                      color: DefensysTokens.textPrimary,
+                                      color: _textPrimaryColor,
                                     ),
                                   ),
                                 ),
                               ],
                             ),
                             if (!isPit) ...[
-                              const Divider(height: 18, color: Color(0xFFF1F5F9)),
+                              Divider(height: 18, color: _borderColor),
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Icon(Icons.edit_note_rounded, size: 16, color: DefensysTokens.steelGrey),
+                                  Icon(Icons.edit_note_rounded, size: 16, color: _textSecondaryColor),
                                   const SizedBox(width: 8),
-                                  const Text(
+                                  Text(
                                     'Documenter: ',
                                     style: TextStyle(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
-                                      color: DefensysTokens.textDark,
+                                      color: _textPrimaryColor,
                                     ),
                                   ),
                                   Expanded(
@@ -2981,7 +2993,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                                       style: TextStyle(
                                         fontSize: 13,
                                         fontWeight: group.documenterName.isEmpty ? FontWeight.w600 : FontWeight.w500,
-                                        color: group.documenterName.isEmpty ? DefensysTokens.warningText : DefensysTokens.textPrimary,
+                                        color: group.documenterName.isEmpty ? DefensysTokens.warningText : _textPrimaryColor,
                                       ),
                                     ),
                                   ),
@@ -2999,20 +3011,20 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                             child: Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFF8FAFC),
+                                color: _panelBgColor,
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                                border: Border.all(color: _borderColor),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
+                                  Text(
                                     'CURRENT STATUS',
                                     style: TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.w700,
                                       letterSpacing: 0.5,
-                                      color: DefensysTokens.steelGrey,
+                                      color: _textSecondaryColor,
                                     ),
                                   ),
                                   const SizedBox(height: 6),
@@ -3026,30 +3038,30 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                             child: Container(
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFF8FAFC),
+                                color: _panelBgColor,
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                                border: Border.all(color: _borderColor),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
+                                  Text(
                                     'EVALUATION RUBRIC',
                                     style: TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.w700,
                                       letterSpacing: 0.5,
-                                      color: DefensysTokens.steelGrey,
+                                      color: _textSecondaryColor,
                                     ),
                                   ),
                                   const SizedBox(height: 6),
                                   Text(
                                     rubricName,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
-                                      color: DefensysTokens.textDark,
+                                      color: _textPrimaryColor,
                                     ),
                                   ),
                                 ],
@@ -3065,9 +3077,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               // Footer Actions
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                decoration: const BoxDecoration(
-                  color: Color(0xFFF8FAFC),
-                  border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+                decoration: BoxDecoration(
+                  color: _panelBgColor,
+                  border: Border(top: BorderSide(color: _borderColor)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
@@ -3077,8 +3089,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                         icon: const Icon(Icons.description_outlined, size: 15),
                         label: const Text('Open Minutes'),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: DefensysTokens.textDark,
-                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          foregroundColor: _textPrimaryColor,
+                          side: BorderSide(color: _borderColor),
+                          backgroundColor: _surfaceColor,
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
@@ -3128,38 +3141,38 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
     switch (normalized) {
       case 'ongoing':
-        bg = DefensysTokens.warningBg;
-        fg = DefensysTokens.warningText;
-        border = DefensysTokens.warningBorder;
+        bg = _isDark ? const Color(0xFF78350F).withValues(alpha: 0.3) : DefensysTokens.warningBg;
+        fg = _isDark ? const Color(0xFFFDE68A) : DefensysTokens.warningText;
+        border = _isDark ? const Color(0xFFB45309).withValues(alpha: 0.5) : DefensysTokens.warningBorder;
         iconData = Icons.play_circle_rounded;
         text = 'Ongoing';
         break;
       case 'done':
       case 'completed':
-        bg = DefensysTokens.successBg;
-        fg = DefensysTokens.successText;
-        border = DefensysTokens.successBorder;
+        bg = _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.3) : DefensysTokens.successBg;
+        fg = _isDark ? const Color(0xFF6EE7B7) : DefensysTokens.successText;
+        border = _isDark ? const Color(0xFF059669).withValues(alpha: 0.5) : DefensysTokens.successBorder;
         iconData = Icons.check_circle_rounded;
         text = 'Completed';
         break;
       case 'cancelled':
-        bg = DefensysTokens.dangerBg;
-        fg = DefensysTokens.dangerText;
-        border = DefensysTokens.dangerBorder;
+        bg = _isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.3) : DefensysTokens.dangerBg;
+        fg = _isDark ? const Color(0xFFFCA5A5) : DefensysTokens.dangerText;
+        border = _isDark ? const Color(0xFFDC2626).withValues(alpha: 0.5) : DefensysTokens.dangerBorder;
         iconData = Icons.cancel_rounded;
         text = 'Cancelled';
         break;
       case 'archived':
-        bg = DefensysTokens.archivedBg;
-        fg = DefensysTokens.archivedText;
-        border = DefensysTokens.archivedBorder;
+        bg = _isDark ? DefensysTokens.mistInputFill : DefensysTokens.archivedBg;
+        fg = _isDark ? DefensysTokens.textSecondaryDark : DefensysTokens.archivedText;
+        border = _isDark ? DefensysTokens.mistBorder : DefensysTokens.archivedBorder;
         iconData = Icons.archive_rounded;
         text = 'Archived';
         break;
       default:
-        bg = DefensysTokens.infoBg;
-        fg = DefensysTokens.infoText;
-        border = DefensysTokens.infoBorder;
+        bg = _isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : DefensysTokens.infoBg;
+        fg = _isDark ? const Color(0xFF93C5FD) : DefensysTokens.infoText;
+        border = _isDark ? const Color(0xFF2563EB).withValues(alpha: 0.5) : DefensysTokens.infoBorder;
         iconData = Icons.schedule_rounded;
         text = 'Scheduled';
     }
@@ -3193,18 +3206,18 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE6E8EF)),
-        boxShadow: const [
+        border: Border.all(color: _borderColor),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x08000000),
+            color: Colors.black.withValues(alpha: _isDark ? 0.2 : 0.03),
             blurRadius: 10,
-            offset: Offset(0, 4),
+            offset: const Offset(0, 4),
           ),
         ],
       ),
-      child: DefensysEmptyState(
+      child: const DefensysEmptyState(
         icon: Icons.table_chart_outlined,
         title: 'No Defense Schedules Found',
         description:
@@ -3218,9 +3231,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE6E8EF)),
+        border: Border.all(color: _borderColor),
       ),
       child: const Center(
         child: CircularProgressIndicator(color: AppColors.maroon),
@@ -3235,13 +3248,13 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       hintText: hintText,
       prefixIcon: prefixIcon,
       suffixIcon: suffixIcon,
-      hintStyle: const TextStyle(color: AppColors.textSecondary),
+      hintStyle: TextStyle(color: _textSecondaryColor),
       filled: true,
-      fillColor: const Color(0xFFFBFCFE),
+      fillColor: _panelBgColor,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFD7DDE8)),
+        borderSide: BorderSide(color: _borderColor),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
@@ -3249,7 +3262,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       ),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFD7DDE8)),
+        borderSide: BorderSide(color: _borderColor),
       ),
     );
   }
@@ -3409,34 +3422,34 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     }
 
     String label = 'No Minutes';
-    Color bg = const Color(0xFFF1F5F9);
-    Color fg = const Color(0xFF64748B);
-    Color border = const Color(0xFFE2E8F0);
+    Color bg = _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9);
+    Color fg = _textSecondaryColor;
+    Color border = _borderColor;
     IconData icon = Icons.description_outlined;
 
     if (status == 'draft') {
       label = 'Draft';
-      bg = const Color(0xFFFFFBEB);
-      fg = const Color(0xFFB45309);
-      border = const Color(0xFFFDE68A);
+      bg = _isDark ? const Color(0xFF78350F).withValues(alpha: 0.3) : const Color(0xFFFFFBEB);
+      fg = _isDark ? const Color(0xFFFDE68A) : const Color(0xFFB45309);
+      border = _isDark ? const Color(0xFFB45309).withValues(alpha: 0.5) : const Color(0xFFFDE68A);
       icon = Icons.edit_note_rounded;
     } else if (status == 'submitted') {
       label = 'Submitted';
-      bg = const Color(0xFFEFF6FF);
-      fg = const Color(0xFF1D4ED8);
-      border = const Color(0xFFBFDBFE);
+      bg = _isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFEFF6FF);
+      fg = _isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8);
+      border = _isDark ? const Color(0xFF2563EB).withValues(alpha: 0.5) : const Color(0xFFBFDBFE);
       icon = Icons.send_rounded;
     } else if (status == 'adviser_signed') {
       label = 'Adviser Signed';
-      bg = const Color(0xFFFAF5FF);
-      fg = const Color(0xFF7E22CE);
-      border = const Color(0xFFE9D5FF);
+      bg = _isDark ? const Color(0xFF581C87).withValues(alpha: 0.3) : const Color(0xFFFAF5FF);
+      fg = _isDark ? const Color(0xFFD8B4FE) : const Color(0xFF7E22CE);
+      border = _isDark ? const Color(0xFF9333EA).withValues(alpha: 0.5) : const Color(0xFFE9D5FF);
       icon = Icons.draw_rounded;
     } else if (status == 'completed') {
       label = 'Completed';
-      bg = const Color(0xFFECFDF5);
-      fg = const Color(0xFF047857);
-      border = const Color(0xFFA7F3D0);
+      bg = _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.3) : const Color(0xFFECFDF5);
+      fg = _isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857);
+      border = _isDark ? const Color(0xFF059669).withValues(alpha: 0.5) : const Color(0xFFA7F3D0);
       icon = Icons.task_alt_rounded;
     }
 
@@ -3553,10 +3566,15 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         .toLowerCase();
     final isDone = ['done', 'completed'].contains(status);
 
-    final Color bg = isDone ? const Color(0xFFFFFBEB) : const Color(0xFFF8FAFC);
-    final Color fg = isDone ? const Color(0xFFB45309) : DefensysTokens.textSecondary;
-    final Color border =
-        isDone ? const Color(0xFFFDE68A) : const Color(0xFFE2E8F0);
+    final Color bg = isDone
+        ? (_isDark ? const Color(0xFF78350F).withValues(alpha: 0.3) : const Color(0xFFFFFBEB))
+        : _panelBgColor;
+    final Color fg = isDone
+        ? (_isDark ? const Color(0xFFFDE68A) : const Color(0xFFB45309))
+        : _textSecondaryColor;
+    final Color border = isDone
+        ? (_isDark ? const Color(0xFFB45309).withValues(alpha: 0.5) : const Color(0xFFFDE68A))
+        : _borderColor;
     final String label = isDone ? 'View Evaluation' : 'Evaluation & Grades';
 
     return InkWell(
@@ -3604,18 +3622,19 @@ class _HeaderCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Expanded(
       flex: flex,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Text(
           text,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: DefensysTokens.fontFamilyInter,
             fontSize: 11,
             fontWeight: FontWeight.w700,
             letterSpacing: 0.6,
-            color: DefensysTokens.steelGrey,
+            color: isDark ? DefensysTokens.textSecondaryDark : DefensysTokens.steelGrey,
           ),
         ),
       ),

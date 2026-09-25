@@ -10,7 +10,6 @@ import '../../../services/unsaved_changes_provider.dart';
 import '../../../utils/unsaved_changes.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../services/dashboard_provider.dart';
-import '../../../services/academic/student_academic_records_provider.dart';
 import '../../../services/academic/student_teams_provider.dart';
 import '../../../services/academic/curriculum_analytics_provider.dart';
 import '../../../services/admin/user_management_provider.dart';
@@ -61,7 +60,12 @@ class AdminShell extends ConsumerStatefulWidget {
 
 class _AdminShellState extends ConsumerState<AdminShell> {
   final Set<DefensysAdminSection> _loadedSections = {};
+  final Map<DefensysAdminSection, Widget> _cachedSectionWidgets = {};
+  final Map<DefensysAdminSection, DateTime> _lastFetchedAt = {};
+  static const _refreshCooldown = Duration(seconds: 45);
+
   DefensysAdminSection? _currentSection;
+  DefensysAdminSection? _optimisticSection;
 
   @override
   void initState() {
@@ -74,65 +78,95 @@ class _AdminShellState extends ConsumerState<AdminShell> {
 
   @override
   Widget build(BuildContext context) {
-    final dashboardState = ref.watch(dashboardProvider('admin'));
-    final academicState = ref.watch(academicPeriodProvider);
+    // Selectively watch only the active semester info so changes elsewhere in
+    // academicPeriodProvider or dashboardProvider do not cause full-shell rebuild cascades.
+    final activeSemester = ref.watch(
+      academicPeriodProvider.select((s) => s.activeSemester),
+    );
+    final dashboardActiveSemester = ref.watch(
+      dashboardProvider('admin').select((s) => s.data?['active_semester']),
+    );
+
     final routerState = GoRouterState.of(context);
     final location = routerState.uri.path;
     final routeSection = AdminRoutes.sectionForLocation(location);
-    final activeSection =
-        routeSection ?? DefensysAdminSection.overview;
+    final isProfile = location == '/admin/profile';
 
-    _loadedSections.add(activeSection);
+    if (_optimisticSection != null && routeSection == _optimisticSection) {
+      _optimisticSection = null;
+    }
 
-    if (_currentSection != activeSection) {
-      final oldSection = _currentSection;
-      _currentSection = activeSection;
-      if (oldSection != null) {
+    final activeSection = _optimisticSection ??
+        routeSection ??
+        (isProfile ? null : DefensysAdminSection.overview);
+
+    if (activeSection != null) {
+      _loadedSections.add(activeSection);
+
+      if (_currentSection != activeSection) {
+        final oldSection = _currentSection;
+        _currentSection = activeSection;
+        if (oldSection != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _refreshSectionData(activeSection);
+          });
+        }
+      }
+
+      if (ref.read(activeAdminSectionProvider) != activeSection) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          _refreshSectionData(activeSection);
+          if (mounted && ref.read(activeAdminSectionProvider) != activeSection) {
+            ref.read(activeAdminSectionProvider.notifier).setSection(activeSection);
+          }
         });
       }
     }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && ref.read(activeAdminSectionProvider) != activeSection) {
-        ref.read(activeAdminSectionProvider.notifier).setSection(activeSection);
-      }
-    });
-
     final isDetail = _isAdminDetailRoute(routerState);
-    final activeIndex = DefensysAdminSection.values.indexOf(activeSection);
+    final activeIndex = activeSection != null
+        ? DefensysAdminSection.values.indexOf(activeSection)
+        : (_currentSection != null ? DefensysAdminSection.values.indexOf(_currentSection!) : 0);
+    final isImport = location == AdminRoutes.defenseScheduleBulkImport;
 
-    final shellContent = Stack(
-      children: [
-        IndexedStack(
-          index: activeIndex >= 0 ? activeIndex : 0,
-          children: DefensysAdminSection.values.map((section) {
-            if (_loadedSections.contains(section)) {
-              return _buildSectionWidget(section);
-            }
-            return const SizedBox.shrink();
-          }).toList(),
-        ),
-        if (widget.routeChild != null)
-          Positioned.fill(
-            child: Offstage(
-              offstage: !isDetail,
-              child: ColoredBox(
-                color: DefensysUi.bgLight,
-                child: widget.routeChild!,
+    final shellContent = RepaintBoundary(
+      child: Stack(
+        children: [
+          IndexedStack(
+            index: activeIndex >= 0 ? activeIndex : 0,
+            children: DefensysAdminSection.values.map((section) {
+              if (!_loadedSections.contains(section)) {
+                return const SizedBox.shrink();
+              }
+              if (section == DefensysAdminSection.defenseBoard && isImport) {
+                return _buildSectionWidget(section);
+              }
+              return _cachedSectionWidgets.putIfAbsent(
+                section,
+                () => _buildSectionWidget(section),
+              );
+            }).toList(),
+          ),
+          if (widget.routeChild != null)
+            Positioned.fill(
+              child: Offstage(
+                offstage: !isDetail,
+                child: ColoredBox(
+                  color: DefensysUi.bgLight,
+                  child: widget.routeChild!,
+                ),
               ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
 
     return DefensysAdminShell(
       activeSection: activeSection,
+      isProfileActive: isProfile,
       activeSemesterLabel: _topSemesterLabel(
-        academicState.activeSemester,
-        dashboardState.data?['active_semester'],
+        activeSemester,
+        dashboardActiveSemester,
       ),
       scrollContent: false,
       onNavigate: (section) => _goToSection(section),
@@ -155,17 +189,26 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
     ref.read(unsavedChangesProvider.notifier).setDirty(false);
     if (section == _currentSection) {
-      _refreshSectionData(section);
+      _refreshSectionData(section, force: true);
     }
+    setState(() {
+      _optimisticSection = section;
+    });
     ref.read(activeAdminSectionProvider.notifier).setSection(section);
     ref.read(appRouterProvider).go(AdminRoutes.pathForSection(section));
   }
 
-  void _refreshSectionData(DefensysAdminSection section) {
+  void _refreshSectionData(DefensysAdminSection section, {bool force = false}) {
+    final now = DateTime.now();
+    final last = _lastFetchedAt[section];
+    if (!force && last != null && now.difference(last) < _refreshCooldown) {
+      return;
+    }
+    _lastFetchedAt[section] = now;
+
     switch (section) {
       case DefensysAdminSection.overview:
         ref.read(dashboardProvider('admin').notifier).fetchDashboardData(silent: true);
-        ref.read(academicPeriodProvider.notifier).fetchPeriods();
         break;
       case DefensysAdminSection.academicPeriods:
         ref.read(academicPeriodProvider.notifier).fetchPeriods();
@@ -173,47 +216,33 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       case DefensysAdminSection.userManagement:
       case DefensysAdminSection.studentAcademicRecords:
         ref.read(userManagementProvider.notifier).fetchUsers();
-        ref.read(academicPeriodProvider.notifier).fetchPeriods();
-        ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
         break;
       case DefensysAdminSection.studentTeams:
         ref.read(studentTeamsProvider.notifier).fetchTeams(level: 'Capstone');
-        ref.read(userManagementProvider.notifier).fetchUsers();
-        ref.read(academicPeriodProvider.notifier).fetchPeriods();
         break;
       case DefensysAdminSection.gradeCenter:
         ref.read(gradeCenterProvider.notifier).fetchGrades();
-        ref.read(defenseStagesProvider.notifier).fetchStages();
-        ref.read(academicPeriodProvider.notifier).fetchPeriods();
         break;
       case DefensysAdminSection.rubrics:
         ref.read(rubricEngineProvider.notifier).fetchRubrics(status: '');
-        ref.read(academicPeriodProvider.notifier).fetchPeriods();
         break;
       case DefensysAdminSection.defenseBoard:
         ref.read(defenseBoardProvider.notifier).fetchBoard();
-        ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
-        ref.read(academicPeriodProvider.notifier).fetchPeriods();
         break;
       case DefensysAdminSection.scheduling:
         ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
-        ref.read(academicPeriodProvider.notifier).fetchPeriods();
         break;
       case DefensysAdminSection.defenseStages:
         ref.read(defenseStagesProvider.notifier).fetchStages();
-        ref.read(academicPeriodProvider.notifier).fetchPeriods();
         break;
       case DefensysAdminSection.curriculumAnalytics:
         ref.read(curriculumAnalyticsProvider.notifier).fetchAnalytics();
-        ref.read(academicPeriodProvider.notifier).fetchPeriods();
         break;
       case DefensysAdminSection.auditCompliance:
         ref.read(systemAuditProvider.notifier).fetch();
-        ref.read(academicPeriodProvider.notifier).fetchPeriods();
         break;
       case DefensysAdminSection.repositoryAudit:
         ref.read(repositoryAuditProvider.notifier).fetchEntries();
-        ref.read(academicPeriodProvider.notifier).fetchPeriods();
         break;
     }
   }
@@ -280,8 +309,20 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       }
     }
     if (!await confirmLogout(context)) return;
+    if (!mounted) return;
+
     ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
     ref.read(unsavedChangesProvider.notifier).setDirty(false);
+
+    // Defensively pop any lingering modal or popup routes on root navigator
+    // so no orphaned ModalBarrier is left covering the screen on the login page:
+    final rootNav = Navigator.of(context, rootNavigator: true);
+    while (rootNav.canPop()) {
+      rootNav.pop();
+    }
+
+    FocusManager.instance.primaryFocus?.unfocus();
+
     await ref.read(authProvider.notifier).logout();
     router.go(AppRoutes.login);
   }

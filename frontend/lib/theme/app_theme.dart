@@ -155,5 +155,145 @@ class AppTheme {
           contentTextStyle: DefensysTokens.dialogContent,
         ),
       );
+
+  static ThemeData get lightTheme => theme;
+
+  static ThemeData get mistDarkTheme => ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        fontFamily: DefensysTokens.fontFamilyInter,
+        scaffoldBackgroundColor: DefensysTokens.mistBackground,
+        colorScheme: ColorScheme.dark(
+          primary: DefensysTokens.mistMaroon,
+          secondary: DefensysTokens.mistGold,
+          surface: DefensysTokens.mistSurface,
+          onSurface: DefensysTokens.mistTextPrimary,
+          onPrimary: Colors.white,
+          onSecondary: Colors.white,
+          outline: DefensysTokens.mistBorder,
+          brightness: Brightness.dark,
+        ),
+        appBarTheme: AppBarTheme(
+          backgroundColor: DefensysTokens.mistPanel,
+          foregroundColor: DefensysTokens.mistTextPrimary,
+          elevation: 0,
+          centerTitle: false,
+          titleTextStyle: DefensysTokens.appBarTitle.copyWith(
+            color: DefensysTokens.mistTextPrimary,
+          ),
+        ),
+        cardTheme: CardThemeData(
+          color: DefensysTokens.mistSurface,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+            side: const BorderSide(color: DefensysTokens.mistBorder, width: 1.0),
+          ),
+          margin: EdgeInsets.zero,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: DefensysTokens.mistMaroon,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+            ),
+            textStyle: const TextStyle(
+              fontFamily: DefensysTokens.fontFamilyInter,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+              letterSpacing: -0.1,
+            ),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: DefensysTokens.mistTextPrimary,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+            ),
+            side: const BorderSide(color: DefensysTokens.mistBorder, width: 1.0),
+            textStyle: const TextStyle(
+              fontFamily: DefensysTokens.fontFamilyInter,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+              letterSpacing: -0.1,
+            ),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: DefensysTokens.mistInputFill,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+            borderSide: const BorderSide(color: DefensysTokens.mistBorder, width: 1.0),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+            borderSide: const BorderSide(color: DefensysTokens.mistBorder, width: 1.0),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+            borderSide: const BorderSide(color: DefensysTokens.mistMaroon, width: 1.5),
+          ),
+          labelStyle: const TextStyle(
+            color: DefensysTokens.mistTextSecondary,
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
+          ),
+          hintStyle: const TextStyle(
+            color: Color(0xFF71717A),
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        ),
+        dividerTheme: const DividerThemeData(
+          color: DefensysTokens.mistBorder,
+          thickness: 1.0,
+        ),
+        chipTheme: ChipThemeData(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+          ),
+          side: const BorderSide(color: DefensysTokens.mistBorder, width: 1.0),
+          backgroundColor: DefensysTokens.mistInputFill,
+          labelStyle: const TextStyle(color: DefensysTokens.mistTextPrimary),
+        ),
+        dialogTheme: DialogThemeData(
+          backgroundColor: DefensysTokens.mistSurface,
+          surfaceTintColor: Colors.transparent,
+          elevation: 4,
+          shadowColor: const Color(0x66000000),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusXl),
+            side: const BorderSide(color: DefensysTokens.mistBorder, width: 1.0),
+          ),
+          titleTextStyle: DefensysTokens.dialogTitle.copyWith(
+            color: DefensysTokens.mistTextPrimary,
+          ),
+          contentTextStyle: DefensysTokens.dialogContent.copyWith(
+            color: DefensysTokens.mistTextSecondary,
+          ),
+        ),
+        popupMenuTheme: PopupMenuThemeData(
+          color: DefensysTokens.mistSurface,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+            side: const BorderSide(color: DefensysTokens.mistBorder, width: 1.0),
+          ),
+          textStyle: const TextStyle(
+            fontFamily: DefensysTokens.fontFamilyInter,
+            color: DefensysTokens.mistTextPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      );
 }
 

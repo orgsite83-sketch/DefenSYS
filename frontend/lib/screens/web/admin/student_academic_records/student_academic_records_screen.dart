@@ -7,6 +7,7 @@ import '../../../../utils/csv_file_io.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
+import '../../../../widgets/table/table.dart';
 import '../widgets/defensys_admin_shell.dart';
 import '../widgets/student_records_rollover_modal.dart';
 
@@ -319,87 +320,114 @@ class _StudentAcademicRecordsScreenState
 
   Widget _recordsTableCard(StudentAcademicRecordsState state, List<Map<String, dynamic>> groupedRecords) {
     final visibleRecords = _pageRecords(groupedRecords);
-    return DefensysCard(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(child: _searchField(state)),
-              const SizedBox(width: 16),
-              _schoolYearFilter(state),
-              const SizedBox(width: 12),
-              _semesterFilter(state),
-              const SizedBox(width: 12),
-              _clearButton(),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (state.isLoading)
-            const SizedBox(
-              height: 150,
-              child: Center(child: CircularProgressIndicator(color: _maroon)),
-            )
-          else if (groupedRecords.isEmpty)
-            _buildEmptyState()
-        else
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 640),
-            child: Scrollbar(
-              thumbVisibility: true,
-              child: SingleChildScrollView(
-                child: _recordsTable(state, visibleRecords),
-              ),
+    return DefensysTableCard(
+      searchController: _searchController,
+      searchHint: 'Search by student name or ID...',
+      isSearchEnabled: !state.isSaving,
+      onSearchSubmitted: (value) {
+        setState(() => _page = 0);
+        ref
+            .read(studentAcademicRecordsProvider.notifier)
+            .fetchRecords(search: value);
+      },
+      onSearchCleared: () {
+        _searchController.clear();
+        setState(() => _page = 0);
+        ref
+            .read(studentAcademicRecordsProvider.notifier)
+            .fetchRecords(search: '', schoolYear: '', semester: '');
+      },
+      filterControls: [
+        _schoolYearFilter(state),
+        _semesterFilter(state),
+        _clearButton(),
+      ],
+      pagination: DefensysTablePagination(
+        currentPage: _page,
+        totalItems: groupedRecords.length,
+        rowsPerPage: _rowsPerPage,
+        rowsPerPageOptions: _rowsPerPageOptions,
+        itemLabel: 'students',
+        onPageChanged: (newPage) => setState(() => _page = newPage),
+        onRowsPerPageChanged: (newRows) {
+          setState(() {
+            _rowsPerPage = newRows;
+            _page = 0;
+          });
+        },
+      ),
+      child: DefensysDataTable<Map<String, dynamic>>(
+        items: visibleRecords,
+        isLoading: state.isLoading,
+        emptyState: _buildEmptyState(),
+        columns: [
+          DefensysTableColumn(
+            title: 'Student',
+            flex: 1.35,
+            minWidth: 180,
+            cellBuilder: (context, record, _) => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  record['student_name']?.toString() ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  record['student_username']?.toString() ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF98A2B3),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 18),
-          Container(height: 1, color: _line),
-          const SizedBox(height: 15),
-          _pagination(state, groupedRecords),
+          DefensysTableColumn(
+            title: 'Year Level',
+            flex: 0.95,
+            minWidth: 120,
+            cellBuilder: (context, record, _) =>
+                _yearLevelBadge(record['year_level']?.toString() ?? ''),
+          ),
+          DefensysTableColumn(
+            title: 'Section',
+            flex: 1.05,
+            minWidth: 120,
+            cellBuilder: (context, record, _) =>
+                _bodyText(record['section']?.toString() ?? '-'),
+          ),
+          DefensysTableColumn(
+            title: 'Latest Period',
+            flex: 1.85,
+            minWidth: 200,
+            cellBuilder: (context, record, _) => _bodyText(
+              record['display_semester']?.toString() ??
+                  record['semester']?.toString() ??
+                  '',
+            ),
+          ),
+          DefensysTableColumn(
+            title: 'Action',
+            flex: 0.7,
+            minWidth: 90,
+            cellBuilder: (context, record, _) => _buildActions(state, record),
+          ),
         ],
       ),
     );
   }
 
-  Widget _searchField(StudentAcademicRecordsState state) {
-    return SizedBox(
-      height: 43,
-      child: TextField(
-        controller: _searchController,
-        enabled: !state.isSaving,
-        style: const TextStyle(fontSize: 13),
-        decoration: InputDecoration(
-          prefixIcon: const Icon(Icons.search_rounded, color: _muted, size: 19),
-          hintText: 'Search by student name or ID...',
-          hintStyle: const TextStyle(color: _muted, fontSize: 13),
-          filled: true,
-          fillColor: const Color(0xFFF3F4F6),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 10,
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: _maroon),
-          ),
-        ),
-        onSubmitted: (value) {
-          setState(() => _page = 0);
-          ref
-              .read(studentAcademicRecordsProvider.notifier)
-              .fetchRecords(search: value);
-        },
-      ),
-    );
-  }
 
   Widget _schoolYearFilter(StudentAcademicRecordsState state) {
     return Container(
@@ -508,24 +536,6 @@ class _StudentAcademicRecordsScreenState
     );
   }
 
-  Widget _recordsTable(
-    StudentAcademicRecordsState state,
-    List<Map<String, dynamic>> visibleRecords,
-  ) {
-    return Column(
-      children: [
-        _tableHeader(const [
-          _ColumnSpec('Student', 1.35),
-          _ColumnSpec('Year Level', 0.95),
-          _ColumnSpec('Section', 1.05),
-          _ColumnSpec('Latest Period', 1.85),
-          _ColumnSpec('Action', 0.7),
-        ]),
-        ...visibleRecords.map((record) => _recordRow(state, record)),
-      ],
-    );
-  }
-
   List<Map<String, dynamic>> _pageRecords(List<Map<String, dynamic>> records) {
     final pages = records.isEmpty ? 1 : (records.length / _rowsPerPage).ceil();
     final safePage = _page.clamp(0, pages - 1);
@@ -534,250 +544,6 @@ class _StudentAcademicRecordsScreenState
     return records.sublist(start, end);
   }
 
-  Widget _pagination(StudentAcademicRecordsState state, List<Map<String, dynamic>> groupedRecords) {
-    final total = groupedRecords.length;
-    final pages = total == 0 ? 1 : (total / _rowsPerPage).ceil();
-    final safePage = _page.clamp(0, pages - 1);
-    final start = total == 0 ? 0 : safePage * _rowsPerPage + 1;
-    final end = total == 0
-        ? 0
-        : (safePage * _rowsPerPage + _rowsPerPage).clamp(0, total);
-
-    return Row(
-      children: [
-        Text(
-          'Showing $start-$end of $total students',
-          style: const TextStyle(
-            color: Color(0xFF5D6678),
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(width: 16),
-        _rowsPerPageDropdown(),
-        const Spacer(),
-        _pageButton(Icons.chevron_left_rounded, safePage > 0, () {
-          setState(() => _page = safePage - 1);
-        }),
-        const SizedBox(width: 8),
-        if (pages <= 10)
-          ...List.generate(pages, (index) {
-            return Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: _numberPageButton(index + 1, safePage == index, () {
-                setState(() => _page = index);
-              }),
-            );
-          })
-        else ...[
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Text(
-              'Page ${safePage + 1} of $pages',
-              style: const TextStyle(
-                color: Color(0xFF5D6678),
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-        _pageButton(Icons.chevron_right_rounded, safePage < pages - 1, () {
-          setState(() => _page = safePage + 1);
-        }),
-      ],
-    );
-  }
-
-  Widget _rowsPerPageDropdown() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Text(
-          'Rows per page',
-          style: TextStyle(
-            color: Color(0xFF5D6678),
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          decoration: BoxDecoration(
-            border: Border.all(color: const Color(0xFFD1D5DB)),
-            borderRadius: BorderRadius.circular(7),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<int>(
-              value: _rowsPerPageOptions.contains(_rowsPerPage)
-                  ? _rowsPerPage
-                  : _rowsPerPageOptions.first,
-              isDense: true,
-              style: const TextStyle(
-                color: Color(0xFF1F2937),
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-              items: _rowsPerPageOptions
-                  .map(
-                    (n) => DropdownMenuItem<int>(
-                      value: n,
-                      child: Text('$n'),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() {
-                  _rowsPerPage = value;
-                  _page = 0;
-                });
-              },
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _pageButton(IconData icon, bool enabled, VoidCallback onTap) {
-    return SizedBox(
-      width: 30,
-      height: 36,
-      child: OutlinedButton(
-        onPressed: enabled ? onTap : null,
-        style: OutlinedButton.styleFrom(
-          padding: EdgeInsets.zero,
-          side: const BorderSide(color: _line),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
-        ),
-        child: Icon(icon, size: 18),
-      ),
-    );
-  }
-
-  Widget _numberPageButton(int number, bool selected, VoidCallback onTap) {
-    return SizedBox(
-      width: 30,
-      height: 36,
-      child: OutlinedButton(
-        onPressed: selected ? null : onTap,
-        style: OutlinedButton.styleFrom(
-          padding: EdgeInsets.zero,
-          disabledForegroundColor: _maroon,
-          foregroundColor: _ink,
-          side: BorderSide(color: selected ? _maroon : _line),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
-        ),
-        child: Text(
-          number.toString(),
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
-        ),
-      ),
-    );
-  }
-
-  Widget _tableHeader(List<_ColumnSpec> columns) {
-    return Container(
-      height: 51,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0F1F4),
-        borderRadius: BorderRadius.circular(5),
-      ),
-      child: Row(children: columns.map(_tableHeaderCell).toList()),
-    );
-  }
-
-  Widget _tableHeaderCell(_ColumnSpec column) {
-    return Expanded(
-      flex: (column.flex * 100).round(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 15),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            column.label,
-            style: const TextStyle(
-              color: Color(0xFF5D6678),
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _recordRow(
-    StudentAcademicRecordsState state,
-    Map<String, dynamic> record,
-  ) {
-    return Container(
-      height: 57,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: _line)),
-      ),
-      child: Row(
-        children: [
-          _tableCell(
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  record['student_name']?.toString() ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _ink,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  record['student_username']?.toString() ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF98A2B3),
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-            flex: 1.35,
-          ),
-          _tableCell(
-            _yearLevelBadge(record['year_level']?.toString() ?? ''),
-            flex: 0.95,
-          ),
-          _tableCell(
-            _bodyText(record['section']?.toString() ?? '-'),
-            flex: 1.05,
-          ),
-          _tableCell(
-            _bodyText(record['display_semester']?.toString() ?? record['semester']?.toString() ?? ''),
-            flex: 1.85,
-          ),
-          _tableCell(_buildActions(state, record), flex: 0.7),
-        ],
-      ),
-    );
-  }
-
-  Widget _tableCell(Widget child, {required double flex}) {
-    return Expanded(
-      flex: (flex * 100).round(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 15),
-        child: Align(alignment: Alignment.centerLeft, child: child),
-      ),
-    );
-  }
 
   Widget _bodyText(String value) {
     return Text(
@@ -1973,13 +1739,6 @@ class _StudentAcademicRecordsScreenState
     );
   }
 
-}
-
-class _ColumnSpec {
-  final String label;
-  final double flex;
-
-  const _ColumnSpec(this.label, this.flex);
 }
 
 class _OfficialClassListParseResult {

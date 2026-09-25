@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
+import '../../../../../theme/defensys_tokens.dart';
 
 class _DomainChartData {
   final String domain;
@@ -11,7 +12,7 @@ class _DomainChartData {
 }
 
 /// Renders Section 2: Project Domains Donut Chart paired with Technology Frameworks
-/// and the Tech Monoculture Index.
+/// and the Tech Monoculture Index with modern shadcn styling.
 class CurriculumProjectsDonut extends StatelessWidget {
   final List<Map<String, dynamic>> domainDistribution;
   final List<Map<String, dynamic>> techDistribution;
@@ -30,8 +31,8 @@ class CurriculumProjectsDonut extends StatelessWidget {
       builder: (context, constraints) {
         final isWide = constraints.maxWidth > 920;
 
-        final donutCard = _buildDonutCard();
-        final techCard = _buildTechStackCard();
+        final donutCard = _buildDonutCard(context);
+        final techCard = _buildTechStackCard(context);
 
         if (isWide) {
           return Row(
@@ -55,7 +56,8 @@ class CurriculumProjectsDonut extends StatelessWidget {
     );
   }
 
-  Widget _buildDonutCard() {
+  Widget _buildDonutCard(BuildContext context) {
+    final isDark = DefensysTokens.isDark(context);
     final chartData = <_DomainChartData>[];
     for (final item in domainDistribution) {
       final domain = item['domain']?.toString() ?? 'General Software';
@@ -71,14 +73,14 @@ class CurriculumProjectsDonut extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
+        color: DefensysTokens.surfaceOf(context),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x05000000),
-            blurRadius: 6,
-            offset: Offset(0, 2),
+            color: isDark ? const Color(0x20000000) : const Color(0x04000000),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
           ),
         ],
       ),
@@ -91,54 +93,59 @@ class CurriculumProjectsDonut extends StatelessWidget {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF6366F1).withValues(alpha: 0.10),
+                  color: const Color(0xFF6366F1).withValues(alpha: isDark ? 0.20 : 0.10),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(Icons.pie_chart_rounded, color: Color(0xFF6366F1), size: 18),
               ),
               const SizedBox(width: 10),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'Project Domain Specialization',
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 15,
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFF0F172A),
+                        color: DefensysTokens.textPrimaryOf(context),
+                        letterSpacing: -0.2,
                       ),
                     ),
+                    const SizedBox(height: 1),
                     Text(
                       'Student deliverables classified into computing specialization domains',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
                     ),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
+          Divider(height: 1, color: DefensysTokens.borderOf(context)),
+          const SizedBox(height: 14),
 
           if (!hasData)
             Container(
               height: 260,
               alignment: Alignment.center,
-              child: const Column(
+              child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.folder_open_rounded, size: 38, color: Color(0xFF94A3B8)),
-                  SizedBox(height: 10),
+                  Icon(Icons.folder_open_rounded, size: 38, color: DefensysTokens.textSecondaryOf(context).withValues(alpha: 0.5)),
+                  const SizedBox(height: 10),
                   Text(
                     'No Deliverable Submissions Recorded',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: DefensysTokens.textPrimaryOf(context)),
                   ),
-                  SizedBox(height: 4),
+                  const SizedBox(height: 3),
                   Text(
                     'Deliverables submitted by student teams will automatically classify into domains.',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    style: TextStyle(fontSize: 11.5, color: DefensysTokens.textSecondaryOf(context)),
                   ),
                 ],
               ),
@@ -159,21 +166,21 @@ class CurriculumProjectsDonut extends StatelessWidget {
                       children: [
                         Text(
                           '$totalProjects',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.w900,
-                            color: Color(0xFF0F172A),
+                            color: DefensysTokens.textPrimaryOf(context),
                             height: 1.0,
                           ),
                         ),
                         const SizedBox(height: 2),
-                        const Text(
+                        Text(
                           'PROJECTS',
                           style: TextStyle(
                             fontSize: 9.5,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 0.8,
-                            color: Color(0xFF64748B),
+                            color: DefensysTokens.textSecondaryOf(context),
                           ),
                         ),
                       ],
@@ -189,7 +196,7 @@ class CurriculumProjectsDonut extends StatelessWidget {
                     innerRadius: '68%',
                     radius: '95%',
                     enableTooltip: true,
-                    strokeColor: Colors.white,
+                    strokeColor: DefensysTokens.surfaceOf(context),
                     strokeWidth: 2.0,
                     animationDuration: 700,
                   ),
@@ -207,8 +214,8 @@ class CurriculumProjectsDonut extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
-                      width: 10,
-                      height: 10,
+                      width: 9,
+                      height: 9,
                       decoration: BoxDecoration(
                         color: d.color,
                         shape: BoxShape.circle,
@@ -217,19 +224,20 @@ class CurriculumProjectsDonut extends StatelessWidget {
                     const SizedBox(width: 6),
                     Text(
                       d.domain,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF334155),
+                        color: DefensysTokens.textPrimaryOf(context),
                       ),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       '${d.percentage.toStringAsFixed(0)}%',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFF64748B),
+                        color: DefensysTokens.textSecondaryOf(context),
+                        fontFeatures: const [FontFeature.tabularFigures()],
                       ),
                     ),
                   ],
@@ -242,7 +250,8 @@ class CurriculumProjectsDonut extends StatelessWidget {
     );
   }
 
-  Widget _buildTechStackCard() {
+  Widget _buildTechStackCard(BuildContext context) {
+    final isDark = DefensysTokens.isDark(context);
     final items = techDistribution.take(6).toList();
     final bool hasData = items.isNotEmpty;
 
@@ -254,14 +263,14 @@ class CurriculumProjectsDonut extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
+        color: DefensysTokens.surfaceOf(context),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x05000000),
-            blurRadius: 6,
-            offset: Offset(0, 2),
+            color: isDark ? const Color(0x20000000) : const Color(0x04000000),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
           ),
         ],
       ),
@@ -274,54 +283,59 @@ class CurriculumProjectsDonut extends StatelessWidget {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF0EA5E9).withValues(alpha: 0.10),
+                  color: const Color(0xFF0EA5E9).withValues(alpha: isDark ? 0.20 : 0.10),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Icon(Icons.code_rounded, color: Color(0xFF0EA5E9), size: 18),
               ),
               const SizedBox(width: 10),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'Top Technology Stacks',
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 15,
                         fontWeight: FontWeight.w800,
-                        color: Color(0xFF0F172A),
+                        color: DefensysTokens.textPrimaryOf(context),
+                        letterSpacing: -0.2,
                       ),
                     ),
+                    const SizedBox(height: 1),
                     Text(
                       'Frameworks and languages detected across deliverable repositories',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
                     ),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
+          Divider(height: 1, color: DefensysTokens.borderOf(context)),
+          const SizedBox(height: 14),
 
           if (!hasData)
             Container(
               height: 260,
               alignment: Alignment.center,
-              child: const Column(
+              child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.devices_rounded, size: 38, color: Color(0xFF94A3B8)),
-                  SizedBox(height: 10),
+                  Icon(Icons.devices_rounded, size: 38, color: DefensysTokens.textSecondaryOf(context).withValues(alpha: 0.5)),
+                  const SizedBox(height: 10),
                   Text(
                     'No Technology Data Recorded',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: DefensysTokens.textPrimaryOf(context)),
                   ),
-                  SizedBox(height: 4),
+                  const SizedBox(height: 3),
                   Text(
                     'Deliverables submitted by student teams will extract software frameworks.',
-                    style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    style: TextStyle(fontSize: 11.5, color: DefensysTokens.textSecondaryOf(context)),
                   ),
                 ],
               ),
@@ -351,20 +365,21 @@ class CurriculumProjectsDonut extends StatelessWidget {
                             const SizedBox(width: 8),
                             Text(
                               tech,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
-                                color: Color(0xFF0F172A),
+                                color: DefensysTokens.textPrimaryOf(context),
                               ),
                             ),
                           ],
                         ),
                         Text(
                           '$count projects (${pct.toStringAsFixed(0)}%)',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF64748B),
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: DefensysTokens.textSecondaryOf(context),
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
                       ],
@@ -374,7 +389,7 @@ class CurriculumProjectsDonut extends StatelessWidget {
                       borderRadius: BorderRadius.circular(4),
                       child: LinearProgressIndicator(
                         value: (pct / 100.0).clamp(0.0, 1.0),
-                        backgroundColor: const Color(0xFFF1F5F9),
+                        backgroundColor: DefensysTokens.surfaceHigherOf(context),
                         valueColor: AlwaysStoppedAnimation<Color>(color),
                         minHeight: 6.5,
                       ),
@@ -389,10 +404,14 @@ class CurriculumProjectsDonut extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
-                color: isMonocultureAlert ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
+                color: isMonocultureAlert
+                    ? (isDark ? const Color(0x20DC2626) : const Color(0xFFFEF2F2))
+                    : (isDark ? const Color(0x2016A34A) : const Color(0xFFF0FDF4)),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: isMonocultureAlert ? const Color(0xFFFECACA) : const Color(0xFFBBF7D0),
+                  color: isMonocultureAlert
+                      ? (isDark ? const Color(0x40DC2626) : const Color(0xFFFECACA))
+                      : (isDark ? const Color(0x4016A34A) : const Color(0xFFBBF7D0)),
                 ),
               ),
               child: Row(
@@ -413,7 +432,9 @@ class CurriculumProjectsDonut extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
-                            color: isMonocultureAlert ? const Color(0xFFB91C1C) : const Color(0xFF15803D),
+                            color: isMonocultureAlert
+                                ? (isDark ? const Color(0xFFF87171) : const Color(0xFFB91C1C))
+                                : (isDark ? const Color(0xFF4ADE80) : const Color(0xFF15803D)),
                           ),
                         ),
                         const SizedBox(height: 1),
@@ -423,7 +444,9 @@ class CurriculumProjectsDonut extends StatelessWidget {
                               : 'No single software framework exceeds 50% share. Good cohort diversification across modern technologies.',
                           style: TextStyle(
                             fontSize: 11,
-                            color: isMonocultureAlert ? const Color(0xFF991B1B) : const Color(0xFF166534),
+                            color: isMonocultureAlert
+                                ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFF991B1B))
+                                : (isDark ? const Color(0xFF86EFAC) : const Color(0xFF166534)),
                           ),
                         ),
                       ],

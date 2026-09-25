@@ -1,8 +1,10 @@
 import 'package:defensys/services/project_archive_provider.dart';
 import 'package:defensys/screens/web/shared/project_archive/dialogs/stage_access_management_dialog.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/defensys_skeleton.dart';
 import 'package:defensys/widgets/status_badge.dart';
+import 'package:defensys/widgets/table/table.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -39,6 +41,8 @@ class ProjectArchiveTable extends ConsumerStatefulWidget {
 class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   static const _kRepoMinTableWidth = 1100.0;
   static const _kDeliverableMinTableWidth = 1000.0;
+
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
 
   String _mainViewMode = 'team';
   final Set<String> _expandedTeamIds = {};
@@ -141,12 +145,16 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: _isDark ? DefensysTokens.mistSurface : Colors.white,
+        borderRadius: BorderRadius.circular(DefensysTableTokens.cardBorderRadius),
+        border: Border.all(
+          color: _isDark ? DefensysTokens.mistBorder : DefensysTableTokens.cardBorder,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
+            color: _isDark
+                ? Colors.black.withValues(alpha: 0.25)
+                : Colors.black.withValues(alpha: 0.03),
             blurRadius: 10,
             offset: const Offset(0, 3),
           ),
@@ -162,15 +170,15 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                   width: 3.5,
                   height: 16,
                   decoration: BoxDecoration(
-                    color: AppColors.maroon,
+                    color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Text(
+                Text(
                   'Project Archive Records',
                   style: TextStyle(
-                    color: Color(0xFF0F172A),
+                    color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.2,
@@ -322,7 +330,10 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           else
             _buildEntriesBody(state),
           const SizedBox(height: 18),
-          Container(height: 1, color: const Color(0xFFE5E7EB)),
+          Container(
+            height: 1,
+            color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
+          ),
           const SizedBox(height: 14),
           Align(
             alignment: Alignment.centerLeft,
@@ -330,8 +341,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
               state.deliverableId.isNotEmpty
                   ? 'Showing ${state.entries.length} teams for ${state.deliverableSummary['label'] ?? state.deliverableId}'
                   : 'Showing ${state.entries.length} records',
-              style: const TextStyle(
-                color: Color(0xFF5D6678),
+              style: TextStyle(
+                color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF5D6678),
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -356,12 +367,16 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
           decoration: BoxDecoration(
-            color: selected ? Colors.white : Colors.transparent,
+            color: selected
+                ? (_isDark ? DefensysTokens.mistSurface : Colors.white)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
             boxShadow: selected
                 ? [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
+                      color: _isDark
+                          ? Colors.black.withValues(alpha: 0.25)
+                          : Colors.black.withValues(alpha: 0.05),
                       blurRadius: 4,
                       offset: const Offset(0, 1),
                     ),
@@ -374,7 +389,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
               Icon(
                 icon,
                 size: 14,
-                color: selected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                color: selected
+                    ? (_isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A))
+                    : (_isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B)),
               ),
               const SizedBox(width: 6),
               Text(
@@ -382,7 +399,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                  color: selected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                  color: selected
+                      ? (_isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A))
+                      : (_isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B)),
                 ),
               ),
             ],
@@ -394,9 +413,11 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(
+          color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -414,19 +435,25 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(
+          color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.groups_rounded, size: 11, color: Color(0xFF64748B)),
+          Icon(
+            Icons.groups_rounded,
+            size: 11,
+            color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
+          ),
           const SizedBox(width: 4),
           Text(
             teamName,
-            style: const TextStyle(
-              color: Color(0xFF334155),
+            style: TextStyle(
+              color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF334155),
               fontSize: 10,
               fontWeight: FontWeight.w700,
             ),
@@ -437,6 +464,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   }
 
   Widget _advancedFiltersButton() {
+    final activeColor = _isDark ? const Color(0xFFF87171) : AppColors.maroon;
     return SizedBox(
       height: 40,
       child: OutlinedButton.icon(
@@ -447,18 +475,18 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
               : Icons.filter_alt_rounded,
           size: 15,
           color: widget.showAdvancedFilters
-              ? AppColors.maroon
-              : const Color(0xFF475569),
+              ? activeColor
+              : (_isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569)),
         ),
         label: Text(widget.showAdvancedFilters ? 'Hide Filters' : 'Filters'),
         style: OutlinedButton.styleFrom(
           foregroundColor: widget.showAdvancedFilters
-              ? AppColors.maroon
-              : const Color(0xFF0F172A),
+              ? activeColor
+              : (_isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A)),
           side: BorderSide(
             color: widget.showAdvancedFilters
-                ? AppColors.maroon
-                : const Color(0xFFE2E8F0),
+                ? activeColor
+                : (_isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
           ),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -476,35 +504,45 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       child: TextField(
         controller: widget.searchController,
         enabled: !state.isSaving,
-        style: const TextStyle(fontSize: 13),
+        style: TextStyle(
+          fontSize: 13,
+          color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
+        ),
         decoration: InputDecoration(
-          prefixIcon: const Icon(
+          prefixIcon: Icon(
             Icons.search_rounded,
-            color: Color(0xFF94A3B8),
+            color: _isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8),
             size: 18,
           ),
           hintText: 'Search by file name, course, team, or semester...',
-          hintStyle: const TextStyle(
-            color: Color(0xFF94A3B8),
+          hintStyle: TextStyle(
+            color: _isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8),
             fontSize: 13,
           ),
           filled: true,
-          fillColor: const Color(0xFFF8FAFC),
+          fillColor: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 14,
             vertical: 10,
           ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+            borderSide: BorderSide(
+              color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+            ),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+            borderSide: BorderSide(
+              color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+            ),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
+            borderSide: BorderSide(
+              color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
+              width: 1.5,
+            ),
           ),
         ),
         onSubmitted: (value) {
@@ -541,8 +579,10 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         icon: const Icon(Icons.refresh_rounded, size: 15),
         label: const Text('Clear Filters'),
         style: OutlinedButton.styleFrom(
-          foregroundColor: const Color(0xFF475569),
-          side: const BorderSide(color: Color(0xFFE2E8F0)),
+          foregroundColor: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
+          side: BorderSide(
+            color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+          ),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -579,9 +619,14 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         child: DropdownButton<String>(
           value: selected,
           isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-          style: const TextStyle(
-            color: AppColors.textPrimary,
+          dropdownColor: _isDark ? DefensysTokens.mistSurface : Colors.white,
+          icon: Icon(
+            Icons.keyboard_arrow_down_rounded,
+            size: 18,
+            color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
+          ),
+          style: TextStyle(
+            color: _isDark ? DefensysTokens.textPrimaryDark : AppColors.textPrimary,
             fontSize: 12.5,
             fontWeight: FontWeight.w500,
           ),
@@ -592,9 +637,10 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                   child: Text(
                     item['label']?.toString() ?? label,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w500,
+                      color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
                     ),
                   ),
                 ),
@@ -623,9 +669,14 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         child: DropdownButton<String>(
           value: selected,
           isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-          style: const TextStyle(
-            color: AppColors.textPrimary,
+          dropdownColor: _isDark ? DefensysTokens.mistSurface : Colors.white,
+          icon: Icon(
+            Icons.keyboard_arrow_down_rounded,
+            size: 18,
+            color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
+          ),
+          style: TextStyle(
+            color: _isDark ? DefensysTokens.textPrimaryDark : AppColors.textPrimary,
             fontSize: 12.5,
             fontWeight: FontWeight.w500,
           ),
@@ -636,9 +687,10 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                   child: Text(
                     item,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w500,
+                      color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
                     ),
                   ),
                 ),
@@ -661,9 +713,11 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       height: 43,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _isDark ? DefensysTokens.mistInputFill : Colors.white,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(
+          color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+        ),
       ),
       child: child,
     );
@@ -676,7 +730,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       child: Text(
         'Scroll horizontally for more columns',
         style: TextStyle(
-          color: AppColors.textSecondary.withValues(alpha: 0.85),
+          color: (_isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary)
+              .withValues(alpha: 0.85),
           fontSize: 11.5,
           fontWeight: FontWeight.w600,
         ),
@@ -734,11 +789,12 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
   Widget _repositoryHeaderData({bool compactColumns = false}) {
     return Container(
-      height: 44,
+      height: DefensysTableTokens.headerHeight,
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: DefensysTableTokens.headerBackgroundOf(context),
+        border: Border(
+          bottom: BorderSide(color: DefensysTableTokens.headerBorderOf(context)),
+        ),
       ),
       child: Row(
         children: [
@@ -766,39 +822,43 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           Container(
             height: 220,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+            decoration: BoxDecoration(
+              color: _isDark ? DefensysTokens.mistSurface : Colors.white,
+              border: Border(
+                bottom: BorderSide(
+                  color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
+                ),
+              ),
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
                   padding: const EdgeInsets.all(12),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFF1F5F9),
+                  decoration: BoxDecoration(
+                    color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.folder_open_outlined,
                     size: 32,
-                    color: Color(0xFF64748B),
+                    color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
+                Text(
                   'No archive records found',
                   style: TextStyle(
-                    color: Color(0xFF1E293B),
+                    color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF1E293B),
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: 4),
-                const Text(
+                Text(
                   'Try searching or adjusting your filter settings',
                   style: TextStyle(
-                    color: Color(0xFF64748B),
+                    color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
                     fontSize: 12.5,
                     fontWeight: FontWeight.w500,
                   ),
@@ -829,10 +889,10 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     final teamName = entry['team_name']?.toString() ?? entry['team']?.toString() ?? '';
 
     return Container(
-      constraints: const BoxConstraints(minHeight: 64),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+      constraints: const BoxConstraints(minHeight: DefensysTableTokens.rowHeightMultiline),
+      decoration: BoxDecoration(
+        color: _isDark ? DefensysTokens.mistPanel : Colors.white,
+        border: Border(bottom: BorderSide(color: DefensysTableTokens.rowBorderOf(context))),
       ),
       child: Row(
         children: [
@@ -843,13 +903,19 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                   width: 28,
                   height: 28,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFEF2F2),
+                    color: _isDark
+                        ? const Color(0xFF7F1D1D).withValues(alpha: 0.35)
+                        : const Color(0xFFFEF2F2),
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFFECACA)),
+                    border: Border.all(
+                      color: _isDark
+                          ? const Color(0xFF991B1B).withValues(alpha: 0.5)
+                          : const Color(0xFFFECACA),
+                    ),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.picture_as_pdf_rounded,
-                    color: Color(0xFFDC2626),
+                    color: _isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
                     size: 15,
                   ),
                 ),
@@ -869,8 +935,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                             : (title.isEmpty ? '-' : title),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF0F172A),
+                        style: TextStyle(
+                          color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
                         ),
@@ -885,8 +951,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                             : 'By $uploadedBy',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF64748B),
+                        style: TextStyle(
+                          color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
                         ),
@@ -945,12 +1011,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Color(0xFF64748B),
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.3,
-            ),
+            style: DefensysTableTokens.headerTextStyleOf(context),
           ),
         ),
       ),
@@ -976,8 +1037,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       value.isEmpty ? '-' : value,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
-        color: AppColors.textPrimary,
+      style: TextStyle(
+        color: _isDark ? DefensysTokens.textPrimaryDark : AppColors.textPrimary,
         fontSize: 13,
         fontWeight: FontWeight.w500,
       ),
@@ -989,16 +1050,18 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(5),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(
+          color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+        ),
       ),
       child: Text(
         value,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: Color(0xFF475569),
+        style: TextStyle(
+          color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
           fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
@@ -1061,7 +1124,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         _actionIcon(
           tooltip: 'View PDF',
           icon: Icons.visibility_outlined,
-          color: const Color(0xFF475569),
+          color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
           onTap: () => widget.onViewPdf(fileUrl, fileName),
         ),
         const SizedBox(width: 4),
@@ -1070,21 +1133,25 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           offset: const Offset(0, 32),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
-            side: const BorderSide(color: Color(0xFFE2E8F0)),
+            side: BorderSide(
+              color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+            ),
           ),
-          color: Colors.white,
+          color: _isDark ? DefensysTokens.mistSurface : Colors.white,
           elevation: 4,
           padding: EdgeInsets.zero,
           icon: Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
+              border: Border.all(
+                color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+              ),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.more_vert_rounded,
-              color: Color(0xFF475569),
+              color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
               size: 15,
             ),
           ),
@@ -1102,19 +1169,23 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             }
           },
           itemBuilder: (context) => [
-            const PopupMenuItem<String>(
+            PopupMenuItem<String>(
               value: 'download',
               height: 36,
               child: Row(
                 children: [
-                  Icon(Icons.download_rounded, size: 15, color: Color(0xFF475569)),
-                  SizedBox(width: 9),
+                  Icon(
+                    Icons.download_rounded,
+                    size: 15,
+                    color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
+                  ),
+                  const SizedBox(width: 9),
                   Text(
                     'Download File',
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF0F172A),
+                      color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
                     ),
                   ),
                 ],
@@ -1161,9 +1232,11 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         child: Container(
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
+            color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(
+              color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+            ),
           ),
           child: Icon(icon, color: color, size: 15),
         ),
@@ -1179,8 +1252,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       padding: const EdgeInsets.only(bottom: 12),
       child: Text(
         'Pick a deliverable to compare all teams, or explore teams and their submitted archive records below.',
-        style: const TextStyle(
-          color: Color(0xFF64748B),
+        style: TextStyle(
+          color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
           fontSize: 12,
           fontWeight: FontWeight.w500,
         ),
@@ -1213,8 +1286,10 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                 icon: const Icon(Icons.arrow_back_rounded, size: 15),
                 label: const Text('Back to all teams'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF475569),
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  foregroundColor: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
+                  side: BorderSide(
+                    color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1),
+                  ),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   shape: RoundedRectangleBorder(
@@ -1246,19 +1321,25 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
         color: isPit
-            ? const Color(0xFFF1F5F9)
-            : AppColors.maroon.withValues(alpha: 0.08),
+            ? (_isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9))
+            : (_isDark
+                ? DefensysTokens.mistMaroon.withValues(alpha: 0.18)
+                : AppColors.maroon.withValues(alpha: 0.08)),
         borderRadius: BorderRadius.circular(5),
         border: Border.all(
           color: isPit
-              ? const Color(0xFFE2E8F0)
-              : AppColors.maroon.withValues(alpha: 0.2),
+              ? (_isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0))
+              : (_isDark
+                  ? DefensysTokens.mistMaroon.withValues(alpha: 0.45)
+                  : AppColors.maroon.withValues(alpha: 0.2)),
         ),
       ),
       child: Text(
         isPit ? 'PIT' : 'Capstone',
         style: TextStyle(
-          color: isPit ? const Color(0xFF475569) : AppColors.maroon,
+          color: isPit
+              ? (_isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569))
+              : (_isDark ? const Color(0xFFF87171) : AppColors.maroon),
           fontSize: 10,
           fontWeight: FontWeight.w700,
         ),
@@ -1290,12 +1371,16 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _isDark ? DefensysTokens.mistPanel : Colors.white,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(
+          color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
+            color: _isDark
+                ? Colors.black.withValues(alpha: 0.2)
+                : Colors.black.withValues(alpha: 0.02),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -1310,13 +1395,13 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                 Container(
                   width: 40,
                   height: 40,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFF1F5F9),
+                  decoration: BoxDecoration(
+                    color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.groups_rounded,
-                    color: Color(0xFF475569),
+                    color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
                     size: 20,
                   ),
                 ),
@@ -1332,10 +1417,10 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                               name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 15,
-                                color: Color(0xFF0F172A),
+                                color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
                                 letterSpacing: -0.2,
                               ),
                             ),
@@ -1354,18 +1439,18 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                           'Project: $project',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFF475569),
+                          style: TextStyle(
+                            color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
                             fontWeight: FontWeight.w600,
                             fontSize: 12.5,
                           ),
                         ),
                       ],
                       const SizedBox(height: 2),
-                      const Text(
+                      Text(
                         'Showing archive records for this team.',
                         style: TextStyle(
-                          color: Color(0xFF64748B),
+                          color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
                           fontSize: 11.5,
                           fontWeight: FontWeight.w500,
                         ),
@@ -1393,9 +1478,11 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                 icon: const Icon(Icons.lock_open_rounded, size: 14),
                 label: const Text('Manage Access'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF0F172A),
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
-                  backgroundColor: Colors.white,
+                  foregroundColor: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
+                  side: BorderSide(
+                    color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1),
+                  ),
+                  backgroundColor: _isDark ? DefensysTokens.mistInputFill : Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -1481,10 +1568,10 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           children: [
             Text(
               '${allVisibleTeams.length} ${allVisibleTeams.length == 1 ? 'team' : 'teams'} in directory',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF64748B),
+                color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
               ),
             ),
             InkWell(
@@ -1509,15 +1596,15 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                           ? Icons.unfold_less_rounded
                           : Icons.unfold_more_rounded,
                       size: 15,
-                      color: const Color(0xFF475569),
+                      color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       isAllExpanded ? 'Collapse All' : 'Expand All',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF475569),
+                        color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
                       ),
                     ),
                   ],
@@ -1549,15 +1636,19 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       return Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: _isDark ? DefensysTokens.mistPanel : Colors.white,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: isExpanded ? const Color(0xFFCBD5E1) : const Color(0xFFE2E8F0),
+            color: isExpanded
+                ? (_isDark ? const Color(0xFF4B5563) : const Color(0xFFCBD5E1))
+                : (_isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
             width: isExpanded ? 1.2 : 1.0,
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: isExpanded ? 0.03 : 0.015),
+              color: _isDark
+                  ? Colors.black.withValues(alpha: 0.25)
+                  : Colors.black.withValues(alpha: isExpanded ? 0.03 : 0.015),
               blurRadius: isExpanded ? 8 : 4,
               offset: const Offset(0, 2),
             ),
@@ -1584,13 +1675,19 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  color: isExpanded ? const Color(0xFFF8FAFC) : Colors.white,
+                  color: isExpanded
+                      ? (_isDark ? const Color(0xFF28272D) : const Color(0xFFF8FAFC))
+                      : (_isDark ? DefensysTokens.mistPanel : Colors.white),
                   borderRadius: BorderRadius.vertical(
                     top: const Radius.circular(10),
                     bottom: Radius.circular(isExpanded ? 0 : 10),
                   ),
                   border: isExpanded
-                      ? const Border(bottom: BorderSide(color: Color(0xFFE2E8F0)))
+                      ? Border(
+                          bottom: BorderSide(
+                            color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+                          ),
+                        )
                       : null,
                 ),
                 child: Row(
@@ -1600,20 +1697,20 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                           ? Icons.keyboard_arrow_down_rounded
                           : Icons.keyboard_arrow_right_rounded,
                       size: 20,
-                      color: const Color(0xFF64748B),
+                      color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
                     ),
                     const SizedBox(width: 8),
                     Container(
                       width: 32,
                       height: 32,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
+                        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.groups_rounded,
                         size: 16,
-                        color: Color(0xFF475569),
+                        color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -1625,10 +1722,10 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                             children: [
                               Text(
                                 name,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.w700,
                                   fontSize: 14,
-                                  color: Color(0xFF0F172A),
+                                  color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -1645,9 +1742,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                               project,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
-                                color: Color(0xFF64748B),
+                                color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -1660,16 +1757,18 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                       padding:
                           const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
+                        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        border: Border.all(
+                          color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+                        ),
                       ),
                       child: Text(
                         '${teamEntries.length} ${teamEntries.length == 1 ? 'file' : 'files'}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFF475569),
+                          color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
                         ),
                       ),
                     ),
@@ -1747,6 +1846,11 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   }
 
   Widget _trackSectionTitle(String label, Color accentColor) {
+    final effectiveAccent = _isDark && accentColor == AppColors.maroon
+        ? const Color(0xFFF87171)
+        : (_isDark && accentColor == const Color(0xFF475569)
+            ? const Color(0xFFA1A1AA)
+            : accentColor);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12, top: 8),
       child: Row(
@@ -1755,17 +1859,17 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             width: 3.5,
             height: 16,
             decoration: BoxDecoration(
-              color: accentColor,
+              color: effectiveAccent,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
           const SizedBox(width: 8),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12.5,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF0F172A),
+              color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
               letterSpacing: 0.4,
             ),
           ),
@@ -1809,9 +1913,12 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             Container(
               height: 72,
               alignment: Alignment.center,
-              child: const Text(
+              child: Text(
                 'No Capstone files found.',
-                style: TextStyle(color: Color(0xFF98A2B3), fontSize: 13),
+                style: TextStyle(
+                  color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF98A2B3),
+                  fontSize: 13,
+                ),
               ),
             ),
         ],
@@ -1879,9 +1986,12 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           Container(
             height: 72,
             alignment: Alignment.center,
-            child: const Text(
+            child: Text(
               'No Capstone files found.',
-              style: TextStyle(color: Color(0xFF98A2B3), fontSize: 13),
+              style: TextStyle(
+                color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF98A2B3),
+                fontSize: 13,
+              ),
             ),
           ),
         ],
@@ -1910,9 +2020,12 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         Container(
           height: 72,
           alignment: Alignment.center,
-          child: const Text(
+          child: Text(
             'No PIT archive files found.',
-            style: TextStyle(color: Color(0xFF98A2B3), fontSize: 13),
+            style: TextStyle(
+              color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF98A2B3),
+              fontSize: 13,
+            ),
           ),
         ),
       );
@@ -1979,6 +2092,11 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   }
 
   Widget _stageTitle(String stage, {Color color = AppColors.maroon}) {
+    final effectiveColor = _isDark && color == AppColors.maroon
+        ? const Color(0xFFF87171)
+        : (_isDark && color == const Color(0xFF475569)
+            ? const Color(0xFFA1A1AA)
+            : color);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8, top: 12, left: 14),
       child: Row(
@@ -1987,17 +2105,17 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             width: 3.5,
             height: 14,
             decoration: BoxDecoration(
-              color: color,
+              color: effectiveColor,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
           const SizedBox(width: 8),
           Text(
             stage.toUpperCase(),
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF0F172A),
+              color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
               letterSpacing: 0.5,
             ),
           ),
@@ -2061,21 +2179,24 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           Icon(
             isPre ? Icons.file_present_rounded : Icons.inventory_2_outlined,
             size: 14,
-            color: const Color(0xFF64748B),
+            color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
           ),
           const SizedBox(width: 6),
           Text(
             title.toUpperCase(),
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 10.5,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.8,
-              color: Color(0xFF64748B),
+              color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Container(height: 1, color: const Color(0xFFE2E8F0)),
+            child: Container(
+              height: 1,
+              color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+            ),
           ),
         ],
       ),
@@ -2105,25 +2226,30 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(
+          color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontWeight: FontWeight.w800,
               fontSize: 15,
-              color: AppColors.maroon,
+              color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'One row per Capstone team for this deliverable. Use Stage to narrow by defense phase.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            style: TextStyle(
+              color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
+              fontSize: 12,
+            ),
           ),
         ],
       ),
@@ -2132,11 +2258,14 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
   Widget _deliverableTableHeaderData() {
     return Container(
-      height: 44,
+      height: DefensysTableTokens.headerHeight,
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: DefensysTableTokens.headerBackgroundOf(context),
+        border: Border(
+          bottom: BorderSide(
+            color: DefensysTableTokens.headerBorderOf(context),
+          ),
+        ),
       ),
       child: Row(
         children: [
@@ -2155,10 +2284,14 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   Widget _repositoryDeliverableRowData(Map<String, dynamic> entry) {
     final hasFile = entry['has_file'] == true;
     return Container(
-      constraints: const BoxConstraints(minHeight: 58),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+      constraints: const BoxConstraints(minHeight: DefensysTableTokens.rowHeightStandard),
+      decoration: BoxDecoration(
+        color: _isDark ? DefensysTokens.mistPanel : Colors.white,
+        border: Border(
+          bottom: BorderSide(
+            color: DefensysTableTokens.rowBorderOf(context),
+          ),
+        ),
       ),
       child: Row(
         children: [

@@ -8,6 +8,7 @@ import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 
 class SchedulerToolbar extends ConsumerWidget {
   const SchedulerToolbar({
@@ -46,6 +47,7 @@ class SchedulerToolbar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final semesterLabel =
         state.activeSemester?['display_name']?.toString() ??
         'No active semester configured';
@@ -79,8 +81,8 @@ class SchedulerToolbar extends ConsumerWidget {
               const SizedBox(height: 8),
               Text(
                 semesterLabel,
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
+                style: TextStyle(
+                  color: isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
                 ),
@@ -95,26 +97,26 @@ class SchedulerToolbar extends ConsumerWidget {
             onPressed: () => _handleBack(context, ref),
             style: OutlinedButton.styleFrom(
               elevation: 0,
-              foregroundColor: const Color(0xFF334155),
-              side: const BorderSide(color: Color(0xFFCBD5E1)),
-              backgroundColor: Colors.white,
+              foregroundColor: isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF334155),
+              side: BorderSide(color: isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1)),
+              backgroundColor: isDark ? DefensysTokens.mistInputFill : Colors.white,
               padding:
                   const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
-            icon: const Icon(
+            icon: Icon(
               Icons.arrow_back_rounded,
               size: 16,
-              color: Color(0xFF64748B),
+              color: isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
             ),
-            label: const Text(
+            label: Text(
               'Back to Operations',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
-                color: Color(0xFF334155),
+                color: isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF334155),
               ),
             ),
           ),
@@ -134,13 +136,15 @@ class SchedulerStepProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDark ? DefensysTokens.mistSurface : Colors.white,
         borderRadius: BorderRadius.circular(14),
+        border: isDark ? Border.all(color: DefensysTokens.mistBorder) : null,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: isDark ? Colors.black.withValues(alpha: 0.25) : Colors.black.withValues(alpha: 0.05),
             blurRadius: 14,
             offset: const Offset(0, 6),
           ),
@@ -150,6 +154,7 @@ class SchedulerStepProgress extends StatelessWidget {
         children: [
           Expanded(
             child: _stepProgressTile(
+              context: context,
               number: 1,
               title: 'Set Up Defense Schedule',
               subtitle: 'Choose the shared inputs for this batch.',
@@ -160,6 +165,7 @@ class SchedulerStepProgress extends StatelessWidget {
           ),
           Expanded(
             child: _stepProgressTile(
+              context: context,
               number: 2,
               title: 'Review & Arrange Teams',
               subtitle: 'Waiting for Step 1 plan generation.',
@@ -169,6 +175,7 @@ class SchedulerStepProgress extends StatelessWidget {
           ),
           Expanded(
             child: _stepProgressTile(
+              context: context,
               number: 3,
               title: 'Final Schedule Preview',
               subtitle: 'Shown after the schedule plan is generated.',
@@ -183,6 +190,7 @@ class SchedulerStepProgress extends StatelessWidget {
   }
 
   Widget _stepProgressTile({
+    required BuildContext context,
     required int number,
     required String title,
     required String subtitle,
@@ -191,13 +199,16 @@ class SchedulerStepProgress extends StatelessWidget {
     bool isFirst = false,
     bool isLast = false,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final Color accent = isActive
         ? AppColors.maroon
         : (isDone ? AppColors.success : const Color(0xFFD0D5DD));
 
     final Color bg = isActive
-        ? const Color(0xFFFDF2F2)
-        : (isDone ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC));
+        ? (isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.25) : const Color(0xFFFDF2F2))
+        : (isDone
+            ? (isDark ? const Color(0xFF064E3B).withValues(alpha: 0.25) : const Color(0xFFF0FDF4))
+            : (isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC)));
 
     return Container(
       height: 84,
@@ -245,8 +256,8 @@ class SchedulerStepProgress extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: isActive || isDone
-                        ? AppColors.textPrimary
-                        : AppColors.textSecondary,
+                        ? (isDark ? DefensysTokens.textPrimaryDark : AppColors.textPrimary)
+                        : (isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary),
                     fontSize: 14,
                     fontWeight: FontWeight.w900,
                   ),
@@ -256,8 +267,8 @@ class SchedulerStepProgress extends StatelessWidget {
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
+                  style: TextStyle(
+                    color: isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
                     fontSize: 12.5,
                     fontWeight: FontWeight.w500,
                   ),

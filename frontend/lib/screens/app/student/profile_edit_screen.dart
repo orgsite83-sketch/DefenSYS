@@ -13,6 +13,7 @@ import 'package:intl/intl.dart';
 import '../../../config/api_config.dart';
 import '../../../services/auth_provider.dart';
 import '../../../services/authenticated_client.dart';
+import '../../../services/theme_provider.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../toasts/feedback_toast.dart';
 import '../../../widgets/confirm_dialog.dart';
@@ -582,15 +583,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
       child: Padding(
         padding: EdgeInsets.all(isWide ? 24 : 16),
-            child: Flex(
-              direction: isWide ? Axis.horizontal : Axis.vertical,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment:
-                  isWide ? CrossAxisAlignment.center : CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    // Avatar stack with quick upload trigger
+        child: isWide
+            ? Row(
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        // Avatar stack with quick upload trigger
                     Stack(
                       clipBehavior: Clip.none,
                       children: [
@@ -743,58 +742,251 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ),
                   ],
                 ),
-                if (!isWide) const SizedBox(height: 16),
-                // Action Buttons for Avatar
-                Row(
-                  children: [
-                    ElevatedButton.icon(
-                      onPressed: _isUploadingAvatar ? null : _pickAndUploadAvatar,
-                      icon: const Icon(Icons.upload_file_rounded, size: 16),
-                      label: const Text('Change Photo'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white.withValues(alpha: 0.15),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        side: const BorderSide(color: Colors.white24),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+              ),
+              const SizedBox(width: 20),
+              // Action Buttons for Avatar
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _isUploadingAvatar ? null : _pickAndUploadAvatar,
+                          icon: const Icon(Icons.upload_file_rounded, size: 16),
+                          label: const Text('Change Photo'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white.withValues(alpha: 0.15),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            side: const BorderSide(color: Colors.white24),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                          ),
                         ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                      ),
+                        if (avatarUrl != null) ...[
+                          const SizedBox(width: 8),
+                          TextButton.icon(
+                            onPressed: _isUploadingAvatar ? null : _deleteAvatar,
+                            icon: const Icon(
+                              Icons.delete_outline_rounded,
+                              size: 16,
+                              color: Color(0xFFFCA5A5),
+                            ),
+                            label: const Text(
+                              'Remove',
+                              style: TextStyle(color: Color(0xFFFCA5A5)),
+                            ),
+                            style: TextButton.styleFrom(
+                              backgroundColor: Colors.white.withValues(alpha: 0.1),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                    if (avatarUrl != null) ...[
-                      const SizedBox(width: 8),
-                      TextButton.icon(
-                        onPressed: _isUploadingAvatar ? null : _deleteAvatar,
-                        icon: const Icon(
-                          Icons.delete_outline_rounded,
-                          size: 16,
-                          color: Color(0xFFFCA5A5),
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        // Avatar stack with quick upload trigger
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(3),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white38, width: 2),
+                              ),
+                              child: CircleAvatar(
+                                radius: 36,
+                                backgroundColor: Colors.white24,
+                                backgroundImage:
+                                    avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                                child: avatarUrl == null
+                                    ? Text(
+                                        displayName.isNotEmpty
+                                            ? displayName[0].toUpperCase()
+                                            : 'U',
+                                        style: const TextStyle(
+                                          fontSize: 26,
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : null,
+                              ),
+                            ),
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: _isUploadingAvatar ? null : _pickAndUploadAvatar,
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: const BoxDecoration(
+                                      color: Colors.white,
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black26,
+                                          blurRadius: 4,
+                                          offset: Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Icon(
+                                      Icons.camera_alt_rounded,
+                                      size: 16,
+                                      color: DefensysTokens.maroon,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        label: const Text(
-                          'Remove',
-                          style: TextStyle(color: Color(0xFFFCA5A5)),
-                        ),
-                        style: TextButton.styleFrom(
-                          backgroundColor: Colors.white.withValues(alpha: 0.1),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      displayName,
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                        letterSpacing: -0.3,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.18),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(color: Colors.white24),
+                                    ),
+                                    child: Text(
+                                      roleLabel,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                email.isNotEmpty ? email : 'No email provided',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.white.withValues(alpha: 0.85),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: [
+                                  _badgeTag('ID: $username', Icons.badge_outlined),
+                                  if (user['team_id'] != null)
+                                    _badgeTag(
+                                      'Team #${user['team_id']}',
+                                      Icons.groups_outlined,
+                                    ),
+                                  if (isPitLead)
+                                    _badgeTag('PIT Leader', Icons.stars_rounded),
+                                  if (isPanelist)
+                                    _badgeTag('Panelist', Icons.assignment_ind_outlined),
+                                  if (isAdviser)
+                                    _badgeTag('Adviser', Icons.school_outlined),
+                                ],
+                              ),
+                            ],
                           ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 12,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _isUploadingAvatar ? null : _pickAndUploadAvatar,
+                          icon: const Icon(Icons.upload_file_rounded, size: 16),
+                          label: const Text('Change Photo'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white.withValues(alpha: 0.15),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            side: const BorderSide(color: Colors.white24),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                        if (avatarUrl != null) ...[
+                          const SizedBox(width: 8),
+                          TextButton.icon(
+                            onPressed: _isUploadingAvatar ? null : _deleteAvatar,
+                            icon: const Icon(
+                              Icons.delete_outline_rounded,
+                              size: 16,
+                              color: Color(0xFFFCA5A5),
+                            ),
+                            label: const Text(
+                              'Remove',
+                              style: TextStyle(color: Color(0xFFFCA5A5)),
+                            ),
+                            style: TextButton.styleFrom(
+                              backgroundColor: Colors.white.withValues(alpha: 0.1),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ],
                 ),
-              ],
-            ),
-          ),
+      ),
     );
   }
 
@@ -1853,13 +2045,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Widget _buildAppInfoAndSessionCard() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDark ? DefensysTokens.mistSurface : Colors.white,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
+            color: isDark ? const Color(0x33000000) : Colors.black.withValues(alpha: 0.04),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -1874,27 +2071,31 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                  color: isDark
+                      ? DefensysTokens.mistMaroon.withValues(alpha: 0.2)
+                      : DefensysTokens.maroon.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.settings_suggest_outlined,
                   size: 20,
-                  color: DefensysTokens.maroon,
+                  color: isDark ? DefensysTokens.mistMaroon : DefensysTokens.maroon,
                 ),
               ),
               const SizedBox(width: 12),
-              const Text(
-                'Application & Session',
+              Text(
+                'Application & Preferences',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: DefensysTokens.textPrimary,
+                  color: isDark ? const Color(0xFFF4F4F5) : DefensysTokens.textPrimary,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
+          _themePreferenceTile(),
+          Divider(height: 1, color: isDark ? DefensysTokens.mistBorder : const Color(0xFFF1F5F9)),
           _infoTile(
             icon: Icons.info_outline_rounded,
             title: 'About DefenSYS',
@@ -1904,7 +2105,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               MaterialPageRoute(builder: (_) => const AboutScreen()),
             ),
           ),
-          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          Divider(height: 1, color: isDark ? DefensysTokens.mistBorder : const Color(0xFFF1F5F9)),
           _infoTile(
             icon: Icons.privacy_tip_outlined,
             title: 'Privacy Policy',
@@ -1914,7 +2115,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               MaterialPageRoute(builder: (_) => const PrivacyScreen()),
             ),
           ),
-          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          Divider(height: 1, color: isDark ? DefensysTokens.mistBorder : const Color(0xFFF1F5F9)),
           _infoTile(
             icon: Icons.gavel_rounded,
             title: 'Terms & Conditions',
@@ -1930,8 +2131,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             child: OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFFDC2626),
-                side: const BorderSide(color: Color(0xFFFCA5A5)),
-                backgroundColor: const Color(0xFFFEF2F2),
+                side: BorderSide(color: isDark ? const Color(0xFF991B1B) : const Color(0xFFFCA5A5)),
+                backgroundColor: isDark ? const Color(0xFF450A0A).withValues(alpha: 0.3) : const Color(0xFFFEF2F2),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -1954,12 +2155,73 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
+  Widget _themePreferenceTile() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: isDark
+                  ? DefensysTokens.mistGold.withValues(alpha: 0.15)
+                  : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              isDark ? Icons.light_mode_rounded : Icons.bedtime_outlined,
+              size: 20,
+              color: isDark ? DefensysTokens.mistGold : DefensysTokens.steelGrey,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Appearance Theme',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? const Color(0xFFF4F4F5) : DefensysTokens.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isDark ? 'Mist Dark mode (warm & eye-friendly)' : 'Light mode (crisp slate)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? const Color(0xFFA1A1AA) : DefensysTokens.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: isDark,
+            activeColor: DefensysTokens.mistMaroon,
+            activeTrackColor: DefensysTokens.mistMaroon.withValues(alpha: 0.3),
+            inactiveThumbColor: Colors.white,
+            inactiveTrackColor: DefensysTokens.switchInactiveTrack,
+            onChanged: (val) {
+              ref.read(themeModeProvider.notifier).toggleTheme();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _infoTile({
     required IconData icon,
     required String title,
     required String subtitle,
     required VoidCallback onTap,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -1967,7 +2229,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: DefensysTokens.textSecondary),
+            Icon(icon, size: 20, color: isDark ? const Color(0xFFA1A1AA) : DefensysTokens.textSecondary),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -1975,26 +2237,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: DefensysTokens.textPrimary,
+                      color: isDark ? const Color(0xFFF4F4F5) : DefensysTokens.textPrimary,
                     ),
                   ),
                   Text(
                     subtitle,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: DefensysTokens.textSecondary,
+                      color: isDark ? const Color(0xFFA1A1AA) : DefensysTokens.textSecondary,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(
+            Icon(
               Icons.chevron_right_rounded,
               size: 20,
-              color: DefensysTokens.textSecondary,
+              color: isDark ? const Color(0xFFA1A1AA) : DefensysTokens.textSecondary,
             ),
           ],
         ),

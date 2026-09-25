@@ -5,7 +5,6 @@ import '../../../navigation/admin_route_paths.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../services/auth_provider.dart';
 import '../../../theme/defensys_tokens.dart';
-import '../../../theme/app_theme.dart';
 import '../../../widgets/offline_banner.dart';
 import '../../../widgets/defensys_logo_mark.dart';
 import '../../../widgets/confirm_dialog.dart';
@@ -13,6 +12,7 @@ import '../../../services/unsaved_changes_provider.dart';
 import '../../../utils/unsaved_changes.dart';
 import '../../../notifications/notifications_modal.dart';
 import '../../../notifications/notifications_provider.dart';
+import '../../../widgets/buttons/defensys_theme_toggle.dart';
 import '../shared/team_deliverables/team_deliverables_screen.dart';
 import '../shared/project_archive/project_archive_screen.dart';
 import '../../app/student/repository_tab.dart';
@@ -36,6 +36,7 @@ import 'documenter_dashboard_content.dart';
 import 'minutes_form_screen.dart';
 import 'capstone_instructor_info_section.dart';
 import 'faculty_base_dashboard_content.dart';
+import '../../../config/api_config.dart';
 
 enum FacultyWorkspace { faculty, pitLead, adviser, pitInstructor, documenter }
 
@@ -74,6 +75,13 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   WorkspaceOption? _activeWorkspaceOption;
   int? _selectedMinutesScheduleId;
   int _navigationEpoch = 0;
+  bool _isCollapsed = false;
+
+  void _toggleCollapse() {
+    setState(() {
+      _isCollapsed = !_isCollapsed;
+    });
+  }
 
   @override
   void initState() {
@@ -117,7 +125,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     // If user is only uploader, show uploader dashboard directly
     if (isOnlyUploader) {
       return Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: DefensysTokens.backgroundOf(context),
         body: const UploaderDashboard(),
       );
     }
@@ -126,7 +134,12 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= DefensysTokens.minDesktopWidth;
         final sidebar = showSidebar
-            ? _buildPermanentSidebar(roles, isWide: isWide)
+            ? _buildPermanentSidebar(
+                roles,
+                isWide: isWide,
+                isCollapsed: isWide && _isCollapsed,
+                onToggleCollapse: isWide ? _toggleCollapse : null,
+              )
             : null;
 
         final mainColumn = Column(
@@ -151,20 +164,25 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
 
         if (isWide) {
           return Scaffold(
-            backgroundColor: AppColors.background,
+            backgroundColor: DefensysTokens.backgroundOf(context),
             body: Row(
               children: [
-                if (sidebar != null) sidebar,
-                Expanded(child: mainColumn),
+                if (sidebar != null) RepaintBoundary(child: sidebar),
+                Expanded(child: RepaintBoundary(child: mainColumn)),
               ],
             ),
           );
         }
 
         return Scaffold(
-          backgroundColor: AppColors.background,
+          backgroundColor: DefensysTokens.backgroundOf(context),
           drawer: sidebar != null
-              ? Drawer(width: DefensysTokens.sidebarWidth, child: sidebar)
+              ? Drawer(
+                  width: DefensysTokens.sidebarWidth,
+                  backgroundColor: DefensysTokens.panelOf(context),
+                  surfaceTintColor: Colors.transparent,
+                  child: sidebar,
+                )
               : null,
           body: mainColumn,
         );
@@ -382,16 +400,18 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   Widget _buildTopBar({required bool showMenuButton}) {
     return Container(
       height: DefensysTokens.topNavHeight,
-      padding: EdgeInsets.symmetric(horizontal: showMenuButton ? 8 : 24),
+      padding: EdgeInsets.only(
+        left: showMenuButton ? 8 : 32,
+        right: 40,
+      ),
       decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
+        color: DefensysTokens.panelOf(context),
+        border: Border(
+          bottom: BorderSide(
+            color: DefensysTokens.borderOf(context),
+            width: 1,
           ),
-        ],
+        ),
       ),
       child: Row(
         children: [
@@ -417,11 +437,11 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                backgroundColor: DefensysTokens.maroon,
+                backgroundColor: DefensysTokens.maroonOf(context),
                 child: IconButton(
                   icon: Icon(
                     Icons.notifications_outlined,
-                    color: Colors.grey.shade600,
+                    color: DefensysTokens.textSecondaryOf(context),
                     size: 23,
                   ),
                   tooltip: 'Notifications',
@@ -437,15 +457,33 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               );
             },
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 10),
+          const DefensysThemeToggle(),
         ],
       ),
     );
   }
 
+  String _roleBadgeText(FacultyWorkspace workspace) {
+    switch (workspace) {
+      case FacultyWorkspace.pitLead:
+        return 'PIT Lead';
+      case FacultyWorkspace.adviser:
+        return 'Adviser';
+      case FacultyWorkspace.pitInstructor:
+        return 'Instructor';
+      case FacultyWorkspace.documenter:
+        return 'Documenter';
+      case FacultyWorkspace.faculty:
+        return 'Faculty';
+    }
+  }
+
   Widget _buildPermanentSidebar(
     Map<String, dynamic> roles, {
     required bool isWide,
+    required bool isCollapsed,
+    VoidCallback? onToggleCollapse,
   }) {
     final workspaceOption = _resolvedWorkspace(roles);
     final available = _availableWorkspaces(roles);
@@ -461,506 +499,835 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         ref.read(dashboardProvider('faculty')).data?['faculty']?['name']?.toString() ??
         'Faculty';
 
+    final groups = _sidebarGroupsForWorkspace(
+      workspaceOption.type,
+      roles,
+      isWide: isWide,
+    );
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
-      width: DefensysTokens.sidebarWidth,
-      color: DefensysTokens.maroon,
+      width: isCollapsed ? 68.0 : DefensysTokens.sidebarWidth,
+      decoration: BoxDecoration(
+        color: DefensysTokens.panelOf(context),
+        border: Border(
+          right: BorderSide(color: DefensysTokens.borderOf(context), width: 1),
+        ),
+      ),
       child: Column(
         children: [
-          Container(
-            height: 92,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                const DefensysLogoMark(size: 40),
-                const SizedBox(width: 14),
-                const Text(
-                  'DefenSYS',
-                  style: TextStyle(
-                    fontFamily: DefensysTokens.fontFamily,
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (available.length > 1)
-            Container(
-              margin: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.06),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  width: 1,
+          // Header / Brand area
+          if (isCollapsed)
+            SizedBox(
+              height: 64,
+              width: 68,
+              child: Center(
+                child: IconButton(
+                  icon: const _SidebarPanelIcon(size: 20),
+                  tooltip: 'Expand sidebar',
+                  splashRadius: 18,
+                  onPressed: onToggleCollapse,
                 ),
               ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<WorkspaceOption>(
-                  isExpanded: true,
-                  value: workspaceOption,
-                  dropdownColor: const Color(0xFF5E0D08),
-                  iconEnabledColor: DefensysTokens.gold,
-                  style: const TextStyle(
-                    fontFamily: DefensysTokens.fontFamily,
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+            )
+          else
+            Container(
+              height: 64,
+              padding: const EdgeInsets.fromLTRB(14, 0, 10, 0),
+              child: Row(
+                children: [
+                  const DefensysLogoMark(
+                    size: 30,
+                    colorMode: DefensysLogoColorMode.brand,
                   ),
-                  items: available
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                'DefenSYS',
+                                style: TextStyle(
+                                  fontFamily: DefensysTokens.fontFamily,
+                                  color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.3,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.clip,
+                                softWrap: false,
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF28272D) : const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: DefensysTokens.borderOf(context),
+                                ),
+                              ),
+                              child: Text(
+                                _roleBadgeText(workspaceOption.type),
+                                style: TextStyle(
+                                  fontFamily: DefensysTokens.fontFamily,
+                                  color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569),
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Academic Portal',
+                          style: TextStyle(
+                            fontFamily: DefensysTokens.fontFamily,
+                            color: isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.clip,
+                          softWrap: false,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (onToggleCollapse != null)
+                    IconButton(
+                      icon: const _SidebarPanelIcon(size: 18),
+                      tooltip: 'Collapse sidebar',
+                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(6),
+                      splashRadius: 16,
+                      onPressed: onToggleCollapse,
+                    ),
+                ],
+              ),
+            ),
+
+          // Workspace Switcher (Multi-role switcher)
+          if (available.length > 1) ...[
+            if (isCollapsed)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                child: PopupMenuButton<WorkspaceOption>(
+                  tooltip: _workspaceLabel(workspaceOption),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: BorderSide(color: DefensysTokens.borderOf(context), width: 1),
+                  ),
+                  color: DefensysTokens.panelOf(context),
+                  elevation: 4,
+                  offset: const Offset(50, 0),
+                  onSelected: (value) {
+                    _afterSidebarAction(isWide, () => _switchWorkspace(value));
+                  },
+                  itemBuilder: (context) => available
                       .map(
-                        (ws) => DropdownMenuItem(
+                        (ws) => PopupMenuItem(
                           value: ws,
-                          child: Text(_workspaceLabel(ws)),
+                          height: 36,
+                          child: Text(
+                            _workspaceLabel(ws),
+                            style: TextStyle(
+                              fontFamily: DefensysTokens.fontFamily,
+                              fontSize: 12.5,
+                              fontWeight: ws == workspaceOption
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: ws == workspaceOption
+                                  ? DefensysTokens.maroonOf(context)
+                                  : (isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A)),
+                            ),
+                          ),
                         ),
                       )
                       .toList(),
-                  onChanged: (value) {
-                    if (value != null) {
-                      _afterSidebarAction(
-                        isWide,
-                        () => _switchWorkspace(value),
-                      );
-                    }
-                  },
+                  child: Container(
+                    width: 40,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF28272D) : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: DefensysTokens.borderOf(context)),
+                    ),
+                    child: Center(
+                      child: Icon(
+                        Icons.swap_horiz_rounded,
+                        size: 16,
+                        color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569),
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            else
+              Container(
+                margin: const EdgeInsets.fromLTRB(10, 4, 10, 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF28272D) : const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: DefensysTokens.borderOf(context), width: 1),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<WorkspaceOption>(
+                    isExpanded: true,
+                    value: workspaceOption,
+                    dropdownColor: DefensysTokens.panelOf(context),
+                    iconEnabledColor: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF64748B),
+                    icon: const Icon(Icons.unfold_more_rounded, size: 18),
+                    style: TextStyle(
+                      fontFamily: DefensysTokens.fontFamily,
+                      color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    items: available
+                        .map(
+                          (ws) => DropdownMenuItem(
+                            value: ws,
+                            child: Text(
+                              _workspaceLabel(ws),
+                              style: TextStyle(
+                                fontFamily: DefensysTokens.fontFamily,
+                                color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        _afterSidebarAction(
+                          isWide,
+                          () => _switchWorkspace(value),
+                        );
+                      }
+                    },
+                  ),
                 ),
               ),
-            ),
-          Container(height: 1, color: Colors.white.withValues(alpha: 0.07)),
+          ],
+
+          // Hairline divider below header
+          Divider(height: 1, thickness: 1, color: DefensysTokens.borderOf(context)),
+
+          // Scrollable Navigation List (Clean direct groups)
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.only(top: 16),
+              padding: const EdgeInsets.only(top: 8, bottom: 8),
               children: [
-                ..._sidebarItemsForWorkspace(workspaceOption.type, roles, isWide: isWide),
-                if (roles['uploader'] == true) ...[
-                  _buildSectionHeader('Tools'),
-                  _buildSidebarItem(
-                    icon: Icons.upload_file,
-                    label: 'Upload Documents',
-                    onTap: () => _afterSidebarAction(
-                      isWide,
-                      () => _goToSection('uploader'),
-                    ),
-                    isActive: _activeSection == 'uploader',
+                for (int i = 0; i < groups.length; i++) ...[
+                  if (i > 0)
+                    SizedBox(height: isCollapsed ? 8 : 20),
+                  _FacultySectionHeader(
+                    title: groups[i].title,
+                    isCollapsed: isCollapsed,
+                    isFirst: i == 0,
                   ),
+                  const SizedBox(height: 4),
+                  for (final e in groups[i].entries)
+                    _FacultyNavItem(
+                      icon: e.icon,
+                      label: e.label,
+                      isActive: e.isActive,
+                      onTap: e.onTap,
+                      isCollapsed: isCollapsed,
+                    ),
                 ],
               ],
             ),
           ),
-          Container(height: 1, color: Colors.white.withValues(alpha: 0.09)),
-          _buildUserProfileCard(facultyName, _workspaceLabel(workspaceOption), isWide),
+
+          // Hairline divider above profile
+          Divider(height: 1, thickness: 1, color: DefensysTokens.borderOf(context)),
+
+          // User Profile Card
+          _buildUserProfileCard(
+            facultyName: facultyName,
+            roleLabel: _workspaceLabel(workspaceOption),
+            isWide: isWide,
+            isCollapsed: isCollapsed,
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildUserProfileCard(String facultyName, String roleLabel, bool isWide) {
+  Widget _buildUserProfileCard({
+    required String facultyName,
+    required String roleLabel,
+    required bool isWide,
+    required bool isCollapsed,
+  }) {
+    final user = ref.watch(authProvider).user ?? widget.userData;
+    final avatarUrl = user?['avatar'] != null
+        ? ApiConfig.publicMediaUrl(user!['avatar'] as String)
+        : null;
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final popupItems = <PopupMenuEntry<String>>[
+      PopupMenuItem(
+        value: 'signature',
+        height: 38,
+        child: Row(
+          children: [
+            Icon(Icons.draw_outlined, size: 16, color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569)),
+            const SizedBox(width: 10),
+            Text(
+              'E-Signature',
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamily,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+              ),
+            ),
+          ],
+        ),
+      ),
+      const PopupMenuDivider(height: 1),
+      PopupMenuItem(
+        value: 'logout',
+        height: 38,
+        child: Row(
+          children: const [
+            Icon(Icons.logout_rounded, size: 16, color: Color(0xFFDC2626)),
+            SizedBox(width: 10),
+            Text(
+              'Log Out',
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamily,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFFDC2626),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ];
+
+    void handleSelect(String value) async {
+      if (value == 'signature') {
+        if (!isWide && mounted) {
+          Navigator.of(context).pop();
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          showDialog(
+            context: context,
+            builder: (context) => const ESignatureUploadDialog(),
+          );
+        });
+      } else if (value == 'logout') {
+        if (!isWide && mounted) {
+          Navigator.of(context).pop();
+        }
+        final hasUnsaved = ref.read(unsavedChangesProvider);
+        if (hasUnsaved) {
+          final saveDraftCallback = ref.read(unsavedChangesSaveDraftProvider);
+          final action = await showDiscardUnsavedChangesDialog(context, onSaveDraft: saveDraftCallback);
+          if (action == UnsavedChangesAction.cancel || !mounted) return;
+          if (action == UnsavedChangesAction.saveDraft && saveDraftCallback != null) {
+            final ok = await saveDraftCallback();
+            if (!ok || !mounted) return;
+          }
+        }
+        if (await confirmLogout(context)) {
+          ref.read(unsavedChangesProvider.notifier).setDirty(false);
+          await ref.read(authProvider.notifier).logout();
+        }
+      }
+    }
+
+    if (isCollapsed) {
+      return Container(
+        margin: const EdgeInsets.fromLTRB(0, 8, 0, 12),
+        height: 54,
+        alignment: Alignment.center,
+        child: PopupMenuButton<String>(
+          tooltip: '$facultyName ($roleLabel)',
+          offset: const Offset(50, 0),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: BorderSide(color: DefensysTokens.borderOf(context), width: 1),
+          ),
+          color: DefensysTokens.panelOf(context),
+          elevation: 4,
+          onSelected: handleSelect,
+          itemBuilder: (context) => popupItems,
+          child: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isDark
+                    ? DefensysTokens.mistMaroon.withValues(alpha: 0.4)
+                    : DefensysTokens.maroon.withValues(alpha: 0.25),
+                width: 1.5,
+              ),
+              color: isDark ? DefensysTokens.mistMaroon : DefensysTokens.maroon,
+              image: avatarUrl != null
+                  ? DecorationImage(
+                      image: NetworkImage(avatarUrl),
+                      fit: BoxFit.cover,
+                    )
+                  : null,
+            ),
+            child: avatarUrl == null
+                ? const Center(
+                    child: Icon(
+                      Icons.school_rounded,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                  )
+                : null,
+          ),
+        ),
+      );
+    }
+
     return Container(
-      margin: const EdgeInsets.fromLTRB(12, 12, 12, 16),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
+        color: isDark ? const Color(0xFF28272D) : const Color(0xFFFAFAFA),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.08),
+          color: DefensysTokens.borderOf(context),
           width: 1,
         ),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: DefensysTokens.gold.withValues(alpha: 0.5),
-                width: 1.5,
-              ),
-              color: Colors.white.withValues(alpha: 0.1),
-            ),
-            child: const Center(
-              child: Icon(
-                Icons.school_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  facultyName,
-                  style: const TextStyle(
-                    fontFamily: DefensysTokens.fontFamily,
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  roleLabel,
-                  style: const TextStyle(
-                    fontFamily: DefensysTokens.fontFamily,
-                    color: Color(0xFF9CA3AF),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          Material(
-            color: Colors.transparent,
-            child: IconButton(
-              icon: const Icon(
-                Icons.draw_rounded,
-                color: Color(0xFFD1D5DB),
-                size: 18,
-              ),
-              tooltip: 'E-Signature',
-              onPressed: () {
-                if (!isWide) {
-                  Navigator.of(context).pop();
-                }
-                showDialog(
-                  context: context,
-                  builder: (context) => const ESignatureUploadDialog(),
-                );
-              },
-              constraints: const BoxConstraints(),
-              padding: const EdgeInsets.all(6),
-              splashRadius: 20,
-            ),
-          ),
-          const SizedBox(width: 4),
-          Material(
-            color: Colors.transparent,
-            child: IconButton(
-              icon: const Icon(
-                Icons.logout_rounded,
-                color: Color(0xFFFCA5A5),
-                size: 18,
-              ),
-              tooltip: 'Log Out',
-              onPressed: () async {
-                if (!isWide) {
-                  Navigator.of(context).pop();
-                }
-                final hasUnsaved = ref.read(unsavedChangesProvider);
-                if (hasUnsaved) {
-                  final saveDraftCallback = ref.read(unsavedChangesSaveDraftProvider);
-                  final action = await showDiscardUnsavedChangesDialog(context, onSaveDraft: saveDraftCallback);
-                  if (action == UnsavedChangesAction.cancel || !mounted) return;
-                  if (action == UnsavedChangesAction.saveDraft && saveDraftCallback != null) {
-                    final ok = await saveDraftCallback();
-                    if (!ok || !mounted) return;
-                  }
-                }
-                if (await confirmLogout(context)) {
-                  ref.read(unsavedChangesProvider.notifier).setDirty(false);
-                  await ref.read(authProvider.notifier).logout();
-                }
-              },
-              constraints: const BoxConstraints(),
-              padding: const EdgeInsets.all(6),
-              splashRadius: 20,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
-      child: Text(
-        title.toUpperCase(),
-        style: TextStyle(
-          fontFamily: DefensysTokens.fontFamily,
-          color: Colors.white.withValues(alpha: 0.45),
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 1.3,
-        ),
-      ),
-    );
-  }
-
-  List<Widget> _sidebarItemsForWorkspace(
-    FacultyWorkspace workspace,
-    Map<String, dynamic> roles, {
-    required bool isWide,
-  }) {
-    switch (workspace) {
-      case FacultyWorkspace.faculty:
-        return [
-          _buildSectionHeader('Repository'),
-          _buildSidebarItem(
-            icon: Icons.local_library_outlined,
-            label: 'Research Repository',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('project_archive'),
-            ),
-            isActive: _activeSection == 'project_archive' ||
-                _activeSection == 'repository_audit' ||
-                _activeSection == 'dashboard',
-          ),
-        ];
-      case FacultyWorkspace.pitLead:
-        return [
-          _buildSectionHeader('Dashboard'),
-          _buildSidebarItem(
-            icon: Icons.dashboard_outlined,
-            label: 'Dashboard',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('dashboard'),
-            ),
-            isActive: _activeSection == 'dashboard',
-          ),
-          _buildSectionHeader('Setup & Configuration'),
-          _buildSidebarItem(
-            icon: Icons.event_note_outlined,
-            label: 'PIT Events Setup',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('pit_events'),
-            ),
-            isActive: _activeSection == 'pit_events',
-          ),
-          _buildSidebarItem(
-            icon: Icons.rule_outlined,
-            label: 'Rubrics',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('rubrics'),
-            ),
-            isActive: _activeSection == 'rubrics',
-          ),
-          _buildSectionHeader('People & Teams'),
-          _buildSidebarItem(
-            icon: Icons.manage_accounts_outlined,
-            label: 'User Management',
-            onTap: () =>
-                _afterSidebarAction(isWide, () => _goToSection('cohort')),
-            isActive:
-                _activeSection == 'cohort' ||
-                _activeSection == 'pit_student_import' ||
-                _activeSection == 'pit_instructors',
-          ),
-          _buildSidebarItem(
-            icon: Icons.groups_outlined,
-            label: 'Student Teams',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('student_teams'),
-            ),
-            isActive: _activeSection == 'student_teams',
-          ),
-          _buildSectionHeader('Defense Operations'),
-          _buildSidebarItem(
-            icon: Icons.view_agenda_outlined,
-            label: 'Defense Operations',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('defense_board'),
-            ),
-            isActive: _activeSection == 'defense_board' ||
-                _activeSection == 'defense_scheduler',
-          ),
-          _buildSidebarItem(
-            icon: Icons.grading_outlined,
-            label: 'Evaluation & Grades',
-            onTap: () =>
-                _afterSidebarAction(isWide, () => _goToSection('grade_center')),
-            isActive: _activeSection == 'grade_center',
-          ),
-          _buildSectionHeader('Archives & Audit'),
-          _buildSidebarItem(
-            icon: Icons.manage_search,
-            label: 'Project Archive',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('project_archive'),
-            ),
-            isActive: _activeSection == 'project_archive' ||
-                _activeSection == 'repository_audit',
-          ),
-          _buildSidebarItem(
-            icon: Icons.verified_user_outlined,
-            label: 'Audit Trail',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('audit_compliance'),
-            ),
-            isActive: _activeSection == 'audit_compliance',
-          ),
-        ];
-      case FacultyWorkspace.adviser:
-        return [
-          _buildSectionHeader('Dashboard'),
-          _buildSidebarItem(
-            icon: Icons.dashboard_outlined,
-            label: 'Dashboard',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('dashboard'),
-            ),
-            isActive: _activeSection == 'dashboard',
-          ),
-          _buildSectionHeader('Advising'),
-          _buildSidebarItem(
-            icon: Icons.folder_open_outlined,
-            label: 'Capstone Teams',
-            onTap: () =>
-                _afterSidebarAction(isWide, () => _goToSection('deliverables')),
-            isActive: _activeSection == 'deliverables',
-          ),
-          _buildSidebarItem(
-            icon: Icons.view_agenda_outlined,
-            label: 'Defense Operations',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('defense_board'),
-            ),
-            isActive: _activeSection == 'defense_board',
-          ),
-          _buildSidebarItem(
-            icon: Icons.summarize_rounded,
-            label: 'Reports',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('audit_compliance'),
-            ),
-            isActive: _activeSection == 'audit_compliance',
-          ),
-        ];
-      case FacultyWorkspace.pitInstructor:
-        return [
-          _buildSectionHeader('Dashboard'),
-          _buildSidebarItem(
-            icon: Icons.dashboard_outlined,
-            label: 'Dashboard',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('dashboard'),
-            ),
-            isActive: _activeSection == 'dashboard',
-          ),
-          _buildSectionHeader('Instruction'),
-          _buildSidebarItem(
-            icon: Icons.folder_open_outlined,
-            label: 'PIT Teams',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('deliverables'),
-            ),
-            isActive: _activeSection == 'deliverables',
-          ),
-          _buildSidebarItem(
-            icon: Icons.summarize_rounded,
-            label: 'Reports',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('audit_compliance'),
-            ),
-            isActive: _activeSection == 'audit_compliance',
-          ),
-        ];
-      case FacultyWorkspace.documenter:
-        return [
-          _buildSectionHeader('Dashboard'),
-          _buildSidebarItem(
-            icon: Icons.dashboard_outlined,
-            label: 'Dashboard',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('dashboard'),
-            ),
-            isActive: _activeSection == 'dashboard',
-          ),
-          _buildSectionHeader('Operations'),
-          _buildSidebarItem(
-            icon: Icons.view_agenda_outlined,
-            label: 'Defense Operations',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('defense_board'),
-            ),
-            isActive: _activeSection == 'defense_board',
-          ),
-        ];
-    }
-  }
-
-  Widget _buildSidebarItem({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    bool isActive = false,
-  }) {
-    final color = isActive ? DefensysTokens.gold : const Color(0xFFD1D5DB);
-    final containerColor = isActive
-        ? Colors.white.withValues(alpha: 0.08)
-        : Colors.transparent;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Material(
-          color: containerColor,
-          child: InkWell(
-            onTap: onTap,
-            hoverColor: Colors.white.withValues(alpha: 0.05),
-            child: Container(
-              height: 46,
-              padding: const EdgeInsets.only(left: 10, right: 14),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
               child: Row(
                 children: [
                   Container(
-                    width: 3,
-                    height: 16,
+                    width: 32,
+                    height: 32,
                     decoration: BoxDecoration(
-                      color: isActive ? DefensysTokens.gold : Colors.transparent,
-                      borderRadius: BorderRadius.circular(99),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(icon, color: color, size: 18),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      label,
-                      style: TextStyle(
-                        fontFamily: DefensysTokens.fontFamily,
-                        color: color,
-                        fontSize: 13,
-                        fontWeight: isActive ? FontWeight.w700 : FontWeight.w600,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isDark
+                            ? DefensysTokens.mistMaroon.withValues(alpha: 0.35)
+                            : DefensysTokens.maroon.withValues(alpha: 0.25),
+                        width: 1.5,
                       ),
+                      color: isDark ? DefensysTokens.mistMaroon : DefensysTokens.maroon,
+                      image: avatarUrl != null
+                          ? DecorationImage(
+                              image: NetworkImage(avatarUrl),
+                              fit: BoxFit.cover,
+                            )
+                          : null,
+                    ),
+                    child: avatarUrl == null
+                        ? const Center(
+                            child: Icon(
+                              Icons.school_rounded,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          facultyName,
+                          style: TextStyle(
+                            fontFamily: DefensysTokens.fontFamily,
+                            color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.clip,
+                          softWrap: false,
+                        ),
+                        const SizedBox(height: 1),
+                        Text(
+                          roleLabel,
+                          style: TextStyle(
+                            fontFamily: DefensysTokens.fontFamily,
+                            color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF64748B),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.clip,
+                          softWrap: false,
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
           ),
-        ),
+          PopupMenuButton<String>(
+            tooltip: 'Account options',
+            icon: Icon(
+              Icons.more_horiz_rounded,
+              color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF64748B),
+              size: 18,
+            ),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            splashRadius: 16,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: BorderSide(color: DefensysTokens.borderOf(context), width: 1),
+            ),
+            color: DefensysTokens.panelOf(context),
+            elevation: 4,
+            offset: const Offset(0, -100),
+            onSelected: handleSelect,
+            itemBuilder: (context) => popupItems,
+          ),
+        ],
       ),
     );
+  }
+
+  List<_FacultyNavGroup> _sidebarGroupsForWorkspace(
+    FacultyWorkspace workspace,
+    Map<String, dynamic> roles, {
+    required bool isWide,
+  }) {
+    List<_FacultyNavGroup> groups;
+    switch (workspace) {
+      case FacultyWorkspace.faculty:
+        groups = [
+          _FacultyNavGroup(
+            title: 'Repository',
+            entries: [
+              _FacultyNavEntry(
+                section: 'project_archive',
+                icon: Icons.folder_rounded,
+                label: 'Research Repository',
+                isActive: _activeSection == 'project_archive' ||
+                    _activeSection == 'repository_audit' ||
+                    _activeSection == 'dashboard',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('project_archive'),
+                ),
+              ),
+            ],
+          ),
+        ];
+        break;
+
+      case FacultyWorkspace.pitLead:
+        groups = [
+          _FacultyNavGroup(
+            title: 'Dashboard',
+            entries: [
+              _FacultyNavEntry(
+                section: 'dashboard',
+                icon: Icons.show_chart_rounded,
+                label: 'Dashboard',
+                isActive: _activeSection == 'dashboard',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('dashboard'),
+                ),
+              ),
+            ],
+          ),
+          _FacultyNavGroup(
+            title: 'Setup & Configuration',
+            entries: [
+              _FacultyNavEntry(
+                section: 'pit_events',
+                icon: Icons.event_note_rounded,
+                label: 'PIT Events Setup',
+                isActive: _activeSection == 'pit_events',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('pit_events'),
+                ),
+              ),
+              _FacultyNavEntry(
+                section: 'rubrics',
+                icon: Icons.checklist_rounded,
+                label: 'Rubrics',
+                isActive: _activeSection == 'rubrics',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('rubrics'),
+                ),
+              ),
+            ],
+          ),
+          _FacultyNavGroup(
+            title: 'People & Teams',
+            entries: [
+              _FacultyNavEntry(
+                section: 'cohort',
+                icon: Icons.manage_accounts_rounded,
+                label: 'User Management',
+                isActive: _activeSection == 'cohort' ||
+                    _activeSection == 'pit_student_import' ||
+                    _activeSection == 'pit_instructors',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('cohort'),
+                ),
+              ),
+              _FacultyNavEntry(
+                section: 'student_teams',
+                icon: Icons.groups_rounded,
+                label: 'Student Teams',
+                isActive: _activeSection == 'student_teams',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('student_teams'),
+                ),
+              ),
+            ],
+          ),
+          _FacultyNavGroup(
+            title: 'Defense Operations',
+            entries: [
+              _FacultyNavEntry(
+                section: 'defense_board',
+                icon: Icons.view_agenda_rounded,
+                label: 'Defense Operations',
+                isActive: _activeSection == 'defense_board' ||
+                    _activeSection == 'defense_scheduler',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('defense_board'),
+                ),
+              ),
+              _FacultyNavEntry(
+                section: 'grade_center',
+                icon: Icons.grade_rounded,
+                label: 'Evaluation & Grades',
+                isActive: _activeSection == 'grade_center',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('grade_center'),
+                ),
+              ),
+            ],
+          ),
+          _FacultyNavGroup(
+            title: 'Archives & Audit',
+            entries: [
+              _FacultyNavEntry(
+                section: 'project_archive',
+                icon: Icons.folder_rounded,
+                label: 'Project Archive',
+                isActive: _activeSection == 'project_archive' ||
+                    _activeSection == 'repository_audit',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('project_archive'),
+                ),
+              ),
+              _FacultyNavEntry(
+                section: 'audit_compliance',
+                icon: Icons.verified_user_outlined,
+                label: 'Audit Trail',
+                isActive: _activeSection == 'audit_compliance',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('audit_compliance'),
+                ),
+              ),
+            ],
+          ),
+        ];
+        break;
+
+      case FacultyWorkspace.adviser:
+        groups = [
+          _FacultyNavGroup(
+            title: 'Dashboard',
+            entries: [
+              _FacultyNavEntry(
+                section: 'dashboard',
+                icon: Icons.show_chart_rounded,
+                label: 'Dashboard',
+                isActive: _activeSection == 'dashboard',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('dashboard'),
+                ),
+              ),
+            ],
+          ),
+          _FacultyNavGroup(
+            title: 'Advising',
+            entries: [
+              _FacultyNavEntry(
+                section: 'deliverables',
+                icon: Icons.folder_open_rounded,
+                label: 'Capstone Teams',
+                isActive: _activeSection == 'deliverables',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('deliverables'),
+                ),
+              ),
+              _FacultyNavEntry(
+                section: 'defense_board',
+                icon: Icons.view_agenda_rounded,
+                label: 'Defense Operations',
+                isActive: _activeSection == 'defense_board',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('defense_board'),
+                ),
+              ),
+              _FacultyNavEntry(
+                section: 'audit_compliance',
+                icon: Icons.summarize_rounded,
+                label: 'Reports',
+                isActive: _activeSection == 'audit_compliance',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('audit_compliance'),
+                ),
+              ),
+            ],
+          ),
+        ];
+        break;
+
+      case FacultyWorkspace.pitInstructor:
+        groups = [
+          _FacultyNavGroup(
+            title: 'Dashboard',
+            entries: [
+              _FacultyNavEntry(
+                section: 'dashboard',
+                icon: Icons.show_chart_rounded,
+                label: 'Dashboard',
+                isActive: _activeSection == 'dashboard',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('dashboard'),
+                ),
+              ),
+            ],
+          ),
+          _FacultyNavGroup(
+            title: 'Instruction',
+            entries: [
+              _FacultyNavEntry(
+                section: 'deliverables',
+                icon: Icons.folder_open_rounded,
+                label: 'PIT Teams',
+                isActive: _activeSection == 'deliverables',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('deliverables'),
+                ),
+              ),
+              _FacultyNavEntry(
+                section: 'audit_compliance',
+                icon: Icons.summarize_rounded,
+                label: 'Reports',
+                isActive: _activeSection == 'audit_compliance',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('audit_compliance'),
+                ),
+              ),
+            ],
+          ),
+        ];
+        break;
+
+      case FacultyWorkspace.documenter:
+        groups = [
+          _FacultyNavGroup(
+            title: 'Dashboard',
+            entries: [
+              _FacultyNavEntry(
+                section: 'dashboard',
+                icon: Icons.show_chart_rounded,
+                label: 'Dashboard',
+                isActive: _activeSection == 'dashboard',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('dashboard'),
+                ),
+              ),
+            ],
+          ),
+          _FacultyNavGroup(
+            title: 'Operations',
+            entries: [
+              _FacultyNavEntry(
+                section: 'defense_board',
+                icon: Icons.view_agenda_rounded,
+                label: 'Defense Operations',
+                isActive: _activeSection == 'defense_board',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('defense_board'),
+                ),
+              ),
+            ],
+          ),
+        ];
+        break;
+    }
+
+    if (roles['uploader'] == true) {
+      groups.add(
+        _FacultyNavGroup(
+          title: 'Tools',
+          entries: [
+            _FacultyNavEntry(
+              section: 'uploader',
+              icon: Icons.upload_file_rounded,
+              label: 'Upload Documents',
+              isActive: _activeSection == 'uploader',
+              onTap: () => _afterSidebarAction(
+                isWide,
+                () => _goToSection('uploader'),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return groups;
   }
 
 
@@ -984,7 +1351,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     final isSubRoute = routerState.pathParameters.containsKey('teamId') ||
         routerState.pathParameters.containsKey('sectionName');
     if (isSubRoute && widget.routeChild != null) {
-      return Container(color: Colors.white, child: widget.routeChild!);
+      return Container(
+        color: DefensysTokens.backgroundOf(context),
+        child: widget.routeChild!,
+      );
     }
 
     final sectionFromRoute = FacultyRoutes.sectionForLocation(
@@ -1002,7 +1372,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       return workspaceOption.type == FacultyWorkspace.faculty
           ? const RepositoryTab()
           : Container(
-              color: Colors.white,
+              color: DefensysTokens.backgroundOf(context),
               child: const ProjectArchiveScreen(),
             );
     }
@@ -1026,7 +1396,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         );
       case 'weekly_reports':
         return Container(
-          color: Colors.white,
+          color: DefensysTokens.surfaceOf(context),
           child: const WeeklyProgressReportsScreen(),
         );
       case 'adviser_grading':
@@ -1043,14 +1413,14 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         );
       case 'cohort':
         return Container(
-          color: Colors.white,
+          color: DefensysTokens.surfaceOf(context),
           child: PitLeadCohortScreen(
             onCreateTeam: () => _goToSection('student_teams'),
           ),
         );
       case 'pit_student_import':
         return Container(
-          color: Colors.white,
+          color: DefensysTokens.surfaceOf(context),
           child: const PitStudentImportScreen(),
         );
       case 'student_teams':
@@ -1059,7 +1429,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             ? TeamListMode.pitInstructor
             : TeamListMode.pitLead;
         return Container(
-          color: Colors.white,
+          color: DefensysTokens.surfaceOf(context),
           child: StudentTeamsScreen(
             mode: mode,
             pitYearLevel: (ws.type == FacultyWorkspace.pitLead || ws.type == FacultyWorkspace.pitInstructor) ? ws.yearLevel : null,
@@ -1068,12 +1438,12 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         );
       case 'pit_events':
         return Container(
-          color: Colors.white,
+          color: DefensysTokens.surfaceOf(context),
           child: const PitEventsManagementScreen(),
         );
       case 'pit_instructors':
         return Container(
-          color: Colors.white,
+          color: DefensysTokens.surfaceOf(context),
           child: PitInstructorAssignmentScreen(
             initialSection: routerState.uri.queryParameters['section'],
           ),
@@ -1085,16 +1455,16 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           return const RepositoryTab();
         }
         return Container(
-          color: Colors.white,
+          color: DefensysTokens.surfaceOf(context),
           child: const ProjectArchiveScreen(),
         );
       case 'audit_compliance':
         return Container(
-          color: Colors.white,
+          color: DefensysTokens.surfaceOf(context),
           child: const AuditComplianceScreen(),
         );
       case 'uploader':
-        return Container(color: Colors.white, child: const UploaderDashboard());
+        return Container(color: DefensysTokens.surfaceOf(context), child: const UploaderDashboard());
       case 'defense_scheduler':
         final user = ref.watch(authProvider).user;
         final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
@@ -1112,7 +1482,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           );
         }
         return Container(
-          color: Colors.white,
+          color: DefensysTokens.surfaceOf(context),
           child: DefenseSchedulerScreen(
             onBack: () => _goToSection('defense_board'),
           ),
@@ -1121,14 +1491,14 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         final isImport =
             GoRouterState.of(context).uri.path == FacultyRoutes.defenseScheduleBulkImport;
         return Container(
-          color: Colors.white,
+          color: DefensysTokens.surfaceOf(context),
           child: DefenseBoardScreen(initialBulkImport: isImport),
         );
       case 'grade_center':
-        return Container(color: Colors.white, child: const GradeCenterScreen());
+        return Container(color: DefensysTokens.surfaceOf(context), child: const GradeCenterScreen());
       case 'rubrics':
         return Container(
-          color: Colors.white,
+          color: DefensysTokens.surfaceOf(context),
           child: RubricEngineScreen(key: ValueKey('rubrics_$_navigationEpoch')),
         );
       case 'dashboard':
@@ -1222,3 +1592,301 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     }
   }
 }
+
+class _FacultyNavGroup {
+  final String title;
+  final List<_FacultyNavEntry> entries;
+
+  const _FacultyNavGroup({
+    required this.title,
+    required this.entries,
+  });
+}
+
+class _FacultyNavEntry {
+  final String section;
+  final IconData icon;
+  final String label;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  const _FacultyNavEntry({
+    required this.section,
+    required this.icon,
+    required this.label,
+    required this.isActive,
+    required this.onTap,
+  });
+}
+
+class _FacultySectionHeader extends StatelessWidget {
+  final String title;
+  final bool isCollapsed;
+  final bool isFirst;
+
+  const _FacultySectionHeader({
+    required this.title,
+    this.isCollapsed = false,
+    this.isFirst = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    if (isCollapsed) {
+      if (isFirst) return const SizedBox(height: 4);
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        child: Divider(height: 1, thickness: 1, color: DefensysTokens.borderOf(context)),
+      );
+    }
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, isFirst ? 6 : 8, 16, 4),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyle(
+          fontFamily: DefensysTokens.fontFamily,
+          color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF71717A),
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.8,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+}
+
+class _FacultyNavItem extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final bool isActive;
+  final VoidCallback onTap;
+  final bool isCollapsed;
+
+  const _FacultyNavItem({
+    required this.icon,
+    required this.label,
+    required this.isActive,
+    required this.onTap,
+    this.isCollapsed = false,
+  });
+
+  @override
+  State<_FacultyNavItem> createState() => _FacultyNavItemState();
+}
+
+class _FacultyNavItemState extends State<_FacultyNavItem> {
+  bool _isPressed = false;
+  bool _isHovered = false;
+
+  @override
+  void didUpdateWidget(covariant _FacultyNavItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive != oldWidget.isActive) {
+      if (_isPressed && widget.isActive) {
+        _isPressed = false;
+      }
+    }
+  }
+
+  void _handleTapDown(TapDownDetails _) {
+    setState(() => _isPressed = true);
+  }
+
+  void _handleTapCancel() {
+    if (mounted) setState(() => _isPressed = false);
+  }
+
+  void _handleTapUp(TapUpDetails _) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _isPressed && !widget.isActive) {
+        setState(() => _isPressed = false);
+      }
+    });
+  }
+
+  void _handleTap() {
+    widget.onTap();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final activeBg = isDark ? DefensysTokens.mistMaroon : DefensysTokens.maroon;
+    const activeColor = Colors.white;
+
+    final isHighlighted = widget.isActive || _isPressed;
+    final Color? bgColor;
+    if (isHighlighted) {
+      bgColor = activeBg;
+    } else if (_isHovered) {
+      bgColor = isDark ? const Color(0xFF28272D) : const Color(0xFFF4F4F5);
+    } else {
+      bgColor = null;
+    }
+
+    final textColor = isHighlighted
+        ? activeColor
+        : (isDark ? const Color(0xFFF4F4F5) : const Color(0xFF18181B));
+    final iconColor = isHighlighted
+        ? activeColor
+        : (isDark ? const Color(0xFFA1A1AA) : const Color(0xFF52525B));
+
+    if (widget.isCollapsed) {
+      return Tooltip(
+        message: widget.label,
+        waitDuration: const Duration(milliseconds: 300),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onEnter: (_) => setState(() => _isHovered = true),
+            onExit: (_) => setState(() => _isHovered = false),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: _handleTapDown,
+              onTapUp: _handleTapUp,
+              onTapCancel: _handleTapCancel,
+              onTap: _handleTap,
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Center(
+                  child: Icon(
+                    widget.icon,
+                    size: 18,
+                    color: iconColor,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 1.5),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() => _isHovered = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: _handleTapDown,
+          onTapUp: _handleTapUp,
+          onTapCancel: _handleTapCancel,
+          onTap: _handleTap,
+          child: Container(
+            height: 38,
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 48,
+                  child: Center(
+                    child: Icon(
+                      widget.icon,
+                      size: 18,
+                      color: iconColor,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Text(
+                      widget.label,
+                      style: TextStyle(
+                        fontFamily: DefensysTokens.fontFamily,
+                        color: textColor,
+                        fontSize: 13,
+                        fontWeight: isHighlighted ? FontWeight.w600 : FontWeight.w500,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SidebarPanelIcon extends StatelessWidget {
+  final double size;
+  final Color color;
+
+  const _SidebarPanelIcon({
+    this.size = 18,
+    this.color = const Color(0xFF64748B),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(
+        size: Size(size, size),
+        painter: _SidebarPanelPainter(color: color),
+      ),
+    );
+  }
+}
+
+class _SidebarPanelPainter extends CustomPainter {
+  final Color color;
+
+  _SidebarPanelPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final strokeWidth = size.width * 0.088;
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true;
+
+    final rect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+        strokeWidth / 2,
+        strokeWidth / 2,
+        size.width - strokeWidth,
+        size.height - strokeWidth,
+      ),
+      Radius.circular(size.width * 0.22),
+    );
+
+    // Outer rounded rectangle
+    canvas.drawRRect(rect, paint);
+
+    // Inner vertical divider (left pane separator)
+    final lineX = size.width * 0.35;
+    canvas.drawLine(
+      Offset(lineX, strokeWidth / 2),
+      Offset(lineX, size.height - strokeWidth / 2),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_SidebarPanelPainter oldDelegate) => oldDelegate.color != color;
+}
+

@@ -8,8 +8,10 @@ import '../../../../services/auth_provider.dart';
 import '../../../../services/rubric_engine_provider.dart';
 import '../../../../services/unsaved_changes_provider.dart';
 import '../../../../theme/app_theme.dart';
+import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
+import '../../../../widgets/table/table.dart';
 import 'rubric_full_page_editor.dart';
 import '../widgets/defensys_admin_shell.dart';
 import '../admin_shell.dart';
@@ -27,9 +29,14 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   static const _kColScope = 110.0;
   static const _kColEval = 150.0;
   static const _kColStatus = 140.0;
-  static const _kRubricDataTableWidth =
-      _kColName + _kColStage + _kColScope + _kColEval + _kColStatus;
   static const _kRubricActionColumnWidth = 80.0;
+
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _surfaceColor => _isDark ? DefensysTokens.mistSurface : Colors.white;
+  Color get _borderColor => _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0);
+  Color get _textPrimaryColor => _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A);
+  Color get _textSecondaryColor => _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B);
+  Color get _subtleFillColor => _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9);
 
   final _searchController = TextEditingController();
   final _tableHScrollController = ScrollController();
@@ -250,12 +257,12 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: _isDark ? _surfaceColor : const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: _borderColor),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
+            color: Colors.black.withValues(alpha: _isDark ? 0.2 : 0.02),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -266,7 +273,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: DefensysUi.primaryMaroon.withValues(alpha: 0.08),
+              color: DefensysUi.primaryMaroon.withValues(alpha: _isDark ? 0.2 : 0.08),
               shape: BoxShape.circle,
             ),
             child: const Icon(
@@ -280,10 +287,10 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Weight Distribution & Scope Configuration',
                   style: TextStyle(
-                    color: Color(0xFF0F172A),
+                    color: _textPrimaryColor,
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.2,
@@ -294,8 +301,8 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
                   isPitLeadOnly || scope == 'pit'
                       ? 'PIT rubrics define criteria and scoring scales. Evaluation grade splits are configured per event in Defense Scheduler.'
                       : 'Capstone weights (Panel / Adviser / Peer) are defined per Defense Stage in Defense Stages Setup. PIT grade splits are defined per event in PIT Events Setup.',
-                  style: const TextStyle(
-                    color: Color(0xFF64748B),
+                  style: TextStyle(
+                    color: _textSecondaryColor,
                     fontSize: 12,
                     height: 1.4,
                     fontWeight: FontWeight.w400,
@@ -414,17 +421,19 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
             duration: const Duration(milliseconds: 180),
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             decoration: BoxDecoration(
-              color: selected ? accent.withValues(alpha: 0.05) : Colors.white,
+              color: selected
+                  ? accent.withValues(alpha: _isDark ? 0.15 : 0.05)
+                  : _surfaceColor,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: selected ? accent : const Color(0xFFE2E8F0),
+                color: selected ? accent : _borderColor,
                 width: selected ? 1.8 : 1,
               ),
               boxShadow: [
                 BoxShadow(
                   color: selected
-                      ? accent.withValues(alpha: 0.12)
-                      : Colors.black.withValues(alpha: 0.03),
+                      ? accent.withValues(alpha: _isDark ? 0.25 : 0.12)
+                      : Colors.black.withValues(alpha: _isDark ? 0.2 : 0.03),
                   blurRadius: selected ? 16 : 8,
                   offset: const Offset(0, 4),
                 ),
@@ -436,7 +445,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: iconBg,
+                    color: _isDark ? accent.withValues(alpha: 0.18) : iconBg,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(icon, color: accent, size: 22),
@@ -452,8 +461,8 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
                         children: [
                           Text(
                             '$count',
-                            style: const TextStyle(
-                              color: Color(0xFF0F172A),
+                            style: TextStyle(
+                              color: _textPrimaryColor,
                               fontSize: 24,
                               fontWeight: FontWeight.w800,
                               height: 1,
@@ -466,7 +475,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: accent.withValues(alpha: 0.1),
+                              color: accent.withValues(alpha: _isDark ? 0.2 : 0.1),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
@@ -487,7 +496,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: selected ? accent : const Color(0xFF334155),
+                          color: selected ? accent : (_isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF334155)),
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
                         ),
@@ -500,7 +509,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
                                 ? Icons.check_circle_rounded
                                 : Icons.filter_alt_outlined,
                             size: 11,
-                            color: selected ? accent : const Color(0xFF94A3B8),
+                            color: selected ? accent : _textSecondaryColor,
                           ),
                           const SizedBox(width: 4),
                           Expanded(
@@ -509,7 +518,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: selected ? accent : const Color(0xFF94A3B8),
+                                color: selected ? accent : _textSecondaryColor,
                                 fontSize: 11,
                                 fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                               ),
@@ -532,427 +541,93 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     RubricEngineState state, {
     required bool isPitLeadOnly,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Filter Command Bar
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final isCompact = constraints.maxWidth < 720;
-                if (isCompact) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _searchField(state),
-                      const SizedBox(height: 12),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            _termSegmentedControl(state),
-                            if (!isPitLeadOnly) ...[
-                              const SizedBox(width: 10),
-                              _scopeSegmentedControl(state),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  );
-                }
-                return Row(
-                  children: [
-                    Expanded(flex: 3, child: _searchField(state)),
-                    const SizedBox(width: 14),
-                    _termSegmentedControl(state),
-                    if (!isPitLeadOnly) ...[
-                      const SizedBox(width: 14),
-                      _scopeSegmentedControl(state),
-                    ],
-                  ],
-                );
-              },
-            ),
-          ),
-          const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
-
-          // Table / Skeletons / Empty State
-          if (state.isLoading)
-            _tableSkeletonLoader()
-          else if (state.rubrics.isEmpty)
-            _emptyRubricTable(isPitLeadOnly: isPitLeadOnly)
-          else
-            _rubricTableWithStickyActions(state),
-
-          if (_showTableScrollHint && state.rubrics.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              child: Row(
-                children: const [
-                  Icon(Icons.swap_horiz_rounded, size: 14, color: Color(0xFF94A3B8)),
-                  SizedBox(width: 6),
-                  Text(
-                    'Scroll horizontally to view all table columns',
-                    style: TextStyle(
-                      color: Color(0xFF94A3B8),
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _searchField(RubricEngineState state) {
-    return SizedBox(
-      height: 42,
-      child: TextField(
-        controller: _searchController,
-        enabled: !state.isSaving,
-        style: const TextStyle(fontSize: 13, color: Color(0xFF0F172A)),
-        decoration: InputDecoration(
-          prefixIcon: const Icon(
-            Icons.search_rounded,
-            color: Color(0xFF64748B),
-            size: 18,
-          ),
-          suffixIcon: _searchController.text.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 16, color: Color(0xFF94A3B8)),
-                  onPressed: () {
-                    _searchController.clear();
-                    ref.read(rubricEngineProvider.notifier).fetchRubrics(search: '');
-                  },
-                )
-              : null,
-          hintText: 'Search rubrics by name or academic year...',
-          hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
-          filled: true,
-          fillColor: const Color(0xFFF8FAFC),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(9),
-            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(9),
-            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(9),
-            borderSide: const BorderSide(color: DefensysUi.primaryMaroon, width: 1.5),
-          ),
-        ),
-        onSubmitted: (value) {
-          ref.read(rubricEngineProvider.notifier).fetchRubrics(search: value);
-        },
-      ),
-    );
-  }
-
-  Widget _scopeSegmentedControl(RubricEngineState state) {
-    final current = state.scope;
-    return Container(
-      height: 42,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _segmentItem(
-            label: 'All Scopes',
-            selected: current.isEmpty,
-            onTap: () => ref.read(rubricEngineProvider.notifier).fetchRubrics(scope: ''),
-          ),
-          _segmentItem(
-            label: 'Capstone',
-            selected: current == 'capstone',
-            onTap: () => ref.read(rubricEngineProvider.notifier).fetchRubrics(scope: 'capstone'),
-          ),
-          _segmentItem(
-            label: 'PIT',
-            selected: current == 'pit',
-            onTap: () => ref.read(rubricEngineProvider.notifier).fetchRubrics(scope: 'pit'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _termSegmentedControl(RubricEngineState state) {
-    final isHistory = state.termContext == 'history';
-    return Container(
-      height: 42,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _segmentItem(
-            label: 'Current Term',
-            selected: !isHistory,
-            onTap: () => ref.read(rubricEngineProvider.notifier).fetchRubrics(termContext: 'active'),
-          ),
-          _segmentItem(
-            label: 'History',
-            selected: isHistory,
-            onTap: () => ref.read(rubricEngineProvider.notifier).fetchRubrics(termContext: 'history'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _segmentItem({
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(7),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 4,
-                    offset: const Offset(0, 1),
-                  ),
-                ]
-              : null,
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? DefensysUi.primaryMaroon : const Color(0xFF64748B),
-            fontSize: 12,
-            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _rubricTableWithStickyActions(RubricEngineState state) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final dataAreaWidth =
-            (constraints.maxWidth - _kRubricActionColumnWidth).clamp(0.0, double.infinity);
-        final needsHorizontalScroll = dataAreaWidth < _kRubricDataTableWidth;
-
-        Widget dataPane = _rubricDataTable(
-          state,
-          useFlexibleColumns: !needsHorizontalScroll,
-        );
-
-        if (needsHorizontalScroll) {
-          dataPane = Scrollbar(
-            controller: _tableHScrollController,
-            thumbVisibility: true,
-            notificationPredicate: (notification) =>
-                notification.metrics.axis == Axis.horizontal,
-            child: SingleChildScrollView(
-              controller: _tableHScrollController,
-              scrollDirection: Axis.horizontal,
-              child: SizedBox(
-                width: _kRubricDataTableWidth,
-                child: dataPane,
-              ),
-            ),
-          );
-        }
-
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: dataPane),
-            _rubricActionColumn(state),
-          ],
-        );
+    return DefensysTableCard(
+      searchController: _searchController,
+      searchHint: 'Search rubrics by name or academic year...',
+      isSearchEnabled: !state.isSaving,
+      onSearchSubmitted: (value) {
+        ref.read(rubricEngineProvider.notifier).fetchRubrics(search: value);
       },
-    );
-  }
-
-  Widget _rubricDataTable(
-    RubricEngineState state, {
-    required bool useFlexibleColumns,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _rubricDataHeader(useFlexibleColumns: useFlexibleColumns),
-        ...state.rubrics.map(
-          (rubric) => _rubricDataRow(
-            rubric,
-            useFlexibleColumns: useFlexibleColumns,
-          ),
+      onSearchCleared: () {
+        ref.read(rubricEngineProvider.notifier).fetchRubrics(search: '');
+      },
+      showScrollHint: _showTableScrollHint && state.rubrics.isNotEmpty,
+      filterControls: [
+        DefensysSegmentedControl<String>(
+          value: state.termContext == 'history' ? 'history' : 'active',
+          items: const [
+            DefensysSegmentItem(value: 'active', label: 'Current Term'),
+            DefensysSegmentItem(value: 'history', label: 'History'),
+          ],
+          onChanged: (val) {
+            ref.read(rubricEngineProvider.notifier).fetchRubrics(termContext: val);
+          },
         ),
+        if (!isPitLeadOnly)
+          DefensysSegmentedControl<String>(
+            value: state.scope,
+            items: const [
+              DefensysSegmentItem(value: '', label: 'All Scopes'),
+              DefensysSegmentItem(value: 'capstone', label: 'Capstone'),
+              DefensysSegmentItem(value: 'pit', label: 'PIT'),
+            ],
+            onChanged: (val) {
+              ref.read(rubricEngineProvider.notifier).fetchRubrics(scope: val);
+            },
+          ),
       ],
-    );
-  }
-
-  Widget _rubricDataHeader({required bool useFlexibleColumns}) {
-    return Container(
-      height: 44,
-      width: useFlexibleColumns ? null : _kRubricDataTableWidth,
-      decoration: const BoxDecoration(
-        color: Color(0xFFF8FAFC),
-        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
-      ),
-      child: useFlexibleColumns
-          ? const Row(
-              children: [
-                _RubricFlexHeaderCell('RUBRIC NAME', flex: 1.55),
-                _RubricFlexHeaderCell('DEFENSE STAGE', flex: 1.2),
-                _RubricFlexHeaderCell('SCOPE', flex: 0.8),
-                _RubricFlexHeaderCell('EVALUATION', flex: 0.95),
-                _RubricFlexHeaderCell('STATUS', flex: 0.9),
-              ],
-            )
-          : const Row(
-              children: [
-                _RubricFixedHeaderCell('RUBRIC NAME', _kColName),
-                _RubricFixedHeaderCell('DEFENSE STAGE', _kColStage),
-                _RubricFixedHeaderCell('SCOPE', _kColScope),
-                _RubricFixedHeaderCell('EVALUATION', _kColEval),
-                _RubricFixedHeaderCell('STATUS', _kColStatus),
-              ],
-            ),
-    );
-  }
-
-  Widget _rubricDataRow(
-    Map<String, dynamic> rubric, {
-    required bool useFlexibleColumns,
-  }) {
-    return Container(
-      width: useFlexibleColumns ? null : _kRubricDataTableWidth,
-      constraints: const BoxConstraints(minHeight: 64),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
-      ),
-      child: useFlexibleColumns
-          ? Row(
-              children: [
-                _RubricFlexTableCell(_rubricNameCell(rubric), flex: 1.55),
-                _RubricFlexTableCell(_defenseStageCell(rubric), flex: 1.2),
-                _RubricFlexTableCell(_scopeCell(rubric), flex: 0.8),
-                _RubricFlexTableCell(_evaluationTypeCell(rubric), flex: 0.95),
-                _RubricFlexTableCell(_statusChip(rubric), flex: 0.9),
-              ],
-            )
-          : Row(
-              children: [
-                _RubricFixedTableCell(_rubricNameCell(rubric), _kColName),
-                _RubricFixedTableCell(_defenseStageCell(rubric), _kColStage),
-                _RubricFixedTableCell(_scopeCell(rubric), _kColScope),
-                _RubricFixedTableCell(_evaluationTypeCell(rubric), _kColEval),
-                _RubricFixedTableCell(_statusChip(rubric), _kColStatus),
-              ],
-            ),
-    );
-  }
-
-  Widget _rubricActionColumn(RubricEngineState state) {
-    return Container(
-      width: _kRubricActionColumnWidth,
-      decoration: const BoxDecoration(
-        border: Border(left: BorderSide(color: Color(0xFFE2E8F0))),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _rubricActionHeader(),
-          ...state.rubrics.map((rubric) => _rubricActionRow(state, rubric)),
+      child: DefensysDataTable<Map<String, dynamic>>(
+        items: state.rubrics,
+        isLoading: state.isLoading,
+        emptyState: _emptyRubricTable(isPitLeadOnly: isPitLeadOnly),
+        horizontalScrollController: _tableHScrollController,
+        onScrollHintChanged: (show) {
+          if (_showTableScrollHint != show && mounted) {
+            setState(() => _showTableScrollHint = show);
+          }
+        },
+        stickyActionColumn: DefensysActionColumn(
+          width: _kRubricActionColumnWidth,
+          title: 'ACTION',
+          alignment: Alignment.center,
+          builder: (context, rubric, _) => _buildActions(state, rubric),
+        ),
+        columns: [
+          DefensysTableColumn(
+            title: 'RUBRIC NAME',
+            flex: 1.55,
+            minWidth: _kColName,
+            cellBuilder: (context, rubric, _) => _rubricNameCell(rubric),
+          ),
+          DefensysTableColumn(
+            title: 'DEFENSE STAGE',
+            flex: 1.2,
+            minWidth: _kColStage,
+            cellBuilder: (context, rubric, _) => _defenseStageCell(rubric),
+          ),
+          DefensysTableColumn(
+            title: 'SCOPE',
+            flex: 0.8,
+            minWidth: _kColScope,
+            cellBuilder: (context, rubric, _) => _scopeCell(rubric),
+          ),
+          DefensysTableColumn(
+            title: 'EVALUATION',
+            flex: 0.95,
+            minWidth: _kColEval,
+            cellBuilder: (context, rubric, _) => _evaluationTypeCell(rubric),
+          ),
+          DefensysTableColumn(
+            title: 'STATUS',
+            flex: 0.9,
+            minWidth: _kColStatus,
+            cellBuilder: (context, rubric, _) => _statusChip(rubric),
+          ),
         ],
       ),
     );
   }
 
-  Widget _rubricActionHeader() {
-    return Container(
-      height: 44,
-      alignment: Alignment.center,
-      decoration: const BoxDecoration(
-        color: Color(0xFFF8FAFC),
-        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
-      ),
-      child: const Text(
-        'ACTION',
-        style: TextStyle(
-          color: Color(0xFF64748B),
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 0.5,
-        ),
-      ),
-    );
-  }
-
-  Widget _rubricActionRow(RubricEngineState state, Map<String, dynamic> rubric) {
-    return Container(
-      constraints: const BoxConstraints(minHeight: 64),
-      alignment: Alignment.center,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
-      ),
-      child: _buildActions(state, rubric),
-    );
-  }
-
-  Widget _tableSkeletonLoader() {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        children: List.generate(
-          5,
-          (index) => Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            height: 48,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _emptyRubricTable({required bool isPitLeadOnly}) {
     return DefensysEmptyState.table(
@@ -994,8 +669,8 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
           rubric['name']?.toString() ?? '-',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Color(0xFF0F172A),
+          style: TextStyle(
+            color: _textPrimaryColor,
             fontSize: 13.5,
             fontWeight: FontWeight.w700,
           ),
@@ -1004,15 +679,15 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.schedule_rounded, size: 12, color: Color(0xFF94A3B8)),
+            Icon(Icons.schedule_rounded, size: 12, color: _textSecondaryColor),
             const SizedBox(width: 4),
             Flexible(
               child: Text(
                 _rubricNameSubtitle(rubric),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF64748B),
+                style: TextStyle(
+                  color: _textSecondaryColor,
                   fontSize: 11.5,
                   fontWeight: FontWeight.w500,
                 ),
@@ -1058,16 +733,16 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: isPit ? const Color(0xFFF1F5F9) : const Color(0xFFF8FAFC),
+        color: _subtleFillColor,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: isPit ? const Color(0xFFCBD5E1) : const Color(0xFFE2E8F0)),
+        border: Border.all(color: _borderColor),
       ),
       child: Text(
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: Color(0xFF334155),
+        style: TextStyle(
+          color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF334155),
           fontSize: 12,
           fontWeight: FontWeight.w600,
         ),
@@ -1081,14 +756,22 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
       decoration: BoxDecoration(
-        color: isPit ? const Color(0xFFF0FDF4) : const Color(0xFFEFF6FF),
+        color: isPit
+            ? (_isDark ? const Color(0xFF064E3B).withValues(alpha: 0.35) : const Color(0xFFF0FDF4))
+            : (_isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.35) : const Color(0xFFEFF6FF)),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: isPit ? const Color(0xFFBBF2D0) : const Color(0xFFBFDBFE)),
+        border: Border.all(
+          color: isPit
+              ? (_isDark ? const Color(0xFF064E3B).withValues(alpha: 0.7) : const Color(0xFFBBF2D0))
+              : (_isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.7) : const Color(0xFFBFDBFE)),
+        ),
       ),
       child: Text(
         isPit ? 'PIT' : 'Capstone',
         style: TextStyle(
-          color: isPit ? const Color(0xFF166534) : const Color(0xFF1E40AF),
+          color: isPit
+              ? (_isDark ? const Color(0xFF34D399) : const Color(0xFF166534))
+              : (_isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF)),
           fontSize: 11,
           fontWeight: FontWeight.w700,
         ),
@@ -1103,9 +786,27 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   Widget _evaluationTypeChip(String? evalType) {
     final type = evalType ?? 'panel';
     final (label, bg, border, fg, icon) = switch (type) {
-      'adviser' => ('Adviser', const Color(0xFFECFDF5), const Color(0xFFA7F3D0), const Color(0xFF047857), Icons.school_outlined),
-      'peer' => ('Peer', const Color(0xFFEFF6FF), const Color(0xFFBFDBFE), const Color(0xFF1D4ED8), Icons.people_outline),
-      _ => ('Panel', const Color(0xFFFFF1F2), const Color(0xFFFECDD3), const Color(0xFF9F1239), Icons.groups_outlined),
+      'adviser' => (
+        'Adviser',
+        _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.35) : const Color(0xFFECFDF5),
+        _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.7) : const Color(0xFFA7F3D0),
+        _isDark ? const Color(0xFF34D399) : const Color(0xFF047857),
+        Icons.school_outlined,
+      ),
+      'peer' => (
+        'Peer',
+        _isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.35) : const Color(0xFFEFF6FF),
+        _isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.7) : const Color(0xFFBFDBFE),
+        _isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
+        Icons.people_outline,
+      ),
+      _ => (
+        'Panel',
+        _isDark ? const Color(0xFF881337).withValues(alpha: 0.35) : const Color(0xFFFFF1F2),
+        _isDark ? const Color(0xFF881337).withValues(alpha: 0.7) : const Color(0xFFFECDD3),
+        _isDark ? const Color(0xFFFDA4AF) : const Color(0xFF9F1239),
+        Icons.groups_outlined,
+      ),
     };
 
     return Container(
@@ -1151,13 +852,13 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     return Theme(
       data: Theme.of(context).copyWith(
         popupMenuTheme: PopupMenuThemeData(
-          color: Colors.white,
+          color: _surfaceColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
-            side: const BorderSide(color: Color(0xFFE2E8F0)),
+            side: BorderSide(color: _borderColor),
           ),
           elevation: 6,
-          shadowColor: Colors.black.withValues(alpha: 0.1),
+          shadowColor: Colors.black.withValues(alpha: _isDark ? 0.3 : 0.1),
         ),
       ),
       child: PopupMenuButton<String>(
@@ -1168,14 +869,14 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
           height: 30,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
+            color: _isDark ? _subtleFillColor : const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: _borderColor),
           ),
-          child: const Icon(
+          child: Icon(
             Icons.more_horiz_rounded,
             size: 17,
-            color: AppColors.textPrimary,
+            color: _textPrimaryColor,
           ),
         ),
         padding: EdgeInsets.zero,
@@ -1201,38 +902,38 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
         },
         itemBuilder: (context) => [
           if (isHardLocked)
-            const PopupMenuItem<String>(
+            PopupMenuItem<String>(
               value: 'view',
               height: 36,
               child: Row(
                 children: [
-                  Icon(Icons.visibility_outlined, size: 15, color: Color(0xFF2563EB)),
-                  SizedBox(width: 9),
+                  const Icon(Icons.visibility_outlined, size: 15, color: Color(0xFF2563EB)),
+                  const SizedBox(width: 9),
                   Text(
                     'View Details',
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+                      color: _textPrimaryColor,
                     ),
                   ),
                 ],
               ),
             )
           else ...[
-            const PopupMenuItem<String>(
+            PopupMenuItem<String>(
               value: 'edit',
               height: 36,
               child: Row(
                 children: [
-                  Icon(Icons.edit_outlined, size: 15, color: AppColors.textPrimary),
-                  SizedBox(width: 9),
+                  Icon(Icons.edit_outlined, size: 15, color: _textPrimaryColor),
+                  const SizedBox(width: 9),
                   Text(
                     'Edit Rubric',
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+                      color: _textPrimaryColor,
                     ),
                   ),
                 ],
@@ -1358,8 +1059,20 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   Widget _statusChip(Map<String, dynamic> rubric) {
     final published = rubric['status'] == 'published';
     final (label, bg, border, fg, icon) = published
-        ? ('Published', const Color(0xFFF0FDF4), const Color(0xFFBBF2D0), const Color(0xFF15803D), Icons.check_circle_outline_rounded)
-        : ('Draft', const Color(0xFFFFFBEB), const Color(0xFFFDE68A), const Color(0xFFB45309), Icons.edit_note_rounded);
+        ? (
+            'Published',
+            _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.35) : const Color(0xFFF0FDF4),
+            _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.7) : const Color(0xFFBBF2D0),
+            _isDark ? const Color(0xFF34D399) : const Color(0xFF15803D),
+            Icons.check_circle_outline_rounded,
+          )
+        : (
+            'Draft',
+            _isDark ? const Color(0xFF78350F).withValues(alpha: 0.35) : const Color(0xFFFFFBEB),
+            _isDark ? const Color(0xFF78350F).withValues(alpha: 0.7) : const Color(0xFFFDE68A),
+            _isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
+            Icons.edit_note_rounded,
+          );
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
@@ -1400,96 +1113,3 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   }
 }
 
-class _RubricFlexHeaderCell extends StatelessWidget {
-  const _RubricFlexHeaderCell(this.text, {required this.flex});
-
-  final String text;
-  final double flex;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      flex: (flex * 100).round(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            text,
-            style: const TextStyle(
-              color: Color(0xFF64748B),
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RubricFlexTableCell extends StatelessWidget {
-  const _RubricFlexTableCell(this.child, {required this.flex});
-
-  final Widget child;
-  final double flex;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      flex: (flex * 100).round(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Align(alignment: Alignment.centerLeft, child: child),
-      ),
-    );
-  }
-}
-
-class _RubricFixedHeaderCell extends StatelessWidget {
-  const _RubricFixedHeaderCell(this.text, this.width);
-
-  final String text;
-  final double width;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            text,
-            style: const TextStyle(
-              color: Color(0xFF64748B),
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RubricFixedTableCell extends StatelessWidget {
-  const _RubricFixedTableCell(this.child, this.width);
-
-  final Widget child;
-  final double width;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Align(alignment: Alignment.centerLeft, child: child),
-      ),
-    );
-  }
-}

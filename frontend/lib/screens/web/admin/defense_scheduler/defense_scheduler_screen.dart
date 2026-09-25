@@ -9,6 +9,7 @@ import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/services/defense_stages_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/defensys_skeleton.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 
@@ -344,8 +345,10 @@ class _DefenseSchedulerScreenState
         ? _stageLabel(state)
         : _eventController.text.trim();
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: DefensysUi.bgLight,
+      backgroundColor: isDark ? DefensysTokens.mistBackground : DefensysUi.bgLight,
       body: RefreshIndicator(
         color: AppColors.maroon,
         onRefresh: () =>

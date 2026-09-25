@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
-import '../../../../../theme/app_theme.dart';
+import '../../../../../theme/defensys_tokens.dart';
 
 /// Data point representing a criterion on the Competency Benchmark Chart.
 class RadarCriterionPoint {
@@ -148,6 +148,7 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
     );
   }
 
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   bool get _isOverall => widget.selectedStageId == 'all';
   bool get _allSelected => _showPanel && _showAdviser && _showPeer;
 
@@ -169,21 +170,21 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
       return Container(
         height: 420,
         alignment: Alignment.center,
-        child: const CircularProgressIndicator(color: AppColors.maroon),
+        child: CircularProgressIndicator(color: DefensysTokens.maroonOf(context)),
       );
     }
 
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
+        color: DefensysTokens.surfaceOf(context),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x04000000),
-            blurRadius: 6,
-            offset: Offset(0, 2),
+            color: _isDark ? const Color(0x20000000) : const Color(0x04000000),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
           ),
         ],
       ),
@@ -204,12 +205,12 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
                     width: 32,
                     height: 32,
                     decoration: BoxDecoration(
-                      color: AppColors.maroon.withValues(alpha: 0.08),
+                      color: DefensysTokens.maroonOf(context).withValues(alpha: _isDark ? 0.20 : 0.08),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.bar_chart_rounded,
-                      color: AppColors.maroon,
+                      color: DefensysTokens.maroonOf(context),
                       size: 18,
                     ),
                   ),
@@ -222,19 +223,21 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
                         _isOverall
                             ? 'Cohort Stages Benchmark'
                             : '${widget.stageTitle}: Competencies',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
-                          color: Color(0xFF0F172A),
+                          color: DefensysTokens.textPrimaryOf(context),
+                          letterSpacing: -0.2,
                         ),
                       ),
+                      const SizedBox(height: 1),
                       Text(
                         _isOverall
                             ? 'Multi-role evaluation consensus across defense stages'
                             : 'All individual rubric criteria benchmarked at 75%',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
-                          color: Color(0xFF64748B),
+                          color: DefensysTokens.textSecondaryOf(context),
                         ),
                       ),
                     ],
@@ -242,7 +245,7 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
                 ],
               ),
 
-              // Right-Side Controls: Mode Switcher & Stage Dropdown (Option 1)
+              // Right-Side Controls: Mode Switcher & Stage Dropdown
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -250,9 +253,9 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
                   Container(
                     padding: const EdgeInsets.all(2.5),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
+                      color: DefensysTokens.surfaceHigherOf(context),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: DefensysTokens.borderOf(context)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -272,7 +275,7 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
                   ),
                   const SizedBox(width: 8),
 
-                  // Option 1: Stage Dropdown
+                  // Stage Dropdown
                   _buildStageDropdown(),
                 ],
               ),
@@ -280,7 +283,7 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
           ),
           const SizedBox(height: 14),
 
-          // 2. Sub-Header: Multi-Select Role Toggles & 75% Benchmark (Combined is GONE!)
+          // 2. Sub-Header: Multi-Select Role Toggles & 75% Benchmark
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -344,19 +347,6 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
             _isOverall ? _buildOverallStageChart() : _buildSingleStageCriteriaChart()
           else
             _buildRankedBarsView(),
-
-          const SizedBox(height: 8),
-          // Institutional Passing Threshold Caption
-          const Center(
-            child: Text(
-              'Evaluations are benchmarked against the 75.0% institutional passing threshold.',
-              style: TextStyle(
-                fontSize: 11,
-                color: Color(0xFF64748B),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -366,14 +356,14 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
     final stages = widget.availableStages;
 
     final items = <DropdownMenuItem<String>>[
-      const DropdownMenuItem(
+      DropdownMenuItem(
         value: 'all',
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.public_rounded, size: 14, color: AppColors.maroon),
-            SizedBox(width: 6),
-            Text('Overall (All Stages)'),
+            Icon(Icons.public_rounded, size: 14, color: DefensysTokens.maroonOf(context)),
+            const SizedBox(width: 6),
+            const Text('Overall (All Stages)'),
           ],
         ),
       ),
@@ -446,27 +436,28 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
       height: 34,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFCBD5E1)),
-        boxShadow: const [
+        border: Border.all(color: DefensysTokens.borderOf(context)),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x04000000),
+            color: _isDark ? const Color(0x20000000) : const Color(0x04000000),
             blurRadius: 4,
-            offset: Offset(0, 1),
+            offset: const Offset(0, 1),
           ),
         ],
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: dropdownValue,
-          icon: const Icon(
+          icon: Icon(
             Icons.keyboard_arrow_down_rounded,
             size: 16,
-            color: Color(0xFF475569),
+            color: DefensysTokens.textSecondaryOf(context),
           ),
-          style: const TextStyle(
-            color: Color(0xFF0F172A),
+          dropdownColor: DefensysTokens.panelOf(context),
+          style: TextStyle(
+            color: DefensysTokens.textPrimaryOf(context),
             fontSize: 12,
             fontWeight: FontWeight.w700,
           ),
@@ -494,12 +485,13 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
         duration: const Duration(milliseconds: 140),
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
+          color: isSelected ? DefensysTokens.panelOf(context) : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
+          border: isSelected ? Border.all(color: DefensysTokens.borderOf(context)) : null,
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
+                    color: Colors.black.withValues(alpha: _isDark ? 0.20 : 0.05),
                     blurRadius: 3,
                     offset: const Offset(0, 1),
                   ),
@@ -512,7 +504,7 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
             Icon(
               icon,
               size: 13,
-              color: isSelected ? AppColors.maroon : const Color(0xFF64748B),
+              color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.textSecondaryOf(context),
             ),
             const SizedBox(width: 4),
             Text(
@@ -520,7 +512,7 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
               style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? AppColors.maroon : const Color(0xFF475569),
+                color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.textSecondaryOf(context),
               ),
             ),
           ],
@@ -538,13 +530,13 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
         decoration: BoxDecoration(
           color: _allSelected
-              ? AppColors.maroon.withValues(alpha: 0.10)
-              : const Color(0xFFF8FAFC),
+              ? DefensysTokens.maroonOf(context).withValues(alpha: _isDark ? 0.22 : 0.10)
+              : DefensysTokens.surfaceHigherOf(context),
           borderRadius: BorderRadius.circular(6),
           border: Border.all(
             color: _allSelected
-                ? AppColors.maroon.withValues(alpha: 0.4)
-                : const Color(0xFFE2E8F0),
+                ? DefensysTokens.maroonOf(context).withValues(alpha: 0.4)
+                : DefensysTokens.borderOf(context),
             width: 1.0,
           ),
         ),
@@ -554,15 +546,15 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
             Icon(
               Icons.layers_outlined,
               size: 13,
-              color: _allSelected ? AppColors.maroon : const Color(0xFF64748B),
+              color: _allSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.textSecondaryOf(context),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 5),
             Text(
               'All Roles',
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: _allSelected ? FontWeight.w700 : FontWeight.w500,
-                color: _allSelected ? AppColors.maroon : const Color(0xFF475569),
+                color: _allSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.textSecondaryOf(context),
               ),
             ),
           ],
@@ -585,10 +577,12 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
         duration: const Duration(milliseconds: 140),
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
         decoration: BoxDecoration(
-          color: isSelected ? color.withValues(alpha: 0.10) : const Color(0xFFF8FAFC),
+          color: isSelected
+              ? color.withValues(alpha: _isDark ? 0.20 : 0.10)
+              : DefensysTokens.surfaceHigherOf(context),
           borderRadius: BorderRadius.circular(6),
           border: Border.all(
-            color: isSelected ? color.withValues(alpha: 0.4) : const Color(0xFFE2E8F0),
+            color: isSelected ? color.withValues(alpha: 0.4) : DefensysTokens.borderOf(context),
             width: 1.0,
           ),
         ),
@@ -599,7 +593,7 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
               width: 7,
               height: 7,
               decoration: BoxDecoration(
-                color: isSelected ? color : const Color(0xFF94A3B8),
+                color: isSelected ? color : DefensysTokens.textSecondaryOf(context),
                 shape: BoxShape.circle,
               ),
             ),
@@ -609,7 +603,7 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? color : const Color(0xFF475569),
+                color: isSelected ? color : DefensysTokens.textSecondaryOf(context),
               ),
             ),
           ],
@@ -627,13 +621,13 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: _showBenchmark
-              ? const Color(0xFFDC2626).withValues(alpha: 0.08)
-              : const Color(0xFFF1F5F9),
+              ? const Color(0xFFDC2626).withValues(alpha: _isDark ? 0.20 : 0.08)
+              : DefensysTokens.surfaceHigherOf(context),
           borderRadius: BorderRadius.circular(6),
           border: Border.all(
             color: _showBenchmark
-                ? const Color(0xFFDC2626).withValues(alpha: 0.5)
-                : const Color(0xFFCBD5E1),
+                ? const Color(0xFFDC2626).withValues(alpha: 0.45)
+                : DefensysTokens.borderOf(context),
             width: 1.0,
           ),
         ),
@@ -643,7 +637,7 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
             Container(
               width: 10,
               height: 2,
-              color: _showBenchmark ? const Color(0xFFDC2626) : const Color(0xFF94A3B8),
+              color: _showBenchmark ? const Color(0xFFDC2626) : DefensysTokens.textSecondaryOf(context),
             ),
             const SizedBox(width: 5),
             Text(
@@ -651,7 +645,7 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: _showBenchmark ? FontWeight.w700 : FontWeight.w500,
-                color: _showBenchmark ? const Color(0xFFDC2626) : const Color(0xFF64748B),
+                color: _showBenchmark ? const Color(0xFFDC2626) : DefensysTokens.textSecondaryOf(context),
               ),
             ),
           ],
@@ -705,9 +699,9 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
 
         return Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: DefensysTokens.surfaceOf(context),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: DefensysTokens.borderOf(context)),
           ),
           padding: const EdgeInsets.only(top: 10, right: 12, bottom: 4),
           child: SingleChildScrollView(
@@ -718,27 +712,27 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
               child: SfCartesianChart(
                 tooltipBehavior: _tooltipBehavior,
                 margin: const EdgeInsets.fromLTRB(10, 10, 16, 10),
-                primaryXAxis: const CategoryAxis(
+                primaryXAxis: CategoryAxis(
                   labelStyle: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF0F172A),
+                    color: DefensysTokens.textPrimaryOf(context),
                   ),
-                  majorGridLines: MajorGridLines(width: 0),
-                  axisLine: AxisLine(color: Color(0xFFCBD5E1), width: 1.0),
+                  majorGridLines: const MajorGridLines(width: 0),
+                  axisLine: AxisLine(color: DefensysTokens.borderOf(context), width: 1.0),
                 ),
                 primaryYAxis: NumericAxis(
                   minimum: 0,
                   maximum: 100,
                   interval: 25,
                   labelFormat: '{value}%',
-                  labelStyle: const TextStyle(
+                  labelStyle: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w500,
-                    color: Color(0xFF64748B),
+                    color: DefensysTokens.textSecondaryOf(context),
                   ),
-                  majorGridLines: const MajorGridLines(
-                    color: Color(0xFFF1F5F9),
+                  majorGridLines: MajorGridLines(
+                    color: DefensysTokens.borderOf(context).withValues(alpha: _isDark ? 0.3 : 0.6),
                     width: 1.0,
                   ),
                   plotBands: <PlotBand>[
@@ -768,7 +762,7 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
                       xValueMapper: (_StageClusterData d, _) => d.stageName,
                       yValueMapper: (_StageClusterData d, _) => d.panelScore ?? 0,
                       color: const Color(0xFF0284C7),
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
                       spacing: 0.12,
                       width: 0.65,
                     ),
@@ -779,7 +773,7 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
                       xValueMapper: (_StageClusterData d, _) => d.stageName,
                       yValueMapper: (_StageClusterData d, _) => d.adviserScore ?? 0,
                       color: const Color(0xFF059669),
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
                       spacing: 0.12,
                       width: 0.65,
                     ),
@@ -790,7 +784,7 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
                       xValueMapper: (_StageClusterData d, _) => d.stageName,
                       yValueMapper: (_StageClusterData d, _) => d.peerScore ?? 0,
                       color: const Color(0xFF7C3AED),
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
                       spacing: 0.12,
                       width: 0.65,
                     ),
@@ -848,7 +842,7 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
           criterionName: cleanedName,
           score: c.combinedScore!,
           roleName: 'Evaluated',
-          roleColor: AppColors.maroon,
+          roleColor: DefensysTokens.maroonOf(context),
         ));
       }
     }
@@ -857,9 +851,9 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
       return Container(
         height: 380,
         alignment: Alignment.center,
-        child: const Text(
+        child: Text(
           'No criteria match the active evaluator role filters.',
-          style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+          style: TextStyle(fontSize: 13, color: DefensysTokens.textSecondaryOf(context)),
         ),
       );
     }
@@ -871,9 +865,9 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
 
         return Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: DefensysTokens.surfaceOf(context),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: DefensysTokens.borderOf(context)),
           ),
           padding: const EdgeInsets.only(top: 10, right: 12, bottom: 4),
           child: SingleChildScrollView(
@@ -889,29 +883,29 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
                   format: 'point.x\npoint.y%',
                 ),
                 margin: const EdgeInsets.fromLTRB(10, 10, 16, 10),
-                primaryXAxis: const CategoryAxis(
+                primaryXAxis: CategoryAxis(
                   labelRotation: -25,
                   labelIntersectAction: AxisLabelIntersectAction.none,
                   labelStyle: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF334155),
+                    color: DefensysTokens.textPrimaryOf(context),
                   ),
-                  majorGridLines: MajorGridLines(width: 0),
-                  axisLine: AxisLine(color: Color(0xFFCBD5E1), width: 1.0),
+                  majorGridLines: const MajorGridLines(width: 0),
+                  axisLine: AxisLine(color: DefensysTokens.borderOf(context), width: 1.0),
                 ),
                 primaryYAxis: NumericAxis(
                   minimum: 0,
                   maximum: 100,
                   interval: 25,
                   labelFormat: '{value}%',
-                  labelStyle: const TextStyle(
+                  labelStyle: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w500,
-                    color: Color(0xFF64748B),
+                    color: DefensysTokens.textSecondaryOf(context),
                   ),
-                  majorGridLines: const MajorGridLines(
-                    color: Color(0xFFF1F5F9),
+                  majorGridLines: MajorGridLines(
+                    color: DefensysTokens.borderOf(context).withValues(alpha: _isDark ? 0.3 : 0.6),
                     width: 1.0,
                   ),
                   plotBands: <PlotBand>[
@@ -940,7 +934,7 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
                     xValueMapper: (_SingleCriterionData d, _) => d.criterionName,
                     yValueMapper: (_SingleCriterionData d, _) => d.score,
                     pointColorMapper: (_SingleCriterionData d, _) => d.roleColor,
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
                     width: 0.55,
                   ),
                 ],
@@ -977,16 +971,16 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
     return Container(
       constraints: const BoxConstraints(maxHeight: 380),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: ListView.separated(
         shrinkWrap: true,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         itemCount: sorted.length,
         separatorBuilder: (_, __) =>
-            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+            Divider(height: 1, color: DefensysTokens.borderOf(context).withValues(alpha: 0.5)),
         itemBuilder: (context, index) {
           final item = sorted[index];
           final score = item.combinedScore ?? 0;
@@ -1009,10 +1003,10 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
                     Expanded(
                       child: Text(
                         cleanedName,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
-                          color: Color(0xFF0F172A),
+                          color: DefensysTokens.textPrimaryOf(context),
                         ),
                       ),
                     ),
@@ -1022,9 +1016,13 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
                           horizontal: 7, vertical: 2),
                       decoration: BoxDecoration(
                         color: isPassing
-                            ? const Color(0xFFECFDF5)
-                            : const Color(0xFFFEF2F2),
+                            ? (_isDark ? const Color(0x20059669) : const Color(0xFFECFDF5))
+                            : (_isDark ? const Color(0x20DC2626) : const Color(0xFFFEF2F2)),
                         borderRadius: BorderRadius.circular(5),
+                        border: Border.all(
+                          color: (isPassing ? const Color(0xFF059669) : const Color(0xFFDC2626)).withValues(alpha: 0.25),
+                          width: 0.8,
+                        ),
                       ),
                       child: Text(
                         deltaText,
@@ -1045,7 +1043,7 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
                         fontSize: 13,
                         fontWeight: FontWeight.w800,
                         color: isPassing
-                            ? const Color(0xFF0F172A)
+                            ? DefensysTokens.textPrimaryOf(context)
                             : const Color(0xFFDC2626),
                         fontFeatures: const [FontFeature.tabularFigures()],
                       ),
@@ -1061,7 +1059,7 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
                       height: 8,
                       width: double.infinity,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
+                        color: DefensysTokens.surfaceHigherOf(context),
                         borderRadius: BorderRadius.circular(4),
                       ),
                     ),

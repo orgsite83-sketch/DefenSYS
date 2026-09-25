@@ -6,6 +6,7 @@ import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/academic/student_academic_records_provider.dart';
 import 'package:defensys/services/user_management_provider.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/confirm_dialog.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 
@@ -49,6 +50,13 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   static const _ink = DefensysUi.textDark;
   static const _muted = DefensysUi.steelGrey;
   static const _line = Color(0xFFE5E7EB);
+
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _surfaceColor => _isDark ? DefensysTokens.mistSurface : Colors.white;
+  Color get _borderColor => _isDark ? DefensysTokens.mistBorder : _line;
+  Color get _textPrimaryColor => _isDark ? DefensysTokens.textPrimaryDark : _ink;
+  Color get _textSecondaryColor => _isDark ? DefensysTokens.textSecondaryDark : _muted;
+  Color get _subtleFillColor => _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6);
 
   late UserManagementTab _currentTab;
   _SubView _subView = _SubView.none;
@@ -588,12 +596,12 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           // Primary Tab Bar Switcher
           Container(
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: _surfaceColor,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _line),
+              border: Border.all(color: _borderColor),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.03),
+                  color: Colors.black.withValues(alpha: _isDark ? 0.2 : 0.03),
                   blurRadius: 10,
                   offset: const Offset(0, 3),
                 ),
@@ -674,7 +682,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               Icon(
                 icon,
                 size: 17,
-                color: isSelected ? Colors.white : _muted,
+                color: isSelected ? Colors.white : _textSecondaryColor,
               ),
               const SizedBox(width: 8),
               Text(
@@ -682,7 +690,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                  color: isSelected ? Colors.white : _ink,
+                  color: isSelected ? Colors.white : _textPrimaryColor,
                   fontFamily: DefensysUi.fontFamily,
                 ),
               ),
@@ -692,7 +700,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 decoration: BoxDecoration(
                   color: isSelected
                       ? Colors.white.withValues(alpha: 0.22)
-                      : const Color(0xFFF3F4F6),
+                      : _subtleFillColor,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -700,7 +708,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: isSelected ? Colors.white : _muted,
+                    color: isSelected ? Colors.white : _textSecondaryColor,
                   ),
                 ),
               ),

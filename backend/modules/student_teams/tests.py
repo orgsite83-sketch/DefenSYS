@@ -371,6 +371,70 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(team.memberships.count(), 2)
         self.assertEqual(team.adviser_id, self.adviser.id)
 
+    def test_bulk_import_multiple_teams_same_section_different_advisers(self):
+        self._activate_capstone_intake_semester()
+        student_3 = User.objects.create_user(
+            username='2024-0003',
+            password='pass12345',
+            role='student',
+            first_name='Mark',
+            last_name='Reyes',
+        )
+        student_4 = User.objects.create_user(
+            username='2024-0004',
+            password='pass12345',
+            role='student',
+            first_name='Anna',
+            last_name='Garcia',
+        )
+        for s in (student_3, student_4):
+            StudentAcademicRecord.objects.create(
+                student=s,
+                semester=self.second_semester,
+                year_level='3rd Year',
+            )
+
+        response = self.client.post(
+            '/api/teams/bulk-import/',
+            {
+                'teams': [
+                    {
+                        'team_name': 'Team Alpha',
+                        'project_title': 'Campus Navigation System',
+                        'level': StudentTeam.LEVEL_3_CAPSTONE,
+                        'year_level': '3rd Year',
+                        'section': 'BSIT-4A',
+                        'member_ids': ['Juan Dela Cruz', 'Maria Santos'],
+                        'leader_id': 'Juan Dela Cruz',
+                        'adviser_id': 'Ada Lovelace',
+                    },
+                    {
+                        'team_name': 'Team Beta',
+                        'project_title': 'Automated Library Portal',
+                        'level': StudentTeam.LEVEL_3_CAPSTONE,
+                        'year_level': '3rd Year',
+                        'section': 'BSIT-4A',
+                        'member_ids': ['Mark Reyes', 'Anna Garcia'],
+                        'leader_id': 'Mark Reyes',
+                        'adviser_id': 'Grace Hopper',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['created_count'], 2)
+        team_a = StudentTeam.objects.get(name='Team Alpha')
+        team_b = StudentTeam.objects.get(name='Team Beta')
+        self.assertEqual(team_a.section, 'BSIT-4A')
+        self.assertEqual(team_b.section, 'BSIT-4A')
+        self.assertEqual(team_a.adviser_id, self.adviser.id)
+        self.assertEqual(team_b.adviser_id, self.adviser_b.id)
+        for s in (self.student_1, self.student_2, student_3, student_4):
+            record = StudentAcademicRecord.objects.get(student=s, semester=self.second_semester)
+            self.assertEqual(record.section, 'BSIT-4A')
+
     def test_bulk_import_accepts_mixed_case_names(self):
         self._activate_capstone_intake_semester()
         response = self.client.post(
@@ -429,6 +493,65 @@ class StudentTeamApiTests(APITestCase):
         self.assertFalse(row['ready'])
         self.assertTrue(
             any('multiple users match' in issue.lower() for issue in row['issues']),
+        )
+
+    def test_bulk_import_resolves_inverted_name(self):
+        self._activate_capstone_intake_semester()
+        row = self._bulk_team_row('Team Inverted', leader_id='Dela Cruz, Juan')
+        row['member_ids'] = ['Dela Cruz, Juan', 'Santos, Maria']
+        response = self.client.post(
+            '/api/teams/bulk-import/preview/',
+            {'teams': [row]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['rows'][0]['ready'])
+
+    def test_bulk_import_resolves_initial_and_surname(self):
+        self._activate_capstone_intake_semester()
+        row = self._bulk_team_row('Team Initial', leader_id='Dela Cruz, J.')
+        row['member_ids'] = ['Dela Cruz, J.', 'Santos, Maria']
+        response = self.client.post(
+            '/api/teams/bulk-import/preview/',
+            {'teams': [row]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['rows'][0]['ready'])
+
+    def test_bulk_import_resolves_unique_surname(self):
+        self._activate_capstone_intake_semester()
+        # Juan Dela Cruz is the only Dela Cruz
+        row = self._bulk_team_row('Team Unique Surname', leader_id='Dela Cruz')
+        row['member_ids'] = ['Dela Cruz', 'Maria Santos']
+        response = self.client.post(
+            '/api/teams/bulk-import/preview/',
+            {'teams': [row]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['rows'][0]['ready'])
+
+    def test_bulk_import_flags_ambiguous_surname(self):
+        self._activate_capstone_intake_semester()
+        User.objects.create_user(
+            username='2024-0088',
+            password='pass12345',
+            role='student',
+            first_name='Pedro',
+            last_name='Dela Cruz',
+        )
+        row = self._bulk_team_row('Team Ambiguous Surname', leader_id='Dela Cruz')
+        row['member_ids'] = ['Dela Cruz', 'Maria Santos']
+        response = self.client.post(
+            '/api/teams/bulk-import/preview/',
+            {'teams': [row]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data['rows'][0]['ready'])
+        self.assertTrue(
+            any('multiple users share the surname' in issue.lower() for issue in response.data['rows'][0]['issues']),
         )
 
     def test_bulk_import_error_includes_team_name(self):

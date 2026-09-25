@@ -85,12 +85,44 @@ class StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // In dark mode, calculate refined dark tones for badges
+    Color effectiveBg = background;
+    Color effectiveFg = textColor;
+    Color effectiveBorder = borderColor;
+
+    if (isDark) {
+      if (background == DefensysTokens.successBg) {
+        effectiveBg = const Color(0xFF064E3B).withValues(alpha: 0.35);
+        effectiveFg = const Color(0xFF34D399);
+        effectiveBorder = const Color(0xFF059669).withValues(alpha: 0.5);
+      } else if (background == DefensysTokens.warningBg) {
+        effectiveBg = const Color(0xFF451A03).withValues(alpha: 0.35);
+        effectiveFg = const Color(0xFFFBBF24);
+        effectiveBorder = const Color(0xFFB45309).withValues(alpha: 0.5);
+      } else if (background == DefensysTokens.dangerBg) {
+        effectiveBg = const Color(0xFF450A0A).withValues(alpha: 0.35);
+        effectiveFg = const Color(0xFFF87171);
+        effectiveBorder = const Color(0xFF991B1B).withValues(alpha: 0.5);
+      } else if (background == DefensysTokens.infoBg) {
+        effectiveBg = const Color(0xFF172554).withValues(alpha: 0.35);
+        effectiveFg = const Color(0xFF60A5FA);
+        effectiveBorder = const Color(0xFF1D4ED8).withValues(alpha: 0.5);
+      } else if (background == DefensysTokens.neutralBg ||
+          background == DefensysTokens.archivedBg) {
+        effectiveBg = const Color(0xFF27272A);
+        effectiveFg = const Color(0xFFA1A1AA);
+        effectiveBorder = const Color(0xFF3F3F46);
+      }
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: background,
+        color: effectiveBg,
         borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-        border: Border.all(color: borderColor, width: 1.0),
+        border: Border.all(color: effectiveBorder, width: 1.0),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -101,21 +133,25 @@ class StatusBadge extends StatelessWidget {
               width: 6,
               height: 6,
               decoration: BoxDecoration(
-                color: textColor,
+                color: effectiveFg,
                 shape: BoxShape.circle,
               ),
             ),
             const SizedBox(width: 5),
           ],
-          Text(
-            label,
-            style: TextStyle(
-              fontFamily: DefensysTokens.fontFamilyInter,
-              color: textColor,
-              fontSize: 11,
-              height: 1.2,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.3,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
+                color: effectiveFg,
+                fontSize: 11,
+                height: 1.2,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.3,
+              ),
             ),
           ),
         ],

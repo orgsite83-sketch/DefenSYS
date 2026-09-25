@@ -89,15 +89,21 @@ Future<bool> showConfirmDialog(
   return confirmed == true;
 }
 
-Future<bool> confirmLogout(BuildContext context) {
+Future<bool> confirmLogout(BuildContext context) async {
   final l10n = context.l10n;
-  return showConfirmDialog(
+  final confirmed = await showConfirmDialog(
     context,
     title: l10n.logoutTitle,
     message: l10n.logoutMessage,
     confirmLabel: l10n.logoutConfirm,
     cancelLabel: l10n.cancel,
   );
+  if (confirmed) {
+    // Wait for dialog pop animation to finish so its ModalBarrier overlay
+    // is completely removed before subsequent route transitions.
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+  }
+  return confirmed;
 }
 
 Future<bool> confirmDestructive(

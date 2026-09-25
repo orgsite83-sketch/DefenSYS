@@ -463,13 +463,13 @@ Student Number,Full Name,Email,Year Level
     expect(find.text('Active Academic Semester Required for Student Enrollment'), findsNothing);
 
     // Verify Target Term in template card
-    expect(find.text('Target Term: 1st Semester, A.Y. 2026-2027'), findsOneWidget);
+    expect(find.textContaining('Target Term: 1st Semester, A.Y. 2026-2027'), findsOneWidget);
 
     // Switch to Rollover mode
     await tester.tap(find.text('Semester Rollover & Promotion'));
     await tester.pumpAndSettle();
 
     // Verify Target Term in rollover rules card
-    expect(find.text('Target Term: 1st Semester, A.Y. 2026-2027'), findsOneWidget);
+    expect(find.textContaining('Target Term: 1st Semester, A.Y. 2026-2027'), findsOneWidget);
   });
 }

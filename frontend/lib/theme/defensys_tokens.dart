@@ -32,6 +32,50 @@ class DefensysTokens {
   static const border = Color(0xFFE2E8F0); // Crisp hairline border
   static const switchInactiveTrack = Color(0xFFCBD5E1);
 
+  // Mist Dark tokens (Warm charcoal / mist palette)
+  static const mistBackground = Color(0xFF161618);
+  static const mistSurface = Color(0xFF212024);
+  static const mistPanel = Color(0xFF1C1B1F);
+  static const mistBorder = Color(0xFF35343A);
+  static const mistInputFill = Color(0xFF28272D);
+  static const mistTextPrimary = Color(0xFFF4F4F5);
+  static const mistTextSecondary = Color(0xFFA1A1AA);
+  static const textPrimaryDark = mistTextPrimary;
+  static const textSecondaryDark = mistTextSecondary;
+  static const mistMaroon = Color(0xFFC0392B);
+  static const mistGold = Color(0xFFF59E0B);
+
+  // Context-aware token helpers
+  static bool isDark(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark;
+
+  static Color backgroundOf(BuildContext context) =>
+      isDark(context) ? mistBackground : background;
+
+  static Color surfaceOf(BuildContext context) =>
+      isDark(context) ? mistSurface : surface;
+
+  static Color panelOf(BuildContext context) =>
+      isDark(context) ? mistPanel : Colors.white;
+
+  static Color borderOf(BuildContext context) =>
+      isDark(context) ? mistBorder : border;
+
+  static Color textPrimaryOf(BuildContext context) =>
+      isDark(context) ? mistTextPrimary : textPrimary;
+
+  static Color textSecondaryOf(BuildContext context) =>
+      isDark(context) ? mistTextSecondary : textSecondary;
+
+  static Color maroonOf(BuildContext context) =>
+      isDark(context) ? mistMaroon : maroon;
+
+  static Color goldOf(BuildContext context) =>
+      isDark(context) ? mistGold : darkGold;
+
+  static Color surfaceHigherOf(BuildContext context) =>
+      isDark(context) ? const Color(0xFF28272D) : const Color(0xFFF1F5F9);
+
   // Semantic colors (Desaturated Tints + WCAG AA Compliant Text)
   static const success = Color(0xFF10B981);
   static const successBg = Color(0xFFECFDF5);
@@ -179,32 +223,34 @@ class DefensysTokens {
       );
 
   /// Anti-slop card decoration: clean surface + hairline border + subtle micro-shadow
-  static BoxDecoration cardDecoration() {
+  static BoxDecoration cardDecoration([BuildContext? context]) {
+    final dark = context != null && isDark(context);
     return BoxDecoration(
-      color: surface,
+      color: dark ? mistSurface : surface,
       borderRadius: BorderRadius.circular(radiusLg),
-      border: Border.all(color: border, width: 1.0),
-      boxShadow: const [
+      border: Border.all(color: dark ? mistBorder : border, width: 1.0),
+      boxShadow: [
         BoxShadow(
-          color: Color(0x0A000000), // 4% micro elevation
+          color: dark ? const Color(0x33000000) : const Color(0x0A000000), // Micro elevation
           blurRadius: 3,
-          offset: Offset(0, 1),
+          offset: const Offset(0, 1),
         ),
       ],
     );
   }
 
   /// Anti-slop dialog decoration: standardized 16px radius + elevation
-  static BoxDecoration dialogDecoration() {
+  static BoxDecoration dialogDecoration([BuildContext? context]) {
+    final dark = context != null && isDark(context);
     return BoxDecoration(
-      color: surface,
+      color: dark ? mistSurface : surface,
       borderRadius: BorderRadius.circular(radiusXl),
-      border: Border.all(color: border, width: 1.0),
-      boxShadow: const [
+      border: Border.all(color: dark ? mistBorder : border, width: 1.0),
+      boxShadow: [
         BoxShadow(
-          color: Color(0x14000000), // 8% elevation
+          color: dark ? const Color(0x66000000) : const Color(0x14000000), // Elevation
           blurRadius: 16,
-          offset: Offset(0, 4),
+          offset: const Offset(0, 4),
         ),
       ],
     );

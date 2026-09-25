@@ -11,10 +11,9 @@ import '../../../../services/grade_center_provider.dart';
 import '../admin_shell.dart';
 import 'grade_center_capstone_table.dart';
 import 'grade_center_event_teams_screen.dart';
-import '../../../../widgets/defensys_skeleton.dart';
 import 'grade_center_shared.dart';
 import 'grade_center_team_detail_screen.dart';
-import '../../../../widgets/feedback/empty_state.dart';
+import '../../../../theme/defensys_tokens.dart';
 import '../widgets/defensys_admin_shell.dart';
 
 class GradeCenterScreen extends ConsumerStatefulWidget {
@@ -28,6 +27,8 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
   final _searchController = TextEditingController();
   Timer? _searchDebounce;
   bool _searchFieldFocused = false;
+
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
 
   String? _eventGroupKey;
   String? _eventScope;
@@ -288,9 +289,9 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -329,7 +330,9 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  color: isSelected ? Colors.white : DefensysUi.steelGrey,
+                  color: isSelected
+                      ? Colors.white
+                      : (_isDark ? DefensysTokens.textSecondaryDark : DefensysUi.steelGrey),
                 ),
               ),
             ),
@@ -379,6 +382,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
       children: [
         Expanded(
           child: gradeCenterKpiStatCard(
+            context: context,
             title: teamsTitle,
             value: total.toString(),
             icon: Icons.groups_rounded,
@@ -390,6 +394,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
         const SizedBox(width: 14),
         Expanded(
           child: gradeCenterKpiStatCard(
+            context: context,
             title: 'Fully graded (100%)',
             value:
                 '${_count(state, 'published')} (${_percent(state, 'published')}%)',
@@ -402,6 +407,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
         const SizedBox(width: 14),
         Expanded(
           child: gradeCenterKpiStatCard(
+            context: context,
             title: 'Awaiting panelists',
             value: _count(state, 'pending').toString(),
             icon: Icons.schedule_rounded,
@@ -490,19 +496,6 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     );
   }
 
-  Widget _buildGroupedListContent(GradeCenterState state) {
-    if (state.isLoading && state.grades.isEmpty) {
-      return DefensysSkeleton.list(count: 5, rowHeight: 56);
-    }
-
-    final groups = groupGradesFromState(state);
-    if (groups.isEmpty) {
-      return _gradeEmptyTable();
-    }
-
-    return _gradeGroupedList(state);
-  }
-
   Widget _scopeFilter(GradeCenterState state) {
     const scopeItems = [
       DropdownMenuItem(value: 'capstone', child: Text('Capstone')),
@@ -514,13 +507,14 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
 
     return DropdownButtonHideUnderline(
       child: DropdownButton<String>(
+        dropdownColor: _isDark ? DefensysTokens.mistSurface : Colors.white,
         value: scopeItems.any((item) => item.value == currentScope)
             ? currentScope
             : defaultScope,
         isExpanded: true,
         icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-        style: const TextStyle(
-          color: DefensysUi.textDark,
+        style: TextStyle(
+          color: _isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark,
           fontFamily: DefensysUi.fontFamily,
           fontSize: 12.5,
           fontWeight: FontWeight.w500,
@@ -544,11 +538,12 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
   Widget _yearLevelFilter(GradeCenterState state) {
     return DropdownButtonHideUnderline(
       child: DropdownButton<String>(
+        dropdownColor: _isDark ? DefensysTokens.mistSurface : Colors.white,
         value: state.yearLevel,
         isExpanded: true,
         icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-        style: const TextStyle(
-          color: DefensysUi.textDark,
+        style: TextStyle(
+          color: _isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark,
           fontFamily: DefensysUi.fontFamily,
           fontSize: 12.5,
           fontWeight: FontWeight.w500,
@@ -573,11 +568,12 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
   Widget _statusFilter(GradeCenterState state) {
     return DropdownButtonHideUnderline(
       child: DropdownButton<String>(
+        dropdownColor: _isDark ? DefensysTokens.mistSurface : Colors.white,
         value: state.status,
         isExpanded: true,
         icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-        style: const TextStyle(
-          color: DefensysUi.textDark,
+        style: TextStyle(
+          color: _isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark,
           fontFamily: DefensysUi.fontFamily,
           fontSize: 12.5,
           fontWeight: FontWeight.w500,
@@ -602,160 +598,6 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     );
   }
 
-  Widget _gradeGroupedList(GradeCenterState state) {
-    final groups = groupGradesFromState(state);
-    return Column(
-      children: groups.entries
-          .map(
-            (entry) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _eventGroupCard(state, entry.key, entry.value),
-            ),
-          )
-          .toList(),
-    );
-  }
-
-  Widget _eventGroupCard(
-    GradeCenterState state,
-    String groupKey,
-    List<Map<String, dynamic>> grades,
-  ) {
-    final settings = groupSettingsForKey(state, groupKey);
-    final scope = settings['scope']?.toString() ?? groupKey.split('|').first;
-    final stageLabel = settings['stage_label']?.toString() ??
-        (groupKey.contains('|') ? groupKey.split('|').sublist(1).join('|') : '');
-    final isComplete = settings['is_officially_complete'] == true;
-    final peerOpen = settings['peer_grading_enabled'] == true;
-    final title = gradeGroupTitle(groupKey);
-    final closeBlocked = groupOfficialCloseBlocked(grades: grades);
-
-    final accent = gradeScopeAccentColor(scope);
-
-    return Material(
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: const BorderSide(color: Color(0xFFE5E7EB)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(width: 4, color: accent),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  InkWell(
-                    onTap: () => _openEventTeams(
-                      groupKey: groupKey,
-                      scope: scope,
-                      stageLabel: stageLabel,
-                      title: title,
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              title,
-                              style: const TextStyle(
-                                color: DefensysUi.textDark,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          gradeTeamCountBadge(grades.length),
-                          if (closeBlocked && !isComplete) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFEF3C7),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: const Text(
-                                'Grading incomplete',
-                                style: TextStyle(
-                                  color: Color(0xFFD97706),
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ],
-                          const SizedBox(width: 8),
-                          const Icon(
-                            Icons.chevron_right_rounded,
-                            color: Color(0xFF98A2B3),
-                            size: 24,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE5E7EB)),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
-                    child: gradeGroupStageControlsSection(
-                      state: state,
-                      scope: scope,
-                      isOfficiallyComplete: isComplete,
-                      peerGradingEnabled: peerOpen,
-                      showCapstonePeerTermBadge: scope == 'capstone',
-                      groupSettings: settings,
-                      grades: grades,
-                      officialCompleteToggleEnabled: !closeBlocked,
-                      onOfficiallyCompleteChanged: (value) {
-                        ref.read(gradeCenterProvider.notifier).updateGroupSettings(
-                              scope: scope,
-                              stageLabel: stageLabel,
-                              isOfficiallyComplete: value,
-                              peerGradingEnabled: value ? false : null,
-                            );
-                      },
-                      onPeerGradingChanged: (value) {
-                        ref.read(gradeCenterProvider.notifier).updateGroupSettings(
-                              scope: scope,
-                              stageLabel: stageLabel,
-                              peerGradingEnabled: value,
-                            );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _gradeEmptyTable() {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: DefensysEmptyState.table(
-        icon: Icons.groups_outlined,
-        title: 'No Teams Found',
-        description:
-            'No student teams match the selected filter criteria in Evaluation & Grades.',
-        size: DefensysEmptyStateSize.compact,
-      ),
-    );
-  }
 
   int _percent(GradeCenterState state, String key) {
     final total = _kpiTotal(state);

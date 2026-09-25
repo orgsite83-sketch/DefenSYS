@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/user_management_provider.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 
 /// Top summary metric cards for User Management screen.
 class UserStatCards extends StatelessWidget {
@@ -99,18 +100,25 @@ class _SummaryCardItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final card = Container(
       height: 90,
       padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
       decoration: BoxDecoration(
-        color: selected ? const Color(0xFFFFF4F4) : Colors.white,
+        color: selected
+            ? (isDark
+                ? DefensysTokens.mistMaroon.withValues(alpha: 0.15)
+                : const Color(0xFFFFF4F4))
+            : (isDark ? DefensysTokens.mistSurface : Colors.white),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: selected ? DefensysUi.primaryMaroon : const Color(0xFFE5E7EB),
+          color: selected
+              ? (isDark ? const Color(0xFFF87171) : DefensysUi.primaryMaroon)
+              : (isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.05),
             blurRadius: 12,
             offset: const Offset(0, 5),
           ),
@@ -122,10 +130,16 @@ class _SummaryCardItem extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: const Color(0xFFF1F2F4),
+              color: isDark ? const Color(0xFF28272D) : const Color(0xFFF1F2F4),
               borderRadius: BorderRadius.circular(9),
             ),
-            child: Icon(icon, color: iconColor, size: 25),
+            child: Icon(
+              icon,
+              color: isDark
+                  ? (selected ? const Color(0xFFF87171) : const Color(0xFFA1A1AA))
+                  : iconColor,
+              size: 25,
+            ),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -137,8 +151,8 @@ class _SummaryCardItem extends StatelessWidget {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: DefensysUi.textDark,
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFFF4F4F5) : DefensysUi.textDark,
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
                   ),
@@ -148,8 +162,8 @@ class _SummaryCardItem extends StatelessWidget {
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF475569),
+                  style: TextStyle(
+                    color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569),
                     fontSize: 12.5,
                     fontWeight: FontWeight.w500,
                   ),

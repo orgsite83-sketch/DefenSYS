@@ -44,6 +44,14 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
   int? _hoveredDropTarget;
   bool _isDragging = false;
 
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _surfaceColor => _isDark ? DefensysTokens.mistSurface : Colors.white;
+  Color get _panelBgColor => _isDark ? DefensysTokens.mistPanel : const Color(0xFFF8FAFC);
+  Color get _inputFillColor => _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9);
+  Color get _borderColor => _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0);
+  Color get _textPrimaryColor => _isDark ? DefensysTokens.textPrimaryDark : DefensysTokens.textPrimary;
+  Color get _textSecondaryColor => _isDark ? DefensysTokens.textSecondaryDark : DefensysTokens.textSecondary;
+
   int? _asInt(dynamic value) {
     if (value is int) return value;
     if (value is num) return value.toInt();
@@ -130,18 +138,18 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const Icon(
+            Icon(
               Icons.linear_scale_rounded,
               size: 16,
-              color: DefensysTokens.maroon,
+              color: _isDark ? const Color(0xFFF87171) : DefensysTokens.maroon,
             ),
             const SizedBox(width: 7),
-            const Text(
+            Text(
               'Sequence Position in Pipeline',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
-                color: DefensysTokens.textPrimary,
+                color: _textPrimaryColor,
                 letterSpacing: -0.2,
               ),
             ),
@@ -150,23 +158,23 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
               padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
               decoration: BoxDecoration(
                 color: widget.isLocked
-                    ? const Color(0xFFEFF6FF)
-                    : DefensysTokens.maroon.withValues(alpha: 0.08),
+                    ? (_isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.25) : const Color(0xFFEFF6FF))
+                    : (_isDark ? DefensysTokens.maroon.withValues(alpha: 0.2) : DefensysTokens.maroon.withValues(alpha: 0.08)),
                 borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
                 border: Border.all(
                   color: widget.isLocked
-                      ? const Color(0xFFBFDBFE)
-                      : DefensysTokens.maroon.withValues(alpha: 0.2),
+                      ? (_isDark ? const Color(0xFF3B82F6).withValues(alpha: 0.4) : const Color(0xFFBFDBFE))
+                      : (_isDark ? const Color(0xFFF87171).withValues(alpha: 0.5) : DefensysTokens.maroon.withValues(alpha: 0.2)),
                 ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (widget.isLocked) ...[
-                    const Icon(
+                    Icon(
                       Icons.lock_rounded,
                       size: 11,
-                      color: Color(0xFF1D4ED8),
+                      color: _isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8),
                     ),
                     const SizedBox(width: 4),
                   ],
@@ -178,8 +186,8 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                       color: widget.isLocked
-                          ? const Color(0xFF1D4ED8)
-                          : DefensysTokens.maroon,
+                          ? (_isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8))
+                          : (_isDark ? const Color(0xFFF87171) : DefensysTokens.maroon),
                     ),
                   ),
                 ],
@@ -194,10 +202,14 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: widget.isLocked ? const Color(0xFFEFF6FF) : const Color(0xFFF1F5F9),
+            color: widget.isLocked
+                ? (_isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.25) : const Color(0xFFEFF6FF))
+                : _inputFillColor,
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
-              color: widget.isLocked ? const Color(0xFFBFDBFE) : const Color(0xFFE2E8F0),
+              color: widget.isLocked
+                  ? (_isDark ? const Color(0xFF3B82F6).withValues(alpha: 0.4) : const Color(0xFFBFDBFE))
+                  : _borderColor,
             ),
           ),
           child: Row(
@@ -205,7 +217,9 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
               Icon(
                 widget.isLocked ? Icons.lock_outline_rounded : Icons.touch_app_rounded,
                 size: 13.5,
-                color: widget.isLocked ? const Color(0xFF1D4ED8) : DefensysTokens.maroon,
+                color: widget.isLocked
+                    ? (_isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8))
+                    : (_isDark ? const Color(0xFFF87171) : DefensysTokens.maroon),
               ),
               const SizedBox(width: 6),
               Expanded(
@@ -217,7 +231,9 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: widget.isLocked ? FontWeight.w600 : FontWeight.w500,
-                    color: widget.isLocked ? const Color(0xFF1E40AF) : DefensysTokens.textSecondary,
+                    color: widget.isLocked
+                        ? (_isDark ? const Color(0xFFBFDBFE) : const Color(0xFF1E40AF))
+                        : _textSecondaryColor,
                   ),
                 ),
               ),
@@ -231,16 +247,18 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
           width: double.infinity,
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: _surfaceColor,
             borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            border: Border.all(color: _borderColor),
+            boxShadow: _isDark
+                ? null
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.02),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -335,19 +353,21 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
     required bool canMoveEarlier,
     required bool canMoveLater,
   }) {
+    final activeMaroon = _isDark ? const Color(0xFFF87171) : DefensysTokens.maroon;
+    final activeTextMaroon = _isDark ? const Color(0xFFFCA5A5) : DefensysTokens.maroonDark;
     final cardWidget = Container(
       constraints: const BoxConstraints(minWidth: 175, maxWidth: 215),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: DefensysTokens.maroon,
+          color: activeMaroon,
           width: 2.0,
         ),
         boxShadow: [
           BoxShadow(
-            color: DefensysTokens.maroon.withValues(alpha: 0.16),
+            color: activeMaroon.withValues(alpha: _isDark ? 0.25 : 0.16),
             blurRadius: 8,
             offset: const Offset(0, 3),
           ),
@@ -363,8 +383,8 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
               Container(
                 width: 22,
                 height: 22,
-                decoration: const BoxDecoration(
-                  color: DefensysTokens.maroon,
+                decoration: BoxDecoration(
+                  color: _isDark ? const Color(0xFF991B1B) : DefensysTokens.maroon,
                   shape: BoxShape.circle,
                 ),
                 child: Center(
@@ -383,15 +403,17 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                   decoration: BoxDecoration(
-                    color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                    color: _isDark
+                        ? const Color(0xFF991B1B).withValues(alpha: 0.25)
+                        : DefensysTokens.maroon.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
                     widget.editing ? 'Active Stage' : 'New Stage (Draft)',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 9.5,
                       fontWeight: FontWeight.w700,
-                      color: DefensysTokens.maroonDark,
+                      color: activeTextMaroon,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -407,13 +429,13 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                     child: Container(
                       padding: const EdgeInsets.all(2),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
+                        color: _inputFillColor,
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.drag_indicator_rounded,
                         size: 15,
-                        color: DefensysTokens.maroon,
+                        color: activeMaroon,
                       ),
                     ),
                   ),
@@ -426,10 +448,10 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
           // Stage Title
           Text(
             stageName,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12.5,
               fontWeight: FontWeight.w800,
-              color: DefensysTokens.textPrimary,
+              color: _textPrimaryColor,
               height: 1.2,
             ),
             maxLines: 1,
@@ -438,10 +460,10 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
           const SizedBox(height: 2),
           Text(
             'Position $position of $totalSlots',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w600,
-              color: DefensysTokens.maroon,
+              color: activeTextMaroon,
             ),
           ),
           const SizedBox(height: 8),
@@ -450,9 +472,9 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
           if (!widget.isLocked) ...[
             Container(
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: _panelBgColor,
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: _borderColor),
               ),
               child: Row(
                 children: [
@@ -474,7 +496,9 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                               Icon(
                                 Icons.arrow_back_rounded,
                                 size: 11,
-                                color: canMoveEarlier ? DefensysTokens.maroon : const Color(0xFFCBD5E1),
+                                color: canMoveEarlier
+                                    ? activeMaroon
+                                    : (_isDark ? const Color(0xFF52525B) : const Color(0xFFCBD5E1)),
                               ),
                               const SizedBox(width: 3),
                               Text(
@@ -482,7 +506,9 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                                 style: TextStyle(
                                   fontSize: 9.5,
                                   fontWeight: FontWeight.w700,
-                                  color: canMoveEarlier ? DefensysTokens.maroonDark : const Color(0xFF94A3B8),
+                                  color: canMoveEarlier
+                                      ? activeTextMaroon
+                                      : (_isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8)),
                                 ),
                               ),
                             ],
@@ -491,7 +517,7 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                       ),
                     ),
                   ),
-                  Container(width: 1, height: 16, color: const Color(0xFFE2E8F0)),
+                  Container(width: 1, height: 16, color: _borderColor),
                   Expanded(
                     child: Tooltip(
                       message: canMoveLater
@@ -512,14 +538,18 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                                 style: TextStyle(
                                   fontSize: 9.5,
                                   fontWeight: FontWeight.w700,
-                                  color: canMoveLater ? DefensysTokens.maroonDark : const Color(0xFF94A3B8),
+                                  color: canMoveLater
+                                      ? activeTextMaroon
+                                      : (_isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8)),
                                 ),
                               ),
                               const SizedBox(width: 3),
                               Icon(
                                 Icons.arrow_forward_rounded,
                                 size: 11,
-                                color: canMoveLater ? DefensysTokens.maroon : const Color(0xFFCBD5E1),
+                                color: canMoveLater
+                                    ? activeMaroon
+                                    : (_isDark ? const Color(0xFF52525B) : const Color(0xFFCBD5E1)),
                               ),
                             ],
                           ),
@@ -553,12 +583,12 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
           constraints: const BoxConstraints(minWidth: 175, maxWidth: 215),
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: _surfaceColor,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: DefensysTokens.maroon, width: 2.5),
+            border: Border.all(color: activeMaroon, width: 2.5),
             boxShadow: [
               BoxShadow(
-                color: DefensysTokens.maroon.withValues(alpha: 0.35),
+                color: activeMaroon.withValues(alpha: _isDark ? 0.35 : 0.35),
                 blurRadius: 16,
                 offset: const Offset(0, 8),
               ),
@@ -570,8 +600,8 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
               Container(
                 width: 22,
                 height: 22,
-                decoration: const BoxDecoration(
-                  color: DefensysTokens.maroon,
+                decoration: BoxDecoration(
+                  color: _isDark ? const Color(0xFF991B1B) : DefensysTokens.maroon,
                   shape: BoxShape.circle,
                 ),
                 child: const Center(
@@ -586,20 +616,20 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                   children: [
                     Text(
                       stageName,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w800,
-                        color: DefensysTokens.textPrimary,
+                        color: _textPrimaryColor,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const Text(
+                    Text(
                       'Drop into desired slot...',
                       style: TextStyle(
                         fontSize: 9.5,
                         fontWeight: FontWeight.w600,
-                        color: DefensysTokens.maroon,
+                        color: activeTextMaroon,
                       ),
                     ),
                   ],
@@ -613,10 +643,12 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
         constraints: const BoxConstraints(minWidth: 165, maxWidth: 200),
         height: 100,
         decoration: BoxDecoration(
-          color: DefensysTokens.maroon.withValues(alpha: 0.05),
+          color: _isDark
+              ? const Color(0xFF991B1B).withValues(alpha: 0.12)
+              : DefensysTokens.maroon.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: DefensysTokens.maroon.withValues(alpha: 0.3),
+            color: activeMaroon.withValues(alpha: 0.3),
             style: BorderStyle.solid,
             width: 1.5,
           ),
@@ -627,7 +659,7 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
-              color: DefensysTokens.maroon.withValues(alpha: 0.7),
+              color: activeMaroon.withValues(alpha: 0.7),
             ),
           ),
         ),
@@ -646,6 +678,7 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
     final label = stageData['label']?.toString() ?? 'Stage $position';
     final isHovered = _hoveredDropTarget == targetSlot;
     final isDropCandidate = _isDragging && !isItemLocked && targetSlot >= widget.minPosition;
+    final activeMaroon = _isDark ? const Color(0xFFF87171) : DefensysTokens.maroon;
 
     final content = AnimatedContainer(
       duration: const Duration(milliseconds: 180),
@@ -653,21 +686,25 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
       decoration: BoxDecoration(
         color: isHovered
-            ? DefensysTokens.maroon.withValues(alpha: 0.08)
+            ? (_isDark
+                ? const Color(0xFF991B1B).withValues(alpha: 0.25)
+                : DefensysTokens.maroon.withValues(alpha: 0.08))
             : (isItemLocked
-                ? const Color(0xFFF1F5F9)
+                ? (_isDark ? DefensysTokens.mistInputFill.withValues(alpha: 0.5) : const Color(0xFFF1F5F9))
                 : (isDropCandidate
-                    ? DefensysTokens.maroon.withValues(alpha: 0.03)
-                    : const Color(0xFFF8FAFC))),
+                    ? (_isDark
+                        ? const Color(0xFF991B1B).withValues(alpha: 0.15)
+                        : DefensysTokens.maroon.withValues(alpha: 0.03))
+                    : _surfaceColor)),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: isHovered
-              ? DefensysTokens.maroon
+              ? activeMaroon
               : (isItemLocked
-                  ? const Color(0xFFCBD5E1)
+                  ? (_isDark ? const Color(0xFF3F3F46) : const Color(0xFFCBD5E1))
                   : (isDropCandidate
-                      ? DefensysTokens.maroon.withValues(alpha: 0.4)
-                      : const Color(0xFFE2E8F0))),
+                      ? activeMaroon.withValues(alpha: 0.45)
+                      : _borderColor)),
           width: isHovered ? 2.0 : (isDropCandidate ? 1.4 : 1.0),
         ),
       ),
@@ -682,8 +719,10 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                 height: 19,
                 decoration: BoxDecoration(
                   color: isItemLocked
-                      ? const Color(0xFF94A3B8)
-                      : (isHovered ? DefensysTokens.maroon : const Color(0xFF64748B)),
+                      ? (_isDark ? const Color(0xFF52525B) : const Color(0xFF94A3B8))
+                      : (isHovered
+                          ? (_isDark ? const Color(0xFF991B1B) : DefensysTokens.maroon)
+                          : (_isDark ? const Color(0xFF3F3F46) : const Color(0xFF64748B))),
                   shape: BoxShape.circle,
                 ),
                 child: Center(
@@ -704,17 +743,19 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: isItemLocked ? const Color(0xFF64748B) : DefensysTokens.textPrimary,
+                    color: isItemLocked
+                        ? (_isDark ? const Color(0xFF71717A) : const Color(0xFF64748B))
+                        : _textPrimaryColor,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               if (isItemLocked)
-                const Icon(
+                Icon(
                   Icons.lock_rounded,
                   size: 12.5,
-                  color: Color(0xFF94A3B8),
+                  color: _isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8),
                 ),
             ],
           ),
@@ -724,7 +765,9 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
             style: TextStyle(
               fontSize: 11.5,
               fontWeight: FontWeight.w700,
-              color: isItemLocked ? const Color(0xFF475569) : DefensysTokens.textPrimary,
+              color: isItemLocked
+                  ? (_isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569))
+                  : _textPrimaryColor,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -738,8 +781,10 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
               fontSize: 9.5,
               fontWeight: isHovered ? FontWeight.w700 : FontWeight.w500,
               color: isHovered
-                  ? DefensysTokens.maroon
-                  : (isItemLocked ? const Color(0xFF94A3B8) : DefensysTokens.textSecondary),
+                  ? (_isDark ? const Color(0xFFFCA5A5) : DefensysTokens.maroon)
+                  : (isItemLocked
+                      ? (_isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8))
+                      : _textSecondaryColor),
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -790,7 +835,9 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                       }
                     },
               borderRadius: BorderRadius.circular(8),
-              hoverColor: DefensysTokens.maroon.withValues(alpha: 0.05),
+              hoverColor: _isDark
+                  ? Colors.white.withValues(alpha: 0.04)
+                  : DefensysTokens.maroon.withValues(alpha: 0.05),
               child: content,
             ),
           ),
@@ -808,6 +855,7 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
   }) {
     final isHovered = _hoveredDropTarget == targetSlot;
     final isDropCandidate = _isDragging && !isLockedSlot && targetSlot >= widget.minPosition;
+    final activeMaroon = _isDark ? const Color(0xFFF87171) : DefensysTokens.maroon;
 
     final targetBox = AnimatedContainer(
       duration: const Duration(milliseconds: 180),
@@ -815,21 +863,21 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
       constraints: const BoxConstraints(minWidth: 105, maxWidth: 135),
       decoration: BoxDecoration(
         color: isLockedSlot
-            ? const Color(0xFFF1F5F9)
+            ? (_isDark ? DefensysTokens.mistInputFill.withValues(alpha: 0.5) : const Color(0xFFF1F5F9))
             : (isHovered
-                ? DefensysTokens.maroon.withValues(alpha: 0.1)
+                ? (_isDark ? const Color(0xFF991B1B).withValues(alpha: 0.25) : DefensysTokens.maroon.withValues(alpha: 0.1))
                 : (isDropCandidate
-                    ? DefensysTokens.maroon.withValues(alpha: 0.04)
-                    : const Color(0xFFF8FAFC))),
+                    ? (_isDark ? const Color(0xFF991B1B).withValues(alpha: 0.12) : DefensysTokens.maroon.withValues(alpha: 0.04))
+                    : _surfaceColor)),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: isLockedSlot
-              ? const Color(0xFFCBD5E1)
+              ? (_isDark ? const Color(0xFF3F3F46) : const Color(0xFFCBD5E1))
               : (isHovered
-                  ? DefensysTokens.maroon
+                  ? activeMaroon
                   : (isDropCandidate
-                      ? DefensysTokens.maroon.withValues(alpha: 0.45)
-                      : const Color(0xFFCBD5E1))),
+                      ? activeMaroon.withValues(alpha: 0.45)
+                      : _borderColor)),
           style: BorderStyle.solid,
           width: isHovered ? 2.0 : (isDropCandidate ? 1.4 : 1.0),
         ),
@@ -843,8 +891,10 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                 : (isHovered ? Icons.add_circle_rounded : Icons.move_to_inbox_rounded),
             size: 16,
             color: isLockedSlot
-                ? const Color(0xFF94A3B8)
-                : (isHovered ? DefensysTokens.maroon : const Color(0xFF64748B)),
+                ? (_isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8))
+                : (isHovered
+                    ? (_isDark ? const Color(0xFFFCA5A5) : DefensysTokens.maroon)
+                    : (_isDark ? const Color(0xFFA1A1AA) : const Color(0xFF64748B))),
           ),
           const SizedBox(height: 3),
           Text(
@@ -853,8 +903,10 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
               fontSize: 10,
               fontWeight: FontWeight.w700,
               color: isLockedSlot
-                  ? const Color(0xFF94A3B8)
-                  : (isHovered ? DefensysTokens.maroon : DefensysTokens.textPrimary),
+                  ? (_isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8))
+                  : (isHovered
+                      ? (_isDark ? const Color(0xFFFCA5A5) : DefensysTokens.maroon)
+                      : _textPrimaryColor),
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -864,7 +916,9 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
             style: TextStyle(
               fontSize: 9,
               fontWeight: FontWeight.w600,
-              color: isLockedSlot ? const Color(0xFF94A3B8) : DefensysTokens.textSecondary,
+              color: isLockedSlot
+                  ? (_isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8))
+                  : _textSecondaryColor,
             ),
           ),
         ],
@@ -930,16 +984,16 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
             child: Container(
               height: 2,
               color: isPast
-                  ? DefensysTokens.maroon.withValues(alpha: 0.4)
-                  : const Color(0xFFCBD5E1),
+                  ? (_isDark ? const Color(0xFFF87171).withValues(alpha: 0.5) : DefensysTokens.maroon.withValues(alpha: 0.4))
+                  : (_isDark ? const Color(0xFF3F3F46) : const Color(0xFFCBD5E1)),
             ),
           ),
           Icon(
             Icons.chevron_right_rounded,
             size: 14,
             color: isPast
-                ? DefensysTokens.maroon.withValues(alpha: 0.6)
-                : const Color(0xFF94A3B8),
+                ? (_isDark ? const Color(0xFFF87171).withValues(alpha: 0.8) : DefensysTokens.maroon.withValues(alpha: 0.6))
+                : (_isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8)),
           ),
         ],
       ),
@@ -955,24 +1009,26 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: _panelBgColor,
         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: _borderColor),
       ),
       child: Row(
         children: [
           Icon(
             Icons.alt_route_rounded,
             size: 13.5,
-            color: widget.isLocked ? const Color(0xFF1D4ED8) : DefensysTokens.maroon,
+            color: widget.isLocked
+                ? (_isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8))
+                : (_isDark ? const Color(0xFFFCA5A5) : DefensysTokens.maroon),
           ),
           const SizedBox(width: 6),
-          const Text(
+          Text(
             'Live Pipeline Flow:',
             style: TextStyle(
               fontSize: 10.5,
               fontWeight: FontWeight.w700,
-              color: DefensysTokens.textSecondary,
+              color: _textSecondaryColor,
             ),
           ),
           const SizedBox(width: 8),
@@ -993,20 +1049,22 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                   Color iconColor;
 
                   if (isCurrent && widget.isLocked) {
-                    pillBg = const Color(0xFFEFF6FF);
-                    pillBorder = const Color(0xFFBFDBFE);
-                    textColor = const Color(0xFF1E40AF);
-                    iconColor = const Color(0xFF1D4ED8);
+                    pillBg = _isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFEFF6FF);
+                    pillBorder = _isDark ? const Color(0xFF3B82F6) : const Color(0xFFBFDBFE);
+                    textColor = _isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF);
+                    iconColor = _isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
                   } else if (isCurrent) {
-                    pillBg = DefensysTokens.maroon.withValues(alpha: 0.1);
-                    pillBorder = DefensysTokens.maroonLight;
-                    textColor = DefensysTokens.maroonDark;
-                    iconColor = DefensysTokens.maroon;
+                    pillBg = _isDark
+                        ? const Color(0xFF991B1B).withValues(alpha: 0.25)
+                        : DefensysTokens.maroon.withValues(alpha: 0.1);
+                    pillBorder = _isDark ? const Color(0xFFF87171) : DefensysTokens.maroonLight;
+                    textColor = _isDark ? const Color(0xFFFCA5A5) : DefensysTokens.maroonDark;
+                    iconColor = _isDark ? const Color(0xFFF87171) : DefensysTokens.maroon;
                   } else {
-                    pillBg = Colors.white;
-                    pillBorder = const Color(0xFFCBD5E1);
-                    textColor = DefensysTokens.textPrimary;
-                    iconColor = const Color(0xFF64748B);
+                    pillBg = _surfaceColor;
+                    pillBorder = _borderColor;
+                    textColor = _textPrimaryColor;
+                    iconColor = _isDark ? const Color(0xFFA1A1AA) : const Color(0xFF64748B);
                   }
 
                   return Row(
@@ -1033,10 +1091,10 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                               ),
                               const SizedBox(width: 4),
                             ] else if (isLocked) ...[
-                              const Icon(
+                              Icon(
                                 Icons.lock_outline_rounded,
                                 size: 10,
-                                color: Color(0xFF94A3B8),
+                                color: _isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8),
                               ),
                               const SizedBox(width: 4),
                             ],
@@ -1052,12 +1110,12 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                         ),
                       ),
                       if (i < sequence.length - 1)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 4),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
                           child: Icon(
                             Icons.arrow_forward_rounded,
                             size: 11,
-                            color: Color(0xFF94A3B8),
+                            color: _isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8),
                           ),
                         ),
                     ],

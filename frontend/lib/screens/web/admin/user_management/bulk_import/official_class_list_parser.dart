@@ -211,6 +211,7 @@ AdminOfficialClassListParseResult parseOfficialClassListRows(List<List<String>> 
         value == 'students',
   );
   final levelIndex = findHeader((value) => value == 'level' || value == 'year level' || value == 'year');
+  final sectionIndex = findHeader((value) => value == 'section' || value == 'class section');
   final emailIndex = findHeader((value) => value == 'email' || value == 'email address' || value.contains('email'));
   final contactIndex = findHeader(
     (value) =>
@@ -242,6 +243,7 @@ AdminOfficialClassListParseResult parseOfficialClassListRows(List<List<String>> 
     final rowYear = levelIndex != -1
         ? normalizeYearLevel(read(levelIndex))
         : yearLevel;
+    final rowSection = sectionIndex != -1 ? read(sectionIndex) : section;
     final contact = contactIndex == -1 ? '' : read(contactIndex);
     students.add({
       'id_number': id,
@@ -252,7 +254,7 @@ AdminOfficialClassListParseResult parseOfficialClassListRows(List<List<String>> 
       if (contact.isNotEmpty) 'contact': contact,
       'role': 'student',
       if (rowYear.isNotEmpty) 'year_level': rowYear,
-      if (section.isNotEmpty) 'section': section,
+      'section': rowSection,
       if (metadata['faculty'] != null) 'faculty': metadata['faculty'],
       '_fileMetadata': metadata,
     });

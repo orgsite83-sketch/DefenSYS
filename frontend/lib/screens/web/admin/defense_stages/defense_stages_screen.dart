@@ -33,6 +33,14 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
   bool _isPipelineView = true;
   final Set<int> _expandedStageIds = {};
 
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+  Color get _surfaceColor => _isDark ? DefensysTokens.mistSurface : Colors.white;
+  Color get _panelBgColor => _isDark ? const Color(0xFF1B1B1F) : const Color(0xFFF8FAFC);
+  Color get _borderColor => _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0);
+  Color get _textPrimaryColor => _isDark ? DefensysTokens.mistTextPrimary : AppColors.textPrimary;
+  Color get _textSecondaryColor => _isDark ? DefensysTokens.mistTextSecondary : AppColors.textSecondary;
+  Color get _subtleFillColor => _isDark ? const Color(0xFF28272D) : const Color(0xFFF1F5F9);
+
   @override
   void initState() {
     super.initState();
@@ -139,18 +147,23 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 children: [
                   Container(
                     padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFFEE2E2),
+                    decoration: BoxDecoration(
+                      color: _isDark
+                          ? const Color(0xFF7F1D1D).withValues(alpha: 0.3)
+                          : const Color(0xFFFEE2E2),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.account_tree_rounded,
-                        color: AppColors.maroon, size: 22),
+                    child: Icon(
+                      Icons.account_tree_rounded,
+                      color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
+                      size: 22,
+                    ),
                   ),
                   const SizedBox(width: 12),
-                  const Text(
+                  Text(
                     'Capstone Stage Chain & Governance',
                     style: TextStyle(
-                      color: AppColors.maroon,
+                      color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
                       fontSize: 22,
                       fontWeight: FontWeight.w900,
                       height: 1.1,
@@ -160,10 +173,10 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'Define sequential defense milestones, evaluation rubrics, and deliverable archive templates for Capstone.',
                 style: TextStyle(
-                  color: AppColors.textSecondary,
+                  color: _textSecondaryColor,
                   fontSize: 14,
                   height: 1.35,
                 ),
@@ -187,8 +200,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 icon: const Icon(Icons.sync_rounded, size: 17),
                 label: const Text('Refresh Stages'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.textPrimary,
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  foregroundColor: _textPrimaryColor,
+                  side: BorderSide(color: _borderColor),
                   padding: const EdgeInsets.symmetric(horizontal: 18),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -232,16 +245,18 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x03000000),
-            blurRadius: 6,
-            offset: Offset(0, 1),
-          ),
-        ],
+        border: Border.all(color: _borderColor),
+        boxShadow: _isDark
+            ? null
+            : const [
+                BoxShadow(
+                  color: Color(0x03000000),
+                  blurRadius: 6,
+                  offset: Offset(0, 1),
+                ),
+              ],
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -249,21 +264,21 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
           final item1 = _executiveStatItem(
             icon: Icons.account_tree_outlined,
-            iconColor: AppColors.maroon,
+            iconColor: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
             value: '$total',
             label: 'Total Academic Stages',
           );
 
           final item2 = _executiveStatItem(
             icon: Icons.check_circle_outline_rounded,
-            iconColor: const Color(0xFF10B981),
+            iconColor: _isDark ? const Color(0xFF34D399) : const Color(0xFF10B981),
             value: '$published',
             label: 'Published & Active',
           );
 
           final item3 = _executiveStatItem(
             icon: Icons.task_alt_rounded,
-            iconColor: const Color(0xFF2563EB),
+            iconColor: _isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
             value: '$locked',
             label: 'Completed Stages',
           );
@@ -272,9 +287,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
             return Column(
               children: [
                 item1,
-                const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                Divider(height: 16, color: _borderColor),
                 item2,
-                const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                Divider(height: 16, color: _borderColor),
                 item3,
               ],
             );
@@ -283,9 +298,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           return Row(
             children: [
               Expanded(child: item1),
-              Container(width: 1, height: 34, color: const Color(0xFFE2E8F0)),
+              Container(width: 1, height: 34, color: _borderColor),
               Expanded(child: item2),
-              Container(width: 1, height: 34, color: const Color(0xFFE2E8F0)),
+              Container(width: 1, height: 34, color: _borderColor),
               Expanded(child: item3),
             ],
           );
@@ -310,7 +325,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
             height: 36,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.1),
+              color: iconColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, color: iconColor, size: 18),
@@ -323,8 +338,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               children: [
                 Text(
                   value,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
+                  style: TextStyle(
+                    color: _textPrimaryColor,
                     fontSize: 20,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -0.4,
@@ -336,8 +351,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
+                  style: TextStyle(
+                    color: _textSecondaryColor,
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,
                     height: 1.15,
@@ -356,9 +371,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: _panelBgColor,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: _borderColor),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -368,24 +383,30 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
             step: '1',
             name: 'Draft',
             hint: 'Configure rubrics & files',
-            color: const Color(0xFFF59E0B),
-            bgColor: const Color(0xFFFFFBEB),
+            color: _isDark ? const Color(0xFFFBBF24) : const Color(0xFFF59E0B),
+            bgColor: _isDark
+                ? const Color(0xFF78350F).withValues(alpha: 0.25)
+                : const Color(0xFFFFFBEB),
           );
 
           final badge2 = _lifecycleInlineBadge(
             step: '2',
             name: 'Published',
             hint: 'Active in defense scheduler',
-            color: const Color(0xFF10B981),
-            bgColor: const Color(0xFFECFDF5),
+            color: _isDark ? const Color(0xFF34D399) : const Color(0xFF10B981),
+            bgColor: _isDark
+                ? const Color(0xFF064E3B).withValues(alpha: 0.25)
+                : const Color(0xFFECFDF5),
           );
 
           final badge3 = _lifecycleInlineBadge(
             step: '3',
             name: 'Completed',
             hint: 'Finalized with scheduled defenses',
-            color: const Color(0xFF2563EB),
-            bgColor: const Color(0xFFEFF6FF),
+            color: _isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+            bgColor: _isDark
+                ? const Color(0xFF1E3A8A).withValues(alpha: 0.25)
+                : const Color(0xFFEFF6FF),
           );
 
           if (isMobile) {
@@ -393,13 +414,17 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  children: const [
-                    Icon(Icons.alt_route_rounded, size: 14, color: AppColors.maroon),
-                    SizedBox(width: 6),
+                  children: [
+                    Icon(
+                      Icons.alt_route_rounded,
+                      size: 14,
+                      color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
+                    ),
+                    const SizedBox(width: 6),
                     Text(
                       'Stage Cycle',
                       style: TextStyle(
-                        color: AppColors.textPrimary,
+                        color: _textPrimaryColor,
                         fontSize: 11.5,
                         fontWeight: FontWeight.w800,
                       ),
@@ -418,26 +443,30 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
           return Row(
             children: [
-              const Icon(Icons.alt_route_rounded, size: 14, color: AppColors.maroon),
+              Icon(
+                Icons.alt_route_rounded,
+                size: 14,
+                color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
+              ),
               const SizedBox(width: 6),
-              const Text(
+              Text(
                 'Stage Cycle: ',
                 style: TextStyle(
-                  color: AppColors.textPrimary,
+                  color: _textPrimaryColor,
                   fontSize: 11.5,
                   fontWeight: FontWeight.w800,
                 ),
               ),
               const SizedBox(width: 8),
               badge1,
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 6),
-                child: Icon(Icons.arrow_forward_rounded, size: 12, color: Color(0xFF94A3B8)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Icon(Icons.arrow_forward_rounded, size: 12, color: _textSecondaryColor),
               ),
               badge2,
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 6),
-                child: Icon(Icons.arrow_forward_rounded, size: 12, color: Color(0xFF94A3B8)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Icon(Icons.arrow_forward_rounded, size: 12, color: _textSecondaryColor),
               ),
               badge3,
             ],
@@ -485,7 +514,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           Text(
             name,
             style: TextStyle(
-              color: color == const Color(0xFF64748B) ? AppColors.textPrimary : color,
+              color: color == const Color(0xFF64748B) ? _textPrimaryColor : color,
               fontSize: 11,
               fontWeight: FontWeight.w800,
             ),
@@ -493,8 +522,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           const SizedBox(width: 4),
           Text(
             '($hint)',
-            style: const TextStyle(
-              color: AppColors.textSecondary,
+            style: TextStyle(
+              color: _textSecondaryColor,
               fontSize: 10,
             ),
           ),
@@ -511,16 +540,18 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x04000000),
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: _borderColor),
+        boxShadow: _isDark
+            ? null
+            : const [
+                BoxShadow(
+                  color: Color(0x04000000),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
       ),
       child: Column(
         children: [
@@ -528,24 +559,24 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             child: Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         'Academic Stage Chain',
                         style: TextStyle(
-                          color: AppColors.textPrimary,
+                          color: _textPrimaryColor,
                           fontSize: 15,
                           fontWeight: FontWeight.w900,
                           letterSpacing: -0.2,
                         ),
                       ),
-                      SizedBox(height: 2),
+                      const SizedBox(height: 2),
                       Text(
                         'Sequential progression of defense milestones & milestone requirements',
                         style: TextStyle(
-                          color: AppColors.textSecondary,
+                          color: _textSecondaryColor,
                           fontSize: 12,
                         ),
                       ),
@@ -555,9 +586,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 Container(
                   padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
+                    color: _subtleFillColor,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    border: Border.all(color: _borderColor),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -580,7 +611,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               ],
             ),
           ),
-          Container(height: 1, color: const Color(0xFFE2E8F0)),
+          Container(height: 1, color: _borderColor),
           if (_isPipelineView)
             _buildStagePipelineView(state)
           else
@@ -614,9 +645,11 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: selected ? Colors.white : Colors.transparent,
+          color: selected
+              ? (_isDark ? const Color(0xFF35343A) : Colors.white)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
-          boxShadow: selected
+          boxShadow: selected && !_isDark
               ? const [
                   BoxShadow(
                     color: Color(0x10000000),
@@ -632,13 +665,17 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
             Icon(
               icon,
               size: 14,
-              color: selected ? AppColors.maroon : AppColors.textSecondary,
+              color: selected
+                  ? (_isDark ? const Color(0xFFF4F4F5) : AppColors.maroon)
+                  : _textSecondaryColor,
             ),
             const SizedBox(width: 5),
             Text(
               label,
               style: TextStyle(
-                color: selected ? AppColors.maroon : AppColors.textSecondary,
+                color: selected
+                    ? (_isDark ? const Color(0xFFF4F4F5) : AppColors.maroon)
+                    : _textSecondaryColor,
                 fontSize: 11.5,
                 fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
               ),
@@ -672,6 +709,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                       isLast: i == totalStages - 1,
                       nodeTop: 14.0,
                       nodeSize: 36.0,
+                      lineColor: _borderColor,
                     ),
                   ),
                 ),
@@ -717,17 +755,23 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     Color textColor;
 
     if (isLocked) {
-      borderColor = const Color(0xFF60A5FA);
-      bgColor = const Color(0xFFEFF6FF);
-      textColor = const Color(0xFF1D4ED8);
+      borderColor = _isDark ? const Color(0xFF3B82F6) : const Color(0xFF60A5FA);
+      bgColor = _isDark
+          ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
+          : const Color(0xFFEFF6FF);
+      textColor = _isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8);
     } else if (isPublished) {
-      borderColor = const Color(0xFF10B981);
-      bgColor = const Color(0xFFECFDF5);
-      textColor = const Color(0xFF047857);
+      borderColor = _isDark ? const Color(0xFF059669) : const Color(0xFF10B981);
+      bgColor = _isDark
+          ? const Color(0xFF064E3B).withValues(alpha: 0.3)
+          : const Color(0xFFECFDF5);
+      textColor = _isDark ? const Color(0xFF34D399) : const Color(0xFF047857);
     } else {
-      borderColor = const Color(0xFFF59E0B);
-      bgColor = const Color(0xFFFFFBEB);
-      textColor = const Color(0xFFB45309);
+      borderColor = _isDark ? const Color(0xFFD97706) : const Color(0xFFF59E0B);
+      bgColor = _isDark
+          ? const Color(0xFF78350F).withValues(alpha: 0.3)
+          : const Color(0xFFFFFBEB);
+      textColor = _isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309);
     }
 
     return Container(
@@ -765,27 +809,31 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
+          color: _panelBgColor,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: _borderColor),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.arrow_downward_rounded, size: 12, color: AppColors.maroon),
+            Icon(
+              Icons.arrow_downward_rounded,
+              size: 12,
+              color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
+            ),
             const SizedBox(width: 5),
-            const Text(
+            Text(
               'Unlocks Next Milestone: ',
               style: TextStyle(
-                color: AppColors.textSecondary,
+                color: _textSecondaryColor,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
               ),
             ),
             Text(
               nextLabel.isNotEmpty ? nextLabel : 'Next Stage',
-              style: const TextStyle(
-                color: AppColors.maroon,
+              style: TextStyle(
+                color: _isDark ? const Color(0xFFF87171) : AppColors.maroon,
                 fontSize: 11,
                 fontWeight: FontWeight.w800,
               ),
@@ -857,9 +905,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: _panelBgColor,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: _borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -890,7 +938,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: _isDark ? _subtleFillColor : Colors.white,
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(color: headerBorder),
                   ),
@@ -911,9 +959,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 2),
             child: Text(
               subtitle,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 10.5,
-                color: AppColors.textSecondary,
+                color: _textSecondaryColor,
               ),
             ),
           ),
@@ -924,17 +972,17 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: _surfaceColor,
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: _borderColor),
               ),
               child: Text(
                 isPost
                     ? 'No post-defense deliverables configured.'
                     : 'No pre-defense deliverables configured.',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: Color(0xFF94A3B8),
+                  color: _textSecondaryColor,
                   fontStyle: FontStyle.italic,
                 ),
               ),
@@ -952,16 +1000,18 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   margin: const EdgeInsets.only(bottom: 6),
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: _surfaceColor,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x02000000),
-                        blurRadius: 3,
-                        offset: Offset(0, 1),
-                      ),
-                    ],
+                    border: Border.all(color: _borderColor),
+                    boxShadow: _isDark
+                        ? null
+                        : const [
+                            BoxShadow(
+                              color: Color(0x02000000),
+                              blurRadius: 3,
+                              offset: Offset(0, 1),
+                            ),
+                          ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -977,10 +1027,10 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                           Expanded(
                             child: Text(
                               label,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
-                                color: AppColors.textPrimary,
+                                color: _textPrimaryColor,
                               ),
                             ),
                           ),
@@ -989,16 +1039,24 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFEF2F2),
+                                color: _isDark
+                                    ? const Color(0xFF7F1D1D).withValues(alpha: 0.3)
+                                    : const Color(0xFFFEF2F2),
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: const Color(0xFFFECACA)),
+                                border: Border.all(
+                                  color: _isDark
+                                      ? const Color(0xFF991B1B)
+                                      : const Color(0xFFFECACA),
+                                ),
                               ),
-                              child: const Text(
+                              child: Text(
                                 'Required',
                                 style: TextStyle(
                                   fontSize: 9.5,
                                   fontWeight: FontWeight.w800,
-                                  color: Color(0xFFB91C1C),
+                                  color: _isDark
+                                      ? const Color(0xFFFCA5A5)
+                                      : const Color(0xFFB91C1C),
                                 ),
                               ),
                             ),
@@ -1008,21 +1066,35 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFEFF6FF),
+                                color: _isDark
+                                    ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
+                                    : const Color(0xFFEFF6FF),
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                                border: Border.all(
+                                  color: _isDark
+                                      ? const Color(0xFF1D4ED8)
+                                      : const Color(0xFFBFDBFE),
+                                ),
                               ),
-                              child: const Row(
+                              child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.visibility_rounded, size: 9.5, color: Color(0xFF1D4ED8)),
-                                  SizedBox(width: 2.5),
+                                  Icon(
+                                    Icons.visibility_rounded,
+                                    size: 9.5,
+                                    color: _isDark
+                                        ? const Color(0xFF93C5FD)
+                                        : const Color(0xFF1D4ED8),
+                                  ),
+                                  const SizedBox(width: 2.5),
                                   Text(
                                     'Panel View',
                                     style: TextStyle(
                                       fontSize: 9.5,
                                       fontWeight: FontWeight.w800,
-                                      color: Color(0xFF1D4ED8),
+                                      color: _isDark
+                                        ? const Color(0xFF93C5FD)
+                                        : const Color(0xFF1D4ED8),
                                     ),
                                   ),
                                 ],
@@ -1034,21 +1106,35 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFFF7ED),
+                                color: _isDark
+                                    ? const Color(0xFF7C2D12).withValues(alpha: 0.3)
+                                    : const Color(0xFFFFF7ED),
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: const Color(0xFFFED7AA)),
+                                border: Border.all(
+                                  color: _isDark
+                                      ? const Color(0xFFC2410C)
+                                      : const Color(0xFFFED7AA),
+                                ),
                               ),
-                              child: const Row(
+                              child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.edit_note_rounded, size: 10, color: Color(0xFFC2410C)),
-                                  SizedBox(width: 2.5),
+                                  Icon(
+                                    Icons.edit_note_rounded,
+                                    size: 10,
+                                    color: _isDark
+                                        ? const Color(0xFFFDBA74)
+                                        : const Color(0xFFC2410C),
+                                  ),
+                                  const SizedBox(width: 2.5),
                                   Text(
                                     'Revisions Only',
                                     style: TextStyle(
                                       fontSize: 9.5,
                                       fontWeight: FontWeight.w800,
-                                      color: Color(0xFFC2410C),
+                                      color: _isDark
+                                        ? const Color(0xFFFDBA74)
+                                        : const Color(0xFFC2410C),
                                     ),
                                   ),
                                 ],
@@ -1060,16 +1146,24 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFEF3C7),
+                                color: _isDark
+                                    ? const Color(0xFF78350F).withValues(alpha: 0.3)
+                                    : const Color(0xFFFEF3C7),
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: const Color(0xFFFDE68A)),
+                                border: Border.all(
+                                  color: _isDark
+                                      ? const Color(0xFFB45309)
+                                      : const Color(0xFFFDE68A),
+                                ),
                               ),
-                              child: const Text(
+                              child: Text(
                                 'Private Vault',
                                 style: TextStyle(
                                   fontSize: 9.5,
                                   fontWeight: FontWeight.w800,
-                                  color: Color(0xFF92400E),
+                                  color: _isDark
+                                      ? const Color(0xFFFCD34D)
+                                      : const Color(0xFF92400E),
                                 ),
                               ),
                             ),
@@ -1080,17 +1174,17 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            const Icon(Icons.code_rounded, size: 11, color: Color(0xFF94A3B8)),
+                            Icon(Icons.code_rounded, size: 11, color: _textSecondaryColor),
                             const SizedBox(width: 4),
                             Expanded(
                               child: Text(
                                 'Archive Pattern: $template',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 10,
                                   fontFamily: 'monospace',
-                                  color: Color(0xFF64748B),
+                                  color: _textSecondaryColor,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -1147,16 +1241,18 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x04000000),
-            blurRadius: 6,
-            offset: Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: _borderColor),
+        boxShadow: _isDark
+            ? null
+            : const [
+                BoxShadow(
+                  color: Color(0x04000000),
+                  blurRadius: 6,
+                  offset: Offset(0, 2),
+                ),
+              ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -1169,8 +1265,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               children: [
                 Text(
                   stage['label']?.toString() ?? 'Stage',
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
+                  style: TextStyle(
+                    color: _textPrimaryColor,
                     fontSize: 15,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -0.2,
@@ -1195,8 +1291,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                         description,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
+                        style: TextStyle(
+                          color: _textSecondaryColor,
                           fontSize: 12,
                           height: 1.25,
                         ),
@@ -1207,19 +1303,19 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
+                        color: _panelBgColor,
                         borderRadius: BorderRadius.circular(5),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        border: Border.all(color: _borderColor),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.turn_right_rounded, size: 12, color: AppColors.textSecondary),
+                          Icon(Icons.turn_right_rounded, size: 12, color: _textSecondaryColor),
                           const SizedBox(width: 3),
                           Text(
                             'Prerequisite: $previousLabel',
-                            style: const TextStyle(
-                              color: AppColors.textSecondary,
+                            style: TextStyle(
+                              color: _textSecondaryColor,
                               fontSize: 10.5,
                               fontWeight: FontWeight.w600,
                             ),
@@ -1232,19 +1328,19 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
+                        color: _panelBgColor,
                         borderRadius: BorderRadius.circular(5),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        border: Border.all(color: _borderColor),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Icon(Icons.flag_outlined, size: 11, color: AppColors.textSecondary),
-                          SizedBox(width: 3),
+                        children: [
+                          Icon(Icons.flag_outlined, size: 11, color: _textSecondaryColor),
+                          const SizedBox(width: 3),
                           Text(
                             'Sequence Start',
                             style: TextStyle(
-                              color: AppColors.textSecondary,
+                              color: _textSecondaryColor,
                               fontSize: 10.5,
                               fontWeight: FontWeight.w600,
                             ),
@@ -1261,9 +1357,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: _panelBgColor,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: _borderColor),
               ),
               child: Row(
                 children: [
@@ -1271,12 +1367,14 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   Icon(
                     hasRubrics ? Icons.assignment_turned_in_rounded : Icons.assignment_outlined,
                     size: 13.5,
-                    color: hasRubrics ? AppColors.maroon : const Color(0xFF94A3B8),
+                    color: hasRubrics
+                        ? (_isDark ? const Color(0xFFF87171) : AppColors.maroon)
+                        : (_isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8)),
                   ),
                   const SizedBox(width: 5),
-                  const Text(
+                  Text(
                     'Rubric: ',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textSecondary),
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _textSecondaryColor),
                   ),
                   Flexible(
                     child: Text(
@@ -1286,34 +1384,44 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: hasRubrics ? FontWeight.w800 : FontWeight.w500,
-                        color: hasRubrics ? AppColors.textPrimary : const Color(0xFF64748B),
+                        color: hasRubrics ? _textPrimaryColor : _textSecondaryColor,
                         fontStyle: hasRubrics ? FontStyle.normal : FontStyle.italic,
                       ),
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Container(width: 1, height: 16, color: const Color(0xFFCBD5E1)),
+                  Container(width: 1, height: 16, color: _borderColor),
                   const SizedBox(width: 12),
                   // 2. Deliverables Section
                   if (isPresentationOnly) ...[
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
+                        color: _isDark
+                            ? const Color(0xFF1E3A8A).withValues(alpha: 0.25)
+                            : const Color(0xFFEFF6FF),
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                        border: Border.all(
+                          color: _isDark
+                              ? const Color(0xFF1D4ED8).withValues(alpha: 0.5)
+                              : const Color(0xFFBFDBFE),
+                        ),
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.record_voice_over_rounded, size: 12, color: Color(0xFF2563EB)),
-                          SizedBox(width: 4),
+                          Icon(
+                            Icons.record_voice_over_rounded,
+                            size: 12,
+                            color: _isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB),
+                          ),
+                          const SizedBox(width: 4),
                           Text(
                             'Presentation / Demo Only (No Uploads)',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
-                              color: Color(0xFF1D4ED8),
+                              color: _isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
                             ),
                           ),
                         ],
@@ -1321,11 +1429,11 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                     ),
                     const Spacer(),
                   ] else ...[
-                    const Icon(Icons.inventory_2_outlined, size: 13.5, color: Color(0xFF475569)),
+                    Icon(Icons.inventory_2_outlined, size: 13.5, color: _textSecondaryColor),
                     const SizedBox(width: 5),
-                    const Text(
+                    Text(
                       'Deliverables: ',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textSecondary),
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _textSecondaryColor),
                     ),
                     const SizedBox(width: 2),
                     // Pre-Defense Deliverables Pill (Blue)
@@ -1333,9 +1441,13 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                       label: 'Pre-defense',
                       count: preCount,
                       icon: Icons.folder_open_rounded,
-                      color: const Color(0xFF2563EB),
-                      bgColor: const Color(0xFFEFF6FF),
-                      borderColor: const Color(0xFFBFDBFE),
+                      color: _isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB),
+                      bgColor: _isDark
+                          ? const Color(0xFF1E3A8A).withValues(alpha: 0.25)
+                          : const Color(0xFFEFF6FF),
+                      borderColor: _isDark
+                          ? const Color(0xFF1D4ED8).withValues(alpha: 0.5)
+                          : const Color(0xFFBFDBFE),
                       tooltip: 'Gatekeeper submissions required before defense scheduling',
                       onTap: () {
                         setState(() {
@@ -1353,9 +1465,13 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                       label: 'Post-defense',
                       count: postCount,
                       icon: Icons.inventory_2_rounded,
-                      color: AppColors.maroon,
-                      bgColor: const Color(0xFFFFF1F2),
-                      borderColor: const Color(0xFFFECDD3),
+                      color: _isDark ? const Color(0xFFFCA5A5) : AppColors.maroon,
+                      bgColor: _isDark
+                          ? const Color(0xFF7F1D1D).withValues(alpha: 0.25)
+                          : const Color(0xFFFFF1F2),
+                      borderColor: _isDark
+                          ? const Color(0xFF991B1B).withValues(alpha: 0.5)
+                          : const Color(0xFFFECDD3),
                       tooltip: 'Final revisions & post-defense deliverables required after defense',
                       onTap: () {
                         setState(() {
@@ -1390,14 +1506,18 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w700,
-                                color: isExpanded ? AppColors.maroon : AppColors.textSecondary,
+                                color: isExpanded
+                                    ? (_isDark ? const Color(0xFFF87171) : AppColors.maroon)
+                                    : _textSecondaryColor,
                               ),
                             ),
                             const SizedBox(width: 2),
                             Icon(
                               isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
                               size: 16,
-                              color: isExpanded ? AppColors.maroon : AppColors.textSecondary,
+                              color: isExpanded
+                                  ? (_isDark ? const Color(0xFFF87171) : AppColors.maroon)
+                                  : _textSecondaryColor,
                             ),
                           ],
                         ),
@@ -1417,9 +1537,13 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                     title: 'Pre-defense deliverables',
                     subtitle: 'Required submissions before defense schedule',
                     icon: Icons.folder_open_rounded,
-                    accentColor: const Color(0xFF2563EB),
-                    headerBg: const Color(0xFFEFF6FF),
-                    headerBorder: const Color(0xFFBFDBFE),
+                    accentColor: _isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB),
+                    headerBg: _isDark
+                        ? const Color(0xFF1E3A8A).withValues(alpha: 0.3)
+                        : const Color(0xFFEFF6FF),
+                    headerBorder: _isDark
+                        ? const Color(0xFF1D4ED8).withValues(alpha: 0.5)
+                        : const Color(0xFFBFDBFE),
                     deliverables: preDeliverables,
                     isPost: false,
                   );
@@ -1428,9 +1552,13 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                     title: 'Post-defense deliverables',
                     subtitle: 'Required outcomes after defense for completion & archive',
                     icon: Icons.inventory_2_rounded,
-                    accentColor: AppColors.maroon,
-                    headerBg: const Color(0xFFFFF1F2),
-                    headerBorder: const Color(0xFFFECDD3),
+                    accentColor: _isDark ? const Color(0xFFFCA5A5) : AppColors.maroon,
+                    headerBg: _isDark
+                        ? const Color(0xFF7F1D1D).withValues(alpha: 0.3)
+                        : const Color(0xFFFFF1F2),
+                    headerBorder: _isDark
+                        ? const Color(0xFF991B1B).withValues(alpha: 0.5)
+                        : const Color(0xFFFECDD3),
                     deliverables: postDeliverables,
                     isPost: true,
                   );
@@ -1462,8 +1590,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     );
   }
 
-  static const _tableLine = Color(0xFFE5E7EB);
-
   Widget _buildStageTable(DefenseStagesState state) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
@@ -1474,8 +1600,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           const SizedBox(height: 8),
           DecoratedBox(
             decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: _tableLine),
+              color: _surfaceColor,
+              border: Border.all(color: _borderColor),
               borderRadius: BorderRadius.circular(8),
             ),
             child: ClipRRect(
@@ -1497,9 +1623,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     return Container(
       height: 48,
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F1F4),
+        color: _subtleFillColor,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: _tableLine),
+        border: Border.all(color: _borderColor),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -1523,8 +1649,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         alignment: Alignment.centerLeft,
         child: Text(
           text,
-          style: const TextStyle(
-            color: AppColors.textSecondary,
+          style: TextStyle(
+            color: _textSecondaryColor,
             fontSize: 11,
             fontWeight: FontWeight.w800,
             letterSpacing: 0.5,
@@ -1543,8 +1669,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           text,
           maxLines: maxLines,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: AppColors.textSecondary,
+          style: TextStyle(
+            color: _textSecondaryColor,
             fontSize: 11,
             fontWeight: FontWeight.w800,
             letterSpacing: 0.45,
@@ -1585,9 +1711,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     return Container(
       constraints: const BoxConstraints(minHeight: 56),
       decoration: BoxDecoration(
-        color: zebra ? const Color(0xFFFAFAFA) : Colors.white,
+        color: zebra ? _panelBgColor : _surfaceColor,
         border: index > 0
-            ? const Border(top: BorderSide(color: _tableLine))
+            ? Border(top: BorderSide(color: _borderColor))
             : null,
       ),
       child: Row(
@@ -1616,9 +1742,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: _panelBgColor,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: _borderColor),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1626,7 +1752,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                     Icon(
                       hasRubrics ? Icons.assignment_turned_in_rounded : Icons.assignment_outlined,
                       size: 13,
-                      color: hasRubrics ? AppColors.maroon : const Color(0xFF94A3B8),
+                      color: hasRubrics
+                          ? (_isDark ? const Color(0xFFF87171) : AppColors.maroon)
+                          : (_isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8)),
                     ),
                     const SizedBox(width: 5),
                     Flexible(
@@ -1635,7 +1763,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: hasRubrics ? FontWeight.w700 : FontWeight.w500,
-                          color: hasRubrics ? AppColors.textPrimary : const Color(0xFF64748B),
+                          color: hasRubrics ? _textPrimaryColor : _textSecondaryColor,
                           fontStyle: hasRubrics ? FontStyle.normal : FontStyle.italic,
                         ),
                         maxLines: 1,
@@ -1653,21 +1781,31 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 ? Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
+                      color: _isDark
+                          ? const Color(0xFF1E3A8A).withValues(alpha: 0.25)
+                          : const Color(0xFFEFF6FF),
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                      border: Border.all(
+                        color: _isDark
+                            ? const Color(0xFF1D4ED8).withValues(alpha: 0.5)
+                            : const Color(0xFFBFDBFE),
+                      ),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.record_voice_over_rounded, size: 12, color: Color(0xFF2563EB)),
-                        SizedBox(width: 4),
+                        Icon(
+                          Icons.record_voice_over_rounded,
+                          size: 12,
+                          color: _isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB),
+                        ),
+                        const SizedBox(width: 4),
                         Text(
                           'Oral / Demo',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
-                            color: Color(0xFF1D4ED8),
+                            color: _isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
                           ),
                         ),
                       ],
@@ -1680,9 +1818,13 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                         label: 'Pre',
                         count: preCount,
                         icon: Icons.folder_open_rounded,
-                        color: const Color(0xFF2563EB),
-                        bgColor: const Color(0xFFEFF6FF),
-                        borderColor: const Color(0xFFBFDBFE),
+                        color: _isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB),
+                        bgColor: _isDark
+                            ? const Color(0xFF1E3A8A).withValues(alpha: 0.25)
+                            : const Color(0xFFEFF6FF),
+                        borderColor: _isDark
+                            ? const Color(0xFF1D4ED8).withValues(alpha: 0.5)
+                            : const Color(0xFFBFDBFE),
                         compact: true,
                       ),
                       const SizedBox(width: 4),
@@ -1690,9 +1832,13 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                         label: 'Post',
                         count: postCount,
                         icon: Icons.inventory_2_rounded,
-                        color: AppColors.maroon,
-                        bgColor: const Color(0xFFFFF1F2),
-                        borderColor: const Color(0xFFFECDD3),
+                        color: _isDark ? const Color(0xFFFCA5A5) : AppColors.maroon,
+                        bgColor: _isDark
+                            ? const Color(0xFF7F1D1D).withValues(alpha: 0.25)
+                            : const Color(0xFFFFF1F2),
+                        borderColor: _isDark
+                            ? const Color(0xFF991B1B).withValues(alpha: 0.5)
+                            : const Color(0xFFFECDD3),
                         compact: true,
                       ),
                     ],
@@ -1741,16 +1887,16 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       height: 28,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: _subtleFillColor,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: _borderColor),
       ),
       child: Text(
         formatted,
-        style: const TextStyle(
+        style: TextStyle(
           fontWeight: FontWeight.w800,
           fontSize: 11.5,
-          color: AppColors.textPrimary,
+          color: _textPrimaryColor,
         ),
       ),
     );
@@ -1780,16 +1926,18 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   margin: const EdgeInsets.only(bottom: 12),
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: _surfaceColor,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x04000000),
-                        blurRadius: 6,
-                        offset: Offset(0, 2),
-                      ),
-                    ],
+                    border: Border.all(color: _borderColor),
+                    boxShadow: _isDark
+                        ? null
+                        : const [
+                            BoxShadow(
+                              color: Color(0x04000000),
+                              blurRadius: 6,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1812,21 +1960,31 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFEFF6FF),
+                                color: _isDark
+                                    ? const Color(0xFF1E3A8A).withValues(alpha: 0.25)
+                                    : const Color(0xFFEFF6FF),
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                                border: Border.all(
+                                  color: _isDark
+                                      ? const Color(0xFF1D4ED8).withValues(alpha: 0.5)
+                                      : const Color(0xFFBFDBFE),
+                                ),
                               ),
-                              child: const Row(
+                              child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.record_voice_over_rounded, size: 12, color: Color(0xFF2563EB)),
-                                  SizedBox(width: 4),
+                                  Icon(
+                                    Icons.record_voice_over_rounded,
+                                    size: 12,
+                                    color: _isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB),
+                                  ),
+                                  const SizedBox(width: 4),
                                   Text(
                                     'Oral / Demo Only',
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w700,
-                                      color: Color(0xFF1D4ED8),
+                                      color: _isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
                                     ),
                                   ),
                                 ],
@@ -1837,18 +1995,26 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                               label: 'Pre-defense',
                               count: preCount,
                               icon: Icons.folder_open_rounded,
-                              color: const Color(0xFF2563EB),
-                              bgColor: const Color(0xFFEFF6FF),
-                              borderColor: const Color(0xFFBFDBFE),
+                              color: _isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB),
+                              bgColor: _isDark
+                                  ? const Color(0xFF1E3A8A).withValues(alpha: 0.25)
+                                  : const Color(0xFFEFF6FF),
+                              borderColor: _isDark
+                                  ? const Color(0xFF1D4ED8).withValues(alpha: 0.5)
+                                  : const Color(0xFFBFDBFE),
                               compact: true,
                             ),
                             _deliverableCategoryBadge(
                               label: 'Post-defense',
                               count: postCount,
                               icon: Icons.inventory_2_rounded,
-                              color: AppColors.maroon,
-                              bgColor: const Color(0xFFFFF1F2),
-                              borderColor: const Color(0xFFFECDD3),
+                              color: _isDark ? const Color(0xFFFCA5A5) : AppColors.maroon,
+                              bgColor: _isDark
+                                  ? const Color(0xFF7F1D1D).withValues(alpha: 0.25)
+                                  : const Color(0xFFFFF1F2),
+                              borderColor: _isDark
+                                  ? const Color(0xFF991B1B).withValues(alpha: 0.5)
+                                  : const Color(0xFFFECDD3),
                               compact: true,
                             ),
                           ],
@@ -1878,8 +2044,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           stage['label']?.toString() ?? '',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: AppColors.textPrimary,
+          style: TextStyle(
+            color: _textPrimaryColor,
             fontSize: 13.5,
             fontWeight: FontWeight.w900,
           ),
@@ -1890,8 +2056,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
             stage['description'].toString(),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
+            style: TextStyle(
+              color: _textSecondaryColor,
               fontSize: 11,
               height: 1.2,
             ),
@@ -1908,19 +2074,19 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
         decoration: BoxDecoration(
-          color: const Color(0xFFF1F5F9),
+          color: _panelBgColor,
           borderRadius: BorderRadius.circular(5),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: _borderColor),
         ),
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.flag_outlined, size: 11, color: Color(0xFF64748B)),
-            SizedBox(width: 4),
+            Icon(Icons.flag_outlined, size: 11, color: _textSecondaryColor),
+            const SizedBox(width: 4),
             Text(
               'Initial Stage',
               style: TextStyle(
-                color: Color(0xFF64748B),
+                color: _textSecondaryColor,
                 fontSize: 10.5,
                 fontWeight: FontWeight.w700,
               ),
@@ -1934,7 +2100,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        const Icon(Icons.subdirectory_arrow_right_rounded, size: 14, color: Color(0xFF94A3B8)),
+        Icon(Icons.subdirectory_arrow_right_rounded, size: 14, color: _textSecondaryColor),
         const SizedBox(width: 4),
         Flexible(
           child: Column(
@@ -1945,8 +2111,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 previous,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
+                style: TextStyle(
+                  color: _textPrimaryColor,
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
                 ),
@@ -1957,9 +2123,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   stage['previous_stage_code'].toString(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'monospace',
-                    color: Color(0xFF64748B),
+                    color: _textSecondaryColor,
                     fontSize: 10.5,
                     fontWeight: FontWeight.w600,
                   ),
@@ -4430,16 +4596,16 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F5F9),
+        color: _subtleFillColor,
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         code,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: 'monospace',
-          color: AppColors.textPrimary,
+          color: _textPrimaryColor,
           fontWeight: FontWeight.w800,
           fontSize: 12,
         ),
@@ -4453,9 +4619,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     if (status == 'locked') {
       return _softChip(
         'Completed',
-        const Color(0xFFEFF6FF),
-        const Color(0xFF1D4ED8),
-        const Color(0xFFBFDBFE),
+        _isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.35) : const Color(0xFFEFF6FF),
+        _isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
+        _isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.7) : const Color(0xFFBFDBFE),
         icon: Icons.task_alt_rounded,
       );
     }
@@ -4463,18 +4629,18 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     if (status == 'published') {
       return _softChip(
         'Published',
-        const Color(0xFFDDF5E8),
-        const Color(0xFF047857),
-        const Color(0xFFA7F3D0),
+        _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.35) : const Color(0xFFDDF5E8),
+        _isDark ? const Color(0xFF34D399) : const Color(0xFF047857),
+        _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.7) : const Color(0xFFA7F3D0),
         icon: Icons.check_circle,
       );
     }
 
     return _softChip(
       'Draft',
-      const Color(0xFFFEF3C7),
-      const Color(0xFFB45309),
-      const Color(0xFFFDE68A),
+      _isDark ? const Color(0xFF78350F).withValues(alpha: 0.35) : const Color(0xFFFEF3C7),
+      _isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
+      _isDark ? const Color(0xFF78350F).withValues(alpha: 0.7) : const Color(0xFFFDE68A),
       icon: Icons.auto_fix_high,
     );
   }
@@ -4521,16 +4687,14 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     );
   }
 
-
-
   Widget _buildLoadingState() {
     return Container(
       width: double.infinity,
       height: 220,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE6E8EF)),
+        border: Border.all(color: _borderColor),
       ),
       child: const Center(
         child: CircularProgressIndicator(color: AppColors.maroon),
@@ -4542,9 +4706,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _surfaceColor,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE6E8EF)),
+        border: Border.all(color: _borderColor),
       ),
       child: DefensysEmptyState(
         icon: Icons.layers_outlined,
@@ -4598,20 +4762,22 @@ class _TimelineRailPainter extends CustomPainter {
   final bool isLast;
   final double nodeTop;
   final double nodeSize;
+  final Color? lineColor;
 
-  static const Color _lineColor = Color(0xFFCBD5E1);
+  static const Color _defaultLineColor = Color(0xFFCBD5E1);
 
   _TimelineRailPainter({
     required this.isFirst,
     required this.isLast,
     this.nodeTop = 14.0,
     this.nodeSize = 36.0,
+    this.lineColor,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = _lineColor
+      ..color = lineColor ?? _defaultLineColor
       ..strokeWidth = 2.0
       ..style = PaintingStyle.stroke;
 
@@ -4635,5 +4801,6 @@ class _TimelineRailPainter extends CustomPainter {
       oldDelegate.isFirst != isFirst ||
       oldDelegate.isLast != isLast ||
       oldDelegate.nodeTop != nodeTop ||
-      oldDelegate.nodeSize != nodeSize;
+      oldDelegate.nodeSize != nodeSize ||
+      oldDelegate.lineColor != lineColor;
 }
