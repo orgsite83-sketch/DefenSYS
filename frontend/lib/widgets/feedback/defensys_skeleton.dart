@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/defensys_tokens.dart';
+import 'login_skeleton.dart';
+
+export 'login_skeleton.dart';
 
 /// Shared skeleton placeholders (static grey blocks; no external package).
 class DefensysSkeleton {
@@ -17,19 +20,38 @@ class DefensysSkeleton {
     return Opacity(opacity: 0.55, child: child);
   }
 
+  /// Full-screen animated login skeleton placeholder for app bootstrap.
+  static Widget loginScreen() => const LoginSkeletonScreen();
+
+  /// Shimmer wrapper that sweeps a gradient highlight across child widgets.
+  static Widget shimmer({
+    required Widget child,
+    Color baseColor = const Color(0xFFE2E8F0),
+    Color highlightColor = const Color(0xFFF8FAFC),
+    Duration duration = const Duration(milliseconds: 1400),
+  }) {
+    return DefensysShimmer(
+      baseColor: baseColor,
+      highlightColor: highlightColor,
+      duration: duration,
+      child: child,
+    );
+  }
+
   /// Single rectangular placeholder.
   static Widget box({
     double? width,
     double height = 16,
     double borderRadius = 8,
     EdgeInsetsGeometry? margin,
+    Color? color,
   }) {
     return Container(
       width: width,
       height: height,
       margin: margin,
       decoration: BoxDecoration(
-        color: _boneColor,
+        color: color ?? _boneColor,
         borderRadius: BorderRadius.circular(borderRadius),
       ),
     );

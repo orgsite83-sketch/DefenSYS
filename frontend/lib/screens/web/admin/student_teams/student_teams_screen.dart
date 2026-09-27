@@ -287,7 +287,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       filename: 'defensys-official-capstone-template.csv',
       content: 'Section,BSIT-4A\n'
           'Team Name,Capstone Project,Adviser,Team Members\n'
-          'Team SkyLedger,Alumni Career Tracker,Ricardo Fontanilla,"VILLAR, Marcus"\n'
+          'Team SkyLedger,Alumni Career Tracker,Prof. Alex Santos,"VILLAR, Marcus"\n'
           ',,,"ONG, Patricia"\n'
           ',,,"SALAZAR, Ethan"\n'
           ',,,"CASTILLO, Zoe"\n',
@@ -515,6 +515,29 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       final excel = xl.Excel.decodeBytes(bytes);
       if (excel.tables.isEmpty) return '';
       final sheet = excel.tables.values.first;
+
+      // Expand merged cell spans so child cells inherit their top-left parent value
+      try {
+        for (final span in sheet.spannedItems) {
+          final parts = span.split(':');
+          if (parts.length != 2) continue;
+          final start = xl.CellIndex.indexByString(parts[0]);
+          final end = xl.CellIndex.indexByString(parts[1]);
+          final startVal = sheet.cell(start).value;
+          if (startVal == null) continue;
+          final minR = start.rowIndex < end.rowIndex ? start.rowIndex : end.rowIndex;
+          final maxR = start.rowIndex > end.rowIndex ? start.rowIndex : end.rowIndex;
+          final minC = start.columnIndex < end.columnIndex ? start.columnIndex : end.columnIndex;
+          final maxC = start.columnIndex > end.columnIndex ? start.columnIndex : end.columnIndex;
+          for (var r = minR; r <= maxR; r++) {
+            for (var c = minC; c <= maxC; c++) {
+              if (r == start.rowIndex && c == start.columnIndex) continue;
+              sheet.cell(xl.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r)).value = startVal;
+            }
+          }
+        }
+      } catch (_) {}
+
       final buffer = StringBuffer();
       for (final row in sheet.rows) {
         final line = row.map((cell) {
@@ -567,11 +590,12 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
 
       String? warning;
       final isClientTemplate = (headers.contains('team name') || headers.contains('team_name')) &&
-          (headers.contains('team members') || headers.contains('team_members') || headers.contains('members'));
+          (headers.contains('team members') || headers.contains('team_members') || headers.contains('members') || headers.contains('names'));
       final recognizedHeaders = {
         'team_name', 'project_title', 'level', 'year_level', 'member_ids',
         'leader_id', 'adviser_id', 'adviser_name', 'team name', 'capstone project',
         'pit project', 'project', 'project title', 'adviser', 'team members', 'members',
+        'section', 'class section', 'class_section', 'names', 'modules', 'module',
       };
       final unrecognized = headers.where((h) => !recognizedHeaders.contains(h)).toList();
 

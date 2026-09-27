@@ -3320,19 +3320,17 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     ref.read(defenseBoardProvider.notifier).fetchBoard();
   }
 
-  Future<void> _openImportScheduleDialog() async {
+  void _openImportScheduleDialog() {
     final user = ref.read(authProvider).user;
     final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
     final isPitLead = user?['is_pit_lead'] == true;
     if (!isAdmin && !isPitLead) return;
 
-    final schedNotifier = ref.read(defenseSchedulerProvider.notifier);
-    await schedNotifier.fetchSchedules();
-
-    if (!mounted) return;
     setState(() {
       _showScheduleBulkImport = true;
     });
+
+    ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
   }
 
   void _openScheduler({String? scope, int? stageId, String? eventName}) {

@@ -163,7 +163,111 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
   bool _isExpanded = false;
   bool _isCustomBuilderActive = false;
   String _activeDelimiter = '_';
+  bool _customPrefixFocused = false;
   final TextEditingController _customPrefixController = TextEditingController();
+
+  static const Map<String, ({String label, IconData icon})> _tokenInfo = {
+    '{project}': (label: 'Project Title', icon: Icons.title_rounded),
+    '{deliverable}': (label: 'Deliverable Name', icon: Icons.insert_drive_file_outlined),
+    '{year}': (label: 'Year Level', icon: Icons.school_outlined),
+    '{course}': (label: 'Course Code', icon: Icons.tag_rounded),
+    '{stage}': (label: 'Defense Stage', icon: Icons.flag_outlined),
+    '{event}': (label: 'Event Name', icon: Icons.flag_outlined),
+    '{semester}': (label: 'Semester', icon: Icons.calendar_today_outlined),
+  };
+
+  ({String prefix, List<String> tokens, String delimiter}) _parseTemplate(String tpl) {
+    if (tpl.isEmpty) {
+      return (prefix: '', tokens: <String>[], delimiter: _activeDelimiter);
+    }
+
+    final tokenRegex = RegExp(r'\{[a-zA-Z0-9_]+\}');
+    final matches = tokenRegex.allMatches(tpl).toList();
+
+    if (matches.isEmpty) {
+      return (prefix: tpl, tokens: <String>[], delimiter: _activeDelimiter);
+    }
+
+    final prefix = tpl.substring(0, matches.first.start);
+    final tokens = matches.map((m) => m.group(0)!).toList();
+
+    String delimiter = _activeDelimiter;
+    if (matches.length >= 2) {
+      final sep = tpl.substring(matches[0].end, matches[1].start);
+      if (sep.contains('-')) {
+        delimiter = '-';
+      } else if (sep.contains('.')) {
+        delimiter = '.';
+      } else if (sep.contains('_')) {
+        delimiter = '_';
+      }
+    }
+
+    return (prefix: prefix, tokens: tokens, delimiter: delimiter);
+  }
+
+  void _rebuildTemplate({
+    String? newPrefix,
+    List<String>? newTokens,
+    String? newDelimiter,
+  }) {
+    if (widget.isLocked) return;
+    final current = _parseTemplate(widget.templateController.text.trim());
+    final prefix = (newPrefix ?? current.prefix).trim();
+    final tokens = newTokens ?? current.tokens;
+    final delim = newDelimiter ?? current.delimiter;
+
+    _activeDelimiter = delim;
+
+    final tokenPart = tokens.join(delim);
+    String fullTemplate = tokenPart;
+    if (prefix.isNotEmpty) {
+      if (tokenPart.isEmpty) {
+        fullTemplate = prefix;
+      } else if (prefix.endsWith(delim) || prefix.endsWith('_') || prefix.endsWith('-') || prefix.endsWith('.')) {
+        fullTemplate = '$prefix$tokenPart';
+      } else {
+        fullTemplate = '$prefix$delim$tokenPart';
+      }
+    }
+
+    widget.templateController.text = fullTemplate;
+    setState(() {
+      _isCustomBuilderActive = true;
+    });
+    widget.onChanged();
+  }
+
+  void _addToken(String tokenKey) {
+    final current = _parseTemplate(widget.templateController.text.trim());
+    final updated = List<String>.from(current.tokens)..add(tokenKey);
+    _rebuildTemplate(newTokens: updated);
+  }
+
+  void _removeTokenAt(int index) {
+    final current = _parseTemplate(widget.templateController.text.trim());
+    if (index >= 0 && index < current.tokens.length) {
+      final updated = List<String>.from(current.tokens)..removeAt(index);
+      _rebuildTemplate(newTokens: updated);
+    }
+  }
+
+  void _setDelimiter(String newDelim) {
+    _rebuildTemplate(newDelimiter: newDelim);
+  }
+
+  void _updatePrefix(String newPrefix) {
+    _rebuildTemplate(newPrefix: newPrefix);
+  }
+
+  void _clearTokens() {
+    _customPrefixController.clear();
+    widget.templateController.text = '';
+    setState(() {
+      _isCustomBuilderActive = true;
+    });
+    widget.onChanged();
+  }
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
   Color get _surfaceColor => _isDark ? DefensysTokens.mistSurface : Colors.white;
@@ -216,63 +320,6 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
     setState(() {
       _isCustomBuilderActive = false;
     });
-    widget.onChanged();
-  }
-
-  void _insertToken(String tokenKey) {
-    if (widget.isLocked) return;
-    var current = widget.templateController.text.trim();
-    if (current.isEmpty) {
-      current = tokenKey;
-    } else {
-      current = '$current$_activeDelimiter$tokenKey';
-    }
-    widget.templateController.text = current;
-    setState(() {
-      _isCustomBuilderActive = true;
-    });
-    widget.onChanged();
-  }
-
-  void _applyPrefix(String prefix) {
-    if (widget.isLocked) return;
-    final cleanPrefix = prefix.trim();
-    var current = widget.templateController.text.trim();
-    if (cleanPrefix.isEmpty) return;
-
-    // Prepend prefix if not already present
-    if (!current.startsWith(cleanPrefix)) {
-      current = '$cleanPrefix$current';
-      widget.templateController.text = current;
-      setState(() {
-        _isCustomBuilderActive = true;
-      });
-      widget.onChanged();
-    }
-  }
-
-  void _removeLastToken() {
-    if (widget.isLocked) return;
-    var current = widget.templateController.text.trim();
-    if (current.isEmpty) return;
-
-    final delimiters = ['_', '-', '.'];
-    int lastDelimIndex = -1;
-    for (final d in delimiters) {
-      final idx = current.lastIndexOf(d);
-      if (idx > lastDelimIndex) {
-        lastDelimIndex = idx;
-      }
-    }
-
-    if (lastDelimIndex > 0) {
-      current = current.substring(0, lastDelimIndex);
-    } else {
-      current = '';
-    }
-
-    widget.templateController.text = current;
-    setState(() {});
     widget.onChanged();
   }
 
@@ -414,18 +461,9 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                     decoration: BoxDecoration(
-                      color: _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.3) : const Color(0xFFECFDF5),
+                      color: _isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFEFF6FF),
                       borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: _isDark ? const Color(0xFF059669) : const Color(0xFFA7F3D0)),
-                    ),
-                    child: Text(
-                      '⚡ Auto-Renamed by System',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: _isDark ? const Color(0xFF34D399) : const Color(0xFF059669),
-                        fontFamily: DefensysTokens.fontFamily,
-                      ),
+                      border: Border.all(color: _isDark ? const Color(0xFF3B82F6) : const Color(0xFFBFDBFE)),
                     ),
                   ),
                 ],
@@ -613,7 +651,7 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
               const SizedBox(width: 5),
               Expanded(
                 child: Text(
-                  'DefenSYS formats repository files automatically upon upload. Students can upload their work under any filename without naming restrictions.',
+                  'Students will see the recommended filename when uploading. If their file has a different name, DefenSYS will rename it to match this format in the repository.',
                   style: TextStyle(
                     fontSize: 10.5,
                     color: _textSecondaryColor,
@@ -712,202 +750,363 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
               ],
             ),
 
+            // Proactive collision warning for "Project Only" with multiple siblings
+            if (isPreset2 && !_isCustomBuilderActive && widget.siblingDeliverables.length >= 2) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: _isDark ? const Color(0xFF78350F).withValues(alpha: 0.25) : const Color(0xFFFEFCE8),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: _isDark ? const Color(0xFFD97706) : const Color(0xFFFDE68A)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 14,
+                      color: _isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'This stage has multiple post-defense deliverables. "Project Only" will produce identical filenames for all of them. Use "Project + Deliverable" to keep files distinct.',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          color: _isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E),
+                          height: 1.35,
+                          fontFamily: DefensysTokens.fontFamily,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             // Interactive Custom Token Builder Section
             if (_isCustomBuilderActive) ...[
               const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: _surfaceColor,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: _borderColor),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+              Builder(
+                builder: (context) {
+                  final parsed = _parseTemplate(currentTemplate);
+                  if (_customPrefixController.text != parsed.prefix && !_customPrefixFocused) {
+                    _customPrefixController.text = parsed.prefix;
+                  }
+
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _surfaceColor,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: _isDark ? const Color(0xFF3F3F46) : const Color(0xFFE2E8F0),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.tune_rounded, size: 14, color: activeMaroon),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Visual Token Builder',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w800,
-                            color: _textPrimaryColor,
-                            fontFamily: DefensysTokens.fontFamily,
+                        // Header
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(5),
+                              decoration: BoxDecoration(
+                                color: activeMaroon.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Icon(Icons.auto_awesome_rounded, size: 14, color: activeMaroon),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Visual Token Builder',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: _textPrimaryColor,
+                                fontFamily: DefensysTokens.fontFamily,
+                              ),
+                            ),
+                            const Spacer(),
+                            if (parsed.tokens.isNotEmpty || parsed.prefix.isNotEmpty)
+                              InkWell(
+                                onTap: widget.isLocked ? null : _clearTokens,
+                                borderRadius: BorderRadius.circular(4),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.refresh_rounded, size: 12, color: _textSecondaryColor),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        'Clear',
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: _textSecondaryColor,
+                                          fontFamily: DefensysTokens.fontFamily,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Active Pattern Container with interactive chips
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: _panelBgColor,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: _borderColor),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    'Active Pattern: ',
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: _textSecondaryColor,
+                                      fontFamily: DefensysTokens.fontFamily,
+                                    ),
+                                  ),
+                                  if (parsed.tokens.isEmpty && parsed.prefix.isEmpty)
+                                    Text(
+                                      '(Empty — click parts below to assemble)',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontStyle: FontStyle.italic,
+                                        color: _isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8),
+                                        fontFamily: DefensysTokens.fontFamily,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              if (parsed.tokens.isNotEmpty || parsed.prefix.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: [
+                                    if (parsed.prefix.isNotEmpty) ...[
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: _surfaceColor,
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(color: _borderColor),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              'Prefix: "${parsed.prefix}"',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                                color: _textPrimaryColor,
+                                                fontFamily: 'monospace',
+                                              ),
+                                            ),
+                                            const SizedBox(width: 5),
+                                            InkWell(
+                                              onTap: widget.isLocked
+                                                  ? null
+                                                  : () {
+                                                      _customPrefixController.clear();
+                                                      _updatePrefix('');
+                                                    },
+                                              child: Icon(Icons.cancel, size: 13, color: _textSecondaryColor),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      _buildSeparatorBadge(parsed.delimiter),
+                                    ],
+                                    for (int i = 0; i < parsed.tokens.length; i++) ...[
+                                      _buildActiveTokenChip(parsed.tokens[i], i),
+                                      if (i < parsed.tokens.length - 1)
+                                        _buildSeparatorBadge(parsed.delimiter),
+                                    ],
+                                  ],
+                                ),
+                              ],
+                            ],
                           ),
                         ),
-                        const Spacer(),
+                        const SizedBox(height: 10),
+
+                        // Delimiter Selector & Prefix Row
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            // Separator
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Separator: ',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: _textSecondaryColor,
+                                    fontFamily: DefensysTokens.fontFamily,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                _buildDelimiterChoice('_', 'Underscore (_)', parsed.delimiter),
+                                const SizedBox(width: 4),
+                                _buildDelimiterChoice('-', 'Hyphen (-)', parsed.delimiter),
+                                const SizedBox(width: 4),
+                                _buildDelimiterChoice('.', 'Dot (.)', parsed.delimiter),
+                              ],
+                            ),
+
+                            // Prefix Input
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'Prefix: ',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: _textSecondaryColor,
+                                    fontFamily: DefensysTokens.fontFamily,
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: 140,
+                                  height: 28,
+                                  child: Focus(
+                                    onFocusChange: (focused) {
+                                      _customPrefixFocused = focused;
+                                    },
+                                    child: TextField(
+                                      controller: _customPrefixController,
+                                      enabled: !widget.isLocked,
+                                      decoration: InputDecoration(
+                                        hintText: 'e.g. FINAL_',
+                                        hintStyle: TextStyle(
+                                          fontSize: 10.5,
+                                          color: _isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8),
+                                        ),
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                                        filled: true,
+                                        fillColor: _inputFillColor,
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(5),
+                                          borderSide: BorderSide(color: _borderColor),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(5),
+                                          borderSide: BorderSide(color: _borderColor),
+                                        ),
+                                      ),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontFamily: 'monospace',
+                                        color: _textPrimaryColor,
+                                      ),
+                                      onChanged: (val) {
+                                        _updatePrefix(val);
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Add Token Buttons Header
                         Text(
-                          'Delimiter: ',
+                          'Click parts to add to filename:',
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: 10.5,
                             fontWeight: FontWeight.w600,
                             color: _textSecondaryColor,
                             fontFamily: DefensysTokens.fontFamily,
                           ),
                         ),
-                        _buildDelimiterChoice('_', 'Underscore (_)'),
-                        const SizedBox(width: 4),
-                        _buildDelimiterChoice('-', 'Hyphen (-)'),
-                        const SizedBox(width: 4),
-                        _buildDelimiterChoice('.', 'Dot (.)'),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
+                        const SizedBox(height: 6),
 
-                    // Active Pattern Visualization
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: _panelBgColor,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Row(
-                        children: [
-                          Text(
-                            'Active Pattern: ',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                              color: _textSecondaryColor,
-                              fontFamily: DefensysTokens.fontFamily,
+                        // Token Pills Palette
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            _buildTokenPill('+ Project Title', '{project}', Icons.title_rounded, parsed.tokens.contains('{project}')),
+                            _buildTokenPill('+ Deliverable Name', '{deliverable}', Icons.insert_drive_file_outlined, parsed.tokens.contains('{deliverable}')),
+                            _buildTokenPill('+ Year Level', '{year}', Icons.school_outlined, parsed.tokens.contains('{year}')),
+                            _buildTokenPill('+ Course Code', '{course}', Icons.tag_rounded, parsed.tokens.contains('{course}')),
+                            _buildTokenPill(
+                              widget.isPit ? '+ Event Name' : '+ Defense Stage',
+                              widget.isPit ? '{event}' : '{stage}',
+                              Icons.flag_outlined,
+                              parsed.tokens.contains(widget.isPit ? '{event}' : '{stage}'),
                             ),
-                          ),
-                          Expanded(
-                            child: Text(
-                              currentTemplate.isNotEmpty ? currentTemplate : '(Empty - using smart default)',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontFamily: 'monospace',
-                                fontWeight: FontWeight.w700,
-                                color: currentTemplate.isNotEmpty
-                                    ? activeMaroon
-                                    : (_isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8)),
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (currentTemplate.isNotEmpty)
-                            InkWell(
-                              onTap: widget.isLocked ? null : _removeLastToken,
-                              borderRadius: BorderRadius.circular(4),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: _surfaceColor,
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: _borderColor),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.backspace_outlined, size: 11, color: _textSecondaryColor),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      'Remove Last',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w700,
-                                        color: _textSecondaryColor,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 8),
-                    Text(
-                      'Click to append token (no curly braces required):',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        color: _textSecondaryColor,
-                        fontFamily: DefensysTokens.fontFamily,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-
-                    // Clickable Token Pills
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        _buildTokenPill('+ Project Title', '{project}', Icons.title_rounded),
-                        _buildTokenPill('+ Deliverable Name', '{deliverable}', Icons.insert_drive_file_outlined),
-                        _buildTokenPill('+ Year Level', '{year}', Icons.school_outlined),
-                        _buildTokenPill('+ Course Code', '{course}', Icons.tag_rounded),
-                        _buildTokenPill(
-                          widget.isPit ? '+ Event Name' : '+ Defense Stage',
-                          widget.isPit ? '{event}' : '{stage}',
-                          Icons.flag_outlined,
+                            _buildTokenPill('+ Semester', '{semester}', Icons.calendar_today_outlined, parsed.tokens.contains('{semester}')),
+                          ],
                         ),
-                        _buildTokenPill('+ Semester', '{semester}', Icons.calendar_today_outlined),
-                      ],
-                    ),
+                        const SizedBox(height: 10),
 
-                    const SizedBox(height: 8),
-                    // Optional static prefix row
-                    Row(
-                      children: [
-                        Expanded(
-                          child: SizedBox(
-                            height: 32,
-                            child: TextField(
-                              controller: _customPrefixController,
-                              enabled: !widget.isLocked,
-                              decoration: InputDecoration(
-                                hintText: 'Optional Prefix (e.g. FINAL_, CS-DEPT_)',
-                                hintStyle: TextStyle(
+                        // Result Preview Banner
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                          decoration: BoxDecoration(
+                            color: activeMaroon.withValues(alpha: _isDark ? 0.15 : 0.05),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: activeMaroon.withValues(alpha: _isDark ? 0.35 : 0.2),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.visibility_outlined, size: 14, color: activeMaroon),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Result Preview: ',
+                                style: TextStyle(
                                   fontSize: 11,
-                                  color: _isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(6),
-                                  borderSide: BorderSide(color: _borderColor),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(6),
-                                  borderSide: BorderSide(color: _borderColor),
+                                  fontWeight: FontWeight.w700,
+                                  color: activeMaroon,
+                                  fontFamily: DefensysTokens.fontFamily,
                                 ),
                               ),
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                color: _textPrimaryColor,
-                                fontFamily: DefensysTokens.fontFamily,
+                              Expanded(
+                                child: Text(
+                                  effectivePreview,
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontFamily: 'monospace',
+                                    fontWeight: FontWeight.w700,
+                                    color: activeMaroon,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        ElevatedButton(
-                          onPressed: widget.isLocked
-                              ? null
-                              : () {
-                                  _applyPrefix(_customPrefixController.text);
-                                  _customPrefixController.clear();
-                                },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _isDark ? const Color(0xFF991B1B) : AppColors.maroon,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            visualDensity: VisualDensity.compact,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                          ),
-                          child: const Text(
-                            'Add Prefix',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                            ],
                           ),
                         ),
                       ],
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
             ],
           ],
@@ -984,50 +1183,142 @@ class _RepositoryArchiveNamingPanelState extends State<RepositoryArchiveNamingPa
     );
   }
 
-  Widget _buildDelimiterChoice(String delim, String tooltip) {
-    final isCurrent = _activeDelimiter == delim;
+  Widget _buildActiveTokenChip(String tokenKey, int index) {
+    final info = _tokenInfo[tokenKey] ?? (label: tokenKey, icon: Icons.token_outlined);
+    final activeMaroon = _isDark ? const Color(0xFFFCA5A5) : AppColors.maroon;
+
+    return Container(
+      padding: const EdgeInsets.only(left: 8, right: 4, top: 4, bottom: 4),
+      decoration: BoxDecoration(
+        color: activeMaroon.withValues(alpha: _isDark ? 0.2 : 0.08),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: activeMaroon.withValues(alpha: _isDark ? 0.5 : 0.35),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(info.icon, size: 13, color: activeMaroon),
+          const SizedBox(width: 5),
+          Text(
+            info.label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: activeMaroon,
+              fontFamily: DefensysTokens.fontFamily,
+            ),
+          ),
+          const SizedBox(width: 4),
+          InkWell(
+            onTap: widget.isLocked ? null : () => _removeTokenAt(index),
+            borderRadius: BorderRadius.circular(999),
+            child: Padding(
+              padding: const EdgeInsets.all(2),
+              child: Icon(
+                Icons.cancel,
+                size: 14,
+                color: activeMaroon.withValues(alpha: 0.75),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSeparatorBadge(String delimiter) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: _inputFillColor,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: _borderColor),
+      ),
+      child: Text(
+        delimiter,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          fontFamily: 'monospace',
+          color: _textSecondaryColor,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDelimiterChoice(String delim, String tooltip, String currentDelim) {
+    final isCurrent = currentDelim == delim;
     return Tooltip(
       message: tooltip,
       child: InkWell(
-        onTap: () => setState(() => _activeDelimiter = delim),
-        borderRadius: BorderRadius.circular(4),
+        onTap: widget.isLocked ? null : () => _setDelimiter(delim),
+        borderRadius: BorderRadius.circular(5),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
             color: isCurrent
                 ? (_isDark ? const Color(0xFF991B1B) : AppColors.maroon)
                 : _inputFillColor,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Text(
-            delim == ' ' ? 'Space' : delim,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: isCurrent ? Colors.white : _textSecondaryColor,
+            borderRadius: BorderRadius.circular(5),
+            border: Border.all(
+              color: isCurrent
+                  ? (_isDark ? const Color(0xFFF87171) : AppColors.maroon)
+                  : _borderColor,
             ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                delim == ' ' ? 'Space' : delim,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  fontFamily: 'monospace',
+                  color: isCurrent ? Colors.white : _textPrimaryColor,
+                ),
+              ),
+              if (isCurrent) ...[
+                const SizedBox(width: 3),
+                const Icon(Icons.check, size: 10, color: Colors.white),
+              ],
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildTokenPill(String label, String tokenKey, IconData icon) {
+  Widget _buildTokenPill(String label, String tokenKey, IconData icon, bool isIncluded) {
     final activeMaroon = _isDark ? const Color(0xFFFCA5A5) : AppColors.maroon;
     return ActionChip(
-      onPressed: widget.isLocked ? null : () => _insertToken(tokenKey),
-      avatar: Icon(icon, size: 13, color: activeMaroon),
+      onPressed: widget.isLocked ? null : () => _addToken(tokenKey),
+      avatar: Icon(
+        isIncluded ? Icons.check_circle_rounded : icon,
+        size: 13,
+        color: isIncluded ? (_isDark ? const Color(0xFF34D399) : const Color(0xFF059669)) : activeMaroon,
+      ),
       label: Text(
         label,
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          color: activeMaroon,
+          color: isIncluded
+              ? (_isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857))
+              : activeMaroon,
           fontFamily: DefensysTokens.fontFamily,
         ),
       ),
-      backgroundColor: _surfaceColor,
-      side: BorderSide(color: _borderColor),
+      backgroundColor: isIncluded
+          ? (_isDark ? const Color(0xFF064E3B).withValues(alpha: 0.25) : const Color(0xFFECFDF5))
+          : _surfaceColor,
+      side: BorderSide(
+        color: isIncluded
+            ? (_isDark ? const Color(0xFF059669) : const Color(0xFFA7F3D0))
+            : _borderColor,
+      ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       visualDensity: VisualDensity.compact,

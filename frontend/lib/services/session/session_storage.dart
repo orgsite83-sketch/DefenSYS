@@ -78,6 +78,16 @@ class SessionStorage {
     return prefs.getBool(AuthStorageKeys.rememberMe) ?? false;
   }
 
+  static Future<void> setSeenGettingStarted(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(AuthStorageKeys.hasSeenGettingStarted, value);
+  }
+
+  static Future<bool> hasSeenGettingStarted() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(AuthStorageKeys.hasSeenGettingStarted) ?? false;
+  }
+
   static Future<void> clearLegacyPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(AuthStorageKeys.legacyJwtToken);

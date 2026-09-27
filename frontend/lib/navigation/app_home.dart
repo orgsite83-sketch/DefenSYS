@@ -5,13 +5,12 @@ import '../screens/web/admin/admin_dashboard.dart';
 import '../screens/web/faculty/faculty_dashboard.dart';
 import '../screens/login_screen.dart';
 import '../services/auth_provider.dart';
+import '../widgets/defensys_skeleton.dart';
 
 /// Root [MaterialApp.home] from auth state (web: dashboard when signed in).
 Widget homeForAuth(AuthState auth) {
   if (auth.isRestoring) {
-    return const Scaffold(
-      body: Center(child: CircularProgressIndicator()),
-    );
+    return const LoginSkeletonScreen();
   }
 
   if (kIsWeb && auth.token != null && auth.user != null) {

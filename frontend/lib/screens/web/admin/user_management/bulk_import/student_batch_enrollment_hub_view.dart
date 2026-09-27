@@ -989,7 +989,7 @@ class _StudentBatchEnrollmentHubViewState
                                   Expanded(
                                     child: Text(
                                       selectedTab == 0
-                                          ? 'Master cohort intake. Section is omitted and automatically assigned when team groupings are uploaded.'
+                                          ? 'Official USTP LIST OF ENROLLMENT format. Multi-page intervals, repeated headers, and cohorts across all pages are read directly with no editing required.'
                                           : 'Class-specific intake. Students are enrolled directly into the section specified in Row 10.',
                                       style: const TextStyle(
                                         fontSize: 12,
@@ -1160,50 +1160,209 @@ class _StudentBatchEnrollmentHubViewState
             ),
           ),
 
-          // Row 1: Document Title (Standard)
-          _buildOfficialHeaderRow(
-            rowNumber: '1',
-            keyName: 'OFFICIAL LIST OF ENROLLED STUDENTS',
-            valueText: '',
-            isRequired: false,
-          ),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          if (selectedTab == 0) ...[
+            // USTP LIST OF ENROLLMENT Layout (Authentic Client Format)
+            _buildOfficialHeaderRow(
+              rowNumber: '1',
+              keyName: 'LIST OF ENROLLMENT',
+              valueText: '',
+              isRequired: false,
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            _buildOfficialHeaderRow(
+              rowNumber: '2',
+              keyName: 'Academic Term',
+              valueText: '2026-2027 1st Semester',
+              badgeText: 'Auto-Detected Term',
+              badgeBg: const Color(0xFFF1F5F9),
+              badgeFg: const Color(0xFF334155),
+              isRequired: true,
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            _buildOfficialHeaderRow(
+              rowNumber: '3',
+              keyName: 'Program',
+              valueText: 'Bachelor of Science in Information Technology',
+              secondaryKey: 'Officially Enrolled',
+              secondaryValue: '143',
+              badgeText: 'Enrollment Summary (Auto-Skipped)',
+              badgeBg: const Color(0xFFF1F5F9),
+              badgeFg: const Color(0xFF64748B),
+              isRequired: false,
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            _buildOfficialHeaderRow(
+              rowNumber: '5',
+              keyName: 'TOTAL',
+              valueText: '143 Officially Enrolled',
+              isRequired: false,
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            _buildOfficialHeaderRow(
+              rowNumber: '7',
+              keyName: 'LIST OF ENROLLMENT',
+              valueText: '',
+              isRequired: false,
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            _buildOfficialHeaderRow(
+              rowNumber: '8',
+              keyName: 'Academic Term',
+              valueText: '2026-2027 1st Semester',
+              isRequired: false,
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            _buildOfficialHeaderRow(
+              rowNumber: '9',
+              keyName: 'Program',
+              valueText: 'Bachelor of Science in Information Technology',
+              badgeText: 'Auto-Detected Degree',
+              badgeBg: const Color(0xFFF1F5F9),
+              badgeFg: const Color(0xFF334155),
+              isRequired: false,
+            ),
+            const Divider(height: 1, color: Color(0xFFCBD5E1)),
 
-          // Row 2: Term (HIGHLIGHTED - REQUIRED)
-          _buildOfficialHeaderRow(
-            rowNumber: '2',
-            keyName: 'Academic Term',
-            valueText: '2026-2027 1st Semester',
-            badgeText: 'Auto-Detected Term',
-            badgeBg: const Color(0xFFF1F5F9),
-            badgeFg: const Color(0xFF334155),
-            isRequired: true,
-          ),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            // Row 10: Column Headers
+            Container(
+              color: const Color(0xFFE2E8F0),
+              child: Row(
+                children: [
+                  _buildGutterCell('10', isHeader: true),
+                  _buildColumnHeaderCell('#', flex: 1),
+                  _buildColumnHeaderCell('Student No', flex: 3, isRequired: true),
+                  _buildColumnHeaderCell('Name', flex: 4, isRequired: true),
+                  _buildColumnHeaderCell('Program', flex: 2),
+                  _buildColumnHeaderCell('Major', flex: 2),
+                  _buildColumnHeaderCell('Level', flex: 2, isRequired: true),
+                  _buildColumnHeaderCell('Gender', flex: 2),
+                  _buildColumnHeaderCell('Status', flex: 3),
+                  _buildColumnHeaderCell('Date', flex: 2),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: Color(0xFFCBD5E1)),
 
-          // Row 4 & 5: Subject Code & Title (Standard Metadata)
-          _buildOfficialHeaderRow(
-            rowNumber: '4',
-            keyName: 'Subject Code',
-            valueText: selectedTab == 0 ? 'IT211' : (isRollover ? 'CAP402' : 'IT111'),
-            secondaryKey: 'Subject Title',
-            secondaryValue: selectedTab == 0 ? 'Data Structures and Algorithms' : (isRollover ? 'Capstone Project 2' : 'Introduction to Computing'),
-            isRequired: false,
-          ),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            // Sample Student rows
+            _buildUstpEnrollmentStudentRow(
+              rowNumber: '11',
+              index: '1',
+              id: '2024-00001',
+              name: 'DELA CRUZ, Juan',
+              prog: 'BSIT',
+              major: '',
+              level: '2nd Year',
+              gen: 'M',
+              status: 'Officially Enrolled',
+              date: '06/22/2026',
+              isAlt: false,
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            _buildUstpEnrollmentStudentRow(
+              rowNumber: '12',
+              index: '2',
+              id: '2024-00002',
+              name: 'SANTOS, Maria',
+              prog: 'BSIT',
+              major: '',
+              level: '2nd Year',
+              gen: 'F',
+              status: 'Officially Enrolled',
+              date: '06/22/2026',
+              isAlt: true,
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            _buildUstpEnrollmentStudentRow(
+              rowNumber: '13',
+              index: '3',
+              id: '2024-00003',
+              name: 'REYES, Mark',
+              prog: 'BSIT',
+              major: '',
+              level: '2nd Year',
+              gen: 'M',
+              status: 'Officially Enrolled',
+              date: '06/22/2026',
+              isAlt: false,
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
 
-          // Row 6 & 8: Units & Mode (Standard Metadata)
-          _buildOfficialHeaderRow(
-            rowNumber: '6',
-            keyName: 'Academic Units',
-            valueText: '3 (Lab Units: 1)',
-            secondaryKey: 'Mode',
-            secondaryValue: 'Lecture and Laboratory',
-            isRequired: false,
-          ),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            // Page Interval Indicator (Images 2 & 3)
+            _buildPageIntervalIndicatorRow(
+              rowNumber: '54',
+              title: 'Print Info: Page 2 of 4  •  Monday 22 June 2026',
+              badgeText: 'Auto-Skipped Page Interval',
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            _buildOfficialHeaderRow(
+              rowNumber: '57',
+              keyName: 'LIST OF ENROLLMENT',
+              valueText: '2026-2027 1st Semester • BSIT',
+              badgeText: 'Repeated Header (Auto-Skipped)',
+              badgeBg: const Color(0xFFFEF3C7),
+              badgeFg: const Color(0xFF92400E),
+              isRequired: false,
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
 
-          if (selectedTab == 1) ...[
+            // Sample Student row from Page 2
+            _buildUstpEnrollmentStudentRow(
+              rowNumber: '59',
+              index: '51',
+              id: '2024-00051',
+              name: 'TORRES, Miguel',
+              prog: 'BSIT',
+              major: '',
+              level: '2nd Year',
+              gen: 'M',
+              status: 'Officially Enrolled',
+              date: '06/22/2026',
+              isAlt: false,
+            ),
+          ] else ...[
+            // Existing By-Section Layout (UNTOUCHED)
+            _buildOfficialHeaderRow(
+              rowNumber: '1',
+              keyName: 'OFFICIAL LIST OF ENROLLED STUDENTS',
+              valueText: '',
+              isRequired: false,
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+            // Row 2: Term (HIGHLIGHTED - REQUIRED)
+            _buildOfficialHeaderRow(
+              rowNumber: '2',
+              keyName: 'Academic Term',
+              valueText: '2026-2027 1st Semester',
+              badgeText: 'Auto-Detected Term',
+              badgeBg: const Color(0xFFF1F5F9),
+              badgeFg: const Color(0xFF334155),
+              isRequired: true,
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+            // Row 4 & 5: Subject Code & Title (Standard Metadata)
+            _buildOfficialHeaderRow(
+              rowNumber: '4',
+              keyName: 'Subject Code',
+              valueText: isRollover ? 'CAP402' : 'IT111',
+              secondaryKey: 'Subject Title',
+              secondaryValue: isRollover ? 'Capstone Project 2' : 'Introduction to Computing',
+              isRequired: false,
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+            // Row 6 & 8: Units & Mode (Standard Metadata)
+            _buildOfficialHeaderRow(
+              rowNumber: '6',
+              keyName: 'Academic Units',
+              valueText: '3 (Lab Units: 1)',
+              secondaryKey: 'Mode',
+              secondaryValue: 'Lecture and Laboratory',
+              isRequired: false,
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
             // Row 9: Instructor (For By-Section)
             _buildOfficialHeaderRow(
               rowNumber: '9',
@@ -1238,113 +1397,37 @@ class _StudentBatchEnrollmentHubViewState
               badgeFg: const Color(0xFF334155),
               isRequired: true,
             ),
-          ] else ...[
-            // Row 9: Instructor (Omitted / Optional for By-Year-Level)
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+            // Row 12: Schedule (Standard Metadata)
             _buildOfficialHeaderRow(
-              rowNumber: '9',
-              keyName: 'Instructor',
-              valueText: '[Omitted / Pending Section Assignment]',
-              badgeText: 'Optional for Cohort',
-              badgeBg: const Color(0xFFF1F5F9),
-              badgeFg: const Color(0xFF64748B),
+              rowNumber: '12',
+              keyName: 'Schedule(s)',
+              valueText: 'M 1:00 PM - 3:00 PM',
               isRequired: false,
             ),
-            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            const Divider(height: 1, color: Color(0xFFCBD5E1)),
 
-            // Row 10: Class Section (Omitted for By-Year-Level)
-            _buildOfficialHeaderRow(
-              rowNumber: '10',
-              keyName: 'Class Section',
-              valueText: '[Omitted — Auto-assigned in Phase 2 Teams]',
-              badgeText: 'Unassigned Section',
-              badgeBg: const Color(0xFFF1F5F9),
-              badgeFg: const Color(0xFF475569),
-              isRequired: false,
+            // Row 14: Column Headers (with Required column highlights)
+            Container(
+              color: const Color(0xFFE2E8F0),
+              child: Row(
+                children: [
+                  _buildGutterCell('14', isHeader: true),
+                  _buildColumnHeaderCell('#', flex: 1),
+                  _buildColumnHeaderCell('Student Number', flex: 3, isRequired: true),
+                  _buildColumnHeaderCell('Full Name', flex: 4, isRequired: true),
+                  _buildColumnHeaderCell('Program', flex: 2),
+                  _buildColumnHeaderCell('Gender', flex: 2),
+                  _buildColumnHeaderCell('Level', flex: 2),
+                  _buildColumnHeaderCell('Email', flex: 4, isRequired: true),
+                  _buildColumnHeaderCell('Contact', flex: 3),
+                ],
+              ),
             ),
-            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            const Divider(height: 1, color: Color(0xFFCBD5E1)),
 
-            // Row 11: Year Level (Primary filter for By-Year-Level)
-            _buildOfficialHeaderRow(
-              rowNumber: '11',
-              keyName: 'Year Level',
-              valueText: '2nd Year BSIT',
-              badgeText: 'Auto-Detected Cohort Level',
-              badgeBg: const Color(0xFFF1F5F9),
-              badgeFg: const Color(0xFF334155),
-              isRequired: true,
-            ),
-          ],
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
-
-          // Row 12: Schedule (Standard Metadata)
-          _buildOfficialHeaderRow(
-            rowNumber: '12',
-            keyName: 'Schedule(s)',
-            valueText: selectedTab == 0 ? 'M/Th 1:00 PM - 3:00 PM' : 'M 1:00 PM - 3:00 PM',
-            isRequired: false,
-          ),
-          const Divider(height: 1, color: Color(0xFFCBD5E1)),
-
-          // Row 14: Column Headers (with Required column highlights)
-          Container(
-            color: const Color(0xFFE2E8F0),
-            child: Row(
-              children: [
-                _buildGutterCell('14', isHeader: true),
-                _buildColumnHeaderCell('#', flex: 1),
-                _buildColumnHeaderCell('Student Number', flex: 3, isRequired: true),
-                _buildColumnHeaderCell('Full Name', flex: 4, isRequired: true),
-                _buildColumnHeaderCell('Program', flex: 2),
-                _buildColumnHeaderCell('Gender', flex: 2),
-                _buildColumnHeaderCell('Level', flex: 2),
-                _buildColumnHeaderCell('Email', flex: 4, isRequired: true),
-                _buildColumnHeaderCell('Contact', flex: 3),
-              ],
-            ),
-          ),
-          const Divider(height: 1, color: Color(0xFFCBD5E1)),
-
-          // Rows 15 & 16: Sample Student Records (Generic Placeholders)
-          if (selectedTab == 0) ...[
-            _buildOfficialStudentRow(
-              rowNumber: '15',
-              index: '1',
-              id: '2024-00001',
-              name: 'DELA CRUZ, Juan',
-              prog: 'BSIT',
-              gen: 'M',
-              level: '2nd Yr.',
-              email: '202400001@university.edu.ph',
-              contact: '09170000001',
-              isAlt: false,
-            ),
-            const Divider(height: 1, color: Color(0xFFE2E8F0)),
-            _buildOfficialStudentRow(
-              rowNumber: '16',
-              index: '2',
-              id: '2024-00002',
-              name: 'SANTOS, Maria',
-              prog: 'BSIT',
-              gen: 'F',
-              level: '2nd Yr.',
-              email: '202400002@university.edu.ph',
-              contact: '09170000002',
-              isAlt: true,
-            ),
-            const Divider(height: 1, color: Color(0xFFE2E8F0)),
-            _buildOfficialStudentRow(
-              rowNumber: '17',
-              index: '3',
-              id: '2024-00003',
-              name: 'REYES, Mark',
-              prog: 'BSIT',
-              gen: 'M',
-              level: '2nd Yr.',
-              email: '202400003@university.edu.ph',
-              contact: '09170000003',
-              isAlt: false,
-            ),
-          ] else ...[
+            // Rows 15 & 16: Sample Student Records
             _buildOfficialStudentRow(
               rowNumber: '15',
               index: '1',
@@ -1499,6 +1582,75 @@ class _StudentBatchEnrollmentHubViewState
           Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(level, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
           Expanded(flex: 4, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(email, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: _muted)))),
           Expanded(flex: 3, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(contact, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUstpEnrollmentStudentRow({
+    required String rowNumber,
+    required String index,
+    required String id,
+    required String name,
+    required String prog,
+    required String major,
+    required String level,
+    required String gen,
+    required String status,
+    required String date,
+    bool isAlt = false,
+  }) {
+    return Container(
+      color: isAlt ? const Color(0xFFF8FAFC) : Colors.white,
+      child: Row(
+        children: [
+          _buildGutterCell(rowNumber),
+          Expanded(flex: 1, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(index, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
+          Expanded(flex: 3, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(id, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: _ink)))),
+          Expanded(flex: 4, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(name, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: _ink)))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(prog, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(major, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(level, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFF334155))))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(gen, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
+          Expanded(flex: 3, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(status, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Color(0xFF047857), fontWeight: FontWeight.w600)))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(date, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPageIntervalIndicatorRow({
+    required String rowNumber,
+    required String title,
+    required String badgeText,
+  }) {
+    return Container(
+      color: const Color(0xFFFFFBEB),
+      child: Row(
+        children: [
+          _buildGutterCell(rowNumber),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFB45309),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: _buildMiniBadge(
+              badgeText,
+              const Color(0xFFFEF3C7),
+              const Color(0xFF92400E),
+            ),
+          ),
         ],
       ),
     );

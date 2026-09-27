@@ -694,7 +694,10 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
-                        value: widget.selectedBulkAdviserFilter,
+                        value: ['all', 'with_adviser', 'without_adviser']
+                                .contains(widget.selectedBulkAdviserFilter.toLowerCase())
+                            ? widget.selectedBulkAdviserFilter.toLowerCase()
+                            : 'all',
                         isDense: true,
                         icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
                         style: const TextStyle(
@@ -1176,7 +1179,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 960, maxHeight: 760),
+                constraints: const BoxConstraints(maxWidth: 1180, maxHeight: 850),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
@@ -1309,56 +1312,60 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Wrap(
-                            spacing: 8,
-                            children: [
-                              OutlinedButton.icon(
-                                onPressed: () async {
-                                  await downloadTextFile(
-                                    filename: bp.filename,
-                                    content: bp.rawCsv,
-                                  );
-                                  if (context.mounted) {
-                                    showSuccessToast(
-                                      context,
-                                      'Sample ${bp.shortLabel} template downloaded.',
+                          Expanded(
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: () async {
+                                    await downloadTextFile(
+                                      filename: bp.filename,
+                                      content: bp.rawCsv,
                                     );
-                                  }
-                                },
-                                icon: const Icon(Icons.download_rounded, size: 15),
-                                label: Text('Download ${bp.shortLabel} Template (.csv)'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: _ink,
-                                  side: const BorderSide(color: _line),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 10,
+                                    if (context.mounted) {
+                                      showSuccessToast(
+                                        context,
+                                        'Sample ${bp.shortLabel} template downloaded.',
+                                      );
+                                    }
+                                  },
+                                  icon: const Icon(Icons.download_rounded, size: 15),
+                                  label: Text('Download ${bp.shortLabel} Template (.csv)'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: _ink,
+                                    side: const BorderSide(color: _line),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 10,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              OutlinedButton.icon(
-                                onPressed: () async {
-                                  await Clipboard.setData(ClipboardData(text: csvToTsv(bp.rawCsv)));
-                                  if (context.mounted) {
-                                    showSuccessToast(
-                                      context,
-                                      'Copied for Excel/Sheets! Press Ctrl+V in your spreadsheet.',
-                                    );
-                                  }
-                                },
-                                icon: const Icon(Icons.copy_rounded, size: 14),
-                                label: const Text('Copy for Excel / Sheets'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: _ink,
-                                  side: const BorderSide(color: _line),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 10,
+                                OutlinedButton.icon(
+                                  onPressed: () async {
+                                    await Clipboard.setData(ClipboardData(text: csvToTsv(bp.rawCsv)));
+                                    if (context.mounted) {
+                                      showSuccessToast(
+                                        context,
+                                        'Copied for Excel/Sheets! Press Ctrl+V in your spreadsheet.',
+                                      );
+                                    }
+                                  },
+                                  icon: const Icon(Icons.copy_rounded, size: 14),
+                                  label: const Text('Copy for Excel / Sheets'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: _ink,
+                                    side: const BorderSide(color: _line),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
+                          const SizedBox(width: 12),
                           ElevatedButton(
                             onPressed: () => Navigator.of(ctx).pop(),
                             style: ElevatedButton.styleFrom(
@@ -1507,9 +1514,818 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
             ),
           ),
 
-          _buildOption2CanonicalPreview(
-            isCapstone: isCapstone,
-            isSharedSystem: selectedTab == 1,
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: selectedTab == 1 ? 1180 : 920,
+              child: isCapstone && selectedTab == 0
+                  ? _buildIndependent5ColumnPreview()
+                  : (selectedTab == 1
+                      ? _buildSharedSystemSideBySidePreview(isCapstone: isCapstone)
+                      : _buildOption2CanonicalPreview(
+                          isCapstone: isCapstone,
+                          isSharedSystem: false,
+                        )),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIndependent5ColumnPreview() {
+    const rowH = 32.0;
+    const teamH = rowH * 4 + 3.0; // 131.0
+    const sec4AH = teamH * 3 + 2.0; // 395.0 (3 teams: SkyLedger, BioPulse, SafeCity)
+    const sec4BH = teamH; // 131.0 (1 team: CodeLearners)
+    const totalH = sec4AH + 1.0 + sec4BH; // 527.0 (all 16 student rows)
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header row (Row 1)
+        Container(
+          color: const Color(0xFFE2E8F0),
+          child: Row(
+            children: [
+              _buildGutterCell('1', isHeader: true),
+              _buildColumnHeaderCell('Team Name', flex: 3, isRequired: true),
+              _buildColumnHeaderCell('Capstone Project', flex: 4, isRequired: true),
+              _buildColumnHeaderCell('Section', flex: 2, isRequired: true),
+              _buildColumnHeaderCell('Adviser', flex: 3, isRequired: true),
+              _buildColumnHeaderCell('Team Members', flex: 4, isRequired: true),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: Color(0xFFCBD5E1)),
+
+        // 16-Row Data Matrix matching Picture 2
+        SizedBox(
+          height: totalH,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Gutter Column (Rows 2 to 17)
+              SizedBox(
+                width: 26,
+                height: totalH,
+                child: Column(
+                  children: List.generate(16, (index) {
+                    final rowNum = (index + 2).toString();
+                    return SizedBox(
+                      height: index < 15 ? rowH + 1.0 : rowH,
+                      child: Column(
+                        children: [
+                          SizedBox(height: rowH, child: _buildGutterCell(rowNum)),
+                          if (index < 15) const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                        ],
+                      ),
+                    );
+                  }),
+                ),
+              ),
+
+              // Columns A & B: Team Name & Capstone Project (flex: 3 + 4 = 7)
+              // Each team occupies 1 single top cell, with rows 2-4 blank unmerged!
+              Expanded(
+                flex: 7,
+                child: SizedBox(
+                  height: totalH,
+                  child: Column(
+                    children: [
+                      // Team 1: Team SkyLedger (Rows 2 to 5)
+                      SizedBox(
+                        height: teamH,
+                        child: _buildUnmergedTeamAndProject4Rows(
+                          teamName: 'Team SkyLedger',
+                          projectName: 'Alumni Career Tracker',
+                          rowH: rowH,
+                        ),
+                      ),
+                      const Divider(height: 1, color: Color(0xFFCBD5E1)),
+                      // Team 2: Team BioPulse (Rows 6 to 9)
+                      SizedBox(
+                        height: teamH,
+                        child: _buildUnmergedTeamAndProject4Rows(
+                          teamName: 'Team BioPulse',
+                          projectName: 'AI-Powered Patient Vital Triage & Disease Predictor',
+                          rowH: rowH,
+                        ),
+                      ),
+                      const Divider(height: 1, color: Color(0xFFCBD5E1)),
+                      // Team 3: Team SafeCity (Rows 10 to 13)
+                      SizedBox(
+                        height: teamH,
+                        child: _buildUnmergedTeamAndProject4Rows(
+                          teamName: 'Team SafeCity',
+                          projectName: 'Smart City IoT Infrastructure & Asset Sentinel',
+                          rowH: rowH,
+                        ),
+                      ),
+                      const Divider(height: 1, color: Color(0xFFCBD5E1)),
+                      // Team 4: Team CodeLearners (Rows 14 to 17)
+                      SizedBox(
+                        height: teamH,
+                        child: _buildUnmergedTeamAndProject4Rows(
+                          teamName: 'Team CodeLearners',
+                          projectName: 'Campus Event Hub',
+                          rowH: rowH,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Column C: Section (flex: 2)
+              // BSIT 4A spans 12 rows (Teams 1, 2, 3), BSIT 4B spans 4 rows (Team 4)
+              Expanded(
+                flex: 2,
+                child: SizedBox(
+                  height: totalH,
+                  child: Column(
+                    children: [
+                      // BSIT 4A (1 big merged cell spanning rows 2 to 13)
+                      Expanded(
+                        child: Container(
+                          margin: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: const Color(0xFF94A3B8), width: 1.5),
+                          ),
+                          alignment: Alignment.center,
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                          child: const Text(
+                            'BSIT 4A',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF1E293B),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const Divider(height: 1, color: Color(0xFFCBD5E1)),
+                      // BSIT 4B (1 big merged cell spanning rows 14 to 17)
+                      SizedBox(
+                        height: sec4BH,
+                        child: Container(
+                          margin: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: const Color(0xFF94A3B8), width: 1.5),
+                          ),
+                          alignment: Alignment.center,
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                          child: const Text(
+                            'BSIT 4B',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF1E293B),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Column D: Adviser (flex: 3) -> 1 BIG MERGED CELL spanning all 16 rows!
+              Expanded(
+                flex: 3,
+                child: Container(
+                  height: totalH,
+                  margin: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: const Color(0xFF94A3B8), width: 1.5),
+                  ),
+                  alignment: Alignment.center,
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+                  child: const Text(
+                    'Prof. Alex Santos',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Column E: Team Members (flex: 4) -> 16 member rows matching Picture 2
+              Expanded(
+                flex: 4,
+                child: SizedBox(
+                  height: totalH,
+                  child: Column(
+                    children: [
+                      // Team 1 members
+                      ..._buildMemberRows([
+                        'Marcus Villar',
+                        'Patricia Ong',
+                        'Ethan Salazar',
+                        'Zoe Castillo',
+                      ], rowHeight: rowH),
+                      const Divider(height: 1, color: Color(0xFFCBD5E1)),
+                      // Team 2 members
+                      ..._buildMemberRows([
+                        'Ryan Torres',
+                        'Nina Villanueva',
+                        'Diego Garcia',
+                        'Patricia Ramos',
+                      ], rowHeight: rowH),
+                      const Divider(height: 1, color: Color(0xFFCBD5E1)),
+                      // Team 3 members
+                      ..._buildMemberRows([
+                        'Carlos Bautista',
+                        'Sophia Santos',
+                        'Miguel Cruz',
+                        'Isabella Alcantara',
+                      ], rowHeight: rowH),
+                      const Divider(height: 1, color: Color(0xFFCBD5E1)),
+                      // Team 4 members
+                      ..._buildMemberRows([
+                        'Kevin Villanueva',
+                        'Bea Castro',
+                        'Christian Lim',
+                        'Joshua Navarro',
+                      ], rowHeight: rowH),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildUnmergedTeamAndProject4Rows({
+    required String teamName,
+    required String projectName,
+    double rowH = 32.0,
+  }) {
+    return Column(
+      children: [
+        // Row 1: Values
+        SizedBox(
+          height: rowH,
+          child: Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: Container(
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Text(
+                    teamName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: _ink,
+                    ),
+                  ),
+                ),
+              ),
+              Container(width: 1, color: const Color(0xFFE2E8F0)),
+              Expanded(
+                flex: 4,
+                child: Container(
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Text(
+                    projectName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF334155),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+        // Rows 2, 3, 4: Blank cells with cell dividers
+        for (var r = 0; r < 3; r++) ...[
+          SizedBox(
+            height: rowH,
+            child: Row(
+              children: [
+                const Expanded(flex: 3, child: SizedBox.shrink()),
+                Container(width: 1, color: const Color(0xFFE2E8F0)),
+                const Expanded(flex: 4, child: SizedBox.shrink()),
+              ],
+            ),
+          ),
+          if (r < 2) const Divider(height: 1, color: Color(0xFFE2E8F0)),
+        ],
+      ],
+    );
+  }
+
+  List<Widget> _buildMemberRows(List<String> members, {double rowHeight = 32.0}) {
+    final list = <Widget>[];
+    for (var i = 0; i < members.length; i++) {
+      final isLeader = i == 0;
+      final name = members[i];
+      list.add(
+        SizedBox(
+          height: rowHeight,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            alignment: Alignment.centerLeft,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    name,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: isLeader ? FontWeight.w800 : FontWeight.w500,
+                      color: isLeader ? _maroon : _ink,
+                    ),
+                  ),
+                ),
+                if (isLeader)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFE4E6),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                    child: const Text(
+                      'LEADER',
+                      style: TextStyle(
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w800,
+                        color: _maroon,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (i < members.length - 1) {
+        list.add(const Divider(height: 1, color: Color(0xFFF1F5F9)));
+      }
+    }
+    return list;
+  }
+
+  Widget _buildSharedSystemSideBySidePreview({required bool isCapstone}) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Section 1: BSIT-4A (Hospital Management System)
+          SizedBox(
+            width: 560,
+            child: _buildSharedSectionBlock(
+              systemName: isCapstone ? 'Hospital Management System' : 'Societree Platform',
+              projectManager: 'Juan Dela Cruz',
+              sectionName: isCapstone ? 'BSIT-4A' : 'BSIT-2A',
+              adviser1Name: 'Prof. Alex Santos',
+              adviser1Teams: [
+                (
+                  team: 'Team MedRecord',
+                  module: 'Patient Records',
+                  members: ['Juan Dela Cruz', 'Maria Santos', 'Mark Reyes', 'Anna Garcia'],
+                ),
+                (
+                  team: 'Team MedBilling',
+                  module: 'Billing',
+                  members: ['David Aquino', 'Sarah Ocampo', 'Daniel Rivera', 'Jasmine Morales'],
+                ),
+                (
+                  team: 'Team MedSchedule',
+                  module: 'Appointments',
+                  members: ['Carlo Ramos', 'Nicole Bautista', 'John Mendoza', 'Patricia Cruz'],
+                ),
+                (
+                  team: 'Team MedPharma',
+                  module: 'Pharmacy',
+                  members: ['Miguel Torres', 'Angela Flores', 'Francis Dizon', 'Rhea Salazar'],
+                ),
+              ],
+              adviser2Name: 'Prof. Elena Ramos',
+              adviser2Teams: [
+                (
+                  team: 'Team MedTriage',
+                  module: 'Triage',
+                  members: ['Kevin Villanueva', 'Bea Castro', 'Christian Lim', 'Joshua Navarro'],
+                ),
+                (
+                  team: 'Team MedLab',
+                  module: 'Laboratory',
+                  members: ['Gabriel Tan', 'Chloe Soriano', 'Pauline Mercado', 'Rafael Pascual'],
+                ),
+                (
+                  team: 'Team MedInventory',
+                  module: 'Inventory',
+                  members: ['Adrian Valdez', 'Stephanie Yap', 'Jerome De Leon', 'Camille Roxas'],
+                ),
+                (
+                  team: 'Team MedWards',
+                  module: 'Wards',
+                  members: ['Bryan Castillo', 'Karen Tolentino', 'Vincent Miranda', 'Alyssa Fernandez'],
+                ),
+              ],
+            ),
+          ),
+          // Vertical divider between sections (spacer in Excel)
+          Container(
+            width: 24,
+            height: 960,
+            alignment: Alignment.center,
+            child: Container(width: 1, color: const Color(0xFFCBD5E1)),
+          ),
+          // Section 2: BSIT-4B (Added Section: Campus Logistics & Supply Chain Platform)
+          SizedBox(
+            width: 560,
+            child: _buildSharedSectionBlock(
+              systemName: isCapstone ? 'Campus Logistics & Supply Chain Platform' : 'Integrated Campus Management',
+              projectManager: 'Patricia Ramos',
+              sectionName: isCapstone ? 'BSIT-4B' : 'BSIT-2B',
+              adviser1Name: 'Prof. Roberto Gomez',
+              adviser1Teams: [
+                (
+                  team: 'Team FleetTrack',
+                  module: 'Fleet & Route Monitoring',
+                  members: ['Lucas Hernandez', 'Camille Bernardo', 'Danilo Gutierrez', 'Andrea Salazar'],
+                ),
+                (
+                  team: 'Team WarehouseHub',
+                  module: 'Central Storage & Stock',
+                  members: ['Enzo Morales', 'Valerie Cruz', 'Paolo Mendoza', 'Bianca Reyes'],
+                ),
+                (
+                  team: 'Team OrderDispatch',
+                  module: 'Package Dispatching',
+                  members: ['Giancarlo Diaz', 'Rachelle Santos', 'Marco Villanueva', 'Hannah Flores'],
+                ),
+                (
+                  team: 'Team SupplierLink',
+                  module: 'Vendor Procurement',
+                  members: ['Leandro Garcia', 'Kirsten Gomez', 'Jerome Pineda', 'Monica Castro'],
+                ),
+              ],
+              adviser2Name: 'Prof. Cynthia Morales',
+              adviser2Teams: [
+                (
+                  team: 'Team AssetTag',
+                  module: 'RFID & Asset Tracking',
+                  members: ['Timothy Aguilar', 'Clarisse Domingo', 'Nathaniel Ramos', 'Fiona Soriano'],
+                ),
+                (
+                  team: 'Team FreightGuard',
+                  module: 'Cold-Chain & Security',
+                  members: ['Oliver Tan', 'Kaye Tolentino', 'Derrick Miranda', 'Althea Pascual'],
+                ),
+                (
+                  team: 'Team AuditPulse',
+                  module: 'Compliance & Audits',
+                  members: ['Justin Valenzuela', 'Giselle David', 'Patrick Ocampo', 'Denise Rivera'],
+                ),
+                (
+                  team: 'Team CargoAnalytics',
+                  module: 'KPI & Fuel Analytics',
+                  members: ['Aaron Mercado', 'Jocelyn Aquino', 'Raymond Dizon', 'Erika Yap'],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSharedSectionBlock({
+    required String systemName,
+    required String projectManager,
+    required String sectionName,
+    required String adviser1Name,
+    required List<({String team, String module, List<String> members})> adviser1Teams,
+    required String adviser2Name,
+    required List<({String team, String module, List<String> members})> adviser2Teams,
+  }) {
+    var currentRow = 1;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Row 1: System Name
+          _buildMetadataPreviewRow(
+            rowNum: (currentRow++).toString(),
+            label: 'System Name',
+            value: systemName,
+          ),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+          // Row 2: Project Manager
+          _buildMetadataPreviewRow(
+            rowNum: (currentRow++).toString(),
+            label: 'Project Manager',
+            value: projectManager,
+          ),
+          const Divider(height: 1, color: Color(0xFFCBD5E1)),
+
+          // Row 3: Blank Row (like Excel Picture 3)
+          _buildBlankSpreadsheetRow((currentRow++).toString()),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+          // Row 4: Section
+          _buildMetadataPreviewRow(
+            rowNum: (currentRow++).toString(),
+            label: 'Section',
+            value: sectionName,
+          ),
+          const Divider(height: 1, color: Color(0xFFCBD5E1)),
+
+          // Row 5: ADVISER 1
+          _buildAdviserDividerRow(
+            rowNum: (currentRow++).toString(),
+            adviserName: adviser1Name,
+            badgeText: 'Faculty Adviser (4 Teams)',
+          ),
+          const Divider(height: 1, color: Color(0xFFCBD5E1)),
+
+          // Row 6: Table Header
+          Container(
+            color: const Color(0xFFE2E8F0),
+            child: Row(
+              children: [
+                _buildGutterCell((currentRow++).toString(), isHeader: true),
+                _buildColumnHeaderCell('Team Name', flex: 3, isRequired: true),
+                _buildColumnHeaderCell('Names', flex: 4, isRequired: true),
+                _buildColumnHeaderCell('Project / Module', flex: 4, isRequired: true),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFCBD5E1)),
+
+          // Rows 7 to 22: 4 Teams under Adviser 1
+          for (var t = 0; t < adviser1Teams.length; t++) ...[
+            _buildSharedTeam4RowsBlock(
+              teamName: adviser1Teams[t].team,
+              moduleName: adviser1Teams[t].module,
+              members: adviser1Teams[t].members,
+              rowNums: [
+                (currentRow++).toString(),
+                (currentRow++).toString(),
+                (currentRow++).toString(),
+                (currentRow++).toString(),
+              ],
+              isAlt: t % 2 == 1,
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          ],
+
+          // Row 23: Blank Row (like Excel Picture 3)
+          _buildBlankSpreadsheetRow((currentRow++).toString()),
+          const Divider(height: 1, color: Color(0xFFCBD5E1)),
+
+          // Row 24: ADVISER 2
+          _buildAdviserDividerRow(
+            rowNum: (currentRow++).toString(),
+            adviserName: adviser2Name,
+            badgeText: 'Faculty Adviser (4 Teams)',
+          ),
+          const Divider(height: 1, color: Color(0xFFCBD5E1)),
+
+          // Row 25: Table Header
+          Container(
+            color: const Color(0xFFE2E8F0),
+            child: Row(
+              children: [
+                _buildGutterCell((currentRow++).toString(), isHeader: true),
+                _buildColumnHeaderCell('Team Name', flex: 3, isRequired: true),
+                _buildColumnHeaderCell('Names', flex: 4, isRequired: true),
+                _buildColumnHeaderCell('Project / Module', flex: 4, isRequired: true),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFCBD5E1)),
+
+          // Rows 26 to 41: 4 Teams under Adviser 2
+          for (var t = 0; t < adviser2Teams.length; t++) ...[
+            _buildSharedTeam4RowsBlock(
+              teamName: adviser2Teams[t].team,
+              moduleName: adviser2Teams[t].module,
+              members: adviser2Teams[t].members,
+              rowNums: [
+                (currentRow++).toString(),
+                (currentRow++).toString(),
+                (currentRow++).toString(),
+                (currentRow++).toString(),
+              ],
+              isAlt: t % 2 == 1,
+            ),
+            if (t < adviser2Teams.length - 1)
+              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBlankSpreadsheetRow(String rowNum) {
+    return Container(
+      color: Colors.white,
+      height: 22,
+      child: Row(
+        children: [
+          _buildGutterCell(rowNum),
+          const Expanded(child: SizedBox.shrink()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSharedTeam4RowsBlock({
+    required String teamName,
+    required String moduleName,
+    required List<String> members,
+    required List<String> rowNums,
+    bool isAlt = false,
+  }) {
+    const memberRowH = 28.0;
+    const blockH = memberRowH * 4 + 3.0; // 115.0
+
+    return SizedBox(
+      height: blockH,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Gutter column (row numbers)
+          SizedBox(
+            width: 26,
+            height: blockH,
+            child: Column(
+              children: List.generate(4, (index) {
+                return SizedBox(
+                  height: index < 3 ? memberRowH + 1.0 : memberRowH,
+                  child: Column(
+                    children: [
+                      SizedBox(height: memberRowH, child: _buildGutterCell(rowNums[index])),
+                      if (index < 3) const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                    ],
+                  ),
+                );
+              }),
+            ),
+          ),
+          // Team Name (Row 1 has value, rows 2-4 are blank cells like Picture 3)
+          Expanded(
+            flex: 3,
+            child: SizedBox(
+              height: blockH,
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: memberRowH,
+                    child: Container(
+                      alignment: Alignment.centerLeft,
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      child: Text(
+                        teamName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: _ink,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  for (var i = 0; i < 3; i++) ...[
+                    SizedBox(
+                      height: memberRowH,
+                      child: const SizedBox.shrink(),
+                    ),
+                    if (i < 2) const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          // Names (4 individual rows, 1st is Leader)
+          Expanded(
+            flex: 4,
+            child: SizedBox(
+              height: blockH,
+              child: Column(
+                children: List.generate(4, (m) {
+                  final isLeader = m == 0;
+                  return SizedBox(
+                    height: m < 3 ? memberRowH + 1.0 : memberRowH,
+                    child: Column(
+                      children: [
+                        Container(
+                          height: memberRowH,
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          alignment: Alignment.centerLeft,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  members[m],
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: isLeader ? FontWeight.w800 : FontWeight.w500,
+                                    color: isLeader ? _maroon : _ink,
+                                  ),
+                                ),
+                              ),
+                              if (isLeader)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFE4E6),
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
+                                  child: const Text(
+                                    'LEADER',
+                                    style: TextStyle(
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.w800,
+                                      color: _maroon,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        if (m < 3) const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                      ],
+                    ),
+                  );
+                }),
+              ),
+            ),
+          ),
+          // Project / Module (Row 1 has value, rows 2-4 are blank cells like Picture 3)
+          Expanded(
+            flex: 4,
+            child: SizedBox(
+              height: blockH,
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: memberRowH,
+                    child: Container(
+                      alignment: Alignment.centerLeft,
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      child: Text(
+                        moduleName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF334155),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  for (var i = 0; i < 3; i++) ...[
+                    SizedBox(
+                      height: memberRowH,
+                      child: const SizedBox.shrink(),
+                    ),
+                    if (i < 2) const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  ],
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -1899,18 +2715,22 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
             ),
           ),
           const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE2E8F0),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF1E293B),
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1E293B),
+                ),
               ),
             ),
           ),
@@ -1960,12 +2780,16 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
           const SizedBox(width: 8),
           const Icon(Icons.person_pin_circle_outlined, size: 15, color: _maroon),
           const SizedBox(width: 6),
-          Text(
-            'ADVISER: $adviserName',
-            style: const TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w800,
-              color: _maroon,
+          Flexible(
+            child: Text(
+              'ADVISER: $adviserName',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+                color: _maroon,
+              ),
             ),
           ),
           const SizedBox(width: 8),

@@ -10,6 +10,7 @@ import '../../../../widgets/feedback/empty_state.dart';
 import '../../../../widgets/table/table.dart';
 import '../widgets/defensys_admin_shell.dart';
 import '../widgets/student_records_rollover_modal.dart';
+import '../user_management/bulk_import/official_class_list_parser.dart';
 
 class StudentAcademicRecordsScreen extends ConsumerStatefulWidget {
   const StudentAcademicRecordsScreen({super.key});
@@ -1096,246 +1097,26 @@ class _StudentAcademicRecordsScreenState
   }
 
   _OfficialClassListParseResult _parseOfficialClassListCsv(String csv) {
-    final rows = csv
-        .split(RegExp(r'\r?\n'))
-        .map(_splitCsvLine)
-        .where((row) => row.any((cell) => cell.trim().isNotEmpty))
-        .toList();
-    if (rows.isEmpty) {
+    if (csv.trim().isEmpty) {
       return const _OfficialClassListParseResult(
         metadata: {},
         students: [],
         validationError: 'Selected file is empty.',
       );
     }
-
-    String? csvSchoolYear;
-    String? csvSemester;
-    final schoolYearRegex = RegExp(r'\b(\d{4}-\d{4})\b');
-    final semesterRegex = RegExp(r'\b(1st|2nd|Summer)\s*(?:Semester|sem)?\b', caseSensitive: false);
-
-    final limit = rows.length < 10 ? rows.length : 10;
-    for (var i = 0; i < limit; i++) {
-      for (final cell in rows[i]) {
-        final trimmed = cell.trim();
-        if (trimmed.isEmpty) continue;
-
-        if (csvSchoolYear == null) {
-          final syMatch = schoolYearRegex.firstMatch(trimmed);
-          if (syMatch != null) {
-            csvSchoolYear = syMatch.group(1);
-          }
-        }
-
-        if (csvSemester == null) {
-          final semMatch = semesterRegex.firstMatch(trimmed);
-          if (semMatch != null) {
-            final rawSem = semMatch.group(1)!.toLowerCase();
-            if (rawSem.contains('1st')) {
-              csvSemester = '1st Semester';
-            } else if (rawSem.contains('2nd')) {
-              csvSemester = '2nd Semester';
-            } else if (rawSem.contains('summer')) {
-              csvSemester = 'Summer';
-            }
-          }
-        }
-      }
-      if (csvSchoolYear != null && csvSemester != null) break;
-    }
-
-    if (csvSchoolYear == null || csvSemester == null) {
+    final parsed = parseOfficialClassListCsv(csv);
+    final schoolYear = parsed.metadata['school_year']?.toString().trim();
+    final semester = parsed.metadata['semester']?.toString().trim();
+    if (schoolYear == null || schoolYear.isEmpty || semester == null || semester.isEmpty) {
       return const _OfficialClassListParseResult(
         metadata: {},
         students: [],
         validationError: 'Missing school year/semester header in the CSV (e.g., "2026-2027 1st Semester").',
       );
     }
-
-    final metadata = <String, dynamic>{
-      'school_year': csvSchoolYear,
-      'semester': csvSemester,
-    };
-    var headerIndex = -1;
-
-    for (var i = 0; i < rows.length; i++) {
-      final normalized = rows[i].map(_normalizeHeader).toList();
-
-      void readMeta(String key, List<String> labels) {
-        if (metadata[key]?.toString().trim().isNotEmpty == true) return;
-        for (final label in labels) {
-          final index = normalized.indexWhere((cell) => cell == label);
-          if (index == -1) continue;
-          final value = _nextCell(rows[i], index);
-          if (value.isNotEmpty) metadata[key] = value;
-          return;
-        }
-      }
-
-      readMeta('faculty', ['faculty', 'instructor']);
-      readMeta('section', ['class section', 'section']);
-      readMeta('year_level', ['year level', 'level']);
-
-      final hasStudentNumber = normalized.any(
-        (cell) =>
-            cell.contains('student') &&
-            (cell.contains('number') ||
-                cell.contains('no') ||
-                cell == 'student n'),
-      );
-      final hasFullName = normalized.contains('full name') || normalized.contains('name');
-      if (hasStudentNumber && hasFullName) {
-        headerIndex = i;
-        break;
-      }
-    }
-
-    if (metadata['year_level'] != null) {
-      metadata['year_level'] = _normalizeYearLevel(
-        metadata['year_level'].toString(),
-      );
-    }
-    if (headerIndex == -1) {
-      return _OfficialClassListParseResult(
-        metadata: metadata,
-        students: const [],
-      );
-    }
-
-    final headers = rows[headerIndex].map(_normalizeHeader).toList();
-    int findHeader(bool Function(String value) matches) =>
-        headers.indexWhere(matches);
-    final idIndex = findHeader(
-      (value) =>
-          value.contains('student') &&
-          (value.contains('number') ||
-              value.contains('no') ||
-              value == 'student n'),
-    );
-    final nameIndex = findHeader((value) => value == 'full name' || value == 'name');
-    final levelIndex = findHeader((value) => value == 'level');
-    final emailIndex = findHeader((value) => value == 'email');
-    final contactIndex = findHeader(
-      (value) =>
-          value == 'contact' ||
-          value == 'contact no' ||
-          value == 'contact no.' ||
-          value == 'contact number' ||
-          value == 'phone' ||
-          value == 'phone no' ||
-          value == 'phone no.' ||
-          value == 'phone number' ||
-          value == 'mobile' ||
-          value == 'mobile no' ||
-          value == 'mobile no.' ||
-          value == 'mobile number' ||
-          value == 'cellphone',
-    );
-    final section = metadata['section']?.toString() ?? '';
-    final yearLevel = metadata['year_level']?.toString() ?? '';
-    final students = <Map<String, dynamic>>[];
-
-    for (final row in rows.skip(headerIndex + 1)) {
-      String read(int index) =>
-          index >= 0 && index < row.length ? row[index].trim() : '';
-      final id = read(idIndex);
-      final name = read(nameIndex);
-      if (id.isEmpty || name.isEmpty) continue;
-      final splitName = _splitOfficialFullName(name);
-      final rowYear = levelIndex != -1
-          ? _normalizeYearLevel(read(levelIndex))
-          : yearLevel;
-      final contact = contactIndex == -1 ? '' : read(contactIndex);
-      students.add({
-        'id_number': id,
-        'first_name': splitName.firstName,
-        'last_name': splitName.lastName,
-        'email': emailIndex == -1 ? '' : read(emailIndex),
-        if (contact.isNotEmpty) 'phone_number': contact,
-        if (contact.isNotEmpty) 'contact': contact,
-        'role': 'student',
-        if (rowYear.isNotEmpty) 'year_level': rowYear,
-        if (section.isNotEmpty) 'section': section,
-      });
-    }
-
     return _OfficialClassListParseResult(
-      metadata: metadata,
-      students: students,
-    );
-  }
-
-  List<String> _splitCsvLine(String line) {
-    final values = <String>[];
-    final buffer = StringBuffer();
-    var quoted = false;
-    for (var i = 0; i < line.length; i++) {
-      final char = line[i];
-      if (char == '"') {
-        if (quoted && i + 1 < line.length && line[i + 1] == '"') {
-          buffer.write('"');
-          i++;
-        } else {
-          quoted = !quoted;
-        }
-      } else if (char == ',' && !quoted) {
-        values.add(buffer.toString().trim());
-        buffer.clear();
-      } else {
-        buffer.write(char);
-      }
-    }
-    values.add(buffer.toString().trim());
-    return values;
-  }
-
-  String _nextCell(List<String> row, int index) {
-    for (var i = index + 1; i < row.length; i++) {
-      final value = row[i].trim();
-      if (value.isNotEmpty) return value;
-    }
-    return '';
-  }
-
-  String _normalizeHeader(String value) => value
-      .trim()
-      .replaceFirst('\ufeff', '')
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
-      .trim();
-
-  String _normalizeYearLevel(String value) {
-    final cleaned = value.trim().toLowerCase();
-    if (cleaned.contains('1') || cleaned.contains('first')) {
-      return '1st Year';
-    }
-    if (cleaned.contains('2') || cleaned.contains('second')) {
-      return '2nd Year';
-    }
-    if (cleaned.contains('3') || cleaned.contains('third')) {
-      return '3rd Year';
-    }
-    if (cleaned.contains('4') || cleaned.contains('fourth')) {
-      return '4th Year';
-    }
-    return value;
-  }
-
-  _OfficialNameParts _splitOfficialFullName(String value) {
-    final clean = value.trim().replaceAll(RegExp(r'\s+'), ' ');
-    if (clean.contains(',')) {
-      final parts = clean.split(',');
-      final lastName = parts.first.trim();
-      final firstName = parts.skip(1).join(',').trim();
-      return _OfficialNameParts(firstName: firstName, lastName: lastName);
-    }
-    final parts = clean.split(' ');
-    if (parts.length == 1) {
-      return _OfficialNameParts(firstName: clean, lastName: '');
-    }
-    return _OfficialNameParts(
-      firstName: parts.first,
-      lastName: parts.skip(1).join(' '),
+      metadata: parsed.metadata,
+      students: parsed.students,
     );
   }
 
@@ -1751,11 +1532,4 @@ class _OfficialClassListParseResult {
     required this.students,
     this.validationError,
   });
-}
-
-class _OfficialNameParts {
-  final String firstName;
-  final String lastName;
-
-  const _OfficialNameParts({required this.firstName, required this.lastName});
 }

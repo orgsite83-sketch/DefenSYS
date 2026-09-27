@@ -405,7 +405,7 @@ Future<void> showUploadDialog({
                       ),
                       const SizedBox(height: 4),
                       const Text(
-                        'You can rename your file to this, or upload directly and DefenSYS will auto-rename it for you.',
+                        'DefenSYS will automatically standardize this file for the repository archive upon upload.',
                         style: TextStyle(
                           fontSize: 10.5,
                           color: Color(0xFF64748B),
@@ -512,6 +512,177 @@ Future<void> showUploadDialog({
                       return;
                     }
 
+                    // Determine the effective filename for the repository
+                    final isPostDefense = item['type'] == 'post' || item['type'] == 'vault';
+                    String effectiveFileName = selectedFileName!;
+
+                    if (isPostDefense && suggestedName.isNotEmpty) {
+                      // Compare basenames (ignoring extension) to detect mismatch
+                      String stripExt(String name) {
+                        final dotIdx = name.lastIndexOf('.');
+                        return dotIdx > 0 ? name.substring(0, dotIdx) : name;
+                      }
+
+                      // Ensure repository name preserves the uploaded file's actual extension
+                      String targetRepoName = suggestedName;
+                      final selDot = selectedFileName!.lastIndexOf('.');
+                      final sugDot = suggestedName.lastIndexOf('.');
+                      if (selDot > 0) {
+                        final selExt = selectedFileName!.substring(selDot);
+                        if (sugDot < 0) {
+                          targetRepoName = '$suggestedName$selExt';
+                        } else {
+                          final sugExt = suggestedName.substring(sugDot);
+                          if (sugExt.toLowerCase() != selExt.toLowerCase()) {
+                            targetRepoName = '${suggestedName.substring(0, sugDot)}$selExt';
+                          }
+                        }
+                      }
+
+                      final selectedBase = stripExt(selectedFileName!).trim().toLowerCase();
+                      final suggestedBase = stripExt(suggestedName).trim().toLowerCase();
+
+                      if (selectedBase != suggestedBase) {
+                        // Show blocking rename confirmation dialog
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (confirmCtx) => AlertDialog(
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                            contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                            actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                            title: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFEF3C7),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(Icons.drive_file_rename_outline_rounded, size: 20, color: Color(0xFFD97706)),
+                                ),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Text(
+                                    'Filename Will Be Adjusted',
+                                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            content: SizedBox(
+                              width: 420,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Your file:',
+                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8FAFC),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.description_outlined, size: 15, color: Color(0xFF64748B)),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            selectedFileName!,
+                                            style: const TextStyle(fontSize: 12, fontFamily: 'monospace', fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  const Text(
+                                    'Repository name:',
+                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: DefensysTokens.maroon.withValues(alpha: 0.06),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.2)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.inventory_2_outlined, size: 15, color: DefensysTokens.maroon),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            targetRepoName,
+                                            style: const TextStyle(fontSize: 12, fontFamily: 'monospace', fontWeight: FontWeight.w700, color: DefensysTokens.maroon),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFEFCE8),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: const Color(0xFFFDE68A)),
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: const [
+                                        Icon(Icons.info_outline_rounded, size: 15, color: Color(0xFFD97706)),
+                                        SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            'The repository requires a standardized filename. Your file will be saved under the repository name shown above.',
+                                            style: TextStyle(fontSize: 11.5, color: Color(0xFF92400E), height: 1.35),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(confirmCtx, false),
+                                child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+                              ),
+                              ElevatedButton(
+                                onPressed: () => Navigator.pop(confirmCtx, true),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: DefensysTokens.maroon,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                child: const Text('OK, Proceed', style: TextStyle(fontWeight: FontWeight.w700)),
+                              ),
+                            ],
+                          ),
+                        );
+
+                        if (confirmed != true) return;
+                        effectiveFileName = targetRepoName;
+                      } else {
+                        effectiveFileName = targetRepoName;
+                      }
+                    }
+
                     setState(() {
                       isUploading = true;
                       uploadProgress = 0.0;
@@ -542,7 +713,7 @@ Future<void> showUploadDialog({
                       request.fields['team_id'] = team['id'].toString();
                       request.fields['stage_label'] = stageLabel;
                       request.fields['deliverable_id'] = item['id'].toString();
-                      request.fields['file_name'] = selectedFileName!;
+                      request.fields['file_name'] = effectiveFileName;
                       request.fields['file_size'] = selectedFileSize ?? '';
                       if (fileId != null) {
                         request.fields['file_id'] = fileId.toString();
@@ -553,7 +724,7 @@ Future<void> showUploadDialog({
                         http.MultipartFile.fromBytes(
                           'file',
                           selectedFileBytes!,
-                          filename: selectedFileName!,
+                          filename: effectiveFileName,
                         ),
                       );
 

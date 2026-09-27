@@ -47,26 +47,35 @@ final List<TemplateBlueprint> studentIntakeBlueprints = [
     badgeBg: Color(0xFFF1F5F9),
     badgeFg: Color(0xFF475569),
     description:
-        'Official university registrar export organized by Year Level. Class section is omitted and automatically assigned when team groupings are uploaded.',
+        'Official university registrar export (LIST OF ENROLLMENT). Supports multi-page intervals, summary header, and cohort intake by Year Level directly from the USTP database.',
     highlights: [
-      'Enrolls the entire cohort at once',
-      'Sections automatically bound via team groupings',
+      'Direct USTP database export support (no manual reformatting needed)',
+      'Multi-page intervals & headers are auto-detected and skipped',
+      'Sections automatically bound later via team groupings',
     ],
     category: 'student',
-    rawCsv: '''OFFICIAL LIST OF ENROLLED STUDENTS,,,,,,,,
-Academic Term,2026-2027 1st Semester,,,,,,,
-Subject Code,IT211,Subject Title,Data Structures and Algorithms,,,,
-Academic Units,3 (Lab Units: 1),Mode,Lecture and Laboratory,,,,
-Year Level,2nd Year,,,,,,,
-Schedule(s),M/Th 1:00 PM - 3:00 PM,,,,,,,
-,,,,,,,,
-#,Student Number,Full Name,Program,Gender,Level,Email,Contact
-1,2024-00001,"DELA CRUZ, Juan",BSIT,M,2nd Yr.,202400001@university.edu.ph,09170000001
-2,2024-00002,"SANTOS, Maria",BSIT,F,2nd Yr.,202400002@university.edu.ph,09170000002
-3,2024-00003,"REYES, Mark",BSIT,M,2nd Yr.,202400003@university.edu.ph,09170000003
-4,2024-00004,"GARCIA, Anna",BSIT,F,2nd Yr.,202400004@university.edu.ph,09170000004
-5,2024-00005,"TORRES, Miguel",BSIT,M,2nd Yr.,202400005@university.edu.ph,09170000005
-6,2024-00006,"FLORES, Angela",BSIT,F,2nd Yr.,202400006@university.edu.ph,09170000006
+    rawCsv: '''LIST OF ENROLLMENT,,,,,,,,,,,
+2026-2027 1st Semester,,,,,,,,,,,
+,Program,Registered,Officially Enrolled,,,,,,,,
+,Bachelor of Science in Information Technology,143,143,,,,,,,,
+,TOTAL,,,,,,,,,,
+,,143,143,,,,,,,,
+LIST OF ENROLLMENT,,,,,,,,,,,
+2026-2027 1st Semester,,,,,,,,,,,
+Bachelor of Science in Information Technology,,,,,,,,,,,
+,#,Student No,Name,Program,Major,Level,,Gender,Status,Date,Date
+,1,2024-00001,"DELA CRUZ, Juan",BSIT,,2nd Year,,M,Officially Enrolled,06/22/2026,06/22/2026
+,2,2024-00002,"SANTOS, Maria",BSIT,,2nd Year,,F,Officially Enrolled,06/22/2026,06/22/2026
+,3,2024-00003,"REYES, Mark",BSIT,,2nd Year,,M,Officially Enrolled,06/22/2026,06/22/2026
+,4,2024-00004,"GARCIA, Anna",BSIT,,2nd Year,,F,Officially Enrolled,06/22/2026,06/22/2026
+,Print Info:,,,Page 2 of,,,,,,4,
+,Monday 22 June 2026,,,,,,,,,,
+LIST OF ENROLLMENT,,,,,,,,,,,
+2026-2027 1st Semester,,,,,,,,,,,
+Bachelor of Science in Information Technology,,,,,,,,,,,
+,#,Student No,Name,Program,Major,Level,,Gender,Status,Date,Date
+,51,2024-00051,"TORRES, Miguel",BSIT,,2nd Year,,M,Officially Enrolled,06/22/2026,06/22/2026
+,52,2024-00052,"FLORES, Angela",BSIT,,2nd Year,,F,Officially Enrolled,06/22/2026,06/22/2026
 ''',
   ),
   const TemplateBlueprint(
@@ -118,61 +127,31 @@ final List<TemplateBlueprint> teamGroupingBlueprints = [
     badgeBg: Color(0xFFF1F5F9),
     badgeFg: Color(0xFF475569),
     description:
-        'Official department standard grouped by Faculty Adviser with Section sub-headers (e.g. 3 teams in 4A, 1 team in 4C). Clean 3-column table with 4 members per team.',
+        'Official department standard 5-column matrix format (Team Name, Capstone Project, Section, Adviser, Team Members). Team Name sits in a single cell per team, with Section & Adviser vertically merged across advisee teams.',
     highlights: [
-      'Grouped by Faculty Adviser (instantly verify 4-team cap)',
-      'Section sub-headers allow advisees from multiple sections',
-      'Clean 3-column format (Team Name, Names, Project)',
-      '4 members per team (1st member = Leader)',
+      '5-column matrix format (Team Name, Capstone Project, Section, Adviser, Team Members)',
+      'Team Name & Project occupy single top cell per team (rows 2-4 unmerged blank)',
+      'Section & Adviser vertically merged across advisee teams',
+      '4 members per team stacked vertically (1st member = Leader)',
     ],
     category: 'team',
-    rawCsv: '''ADVISER: Prof. Alex Santos
-
-Section,BSIT-4A
-Team Name,Names,Project / Module
-Group 1,Juan Dela Cruz,Smart Campus Navigation System
-,,Maria Santos,
-,,Mark Reyes,
-,,Anna Garcia,
-Group 2,David Aquino,Automated Library Portal
-,,Sarah Ocampo,
-,,Daniel Rivera,
-,,Jasmine Morales,
-Group 3,Carlo Ramos,Alumni Career Tracker
-,,Nicole Bautista,
-,,John Mendoza,
-,,Patricia Cruz,
-
-Section,BSIT-4C
-Team Name,Names,Project / Module
-Group 1,Miguel Torres,Hospital Inventory System
-,,Angela Flores,
-,,Francis Dizon,
-,,Rhea Salazar,
-
-ADVISER: Prof. Elena Ramos
-
-Section,BSIT-4A
-Team Name,Names,Project / Module
-Group 4,Kevin Villanueva,Event Booking System
-,,Bea Castro,
-,,Christian Lim,
-,,Joshua Navarro,
-
-Section,BSIT-4B
-Team Name,Names,Project / Module
-Group 1,Gabriel Tan,Laboratory Management Portal
-,,Chloe Soriano,
-,,Pauline Mercado,
-,,Rafael Pascual,
-Group 2,Adrian Valdez,Security Clearance System
-,,Stephanie Yap,
-,,Jerome De Leon,
-,,Camille Roxas,
-Group 3,Bryan Castillo,Dormitory Management System
-,,Karen Tolentino,
-,,Vincent Miranda,
-,,Alyssa Fernandez,
+    rawCsv: '''Team Name,Capstone Project,Section,Adviser,Team Members
+Team SkyLedger,Alumni Career Tracker,BSIT 4A,Prof. Alex Santos,Marcus Villar
+,,,,Patricia Ong
+,,,,Ethan Salazar
+,,,,Zoe Castillo
+Team BioPulse,AI-Powered Patient Vital Triage & Disease Predictor,,,Ryan Torres
+,,,,Nina Villanueva
+,,,,Diego Garcia
+,,,,Patricia Ramos
+Team SafeCity,Smart City IoT Infrastructure & Asset Sentinel,,,Carlos Bautista
+,,,,Sophia Santos
+,,,,Miguel Cruz
+,,,,Isabella Alcantara
+Team CodeLearners,Campus Event Hub,BSIT 4B,,Kevin Villanueva
+,,,,Bea Castro
+,,,,Christian Lim
+,,,,Joshua Navarro
 ''',
   ),
   const TemplateBlueprint(
@@ -185,64 +164,97 @@ Group 3,Bryan Castillo,Dormitory Management System
     badgeBg: Color(0xFFF1F5F9),
     badgeFg: Color(0xFF475569),
     description:
-        'Official department standard where sections collaborate on a shared system. System Name and PM at top, grouped by Faculty Adviser with Section sub-headers.',
+        'Official department standard where sections collaborate on a shared system. Grouped by Section (BSIT-4A & BSIT-4B) with faculty advisers, meaningful team names, and 4 students per team.',
     highlights: [
-      'One overarching system divided into modules',
-      'Grouped by Faculty Adviser (instantly verify 4-team cap)',
-      'Section sub-headers allow advisees from multiple sections',
-      '4 members per team (1st member = Leader)',
+      'One overarching system divided into modules per section',
+      'Structured by Section (BSIT-4A, BSIT-4B) with dedicated faculty advisers',
+      'Team Name sits in a single unmerged cell per team',
+      'Exactly 4 members per team (1st member = Leader)',
     ],
     category: 'team',
     rawCsv: '''System Name,Hospital Management System
 Project Manager,Juan Dela Cruz
 
-ADVISER: Prof. Alex Santos
-
 Section,BSIT-4A
+ADVISER: Prof. Alex Santos
 Team Name,Names,Project / Module
-Group 1,Juan Dela Cruz,Patient Records
+Team MedRecord,Juan Dela Cruz,Patient Records
 ,,Maria Santos,
 ,,Mark Reyes,
 ,,Anna Garcia,
-Group 2,David Aquino,Billing
+Team MedBilling,David Aquino,Billing
 ,,Sarah Ocampo,
 ,,Daniel Rivera,
 ,,Jasmine Morales,
-Group 3,Carlo Ramos,Appointments
+Team MedSchedule,Carlo Ramos,Appointments
 ,,Nicole Bautista,
 ,,John Mendoza,
 ,,Patricia Cruz,
-
-Section,BSIT-4C
-Team Name,Names,Project / Module
-Group 1,Miguel Torres,Pharmacy
+Team MedPharma,Miguel Torres,Pharmacy
 ,,Angela Flores,
 ,,Francis Dizon,
 ,,Rhea Salazar,
 
 ADVISER: Prof. Elena Ramos
-
-Section,BSIT-4A
 Team Name,Names,Project / Module
-Group 4,Kevin Villanueva,Triage
+Team MedTriage,Kevin Villanueva,Triage
 ,,Bea Castro,
 ,,Christian Lim,
 ,,Joshua Navarro,
-
-Section,BSIT-4B
-Team Name,Names,Project / Module
-Group 1,Gabriel Tan,Laboratory
+Team MedLab,Gabriel Tan,Laboratory
 ,,Chloe Soriano,
 ,,Pauline Mercado,
 ,,Rafael Pascual,
-Group 2,Adrian Valdez,Inventory
+Team MedInventory,Adrian Valdez,Inventory
 ,,Stephanie Yap,
 ,,Jerome De Leon,
 ,,Camille Roxas,
-Group 3,Bryan Castillo,Wards
+Team MedWards,Bryan Castillo,Wards
 ,,Karen Tolentino,
 ,,Vincent Miranda,
 ,,Alyssa Fernandez,
+
+System Name,Campus Logistics & Supply Chain Platform
+Project Manager,Patricia Ramos
+
+Section,BSIT-4B
+ADVISER: Prof. Roberto Gomez
+Team Name,Names,Project / Module
+Team FleetTrack,Lucas Hernandez,Fleet & Route Monitoring
+,,Camille Bernardo,
+,,Danilo Gutierrez,
+,,Andrea Salazar,
+Team WarehouseHub,Enzo Morales,Central Storage & Stock
+,,Valerie Cruz,
+,,Paolo Mendoza,
+,,Bianca Reyes,
+Team OrderDispatch,Giancarlo Diaz,Package Dispatching
+,,Rachelle Santos,
+,,Marco Villanueva,
+,,Hannah Flores,
+Team SupplierLink,Leandro Garcia,Vendor Procurement
+,,Kirsten Gomez,
+,,Jerome Pineda,
+,,Monica Castro,
+
+ADVISER: Prof. Cynthia Morales
+Team Name,Names,Project / Module
+Team AssetTag,Timothy Aguilar,RFID & Asset Tracking
+,,Clarisse Domingo,
+,,Nathaniel Ramos,
+,,Fiona Soriano,
+Team FreightGuard,Oliver Tan,Cold-Chain & Security
+,,Kaye Tolentino,
+,,Derrick Miranda,
+,,Althea Pascual,
+Team AuditPulse,Justin Valenzuela,Compliance & Audits
+,,Giselle David,
+,,Patrick Ocampo,
+,,Denise Rivera,
+Team CargoAnalytics,Aaron Mercado,KPI & Fuel Analytics
+,,Jocelyn Aquino,
+,,Raymond Dizon,
+,,Erika Yap,
 ''',
   ),
 ];

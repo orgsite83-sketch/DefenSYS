@@ -95,7 +95,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Repository Archiving & Naming'), findsOneWidget);
-    expect(find.text('⚡ Auto-Renamed by System'), findsOneWidget);
+    expect(find.text('📋 Suggested Name'), findsOneWidget);
     expect(find.text('Primary Manuscript'), findsOneWidget);
     expect(find.text('Configure Format'), findsOneWidget);
 
@@ -115,5 +115,26 @@ void main() {
     expect(find.text('Visual Token Builder'), findsOneWidget);
     expect(find.text('Active Pattern: '), findsOneWidget);
     expect(find.text('+ Project Title'), findsOneWidget);
+    expect(find.text('+ Deliverable Name'), findsOneWidget);
+    expect(find.text('Separator: '), findsOneWidget);
+    expect(find.text('Result Preview: '), findsOneWidget);
+
+    // Initial template has project and deliverable
+    expect(templateController.text, '{project}_{deliverable}');
+
+    // Tap + Year Level to append year
+    await tester.tap(find.text('+ Year Level'));
+    await tester.pumpAndSettle();
+    expect(templateController.text, '{project}_{deliverable}_{year}');
+
+    // Tap hyphen separator
+    await tester.tap(find.text('-'));
+    await tester.pumpAndSettle();
+    expect(templateController.text, '{project}-{deliverable}-{year}');
+
+    // Remove the first token (Project Title) via its cancel icon
+    await tester.tap(find.byIcon(Icons.cancel).first);
+    await tester.pumpAndSettle();
+    expect(templateController.text, '{deliverable}-{year}');
   });
 }

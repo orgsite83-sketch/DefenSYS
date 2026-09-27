@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:defensys/screens/login_screen.dart';
 
 import '../helpers/auth_test_overrides.dart';
@@ -9,11 +10,16 @@ void main() {
   testWidgets('LoginScreen shows DefenSYS branding and sign-in controls', (
     tester,
   ) async {
+    SharedPreferences.setMockInitialValues({
+      'defensys_has_seen_getting_started': true,
+    });
+
     await pumpDefensysWidget(
       tester,
       const LoginScreen(),
       overrides: authTestOverrides(),
     );
+    await tester.pumpAndSettle();
 
     expect(find.text('DefenSYS'), findsWidgets);
     expect(find.text('Sign In'), findsOneWidget);
@@ -46,6 +52,52 @@ void main() {
 
     expect(find.text('ID or Email Address'), findsOneWidget);
     expect(find.textContaining('Gmail inbox'), findsOneWidget);
+  });
+
+  testWidgets('Mobile LoginScreen shows Getting Started on first launch and transitions to login', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'defensys_has_seen_getting_started': false,
+    });
+
+    // Set small phone dimensions to trigger mobile layout
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await pumpDefensysWidget(
+      tester,
+      const LoginScreen(),
+      overrides: authTestOverrides(),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify State 1: Getting Started Card
+    expect(find.text('Empowering Capstone\n& PIT Research'), findsOneWidget);
+    expect(find.text('Get Started / Sign In'), findsOneWidget);
+
+    // Tap "Get Started / Sign In" to transition into State 2
+    await tester.tap(find.text('Get Started / Sign In'));
+    await tester.pumpAndSettle();
+
+    // Verify State 2: Login Form Card
+    expect(find.text('Welcome back'), findsOneWidget);
+    expect(find.text('Student ID or Email'), findsOneWidget);
+    expect(find.text('Password'), findsWidgets);
+    expect(find.text('Sign In'), findsOneWidget);
+
+    // Tap "Getting Started" in footer to return to Welcome view
+    final gettingStartedLink = find.text('Getting Started');
+    expect(gettingStartedLink, findsOneWidget);
+    await tester.tap(gettingStartedLink);
+    await tester.pumpAndSettle();
+
+    // Verify returned to Getting Started Card
+    expect(find.text('Empowering Capstone\n& PIT Research'), findsOneWidget);
   });
 }
 

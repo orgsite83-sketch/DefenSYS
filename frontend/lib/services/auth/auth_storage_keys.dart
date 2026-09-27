@@ -6,6 +6,7 @@ abstract final class AuthStorageKeys {
   static const legacyJwtToken = 'jwt_token';
   static const legacyUserData = 'user_data';
   static const termsAcceptedVersion = 'defensys_terms_accepted_version';
+  static const hasSeenGettingStarted = 'defensys_has_seen_getting_started';
 
   /// Unique per-tab identifier stored in sessionStorage.
   static const tabId = '_defensys_tab_id';

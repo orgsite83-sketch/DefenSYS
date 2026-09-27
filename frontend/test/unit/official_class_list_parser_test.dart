@@ -47,5 +47,75 @@ Instructor, Dr. Juan Dela Cruz
       expect(result.students[0]['year_level'], '3rd Year');
       expect(result.students[1]['phone_number'], '09170001012');
     });
+
+    test('correctly parses multi-page USTP List of Enrollment by year level with page intervals', () {
+      const ustpCsv = '''LIST OF ENROLLMENT,,,,,,,,,,,
+2026-2027 1st Semester,,,,,,,,,,,
+,Program,Registered,Officially Enrolled,,,,,,,,
+,Bachelor of Science in Information Technology,143,143,,,,,,,,
+,TOTAL,,,,,,,,,,
+,,143,143,,,,,,,,
+LIST OF ENROLLMENT,,,,,,,,,,,
+2026-2027 1st Semester,,,,,,,,,,,
+Bachelor of Science in Information Technology,,,,,,,,,,,
+,#,Student No,Name,Program,Major,Level,,Gender,Status,Date,Date
+,1,2024-00001,"DELA CRUZ, Juan",BSIT,,2nd Year,,M,Officially Enrolled,06/22/2026,06/22/2026
+,2,2024-00002,"SANTOS, Maria",BSIT,,2nd Year,,F,Officially Enrolled,06/22/2026,06/22/2026
+,Print Info:,,,Page 2 of,,,,,,4,
+,Monday 22 June 2026,,,,,,,,,,
+LIST OF ENROLLMENT,,,,,,,,,,,
+2026-2027 1st Semester,,,,,,,,,,,
+Bachelor of Science in Information Technology,,,,,,,,,,,
+,#,Student No,Name,Program,Major,Level,,Gender,Status,Date,Date
+,51,2024-00051,"REYES, Mark",BSIT,,2nd Year,,M,Officially Enrolled,06/22/2026,06/22/2026
+,52,2024-00052,"GARCIA, Anna",BSIT,,2nd Year,,F,Officially Enrolled,06/22/2026,06/22/2026
+,Print Info:,,,Page 3 of,,,,,,4,
+,Monday 22 June 2026,,,,,,,,,,
+LIST OF ENROLLMENT,,,,,,,,,,,
+2026-2027 1st Semester,,,,,,,,,,,
+Bachelor of Science in Information Technology,,,,,,,,,,,
+,#,Student No,Name,Program,Major,Level,,Gender,Status,Date,Date
+,101,2024-00101,"TORRES, Miguel",BSIT,,2nd Year,,M,Officially Enrolled,06/22/2026,06/22/2026
+,TOTAL,,,,143,143,,,,,,
+''';
+
+      final result = parseOfficialClassListCsv(ustpCsv);
+      expect(result.metadata['school_year'], '2026-2027');
+      expect(result.metadata['semester'], '1st Semester');
+      expect(result.metadata['year_level'], '2nd Year');
+      expect(result.metadata['program'], 'Bachelor of Science in Information Technology');
+      expect(result.students.length, 5);
+
+      expect(result.students[0]['id_number'], '2024-00001');
+      expect(result.students[0]['first_name'], 'Juan');
+      expect(result.students[0]['last_name'], 'DELA CRUZ');
+      expect(result.students[0]['year_level'], '2nd Year');
+      expect(result.students[0]['email'], '202400001@ustp.edu.ph');
+      expect(result.students[0]['gender'], 'M');
+      expect(result.students[0]['status'], 'Officially Enrolled');
+      expect(result.students[0]['program'], 'BSIT');
+
+      expect(result.students[1]['id_number'], '2024-00002');
+      expect(result.students[1]['first_name'], 'Maria');
+      expect(result.students[1]['last_name'], 'SANTOS');
+      expect(result.students[1]['year_level'], '2nd Year');
+      expect(result.students[1]['email'], '202400002@ustp.edu.ph');
+
+      expect(result.students[2]['id_number'], '2024-00051');
+      expect(result.students[2]['first_name'], 'Mark');
+      expect(result.students[2]['last_name'], 'REYES');
+      expect(result.students[2]['year_level'], '2nd Year');
+      expect(result.students[2]['email'], '202400051@ustp.edu.ph');
+
+      expect(result.students[3]['id_number'], '2024-00052');
+      expect(result.students[3]['first_name'], 'Anna');
+      expect(result.students[3]['last_name'], 'GARCIA');
+      expect(result.students[3]['year_level'], '2nd Year');
+
+      expect(result.students[4]['id_number'], '2024-00101');
+      expect(result.students[4]['first_name'], 'Miguel');
+      expect(result.students[4]['last_name'], 'TORRES');
+      expect(result.students[4]['year_level'], '2nd Year');
+    });
   });
 }

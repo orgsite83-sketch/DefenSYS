@@ -103,7 +103,6 @@ flutter:
     - assets/logo-login-mark.png
     - assets/logo-web-mark.png
     - assets/logo-web-mark-smooth.png
-    - assets/login_hero.png
     - assets/login_hero_1.png
     - assets/login_hero_2.png
     - assets/login_hero_3.png
@@ -118,6 +117,7 @@ flutter:
     - assets/logo-legacy.png
     - assets/logo-ustp-trans.png
     - assets/logo-ustp-white.png
+    - assets/ustp_oroquieta_campus.jpg
 
   fonts:
     - family: Poppins

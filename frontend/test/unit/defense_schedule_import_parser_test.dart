@@ -157,6 +157,69 @@ Time,Team Name,Capstone Project,Adviser,Team Members,Chair,Panel Member 1,Docume
       expect(result.room, equals('AVR 1'));
       expect(result.rows.first.stage, equals('FINAL ORAL EXAMINATION'));
     });
+
+    test('parses school defense schedule with DAY banner, merged adviser, and merged documenter', () {
+      const csv = '''
+DAY 4 - APRIL 25, 2026,,,,,,,,
+#,Time,Team Name,Adviser,Panel Chair,Panel Member 1,Panel Member 2,Panel Member 3,Documenter
+1,8:00 - 9:00,P3R,ARNEL F. MANGGA,Jubilee S. Daga-ang,Kilven Mark P. Badiang,Janice Ruiz - Ocampo,Io Rowan M. Borata,MARITES D. HABAGAT
+2,9:00 - 10:00,Year4ward,,Jubilee S. Daga-ang,Kilven Mark P. Badiang,Janice Ruiz - Ocampo,Io Rowan M. Borata,
+3,10:00 - 11:00,Aurea's Crew,JANICE RUIZ - OCAMPO,Janice Ruiz - Ocampo,Lutherly G. Bongcawel,Markony L. Undag,Kilven Mark P. Badiang,RICHARD C. PALER
+4,11:00 - 12:00,Talk2Doc,,Janice Ruiz - Ocampo,Lutherly G. Bongcawel,Markony L. Undag,Kilven Mark P. Badiang,
+''';
+      final bytes = Uint8List.fromList(utf8.encode(csv));
+      final result = parseScheduleImportFile(
+        bytes: bytes,
+        filename: 'defense_schedule_day4.csv',
+      );
+
+      expect(result.date, equals('APRIL 25, 2026'));
+      expect(result.rows, hasLength(4));
+
+      // Row 1: P3R
+      expect(result.rows[0].teamName, equals('P3R'));
+      expect(result.rows[0].adviser, equals('ARNEL F. MANGGA'));
+      expect(result.rows[0].chair, equals('Jubilee S. Daga-ang'));
+      expect(result.rows[0].panelMembers, equals([
+        'Kilven Mark P. Badiang',
+        'Janice Ruiz - Ocampo',
+        'Io Rowan M. Borata',
+      ]));
+      expect(result.rows[0].documenter, equals('MARITES D. HABAGAT'));
+
+      // Row 2: Year4ward (inherited adviser & documenter, but own panel members)
+      expect(result.rows[1].teamName, equals('Year4ward'));
+      expect(result.rows[1].adviser, equals('ARNEL F. MANGGA'));
+      expect(result.rows[1].chair, equals('Jubilee S. Daga-ang'));
+      expect(result.rows[1].panelMembers, equals([
+        'Kilven Mark P. Badiang',
+        'Janice Ruiz - Ocampo',
+        'Io Rowan M. Borata',
+      ]));
+      expect(result.rows[1].documenter, equals('MARITES D. HABAGAT'));
+
+      // Row 3: Aurea's Crew (new adviser & documenter)
+      expect(result.rows[2].teamName, equals("Aurea's Crew"));
+      expect(result.rows[2].adviser, equals('JANICE RUIZ - OCAMPO'));
+      expect(result.rows[2].chair, equals('Janice Ruiz - Ocampo'));
+      expect(result.rows[2].panelMembers, equals([
+        'Lutherly G. Bongcawel',
+        'Markony L. Undag',
+        'Kilven Mark P. Badiang',
+      ]));
+      expect(result.rows[2].documenter, equals('RICHARD C. PALER'));
+
+      // Row 4: Talk2Doc (inherited adviser & documenter)
+      expect(result.rows[3].teamName, equals('Talk2Doc'));
+      expect(result.rows[3].adviser, equals('JANICE RUIZ - OCAMPO'));
+      expect(result.rows[3].chair, equals('Janice Ruiz - Ocampo'));
+      expect(result.rows[3].panelMembers, equals([
+        'Lutherly G. Bongcawel',
+        'Markony L. Undag',
+        'Kilven Mark P. Badiang',
+      ]));
+      expect(result.rows[3].documenter, equals('RICHARD C. PALER'));
+    });
   });
 }
 

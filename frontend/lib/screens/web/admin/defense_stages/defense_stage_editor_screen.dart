@@ -1159,6 +1159,9 @@ class _DefenseStageEditorScreenState
                                   emptyPlaceholderText: 'No post-defense deliverables configured yet. (e.g. Final Manuscript PDF, Source Code Zip, Demo Video)',
                                   items: postDeliverables,
                                   isPost: true,
+                                  stageDefaultNamingWidget: postDeliverables.length >= 2
+                                      ? _buildStageDefaultNamingDropdown(postDeliverables)
+                                      : null,
                                 ),
                               ],
                             ],
@@ -1874,6 +1877,7 @@ class _DefenseStageEditorScreenState
     required String emptyPlaceholderText,
     required List<Map<String, dynamic>> items,
     required bool isPost,
+    Widget? stageDefaultNamingWidget,
   }) {
     final effectiveAccent = _isDark
         ? (isPost ? const Color(0xFFF87171) : const Color(0xFF60A5FA))
@@ -1967,6 +1971,12 @@ class _DefenseStageEditorScreenState
               ],
             ),
           ),
+          if (stageDefaultNamingWidget != null) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              child: stageDefaultNamingWidget,
+            ),
+          ],
           Padding(
             padding: const EdgeInsets.all(12),
             child: items.isEmpty
@@ -2012,6 +2022,146 @@ class _DefenseStageEditorScreenState
                         .toList(),
                   ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStageDefaultNamingDropdown(List<Map<String, dynamic>> postDeliverables) {
+    const presets = {
+      '{project}_{deliverable}': 'Project + Deliverable (Recommended)',
+      '{project}': 'Project Only',
+      '{year}_{course}_{project}_{deliverable}': 'Academic Standard',
+      '{stage}_{project}_{deliverable}': 'Stage Specific',
+      '{semester}_{project}_{deliverable}': 'Semester Standard',
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: _isDark
+            ? const Color(0xFF1E3A8A).withValues(alpha: 0.15)
+            : const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: _isDark
+              ? const Color(0xFF3B82F6).withValues(alpha: 0.3)
+              : const Color(0xFFBFDBFE),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.tune_rounded,
+                size: 15,
+                color: _isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Apply Naming Pattern to All Post-Defense Deliverables',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: _isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF),
+                    fontFamily: DefensysTokens.fontFamily,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: presets.entries.map((entry) {
+              final isProjectOnly = entry.key == '{project}';
+              final hasCollisionRisk = isProjectOnly && postDeliverables.length >= 2;
+              return InkWell(
+                onTap: _isLocked
+                    ? null
+                    : () {
+                        setState(() {
+                          for (final d in postDeliverables) {
+                            final ctrl = d['_templateController'] as TextEditingController?;
+                            if (ctrl != null) {
+                              ctrl.text = entry.key;
+                            }
+                            d['archive_file_template'] = entry.key;
+                          }
+                        });
+                        _markDirty();
+                      },
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: hasCollisionRisk
+                        ? (_isDark ? const Color(0xFF78350F).withValues(alpha: 0.3) : const Color(0xFFFEFCE8))
+                        : _surfaceColor,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: hasCollisionRisk
+                          ? (_isDark ? const Color(0xFFD97706) : const Color(0xFFFDE68A))
+                          : _borderColor,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (hasCollisionRisk) ...[
+                        Icon(
+                          Icons.warning_amber_rounded,
+                          size: 13,
+                          color: _isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      Text(
+                        entry.value,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: hasCollisionRisk
+                              ? (_isDark ? const Color(0xFFFBBF24) : const Color(0xFF92400E))
+                              : _textPrimaryColor,
+                          fontFamily: DefensysTokens.fontFamily,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          if (postDeliverables.length >= 2) ...[
+            const SizedBox(height: 6),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 13,
+                  color: _isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8),
+                ),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(
+                    '"Project + Deliverable" is recommended when you have multiple deliverables to avoid filename conflicts.',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: _textSecondaryColor,
+                      fontFamily: DefensysTokens.fontFamily,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

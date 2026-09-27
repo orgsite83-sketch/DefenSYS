@@ -210,6 +210,7 @@ ParsedScheduleImport parseScheduleImportFile({
     if (sheet == null || sheet.rows.isEmpty) {
       continue;
     }
+    _expandSheetSpannedItems(sheet);
     final matrix = sheet.rows
         .map((row) => row.map(_excelCellText).toList(growable: false))
         .toList(growable: false);
@@ -409,11 +410,11 @@ ParsedScheduleImport parseScheduleImportMatrix(
     final time = read(timeCol);
     final teamName = read(teamCol);
     final project = read(projectCol);
-    final adviser = read(adviserCol);
-    final chair = read(chairCol);
-    final documenter = read(documenterCol);
-    final colRoom = read(roomCol, fill: false);
-    final colDate = read(dateCol, fill: false);
+    final adviser = read(adviserCol, fill: true);
+    final chair = read(chairCol, fill: false);
+    final documenter = read(documenterCol, fill: true);
+    final colRoom = read(roomCol, fill: true);
+    final colDate = read(dateCol, fill: true);
     final colStage = read(stageCol, fill: false);
     final colSemester = read(semesterCol, fill: false);
 
@@ -443,7 +444,7 @@ ParsedScheduleImport parseScheduleImportMatrix(
         adviser: adviser,
         chair: chair,
         panelMembers: [
-          for (final panelCol in panelCols) read(panelCol),
+          for (final panelCol in panelCols) read(panelCol, fill: false),
         ].where((name) => name.isNotEmpty).toList(),
         documenter: documenter,
         room: effectiveRoom,
@@ -495,6 +496,29 @@ ParsedScheduleImport parseScheduleImportMatrix(
     room: metadata['room'] ?? currentRoom,
     isRedefense: isRedefense,
   );
+}
+
+void _expandSheetSpannedItems(Sheet sheet) {
+  try {
+    for (final span in sheet.spannedItems) {
+      final parts = span.split(':');
+      if (parts.length != 2) continue;
+      final start = CellIndex.indexByString(parts[0]);
+      final end = CellIndex.indexByString(parts[1]);
+      final startVal = sheet.cell(start).value;
+      if (startVal == null) continue;
+      final minR = start.rowIndex < end.rowIndex ? start.rowIndex : end.rowIndex;
+      final maxR = start.rowIndex > end.rowIndex ? start.rowIndex : end.rowIndex;
+      final minC = start.columnIndex < end.columnIndex ? start.columnIndex : end.columnIndex;
+      final maxC = start.columnIndex > end.columnIndex ? start.columnIndex : end.columnIndex;
+      for (var r = minR; r <= maxR; r++) {
+        for (var c = minC; c <= maxC; c++) {
+          if (r == start.rowIndex && c == start.columnIndex) continue;
+          sheet.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r)).value = startVal;
+        }
+      }
+    }
+  } catch (_) {}
 }
 
 String _excelCellText(Data? cell) {
@@ -643,8 +667,22 @@ Map<String, String> _readMetadataRow(
       }
     }
 
-    if (result['date'] == null && _isDateString(cell)) {
-      result['date'] = cell;
+    final combinedWithNext = (i + 1 < row.length && RegExp(r'^\d{4}$').hasMatch(row[i + 1].trim()))
+        ? '$cell, ${row[i + 1].trim()}'
+        : cell;
+
+    final dayDateMatch = RegExp(
+      r'(?:DAY\s*\d+\s*[-–]\s*)?([A-Za-z]+\s+\d{1,2}(?:,?\s+\d{4})?)',
+      caseSensitive: false,
+    ).firstMatch(combinedWithNext);
+    if (dayDateMatch != null && dayDateMatch.group(1) != null) {
+      var extractedDate = dayDateMatch.group(1)!.trim();
+      extractedDate = extractedDate.replaceAll(RegExp(r'^DAY\s*\d+\s*[-–]\s*', caseSensitive: false), '').trim();
+      if (_isDateString(extractedDate)) {
+        result['date'] ??= extractedDate;
+      }
+    } else if (result['date'] == null && _isDateString(cell)) {
+      result['date'] = cell.replaceAll(RegExp(r'^DAY\s*\d+\s*[-–]\s*', caseSensitive: false), '').trim();
     } else if (result['room'] == null && _isRoomString(cell)) {
       result['room'] = cell;
     } else if (result['stage'] == null) {
@@ -659,7 +697,16 @@ Map<String, String> _readMetadataRow(
       row.map((c) => c.trim()).where((c) => c.isNotEmpty).toList();
   if (nonEmpty.length == 1) {
     final single = nonEmpty.first;
-    if (_isDateString(single)) {
+    final dayDateMatch = RegExp(
+      r'(?:DAY\s*\d+\s*[-–]\s*)?([A-Za-z]+\s+\d{1,2},?\s+\d{4})',
+      caseSensitive: false,
+    ).firstMatch(single);
+    if (dayDateMatch != null && dayDateMatch.group(1) != null) {
+      final extractedDate = dayDateMatch.group(1)!.trim();
+      if (_isDateString(extractedDate)) {
+        result['date'] ??= extractedDate;
+      }
+    } else if (_isDateString(single)) {
       result['date'] ??= single;
     } else if (_isRoomString(single)) {
       result['room'] ??= single;

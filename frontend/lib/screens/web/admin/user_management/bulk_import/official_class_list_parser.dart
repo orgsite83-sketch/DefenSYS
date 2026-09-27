@@ -42,6 +42,26 @@ AdminOfficialClassListParseResult parseOfficialClassListXlsx(List<int> bytes) {
       return const AdminOfficialClassListParseResult(metadata: {}, students: []);
     }
     final sheet = workbook.tables.values.first;
+    try {
+      for (final span in sheet.spannedItems) {
+        final parts = span.split(':');
+        if (parts.length != 2) continue;
+        final start = xl.CellIndex.indexByString(parts[0]);
+        final end = xl.CellIndex.indexByString(parts[1]);
+        final startVal = sheet.cell(start).value;
+        if (startVal == null) continue;
+        final minR = start.rowIndex < end.rowIndex ? start.rowIndex : end.rowIndex;
+        final maxR = start.rowIndex > end.rowIndex ? start.rowIndex : end.rowIndex;
+        final minC = start.columnIndex < end.columnIndex ? start.columnIndex : end.columnIndex;
+        final maxC = start.columnIndex > end.columnIndex ? start.columnIndex : end.columnIndex;
+        for (var r = minR; r <= maxR; r++) {
+          for (var c = minC; c <= maxC; c++) {
+            if (r == start.rowIndex && c == start.columnIndex) continue;
+            sheet.cell(xl.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r)).value = startVal;
+          }
+        }
+      }
+    } catch (_) {}
     final rows = sheet.rows
         .map((row) => row.map((cell) => _excelCellText(cell?.value)).toList())
         .where((row) => row.any((cell) => cell.trim().isNotEmpty))
@@ -87,11 +107,15 @@ String _excelCellText(xl.CellValue? value) {
 AdminOfficialClassListParseResult parseOfficialClassListRows(List<List<String>> rows) {
   String? csvSchoolYear;
   String? csvSemester;
+  String? detectedProgram;
 
   final schoolYearRegex = RegExp(r'(?:s\.?y\.?\s*)?(\d{4}\s*-\s*\d{4})', caseSensitive: false);
   final semesterRegex = RegExp(r'(\d(?:st|nd|rd)?\s*sem(?:ester)?|summer)', caseSensitive: false);
 
-  for (final row in rows) {
+  // 1. Scan for Academic Term (School Year & Semester) and Program metadata from top rows
+  final preambleLimit = rows.length < 50 ? rows.length : 50;
+  for (var r = 0; r < preambleLimit; r++) {
+    final row = rows[r];
     for (final cell in row) {
       final trimmed = cell.trim();
       if (trimmed.isEmpty) continue;
@@ -116,46 +140,39 @@ AdminOfficialClassListParseResult parseOfficialClassListRows(List<List<String>> 
           }
         }
       }
+
+      if (detectedProgram == null) {
+        final lower = trimmed.toLowerCase();
+        if (lower.startsWith('bachelor of') ||
+            lower.startsWith('bachelor in') ||
+            lower.startsWith('master of') ||
+            lower.startsWith('doctor of') ||
+            lower == 'bsit' ||
+            lower == 'bscs' ||
+            lower == 'bsemc' ||
+            lower == 'bsis') {
+          detectedProgram = trimmed;
+        }
+      }
     }
-    if (csvSchoolYear != null && csvSemester != null) break;
   }
 
   final metadata = <String, dynamic>{
     if (csvSchoolYear != null) 'school_year': csvSchoolYear,
     if (csvSemester != null) 'semester': csvSemester,
+    if (detectedProgram != null) 'program': detectedProgram,
   };
-  var headerIndex = -1;
 
-  for (var i = 0; i < rows.length; i++) {
+  // 2. Scan for key-value preamble metadata (e.g. Instructor, Section, Year Level, Subject Code, Subject Title)
+  for (var i = 0; i < preambleLimit; i++) {
     final normalized = rows[i].map(normalizeHeader).toList();
 
-    // Check if this row is the student table header
-    final hasStudentNumber = normalized.any(
-      (cell) =>
-          cell == 'id' ||
-          cell == 'id number' ||
-          cell == 'student id' ||
-          (cell.contains('student') &&
-              (cell.contains('number') ||
-                  cell.contains('no') ||
-                  cell.contains('id') ||
-                  cell == 'student n')),
-    );
-    final hasFullName = normalized.contains('full name') ||
-        normalized.contains('student name') ||
-        normalized.contains('name') ||
-        normalized.contains('students');
-    if (hasStudentNumber && hasFullName) {
-      headerIndex = i;
-      break;
-    }
-
-    // Only read key-value preamble metadata from lines before table headers,
-    // and ignore rows that look like standard tabular headers (with id/name/email/role columns)
+    // Ignore rows that look like standard tabular headers
     final isTabularHeader = normalized.contains('id number') ||
         normalized.contains('first name') ||
         normalized.contains('last name') ||
-        (normalized.contains('email') && normalized.contains('role'));
+        (normalized.contains('email') && normalized.contains('role')) ||
+        _isTableHeaderRow(rows[i]);
 
     if (!isTabularHeader) {
       void readMeta(String key, List<String> labels) {
@@ -164,7 +181,16 @@ AdminOfficialClassListParseResult parseOfficialClassListRows(List<List<String>> 
           final index = normalized.indexWhere((cell) => cell == label);
           if (index == -1) continue;
           final value = nextCell(rows[i], index);
-          if (value.isNotEmpty) metadata[key] = value;
+          if (value.isNotEmpty) {
+            final valLower = value.toLowerCase();
+            if (valLower.contains('omitted') ||
+                valLower.contains('pending') ||
+                valLower.contains('auto-assigned') ||
+                value.startsWith('[')) {
+              return;
+            }
+            metadata[key] = value;
+          }
           return;
         }
       }
@@ -182,76 +208,98 @@ AdminOfficialClassListParseResult parseOfficialClassListRows(List<List<String>> 
       metadata['year_level'].toString(),
     );
   }
-  if (headerIndex == -1) {
-    return const AdminOfficialClassListParseResult(
-      metadata: {},
-      students: [],
+
+  // 3. Find first student table header
+  var firstHeaderIndex = -1;
+  for (var i = 0; i < rows.length; i++) {
+    if (_isTableHeaderRow(rows[i])) {
+      firstHeaderIndex = i;
+      break;
+    }
+  }
+
+  if (firstHeaderIndex == -1) {
+    return AdminOfficialClassListParseResult(
+      metadata: metadata,
+      students: const [],
     );
   }
 
-  final headers = rows[headerIndex].map(normalizeHeader).toList();
-  int findHeader(bool Function(String value) matches) =>
-      headers.indexWhere(matches);
-  final idIndex = findHeader(
-    (value) =>
-        value == 'id' ||
-        value == 'id number' ||
-        value == 'student id' ||
-        (value.contains('student') &&
-            (value.contains('number') ||
-                value.contains('no') ||
-                value.contains('id') ||
-                value == 'student n')),
-  );
-  final nameIndex = findHeader(
-    (value) =>
-        value == 'full name' ||
-        value == 'student name' ||
-        value == 'name' ||
-        value == 'students',
-  );
-  final levelIndex = findHeader((value) => value == 'level' || value == 'year level' || value == 'year');
-  final sectionIndex = findHeader((value) => value == 'section' || value == 'class section');
-  final emailIndex = findHeader((value) => value == 'email' || value == 'email address' || value.contains('email'));
-  final contactIndex = findHeader(
-    (value) =>
-        value == 'contact' ||
-        value == 'contact no' ||
-        value == 'contact no.' ||
-        value == 'contact number' ||
-        value == 'phone' ||
-        value == 'phone no' ||
-        value == 'phone no.' ||
-        value == 'phone number' ||
-        value == 'mobile' ||
-        value == 'mobile no' ||
-        value == 'mobile no.' ||
-        value == 'mobile number' ||
-        value == 'cellphone',
-  );
+  _ClassListColumnIndices currentCols =
+      _ClassListColumnIndices.fromRow(rows[firstHeaderIndex]);
+
   final section = metadata['section']?.toString() ?? '';
   final yearLevel = metadata['year_level']?.toString() ?? '';
   final students = <Map<String, dynamic>>[];
+  final seenStudentIds = <String>{};
 
-  for (final row in rows.skip(headerIndex + 1)) {
+  // 4. Iterate all rows after firstHeaderIndex
+  for (var i = firstHeaderIndex + 1; i < rows.length; i++) {
+    final row = rows[i];
+    final lineText = row
+        .map((c) => c.trim())
+        .where((c) => c.isNotEmpty)
+        .join(' ')
+        .toLowerCase();
+    if (lineText.isEmpty) continue;
+
+    // A. Check if this row is a repeating table header from a new page
+    if (_isTableHeaderRow(row)) {
+      currentCols = _ClassListColumnIndices.fromRow(row);
+      continue;
+    }
+
+    // B. Check if this row is a page interval row (USTP Print Info, Page X of Y, dates, repeat title, totals)
+    if (_isPageIntervalRow(row, lineText)) {
+      continue;
+    }
+
+    // C. Read fields using current column mapping
     String read(int index) =>
         index >= 0 && index < row.length ? row[index].trim() : '';
-    final id = read(idIndex);
-    final name = read(nameIndex);
-    if (id.isEmpty || name.isEmpty) continue;
+
+    final id = read(currentCols.idIndex);
+    final name = read(currentCols.nameIndex);
+
+    // D. Validate student row
+    if (!_isValidStudentRow(id, name)) {
+      continue;
+    }
+
+    // Prevent duplicate student IDs within the same file (e.g. repeated page boundary records)
+    final cleanIdForDedup = id.toLowerCase().replaceAll(RegExp(r'\s+'), '');
+    if (seenStudentIds.contains(cleanIdForDedup)) {
+      continue;
+    }
+    seenStudentIds.add(cleanIdForDedup);
+
     final splitName = splitOfficialFullName(name);
-    final rowYear = levelIndex != -1
-        ? normalizeYearLevel(read(levelIndex))
-        : yearLevel;
-    final rowSection = sectionIndex != -1 ? read(sectionIndex) : section;
-    final contact = contactIndex == -1 ? '' : read(contactIndex);
+    final rawLevel = currentCols.levelIndex != -1 ? read(currentCols.levelIndex) : '';
+    final rowYear = rawLevel.isNotEmpty ? normalizeYearLevel(rawLevel) : yearLevel;
+    final rowSection = currentCols.sectionIndex != -1 ? read(currentCols.sectionIndex) : section;
+    final contact = currentCols.contactIndex != -1 ? read(currentCols.contactIndex) : '';
+    final gender = currentCols.genderIndex != -1 ? read(currentCols.genderIndex) : '';
+    final program = currentCols.programIndex != -1
+        ? read(currentCols.programIndex)
+        : (metadata['program']?.toString() ?? '');
+    final status = currentCols.statusIndex != -1 ? read(currentCols.statusIndex) : '';
+
+    String email = currentCols.emailIndex != -1 ? read(currentCols.emailIndex) : '';
+    if (email.isEmpty && id.isNotEmpty) {
+      final cleanId = id.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+      email = cleanId.isNotEmpty ? '$cleanId@ustp.edu.ph' : '$id@ustp.edu.ph';
+    }
+
     students.add({
       'id_number': id,
       'first_name': splitName.firstName,
       'last_name': splitName.lastName,
-      'email': emailIndex == -1 ? '' : read(emailIndex),
+      'email': email,
       if (contact.isNotEmpty) 'phone_number': contact,
       if (contact.isNotEmpty) 'contact': contact,
+      if (gender.isNotEmpty) 'gender': gender,
+      if (program.isNotEmpty) 'program': program,
+      if (status.isNotEmpty) 'status': status,
       'role': 'student',
       if (rowYear.isNotEmpty) 'year_level': rowYear,
       'section': rowSection,
@@ -260,10 +308,192 @@ AdminOfficialClassListParseResult parseOfficialClassListRows(List<List<String>> 
     });
   }
 
+  // 5. In case year_level was not in header metadata, infer it from cohort students
+  if ((metadata['year_level'] == null || metadata['year_level'].toString().isEmpty) && students.isNotEmpty) {
+    final counts = <String, int>{};
+    for (final s in students) {
+      final y = s['year_level']?.toString() ?? '';
+      if (y.isNotEmpty) {
+        counts[y] = (counts[y] ?? 0) + 1;
+      }
+    }
+    if (counts.isNotEmpty) {
+      final dominantYear = counts.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+      metadata['year_level'] = dominantYear;
+    }
+  }
+
   return AdminOfficialClassListParseResult(
     metadata: metadata,
     students: students,
   );
+}
+
+class _ClassListColumnIndices {
+  final int idIndex;
+  final int nameIndex;
+  final int levelIndex;
+  final int sectionIndex;
+  final int emailIndex;
+  final int contactIndex;
+  final int genderIndex;
+  final int programIndex;
+  final int statusIndex;
+
+  const _ClassListColumnIndices({
+    required this.idIndex,
+    required this.nameIndex,
+    required this.levelIndex,
+    required this.sectionIndex,
+    required this.emailIndex,
+    required this.contactIndex,
+    required this.genderIndex,
+    required this.programIndex,
+    required this.statusIndex,
+  });
+
+  factory _ClassListColumnIndices.fromRow(List<String> row) {
+    final headers = row.map(normalizeHeader).toList();
+    int find(bool Function(String v) match) => headers.indexWhere(match);
+
+    final id = find((v) =>
+        v == 'id' ||
+        v == 'id number' ||
+        v == 'student id' ||
+        (v.contains('student') &&
+            (v.contains('number') ||
+                v.contains('no') ||
+                v.contains('id') ||
+                v == 'student n')));
+
+    final name = find((v) =>
+        v == 'full name' ||
+        v == 'student name' ||
+        v == 'name' ||
+        v == 'students');
+
+    final level = find((v) => v == 'level' || v == 'year level' || v == 'year');
+    final section = find((v) => v == 'section' || v == 'class section');
+    final email = find((v) => v == 'email' || v == 'email address' || v.contains('email'));
+    final contact = find((v) =>
+        v == 'contact' ||
+        v == 'contact no' ||
+        v == 'contact no.' ||
+        v == 'contact number' ||
+        v == 'phone' ||
+        v == 'phone no' ||
+        v == 'phone no.' ||
+        v == 'phone number' ||
+        v == 'mobile' ||
+        v == 'mobile no' ||
+        v == 'mobile no.' ||
+        v == 'mobile number' ||
+        v == 'cellphone');
+    final gender = find((v) => v == 'gender' || v == 'sex');
+    final program = find((v) => v == 'program' || v == 'course' || v == 'degree');
+    final status = find((v) => v == 'status' || v == 'enrollment status');
+
+    return _ClassListColumnIndices(
+      idIndex: id,
+      nameIndex: name,
+      levelIndex: level,
+      sectionIndex: section,
+      emailIndex: email,
+      contactIndex: contact,
+      genderIndex: gender,
+      programIndex: program,
+      statusIndex: status,
+    );
+  }
+}
+
+bool _isTableHeaderRow(List<String> row) {
+  final normalized = row.map(normalizeHeader).toList();
+  final hasStudentNumber = normalized.any(
+    (cell) =>
+        cell == 'id' ||
+        cell == 'id number' ||
+        cell == 'student id' ||
+        (cell.contains('student') &&
+            (cell.contains('number') ||
+                cell.contains('no') ||
+                cell.contains('id') ||
+                cell == 'student n')),
+  );
+  final hasFullName = normalized.contains('full name') ||
+      normalized.contains('student name') ||
+      normalized.contains('name') ||
+      normalized.contains('students');
+  return hasStudentNumber && hasFullName;
+}
+
+bool _isPageIntervalRow(List<String> row, String lineText) {
+  if (lineText.contains('print info')) return true;
+  if (lineText.contains('page ') && (lineText.contains(' of ') || lineText.contains(' of'))) return true;
+  if (lineText.contains('list of enrollment')) return true;
+  if (lineText.contains('official list of enrolled students')) return true;
+  if (lineText.contains('officially enrolled') && lineText.contains('registered')) return true;
+  if (lineText.startsWith('total') || lineText.contains('total count') || lineText == 'total') return true;
+
+  // Day names for print dates: e.g. "Monday 22 June 2026"
+  final dayPrefixes = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  if (dayPrefixes.any((d) => lineText.startsWith(d))) return true;
+
+  // Single term headers repeating on each page: e.g. "2026-2027 1st Semester"
+  if (RegExp(r'^\d{4}\s*-\s*\d{4}\s+\d(?:st|nd|rd)?\s+sem', caseSensitive: false).hasMatch(lineText)) return true;
+
+  // Program header repeating on each page: e.g. "Bachelor of Science in Information Technology"
+  if (lineText.startsWith('bachelor of') || lineText.startsWith('bachelor in')) return true;
+
+  return false;
+}
+
+bool _isValidStudentRow(String id, String name) {
+  if (id.isEmpty || name.isEmpty) return false;
+
+  final idLower = id.toLowerCase();
+  final nameLower = name.toLowerCase();
+
+  const blockedTerms = {
+    'student no',
+    'student number',
+    'student id',
+    'id',
+    'id number',
+    'student n',
+    'name',
+    'student name',
+    'full name',
+    'students',
+    'program',
+    'major',
+    'level',
+    'gender',
+    'status',
+    'date',
+    'total',
+    'print info',
+  };
+
+  if (blockedTerms.contains(idLower) || blockedTerms.contains(nameLower)) {
+    return false;
+  }
+
+  if (idLower.contains('print info') || nameLower.contains('print info')) {
+    return false;
+  }
+  if (idLower.contains('page ') || nameLower.contains('page ')) {
+    return false;
+  }
+
+  // An ID must have at least one alphanumeric character
+  if (!RegExp(r'[a-zA-Z0-9]').hasMatch(id)) return false;
+
+  // A name must have at least two alphabetic characters
+  final letters = RegExp(r'[a-zA-Z]').allMatches(name).length;
+  if (letters < 2) return false;
+
+  return true;
 }
 
 List<String> splitCsvLine(String line) {
