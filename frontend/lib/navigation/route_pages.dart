@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../toasts/feedback_toast.dart';
 
+import '../screens/web/admin/academic_periods/semester_detail_screen.dart';
 import '../screens/web/admin/defense_stage_editor_screen.dart';
 import '../screens/web/admin/grade_center_event_teams_screen.dart';
 import '../screens/web/admin/grade_center_shared.dart';
@@ -329,6 +330,26 @@ class PitLeadCohortSectionDetailRoute extends StatelessWidget {
     return PitLeadCohortSectionDetailScreen(
       sectionName: Uri.decodeComponent(sectionName),
       onBack: () => context.go(FacultyRoutes.cohort),
+    );
+  }
+}
+
+class AdminSemesterDetailRoute extends StatelessWidget {
+  const AdminSemesterDetailRoute({super.key, required this.semesterId});
+
+  final int? semesterId;
+
+  @override
+  Widget build(BuildContext context) {
+    return SemesterDetailScreen(
+      semesterId: semesterId,
+      onBack: () {
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go(AdminRoutes.academicPeriods);
+        }
+      },
     );
   }
 }

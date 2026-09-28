@@ -394,6 +394,121 @@ Student Number,Full Name,Email,Year Level
       expect(capturedResult!.files.length, 1);
       expect(capturedResult!.files.first.name, 'bsit_3a_enrolled.csv');
     });
+
+    testWidgets('recognizes USTP List of Enrollment by year level in student mode and generates preview', (tester) async {
+      const byYearCsv = '''LIST OF ENROLLMENT,,,,,,,,,,,
+2026-2027 1st Semester,,,,,,,,,,,
+,Program,Registered,Officially Enrolled,,,,,,,,
+,Bachelor of Science in Information Technology,3,3,,,,,,,,
+,TOTAL,,,,,,,,,,
+,,3,3,,,,,,,,
+LIST OF ENROLLMENT,,,,,,,,,,,
+2026-2027 1st Semester,,,,,,,,,,,
+Bachelor of Science in Information Technology,,,,,,,,,,,
+,#,Student No,Name,Program,Major,Level,,Gender,Status,Date,Date
+,1,4001,"VILLAR, Marcus",BSIT,,4th Year,,M,Officially Enrolled,06/22/2026,06/22/2026
+,2,4002,"ONG, Patricia",BSIT,,4th Year,,F,Officially Enrolled,06/22/2026,06/22/2026
+,3,4003,"SALAZAR, Ethan",BSIT,,4th Year,,M,Officially Enrolled,06/22/2026,06/22/2026
+''';
+
+      final byYearFile = PickedTabularFile(
+        name: 'students_4th_year_by_year_level.csv',
+        extension: 'csv',
+        bytes: Uint8List.fromList(byYearCsv.codeUnits),
+        text: byYearCsv,
+      );
+
+      StagedImportResult? capturedResult;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () async {
+                  capturedResult = await showFileImportStagingModal(
+                    context,
+                    initialFiles: [byYearFile],
+                    importMode: 'student',
+                    hasActiveSemester: true,
+                  );
+                },
+                child: const Text('Open Modal'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open Modal'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Staged Import Files'), findsOneWidget);
+      expect(find.textContaining('Student Batch'), findsOneWidget);
+      expect(find.textContaining('Official Class List (By Year Level)'), findsOneWidget);
+      expect(find.text('4th Year'), findsOneWidget);
+      expect(find.text('3 students'), findsOneWidget);
+      expect(find.text('Section: Auto-detected Section'), findsNothing);
+
+      // Confirm generate preview button
+      await tester.tap(find.text('Generate Preview Table (3 rows)'));
+      await tester.pumpAndSettle();
+
+      expect(capturedResult, isNotNull);
+      expect(capturedResult!.importMode, 'student');
+      expect(capturedResult!.files.length, 1);
+      expect(capturedResult!.files.first.name, 'students_4th_year_by_year_level.csv');
+    });
+
+    testWidgets('rejects USTP List of Enrollment by year level in general (faculty) mode', (tester) async {
+      const byYearCsv = '''LIST OF ENROLLMENT,,,,,,,,,,,
+2026-2027 1st Semester,,,,,,,,,,,
+,Program,Registered,Officially Enrolled,,,,,,,,
+,Bachelor of Science in Information Technology,3,3,,,,,,,,
+,TOTAL,,,,,,,,,,
+,,3,3,,,,,,,,
+LIST OF ENROLLMENT,,,,,,,,,,,
+2026-2027 1st Semester,,,,,,,,,,,
+Bachelor of Science in Information Technology,,,,,,,,,,,
+,#,Student No,Name,Program,Major,Level,,Gender,Status,Date,Date
+,1,4001,"VILLAR, Marcus",BSIT,,4th Year,,M,Officially Enrolled,06/22/2026,06/22/2026
+''';
+
+      final byYearFile = PickedTabularFile(
+        name: 'students_4th_year_by_year_level.csv',
+        extension: 'csv',
+        bytes: Uint8List.fromList(byYearCsv.codeUnits),
+        text: byYearCsv,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () async {
+                  await showFileImportStagingModal(
+                    context,
+                    initialFiles: [byYearFile],
+                    importMode: 'general',
+                  );
+                },
+                child: const Text('Open Modal'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open Modal'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Staged Import Files'), findsOneWidget);
+      expect(find.textContaining('No valid faculty & staff files detected'), findsOneWidget);
+      expect(find.textContaining('Official Class List (By Year Level)'), findsOneWidget);
+      expect(find.textContaining('This file is a Student Class List (By Year Level)'), findsOneWidget);
+    });
   });
 }
+
 

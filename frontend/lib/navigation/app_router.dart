@@ -246,6 +246,15 @@ List<RouteBase> _adminRoutes() {
         GoRoute(
           path: 'academic-periods',
           pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+          routes: [
+            GoRoute(
+              path: ':semesterId',
+              builder: (_, state) {
+                final id = int.tryParse(state.pathParameters['semesterId'] ?? '');
+                return AdminSemesterDetailRoute(semesterId: id);
+              },
+            ),
+          ],
         ),
         GoRoute(
           path: 'users',

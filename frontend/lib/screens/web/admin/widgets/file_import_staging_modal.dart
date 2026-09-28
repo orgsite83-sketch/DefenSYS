@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../utils/csv_file_io.dart';
 import '../../../../widgets/feedback/empty_state.dart';
+import '../user_management/bulk_import/official_class_list_parser.dart';
 
 /// Result containing staged files and user-confirmed import mode.
 class StagedImportResult {
@@ -368,6 +369,52 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
         subjectTitle: subjectTitle,
         yearLevel: yearLevel,
         instructor: instructor,
+        warning: studentCount == 0 ? 'No enrolled student records found in template.' : null,
+      );
+    }
+
+    // 1b. Check for Official University Registrar List of Enrollment (By Year Level)
+    bool isByYearEnrollmentList = false;
+    for (var i = 0; i < headerScanLimit; i++) {
+      final line = rows[i].join(' ').toLowerCase();
+      if (line.contains('list of enrollment') ||
+          (line.contains('officially enrolled') && line.contains('registered'))) {
+        isByYearEnrollmentList = true;
+        break;
+      }
+    }
+
+    if (isByYearEnrollmentList) {
+      final parsed = parseOfficialClassListRows(rows);
+      final studentCount = parsed.students.length;
+      final detectedYear = parsed.metadata['year_level']?.toString();
+
+      final isGeneralMode = importMode == 'general';
+      if (isGeneralMode) {
+        return StagedFileInfo(
+          file: file,
+          formatLabel: 'Official Class List (By Year Level)',
+          isValid: false,
+          rowCount: 0,
+          detectedImportMode: 'student',
+          recordEntityLabel: 'students',
+          primaryRole: 'Student',
+          yearLevel: detectedYear,
+          warning:
+              'This file is a Student Class List (By Year Level). It cannot be imported into Faculty & Staff. Please use the Batch Student Enrollment Hub instead.',
+        );
+      }
+
+      return StagedFileInfo(
+        file: file,
+        formatLabel: 'Official Class List (By Year Level)',
+        isValid: studentCount > 0,
+        rowCount: studentCount,
+        detectedImportMode: 'student',
+        recordEntityLabel: 'students',
+        primaryRole: 'Student',
+        section: null,
+        yearLevel: detectedYear,
         warning: studentCount == 0 ? 'No enrolled student records found in template.' : null,
       );
     }
@@ -1101,7 +1148,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
                 fgColor: entityFg,
                 borderColor: entityBorder,
               ),
-              if (info.primaryRole != null && info.formatLabel != 'Official Class List' && !isInvalid)
+              if (info.primaryRole != null && !info.formatLabel.startsWith('Official Class List') && !isInvalid)
                 _buildMetadataChip(
                   icon: Icons.person_pin_circle_outlined,
                   label: 'Role: ${info.primaryRole}',

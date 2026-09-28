@@ -1940,6 +1940,9 @@ class _StudentBatchEnrollmentHubViewState
         ? <Map<String, dynamic>>[]
         : filtered.sublist(startIndex, endIndex);
 
+    final allViaTeams = sectionCounts.isEmpty ||
+        (sectionCounts.length == 1 && sectionCounts.containsKey('Unassigned'));
+
     return DefensysCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -1971,9 +1974,11 @@ class _StudentBatchEnrollmentHubViewState
                         ),
                       ),
                       const SizedBox(height: 3),
-                      const Text(
-                        'Verify parsed student cohorts, section assignments, and emails before confirming enrollment.',
-                        style: TextStyle(
+                      Text(
+                        allViaTeams
+                            ? 'Verify parsed student cohorts, emails, and IDs before confirming enrollment. Section assignments will link via team rosters.'
+                            : 'Verify parsed student cohorts, section assignments, and emails before confirming enrollment.',
+                        style: const TextStyle(
                           fontSize: 12.5,
                           color: DefensysUi.steelGrey,
                           height: 1.35,
@@ -2007,8 +2012,12 @@ class _StudentBatchEnrollmentHubViewState
                     child: Row(
                       children: [
                         _buildSectionPill('ALL', 'All Sections ($totalStudents)'),
-                        ...sectionCounts.entries
-                            .map((e) => _buildSectionPill(e.key, '${e.key} (${e.value})')),
+                        ...sectionCounts.entries.map((e) {
+                          final label = e.key == 'Unassigned'
+                              ? 'Via Team Roster (${e.value})'
+                              : '${e.key} (${e.value})';
+                          return _buildSectionPill(e.key, label);
+                        }),
                       ],
                     ),
                   ),
@@ -2053,11 +2062,13 @@ class _StudentBatchEnrollmentHubViewState
               ],
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(24, 10, 24, 16),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 10, 24, 16),
             child: Text(
-              'Review student details and verify section assignments before confirming enrollment.',
-              style: TextStyle(
+              allViaTeams
+                  ? 'Review student details before confirming enrollment. Section assignments will link automatically via team rosters.'
+                  : 'Review student details and verify section assignments before confirming enrollment.',
+              style: const TextStyle(
                 color: Color(0xFF98A2B3),
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
@@ -2114,7 +2125,11 @@ class _StudentBatchEnrollmentHubViewState
                     fullName == ',' ? (s['name']?.toString() ?? 'Student') : fullName;
                 final email = s['email']?.toString() ?? '';
                 final year = s['year_level']?.toString() ?? 'Unassigned';
-                final sec = s['section']?.toString() ?? 'Unassigned';
+                final rawSec = s['section']?.toString().trim() ?? '';
+                final hasExplicitSection = rawSec.isNotEmpty &&
+                    rawSec.toLowerCase() != 'unassigned' &&
+                    rawSec.toLowerCase() != 'null';
+                final sec = hasExplicitSection ? rawSec : '';
 
                 final instructor = (s['faculty'] ?? s['instructor'] ?? s['instructor_name'] ?? '').toString().trim();
                 final isCapstoneStudent = year.contains('4th') ||
@@ -2156,21 +2171,40 @@ class _StudentBatchEnrollmentHubViewState
                           spacing: 6,
                           runSpacing: 4,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: sec.isNotEmpty ? const Color(0xFFF1F5F9) : const Color(0xFFFFFBEB),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: sec.isNotEmpty ? const Color(0xFFCBD5E1) : const Color(0xFFFDE68A),
+                            Tooltip(
+                              message: hasExplicitSection
+                                  ? 'Assigned Section: $sec'
+                                  : 'Section will be automatically linked when the Capstone Team Roster is imported.',
+                              waitDuration: const Duration(milliseconds: 300),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: const Color(0xFFCBD5E1)),
                                 ),
-                              ),
-                              child: Text(
-                                sec.isNotEmpty ? 'Section: $sec' : 'Section: Unassigned (Pending Teams)',
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w600,
-                                  color: sec.isNotEmpty ? _ink : const Color(0xFFB45309),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (!hasExplicitSection) ...[
+                                      const Icon(
+                                        Icons.groups_outlined,
+                                        size: 13,
+                                        color: Color(0xFF64748B),
+                                      ),
+                                      const SizedBox(width: 4),
+                                    ],
+                                    Text(
+                                      hasExplicitSection
+                                          ? 'Section: $sec'
+                                          : 'Section: Via Team Roster',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: hasExplicitSection ? _ink : const Color(0xFF475569),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -2276,10 +2310,12 @@ class _StudentBatchEnrollmentHubViewState
               children: [
                 const Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFF667085)),
                 const SizedBox(width: 6),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Review student details and verify section assignments before confirming enrollment.',
-                    style: TextStyle(
+                    allViaTeams
+                        ? 'Review student details before confirming enrollment. Section assignments will link automatically via team rosters.'
+                        : 'Review student details and verify section assignments before confirming enrollment.',
+                    style: const TextStyle(
                       color: Color(0xFF667085),
                       fontSize: 11.5,
                       fontWeight: FontWeight.w500,

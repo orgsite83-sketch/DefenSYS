@@ -132,14 +132,11 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   }
 
   void _showRubricToast(String message, ToastificationType type) {
-    toastification.show(
-      context: context,
-      type: type,
-      style: ToastificationStyle.flatColored,
-      alignment: Alignment.topRight,
-      title: Text(message),
-      autoCloseDuration: const Duration(seconds: 4),
-    );
+    if (type == ToastificationType.error) {
+      showErrorToast(context, message);
+    } else {
+      showSuccessToast(context, message);
+    }
   }
 
   @override

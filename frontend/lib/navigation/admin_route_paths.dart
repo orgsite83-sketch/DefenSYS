@@ -20,6 +20,9 @@ abstract final class AdminRoutes {
   static const defenseScheduleBulkImport = '/admin/defense-board/import';
   static const defenseStages = '/admin/defense-stages';
 
+  static String academicPeriodDetail(int semesterId) =>
+      '/admin/academic-periods/$semesterId';
+
   static String teamDetail(int teamId) => '/admin/student-teams/$teamId';
 
   static String gradeDetail(int gradeId) =>

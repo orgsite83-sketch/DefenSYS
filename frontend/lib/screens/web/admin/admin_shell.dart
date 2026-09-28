@@ -256,7 +256,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         params.containsKey('gradeId') ||
         params.containsKey('groupKey') ||
         params.containsKey('stageId') ||
-        params.containsKey('rubricId');
+        params.containsKey('rubricId') ||
+        params.containsKey('semesterId');
   }
 
   Widget _buildSectionWidget(DefensysAdminSection section) {

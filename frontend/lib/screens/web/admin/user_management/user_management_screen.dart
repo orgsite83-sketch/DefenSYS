@@ -504,7 +504,6 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           if (success && context.mounted) {
             showSuccessToast(context, '${users.length} students imported successfully!');
             ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
-            ref.read(userManagementProvider.notifier).fetchUsers();
             _closeSubView();
           }
         },

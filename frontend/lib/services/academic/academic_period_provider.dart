@@ -142,6 +142,77 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     }
   }
 
+  Future<bool> updateSchoolYear(int schoolYearId, String label) async {
+    final trimmed = label.trim();
+    if (trimmed.isEmpty) {
+      state = state.copyWith(error: 'Enter a school year first.');
+      return false;
+    }
+
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final response = await _client.patch(
+        Uri.parse('$baseUrl/$schoolYearId/'),
+        body: jsonEncode({'school_year': trimmed}),
+      );
+
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        _applyPayload(payload, successMessage: 'School year updated to $trimmed.');
+        await _refreshDependentProviders();
+        return true;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deleteSchoolYear(int schoolYearId) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final response = await _client.delete(
+        Uri.parse('$baseUrl/$schoolYearId/'),
+      );
+
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        final msg = payload['detail']?.toString() ?? 'School year deleted.';
+        if (state.selectedSchoolYearId == schoolYearId) {
+          state = state.copyWith(selectedSchoolYearId: null);
+        }
+        _applyPayload(payload, successMessage: msg);
+        await _refreshDependentProviders();
+        return true;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
   Future<bool> addSemester(int schoolYearId, String label) async {
     state = state.copyWith(
       isSaving: true,
@@ -158,6 +229,37 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
 
       if (response.statusCode == 201) {
         await fetchPeriods(successMessage: '$label added.');
+        await _refreshDependentProviders();
+        return true;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deleteSemester(int semesterId) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final response = await _client.delete(
+        Uri.parse('$baseUrl/semesters/$semesterId/'),
+      );
+
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        final msg = payload['detail']?.toString() ?? 'Semester deleted.';
+        _applyPayload(payload, successMessage: msg);
         await _refreshDependentProviders();
         return true;
       }
