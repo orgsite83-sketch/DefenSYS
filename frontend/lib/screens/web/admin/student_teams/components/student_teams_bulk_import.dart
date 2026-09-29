@@ -7,6 +7,7 @@ import 'package:defensys/screens/web/admin/widgets/template_blueprint_models.dar
 import 'package:defensys/services/student_teams_provider.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/utils/csv_file_io.dart';
+import 'package:defensys/utils/export/team_roster_excel_generator.dart';
 import 'package:defensys/utils/import/team_bulk_import_csv.dart';
 import 'package:defensys/utils/team_bulk_import_draft.dart';
 
@@ -150,6 +151,10 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
   static const Color _green = Color(0xFF15803D);
 
   final TextEditingController _searchCtrl = TextEditingController();
+  String _selectedSectionFilter = 'all';
+  String _selectedAdviserFilter = 'all';
+  String _groupBy = 'none'; // 'none' | 'section' | 'adviser'
+  final Set<String> _customSections = {};
 
   @override
   void dispose() {
@@ -381,6 +386,36 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
       width: 1,
       margin: const EdgeInsets.symmetric(horizontal: 12),
       color: const Color(0xFFCBD5E1),
+    );
+  }
+
+  Widget _buildToolbarDropdown({
+    required IconData icon,
+    required String value,
+    required List<DropdownMenuItem<String>> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: const Color(0xFFD1D5DB)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: items.any((it) => it.value == value) ? value : items.first.value,
+          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: _muted),
+          style: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+            color: DefensysUi.textDark,
+          ),
+          items: items,
+          onChanged: widget.state.isSaving ? null : onChanged,
+        ),
+      ),
     );
   }
 
@@ -825,6 +860,21 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
     final totalRows = widget.parsedBulkRows.length;
     final issueCount = totalRows - readyCount;
 
+    final uniqueSections = <String>{};
+    for (final r in widget.parsedBulkRows) {
+      final s = (r['section'] ?? '').toString().trim();
+      if (s.isNotEmpty) uniqueSections.add(s);
+    }
+    uniqueSections.addAll(_customSections);
+    final sortedSections = uniqueSections.toList()..sort();
+
+    final uniqueAdvisers = <String>{};
+    for (final r in widget.parsedBulkRows) {
+      final a = (r['adviser_name'] ?? r['adviser_id'] ?? '').toString().trim();
+      if (a.isNotEmpty) uniqueAdvisers.add(a);
+    }
+    final sortedAdvisers = uniqueAdvisers.toList()..sort();
+
     return DefensysCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -877,6 +927,38 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                       ? '0 teams staged'
                       : (readyCount > 0 ? '$readyCount / $totalRows ready' : '$totalRows teams staged'),
                 ),
+                if (widget.parsedBulkRows.isNotEmpty) ...[
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    key: const ValueKey('top_import_ready_teams_btn'),
+                    onPressed: widget.state.isSaving || widget.parsedBulkRows.isEmpty || widget.templateWarning != null || readyCount == 0
+                        ? null
+                        : widget.onImportBulkTeams,
+                    icon: widget.state.isSaving
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.cloud_upload_rounded, size: 15),
+                    label: Text(
+                      readyCount > 0 ? 'Import $readyCount Ready' : 'Import Ready',
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _maroon,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: const Color(0xFFE2E8F0),
+                      disabledForegroundColor: const Color(0xFF94A3B8),
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -893,27 +975,46 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                   borderRadius: BorderRadius.circular(7),
                   border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.analytics_outlined, size: 15, color: Color(0xFF475569)),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Validation Snapshot:',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF334155),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      const Icon(Icons.analytics_outlined, size: 15, color: Color(0xFF475569)),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Validation Snapshot:',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF334155),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 14),
-                    _buildTeamStatItem('Ready to Import', readyCount, const Color(0xFF16A34A)),
-                    if (issueCount > 0) ...[
+                      const SizedBox(width: 14),
+                      _buildTeamStatItem('Ready to Import', readyCount, const Color(0xFF16A34A)),
+                      if (issueCount > 0) ...[
+                        _buildTeamStatDivider(),
+                        _buildTeamStatItem('Needs Fix', issueCount, const Color(0xFFD97706)),
+                      ],
+                      if (sortedSections.isNotEmpty) ...[
+                        _buildTeamStatDivider(),
+                        _buildTeamStatItem(
+                          sortedSections.length == 1 ? 'Section' : 'Sections',
+                          sortedSections.length,
+                          const Color(0xFF0284C7),
+                        ),
+                      ],
+                      if (widget.isCapstoneAdmin && sortedAdvisers.isNotEmpty) ...[
+                        _buildTeamStatDivider(),
+                        _buildTeamStatItem(
+                          sortedAdvisers.length == 1 ? 'Adviser' : 'Advisers',
+                          sortedAdvisers.length,
+                          const Color(0xFF7C3AED),
+                        ),
+                      ],
                       _buildTeamStatDivider(),
-                      _buildTeamStatItem('Needs Fix', issueCount, const Color(0xFFD97706)),
+                      _buildTeamStatItem('Total Staged', totalRows, const Color(0xFF64748B)),
                     ],
-                    _buildTeamStatDivider(),
-                    _buildTeamStatItem('Total Staged', totalRows, const Color(0xFF64748B)),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -921,9 +1022,13 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
           // Search + Filter Toolbar
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
-            child: Row(
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Expanded(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 260, maxWidth: 360),
                   child: SizedBox(
                     height: 40,
                     child: TextField(
@@ -941,8 +1046,8 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                                 },
                               )
                             : null,
-                        hintText: 'Search by team name, project title, adviser, or members...',
-                        hintStyle: const TextStyle(fontSize: 12.5, color: _muted),
+                        hintText: 'Search by team, project, section, adviser...',
+                        hintStyle: const TextStyle(fontSize: 12, color: _muted),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                         filled: true,
                         fillColor: const Color(0xFFF9FAFB),
@@ -962,7 +1067,74 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                if (sortedSections.isNotEmpty)
+                  _buildToolbarDropdown(
+                    icon: Icons.meeting_room_outlined,
+                    value: _selectedSectionFilter,
+                    items: [
+                      const DropdownMenuItem(value: 'all', child: Text('All Sections')),
+                      ...sortedSections.map((sec) {
+                        final count = widget.parsedBulkRows
+                            .where((r) => (r['section'] ?? '').toString().trim() == sec)
+                            .length;
+                        return DropdownMenuItem(value: sec, child: Text('Sec: $sec ($count)'));
+                      }),
+                      if (widget.parsedBulkRows.any((r) => (r['section'] ?? '').toString().trim().isEmpty))
+                        DropdownMenuItem(
+                          value: '_none_',
+                          child: Text(
+                            'No Section (${widget.parsedBulkRows.where((r) => (r['section'] ?? '').toString().trim().isEmpty).length})',
+                          ),
+                        ),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setState(() => _selectedSectionFilter = v);
+                    },
+                  ),
+                if (widget.isCapstoneAdmin || sortedAdvisers.isNotEmpty)
+                  _buildToolbarDropdown(
+                    icon: Icons.supervisor_account_outlined,
+                    value: _selectedAdviserFilter,
+                    items: [
+                      const DropdownMenuItem(value: 'all', child: Text('All Advisers')),
+                      DropdownMenuItem(
+                        value: 'with_adviser',
+                        child: Text(
+                          'With Adviser (${widget.parsedBulkRows.where((r) => (r['adviser_name'] ?? r['adviser_id'] ?? '').toString().trim().isNotEmpty).length})',
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'without_adviser',
+                        child: Text(
+                          'Without Adviser (${widget.parsedBulkRows.where((r) => (r['adviser_name'] ?? r['adviser_id'] ?? '').toString().trim().isEmpty).length})',
+                        ),
+                      ),
+                      ...sortedAdvisers.map((adv) {
+                        final count = widget.parsedBulkRows
+                            .where((r) => (r['adviser_name'] ?? r['adviser_id'] ?? '').toString().trim() == adv)
+                            .length;
+                        return DropdownMenuItem(
+                          value: adv,
+                          child: Text('$adv ($count)', overflow: TextOverflow.ellipsis),
+                        );
+                      }),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setState(() => _selectedAdviserFilter = v);
+                    },
+                  ),
+                _buildToolbarDropdown(
+                  icon: Icons.view_agenda_outlined,
+                  value: _groupBy,
+                  items: const [
+                    DropdownMenuItem(value: 'none', child: Text('View: Flat List')),
+                    DropdownMenuItem(value: 'section', child: Text('Group: By Section')),
+                    DropdownMenuItem(value: 'adviser', child: Text('Group: By Adviser')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setState(() => _groupBy = v);
+                  },
+                ),
                 FilterChip(
                   label: Text(issueCount > 0 ? 'Issues only ($issueCount)' : 'Issues only'),
                   selected: widget.showIssuesOnly,
@@ -1043,9 +1215,16 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                     pitLeadYear: widget.pitLeadYear,
                     showIssuesOnly: widget.showIssuesOnly,
                     searchQuery: _searchCtrl.text,
+                    sectionFilter: _selectedSectionFilter,
+                    adviserFilter: _selectedAdviserFilter,
+                    groupBy: _groupBy,
                     onRowChanged: widget.onScheduleRowPreview,
                     onDeleteRow: widget.onDeleteBulkRow,
                     onAddRow: widget.onAddBulkRow,
+                    adviserOptions: widget.state.advisers,
+                    sectionOptions: sortedSections,
+                    studentOptions: widget.state.students,
+                    onSectionAdded: (sec) => setState(() => _customSections.add(sec)),
                   ),
                 ],
               ),
@@ -1164,282 +1343,238 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
     required bool isCapstone,
     required String activeSemLabel,
   }) {
-    int selectedTab = 0;
-
     showDialog(
       context: context,
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (modalCtx, setModalState) {
-            final blueprints = teamGroupingBlueprintsFor(isCapstone: isCapstone);
-            final bp = blueprints[selectedTab];
+        final blueprints = teamGroupingBlueprintsFor(isCapstone: isCapstone);
+        final bp = blueprints.first;
 
-            return Dialog(
-              backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1180, maxHeight: 850),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Modal Header
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 20, 16, 16),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: _maroon.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(Icons.grid_on_rounded, color: _maroon, size: 20),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  isCapstone
-                                      ? 'Official Capstone Team Sheet Blueprint'
-                                      : 'Official PIT Team Sheet Blueprint',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w800,
-                                    color: _ink,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Target Term: $activeSemLabel • Interactive guide for supported team grouping layouts',
-                                  style: const TextStyle(fontSize: 12, color: _muted),
-                                ),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () => Navigator.of(ctx).pop(),
-                            icon: const Icon(Icons.close_rounded, size: 20, color: _muted),
-                            splashRadius: 18,
-                          ),
-                        ],
+        return Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1350, maxHeight: 850),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Modal Header
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 16, 16),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: _maroon.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.grid_on_rounded, color: _maroon, size: 20),
                       ),
-                    ),
-                    const Divider(height: 1, color: _line),
-
-                    // Guidance Bar (Single Canonical Standard)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      color: const Color(0xFFF8FAFC),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF64748B)),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
                               isCapstone
-                                  ? 'Official Department Team Roster. Section declared as header block, with teams grouped under faculty Advisers and projects/modules assigned per team.'
-                                  : 'Official PIT Team Roster. Section declared as header block, with instructor declared at top and projects/modules assigned per team.',
+                                  ? 'Official Capstone Team Sheet Blueprint'
+                                  : 'Official PIT Team Sheet Blueprint',
                               style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFF334155),
-                                height: 1.35,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: _ink,
                               ),
                             ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: const Color(0xFFCBD5E1)),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Target Term: $activeSemLabel • Standardized unified team roster blueprint',
+                              style: const TextStyle(fontSize: 12, color: _muted),
                             ),
-                            child: const Text(
-                              'Auto-Detected',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF475569),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1, color: _line),
-
-                    // Variation Switcher (Independent Projects vs Shared System)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
-                      child: Row(
-                        children: [
-                          _buildBlueprintVariantTab(
-                            title: 'Different Systems (Independent Projects)',
-                            icon: Icons.hub_outlined,
-                            isSelected: selectedTab == 0,
-                            onTap: () => setModalState(() => selectedTab = 0),
-                          ),
-                          const SizedBox(width: 8),
-                          _buildBlueprintVariantTab(
-                            title: 'Single Shared System (Modules)',
-                            icon: Icons.account_tree_outlined,
-                            isSelected: selectedTab == 1,
-                            onTap: () => setModalState(() => selectedTab = 1),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    // Scrollable Content
-                    Flexible(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(24),
-                        child: _buildSampleTeamSheetPreview(
-                          isCapstone: isCapstone,
-                          selectedTab: selectedTab,
+                          ],
                         ),
                       ),
-                    ),
+                      IconButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        icon: const Icon(Icons.close_rounded, size: 20, color: _muted),
+                        splashRadius: 18,
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: _line),
 
-                    const Divider(height: 1, color: _line),
-                    // Modal Footer
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                OutlinedButton.icon(
-                                  onPressed: () async {
-                                    await downloadTextFile(
-                                      filename: bp.filename,
-                                      content: bp.rawCsv,
-                                    );
-                                    if (context.mounted) {
-                                      showSuccessToast(
-                                        context,
-                                        'Sample ${bp.shortLabel} template downloaded.',
-                                      );
-                                    }
-                                  },
-                                  icon: const Icon(Icons.download_rounded, size: 15),
-                                  label: Text('Download ${bp.shortLabel} Template (.csv)'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: _ink,
-                                    side: const BorderSide(color: _line),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 10,
-                                    ),
-                                  ),
-                                ),
-                                OutlinedButton.icon(
-                                  onPressed: () async {
-                                    await Clipboard.setData(ClipboardData(text: csvToTsv(bp.rawCsv)));
-                                    if (context.mounted) {
-                                      showSuccessToast(
-                                        context,
-                                        'Copied for Excel/Sheets! Press Ctrl+V in your spreadsheet.',
-                                      );
-                                    }
-                                  },
-                                  icon: const Icon(Icons.copy_rounded, size: 14),
-                                  label: const Text('Copy for Excel / Sheets'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: _ink,
-                                    side: const BorderSide(color: _line),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 10,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
+                // Guidance Bar (Single Canonical Standard)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  color: const Color(0xFFF8FAFC),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF64748B)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          isCapstone
+                              ? 'Official Unified Team Roster. Supports both Different Systems (Independent Projects) and Single Shared Systems (Modules) under one standardized 5-column schema.'
+                              : 'Official Unified PIT Team Roster. Supports both Different Systems (Independent Projects) and Single Shared Systems (Modules) under one standardized 5-column schema.',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF334155),
+                            height: 1.35,
                           ),
-                          const SizedBox(width: 12),
-                          ElevatedButton(
-                            onPressed: () => Navigator.of(ctx).pop(),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _maroon,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 10,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: const Color(0xFFCBD5E1)),
+                        ),
+                        child: const Text(
+                          'Unified Standard',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF475569),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: _line),
+
+                // Scrollable Content (Unified Side-by-Side: Different & Shared System)
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: _buildSampleTeamSheetPreview(
+                      isCapstone: isCapstone,
+                    ),
+                  ),
+                ),
+
+                const Divider(height: 1, color: _line),
+                // Modal Footer
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            FilledButton.icon(
+                              onPressed: () async {
+                                final xlsxBytes = generateOfficialTeamRosterExcelBytes(
+                                  isCapstone: widget.isCapstoneAdmin,
+                                );
+                                final xlsxFilename = bp.filename.replaceAll('.csv', '.xlsx');
+                                await downloadBinaryFile(
+                                  filename: xlsxFilename,
+                                  bytes: xlsxBytes,
+                                  mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                );
+                                if (context.mounted) {
+                                  showSuccessToast(
+                                    context,
+                                    'Sample ${bp.shortLabel} Excel template (.xlsx) downloaded.',
+                                  );
+                                }
+                              },
+                              icon: const Icon(Icons.table_chart_rounded, size: 15),
+                              label: const Text('Download Excel Template (.xlsx)'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF15803D),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
                               ),
                             ),
-                            child: const Text('Close'),
-                          ),
-                        ],
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                await downloadTextFile(
+                                  filename: bp.filename,
+                                  content: bp.rawCsv,
+                                );
+                                if (context.mounted) {
+                                  showSuccessToast(
+                                    context,
+                                    'Sample ${bp.shortLabel} template downloaded.',
+                                  );
+                                }
+                              },
+                              icon: const Icon(Icons.download_rounded, size: 15),
+                              label: Text('Download ${bp.shortLabel} Template (.csv)'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: _ink,
+                                side: const BorderSide(color: _line),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                              ),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                await Clipboard.setData(ClipboardData(text: csvToTsv(bp.rawCsv)));
+                                if (context.mounted) {
+                                  showSuccessToast(
+                                    context,
+                                    'Copied for Excel/Sheets! Press Ctrl+V in your spreadsheet.',
+                                  );
+                                }
+                              },
+                              icon: const Icon(Icons.copy_rounded, size: 14),
+                              label: const Text('Copy for Excel / Sheets'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: _ink,
+                                side: const BorderSide(color: _line),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 12),
+                      ElevatedButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _maroon,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 10,
+                          ),
+                        ),
+                        child: const Text('Close'),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
+              ],
+            ),
+          ),
         );
       },
     );
   }
 
-  Widget _buildBlueprintVariantTab({
-    required String title,
-    required IconData icon,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFF1F5F9) : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected ? const Color(0xFF94A3B8) : const Color(0xFFE2E8F0),
-            width: isSelected ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 15,
-              color: isSelected ? _ink : const Color(0xFF64748B),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                color: isSelected ? _ink : const Color(0xFF64748B),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildSampleTeamSheetPreview({
     required bool isCapstone,
-    required int selectedTab,
   }) {
     final blueprints = teamGroupingBlueprintsFor(isCapstone: isCapstone);
-    final bp = blueprints[selectedTab];
+    final bp = blueprints.first;
 
     return Container(
       decoration: BoxDecoration(
@@ -1517,15 +1652,8 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: SizedBox(
-              width: selectedTab == 1 ? 1180 : 920,
-              child: isCapstone && selectedTab == 0
-                  ? _buildIndependent5ColumnPreview()
-                  : (selectedTab == 1
-                      ? _buildSharedSystemSideBySidePreview(isCapstone: isCapstone)
-                      : _buildOption2CanonicalPreview(
-                          isCapstone: isCapstone,
-                          isSharedSystem: false,
-                        )),
+              width: 1285,
+              child: _buildUnifiedSingleSpreadsheetPreview(isCapstone: isCapstone),
             ),
           ),
         ],
@@ -1890,445 +2018,835 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
     return list;
   }
 
-  Widget _buildSharedSystemSideBySidePreview({required bool isCapstone}) {
-    return Container(
-      color: Colors.white,
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Section 1: BSIT-4A (Hospital Management System)
-          SizedBox(
-            width: 560,
-            child: _buildSharedSectionBlock(
-              systemName: isCapstone ? 'Hospital Management System' : 'Societree Platform',
-              projectManager: 'Juan Dela Cruz',
-              sectionName: isCapstone ? 'BSIT-4A' : 'BSIT-2A',
-              adviser1Name: 'Prof. Alex Santos',
-              adviser1Teams: [
-                (
-                  team: 'Team MedRecord',
-                  module: 'Patient Records',
-                  members: ['Juan Dela Cruz', 'Maria Santos', 'Mark Reyes', 'Anna Garcia'],
-                ),
-                (
-                  team: 'Team MedBilling',
-                  module: 'Billing',
-                  members: ['David Aquino', 'Sarah Ocampo', 'Daniel Rivera', 'Jasmine Morales'],
-                ),
-                (
-                  team: 'Team MedSchedule',
-                  module: 'Appointments',
-                  members: ['Carlo Ramos', 'Nicole Bautista', 'John Mendoza', 'Patricia Cruz'],
-                ),
-                (
-                  team: 'Team MedPharma',
-                  module: 'Pharmacy',
-                  members: ['Miguel Torres', 'Angela Flores', 'Francis Dizon', 'Rhea Salazar'],
-                ),
-              ],
-              adviser2Name: 'Prof. Elena Ramos',
-              adviser2Teams: [
-                (
-                  team: 'Team MedTriage',
-                  module: 'Triage',
-                  members: ['Kevin Villanueva', 'Bea Castro', 'Christian Lim', 'Joshua Navarro'],
-                ),
-                (
-                  team: 'Team MedLab',
-                  module: 'Laboratory',
-                  members: ['Gabriel Tan', 'Chloe Soriano', 'Pauline Mercado', 'Rafael Pascual'],
-                ),
-                (
-                  team: 'Team MedInventory',
-                  module: 'Inventory',
-                  members: ['Adrian Valdez', 'Stephanie Yap', 'Jerome De Leon', 'Camille Roxas'],
-                ),
-                (
-                  team: 'Team MedWards',
-                  module: 'Wards',
-                  members: ['Bryan Castillo', 'Karen Tolentino', 'Vincent Miranda', 'Alyssa Fernandez'],
-                ),
-              ],
-            ),
-          ),
-          // Vertical divider between sections (spacer in Excel)
-          Container(
-            width: 24,
-            height: 960,
-            alignment: Alignment.center,
-            child: Container(width: 1, color: const Color(0xFFCBD5E1)),
-          ),
-          // Section 2: BSIT-4B (Added Section: Campus Logistics & Supply Chain Platform)
-          SizedBox(
-            width: 560,
-            child: _buildSharedSectionBlock(
-              systemName: isCapstone ? 'Campus Logistics & Supply Chain Platform' : 'Integrated Campus Management',
-              projectManager: 'Patricia Ramos',
-              sectionName: isCapstone ? 'BSIT-4B' : 'BSIT-2B',
-              adviser1Name: 'Prof. Roberto Gomez',
-              adviser1Teams: [
-                (
-                  team: 'Team FleetTrack',
-                  module: 'Fleet & Route Monitoring',
-                  members: ['Lucas Hernandez', 'Camille Bernardo', 'Danilo Gutierrez', 'Andrea Salazar'],
-                ),
-                (
-                  team: 'Team WarehouseHub',
-                  module: 'Central Storage & Stock',
-                  members: ['Enzo Morales', 'Valerie Cruz', 'Paolo Mendoza', 'Bianca Reyes'],
-                ),
-                (
-                  team: 'Team OrderDispatch',
-                  module: 'Package Dispatching',
-                  members: ['Giancarlo Diaz', 'Rachelle Santos', 'Marco Villanueva', 'Hannah Flores'],
-                ),
-                (
-                  team: 'Team SupplierLink',
-                  module: 'Vendor Procurement',
-                  members: ['Leandro Garcia', 'Kirsten Gomez', 'Jerome Pineda', 'Monica Castro'],
-                ),
-              ],
-              adviser2Name: 'Prof. Cynthia Morales',
-              adviser2Teams: [
-                (
-                  team: 'Team AssetTag',
-                  module: 'RFID & Asset Tracking',
-                  members: ['Timothy Aguilar', 'Clarisse Domingo', 'Nathaniel Ramos', 'Fiona Soriano'],
-                ),
-                (
-                  team: 'Team FreightGuard',
-                  module: 'Cold-Chain & Security',
-                  members: ['Oliver Tan', 'Kaye Tolentino', 'Derrick Miranda', 'Althea Pascual'],
-                ),
-                (
-                  team: 'Team AuditPulse',
-                  module: 'Compliance & Audits',
-                  members: ['Justin Valenzuela', 'Giselle David', 'Patrick Ocampo', 'Denise Rivera'],
-                ),
-                (
-                  team: 'Team CargoAnalytics',
-                  module: 'KPI & Fuel Analytics',
-                  members: ['Aaron Mercado', 'Jocelyn Aquino', 'Raymond Dizon', 'Erika Yap'],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  static const _capstone4ATeams = [
+    (
+      team: 'Team SkyLedger',
+      item: 'Alumni Career Tracker',
+      members: ['Marcus Villar', 'Patricia Ong', 'Ethan Salazar', 'Zoe Castillo'],
+    ),
+    (
+      team: 'Team BioPulse',
+      item: 'AI-Powered Vital Triage & Disease Predictor',
+      members: ['Ryan Torres', 'Nina Villanueva', 'Diego Garcia', 'Patricia Ramos'],
+    ),
+    (
+      team: 'Team SafeCity',
+      item: 'Smart City IoT Infrastructure & Asset Sentinel',
+      members: ['Carlos Bautista', 'Sophia Santos', 'Miguel Cruz', 'Isabella Alcantara'],
+    ),
+    (
+      team: 'Team CodeLearners',
+      item: 'Campus Event Hub',
+      members: ['David Aquino', 'Sarah Ocampo', 'Daniel Rivera', 'Jasmine Morales'],
+    ),
+    (
+      team: 'Team CyberGuard',
+      item: 'Automated Penetration Testing & Threat Hunter',
+      members: ['Gabriel Mendoza', 'Bea Castro', 'Christian Lim', 'Joshua Navarro'],
+    ),
+    (
+      team: 'Team AgriSense',
+      item: 'Smart Agriculture Crop & Soil Monitoring',
+      members: ['Adrian Valdez', 'Stephanie Yap', 'Jerome De Leon', 'Camille Roxas'],
+    ),
+    (
+      team: 'Team EduTrack',
+      item: 'Student Performance Analytics & Early Warning',
+      members: ['Carlo Ramos', 'Nicole Bautista', 'John Mendoza', 'Patricia Cruz'],
+    ),
+    (
+      team: 'Team EcoRoute',
+      item: 'Intelligent Fleet Logistics & Route Optimizer',
+      members: ['Kenneth Salazar', 'Nicole Dizon', 'Jerome Navarro', 'Alyssa Castillo'],
+    ),
+  ];
 
-  Widget _buildSharedSectionBlock({
-    required String systemName,
-    required String projectManager,
-    required String sectionName,
-    required String adviser1Name,
-    required List<({String team, String module, List<String> members})> adviser1Teams,
-    required String adviser2Name,
-    required List<({String team, String module, List<String> members})> adviser2Teams,
-  }) {
-    var currentRow = 1;
+  static const _capstone4BTeams = [
+    (
+      team: 'Team MedRecord',
+      item: 'Patient Records',
+      members: ['Lucas Hernandez', 'Camille Bernardo', 'Danilo Gutierrez', 'Andrea Salazar'],
+    ),
+    (
+      team: 'Team MedBilling',
+      item: 'Billing',
+      members: ['Enzo Morales', 'Valerie Cruz', 'Paolo Mercado', 'Bianca Reyes'],
+    ),
+    (
+      team: 'Team MedSchedule',
+      item: 'Appointments',
+      members: ['Giancarlo Diaz', 'Rachelle Santos', 'Marco Dela Cruz', 'Hannah Ocampo'],
+    ),
+    (
+      team: 'Team MedPharma',
+      item: 'Pharmacy',
+      members: ['Leandro Garcia', 'Kirsten Gomez', 'Jerome Pineda', 'Monica Castro'],
+    ),
+    (
+      team: 'Team MedTriage',
+      item: 'Triage',
+      members: ['Timothy Aguilar', 'Clarisse Domingo', 'Nathaniel Pascual', 'Fiona Soriano'],
+    ),
+    (
+      team: 'Team MedLab',
+      item: 'Laboratory',
+      members: ['Oliver Tan', 'Kaye Tolentino', 'Derrick Miranda', 'Althea Fernandez'],
+    ),
+    (
+      team: 'Team MedInventory',
+      item: 'Inventory',
+      members: ['Justin Valenzuela', 'Alyssa Romero', 'Vincent Marquez', 'Danica Sotto'],
+    ),
+    (
+      team: 'Team MedWards',
+      item: 'Wards',
+      members: ['Gabriel Tan', 'Chloe Soriano', 'Pauline Mercado', 'Rafael Pascual'],
+    ),
+  ];
+
+  static const _pit2ATeams = [
+    (
+      team: 'Group 1',
+      item: 'Smart Campus Navigation System',
+      members: ['Juan Dela Cruz', 'Maria Santos', 'Mark Reyes', 'Anna Garcia'],
+    ),
+    (
+      team: 'Group 2',
+      item: 'Automated Library Portal',
+      members: ['David Aquino', 'Sarah Ocampo', 'Daniel Rivera', 'Jasmine Morales'],
+    ),
+    (
+      team: 'Group 3',
+      item: 'Alumni Career Tracker',
+      members: ['Carlo Ramos', 'Nicole Bautista', 'John Mendoza', 'Patricia Cruz'],
+    ),
+    (
+      team: 'Group 4',
+      item: 'Event Booking System',
+      members: ['Kevin Villanueva', 'Bea Castro', 'Christian Lim', 'Joshua Navarro'],
+    ),
+    (
+      team: 'Group 5',
+      item: 'Hostel Reservation Portal',
+      members: ['Cedric Valdez', 'Leila Soriano', 'Paolo Ramos', 'Diana Cruz'],
+    ),
+    (
+      team: 'Group 6',
+      item: 'Campus Lost & Found Sentinel',
+      members: ['Anthony Lim', 'Katrina Santos', 'Justin Ocampo', 'Bianca Reyes'],
+    ),
+    (
+      team: 'Group 7',
+      item: 'Student Tutoring Exchange',
+      members: ['Patrick Mendoza', 'Christine Torres', 'Lorenzo Garcia', 'Bea Bautista'],
+    ),
+    (
+      team: 'Group 8',
+      item: 'Green Campus Energy Tracker',
+      members: ['Kenneth Salazar', 'Nicole Dizon', 'Jerome Navarro', 'Alyssa Castillo'],
+    ),
+  ];
+
+  static const _pit2BTeams = [
+    (
+      team: 'Group 1',
+      item: 'Site Module',
+      members: ['Juan Dela Cruz', 'Maria Santos', 'Mark Reyes', 'Anna Garcia'],
+    ),
+    (
+      team: 'Group 2',
+      item: 'Arcu Module',
+      members: ['David Aquino', 'Sarah Ocampo', 'Daniel Rivera', 'Jasmine Morales'],
+    ),
+    (
+      team: 'Group 3',
+      item: 'Events Module',
+      members: ['Carlo Ramos', 'Nicole Bautista', 'John Mendoza', 'Patricia Cruz'],
+    ),
+    (
+      team: 'Group 4',
+      item: 'Membership Module',
+      members: ['Kevin Villanueva', 'Bea Castro', 'Christian Lim', 'Joshua Navarro'],
+    ),
+    (
+      team: 'Group 5',
+      item: 'Finance Module',
+      members: ['Cedric Valdez', 'Leila Soriano', 'Paolo Ramos', 'Diana Cruz'],
+    ),
+    (
+      team: 'Group 6',
+      item: 'Elections Module',
+      members: ['Anthony Lim', 'Katrina Santos', 'Justin Ocampo', 'Bianca Reyes'],
+    ),
+    (
+      team: 'Group 7',
+      item: 'Publication Module',
+      members: ['Patrick Mendoza', 'Christine Torres', 'Lorenzo Garcia', 'Bea Bautista'],
+    ),
+    (
+      team: 'Group 8',
+      item: 'Certificates Module',
+      members: ['Kenneth Salazar', 'Nicole Dizon', 'Jerome Navarro', 'Alyssa Castillo'],
+    ),
+  ];
+
+  Widget _buildUnifiedSingleSpreadsheetPreview({required bool isCapstone}) {
+    const rowH = 26.0;
+    const colLettersH = 22.0;
+
+    const gutterW = 34.0;
+    const colAW = 115.0; // Team Name
+    const colBW = 180.0; // Capstone Project
+    const colCW = 68.0;  // Section
+    const colDW = 125.0; // Adviser
+    const colEW = 140.0; // Team Members
+    const colFW = 28.0;  // Empty Column F Separator
+    const colGW = 115.0; // Team Name
+    const colHW = 140.0; // Module
+    const colIW = 68.0;  // Section
+    const colJW = 130.0; // Adviser
+    const colKW = 140.0; // Team Members
+
+    const totalTableWidth = gutterW +
+        colAW +
+        colBW +
+        colCW +
+        colDW +
+        colEW +
+        colFW +
+        colGW +
+        colHW +
+        colIW +
+        colJW +
+        colKW; // 1285.0
+
+    final leftTeams = isCapstone ? _capstone4ATeams : _pit2ATeams;
+    final rightTeams = isCapstone ? _capstone4BTeams : _pit2BTeams;
+
+    final leftSectionName = isCapstone ? 'BSIT-4A' : 'BSIT-2A';
+    final rightSectionName = isCapstone ? 'BSIT-4B' : 'BSIT-2B';
+    final systemName = isCapstone ? 'Hospital Management System' : 'Societree';
+    final projectManager = 'Juan Dela Cruz';
+    final projectColTitle = isCapstone ? 'Capstone Project *' : 'PIT Project *';
+    final adviserColTitle = isCapstone ? 'Adviser *' : 'Instructor *';
 
     return Container(
+      width: totalTableWidth + 2,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFCBD5E1)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Row 1: System Name
-          _buildMetadataPreviewRow(
-            rowNum: (currentRow++).toString(),
-            label: 'System Name',
-            value: systemName,
-          ),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
-
-          // Row 2: Project Manager
-          _buildMetadataPreviewRow(
-            rowNum: (currentRow++).toString(),
-            label: 'Project Manager',
-            value: projectManager,
-          ),
-          const Divider(height: 1, color: Color(0xFFCBD5E1)),
-
-          // Row 3: Blank Row (like Excel Picture 3)
-          _buildBlankSpreadsheetRow((currentRow++).toString()),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
-
-          // Row 4: Section
-          _buildMetadataPreviewRow(
-            rowNum: (currentRow++).toString(),
-            label: 'Section',
-            value: sectionName,
-          ),
-          const Divider(height: 1, color: Color(0xFFCBD5E1)),
-
-          // Row 5: ADVISER 1
-          _buildAdviserDividerRow(
-            rowNum: (currentRow++).toString(),
-            adviserName: adviser1Name,
-            badgeText: 'Faculty Adviser (4 Teams)',
-          ),
-          const Divider(height: 1, color: Color(0xFFCBD5E1)),
-
-          // Row 6: Table Header
+          // Excel Column Letter Header Row (A to K)
           Container(
-            color: const Color(0xFFE2E8F0),
+            color: const Color(0xFFF1F5F9),
             child: Row(
               children: [
-                _buildGutterCell((currentRow++).toString(), isHeader: true),
-                _buildColumnHeaderCell('Team Name', flex: 3, isRequired: true),
-                _buildColumnHeaderCell('Names', flex: 4, isRequired: true),
-                _buildColumnHeaderCell('Project / Module', flex: 4, isRequired: true),
+                _buildExcelHeaderCell('', width: gutterW, height: colLettersH),
+                _buildExcelHeaderCell('A', width: colAW, height: colLettersH),
+                _buildExcelHeaderCell('B', width: colBW, height: colLettersH),
+                _buildExcelHeaderCell('C', width: colCW, height: colLettersH),
+                _buildExcelHeaderCell('D', width: colDW, height: colLettersH),
+                _buildExcelHeaderCell('E', width: colEW, height: colLettersH),
+                _buildExcelHeaderCell('F', width: colFW, height: colLettersH),
+                _buildExcelHeaderCell('G', width: colGW, height: colLettersH),
+                _buildExcelHeaderCell('H', width: colHW, height: colLettersH),
+                _buildExcelHeaderCell('I', width: colIW, height: colLettersH),
+                _buildExcelHeaderCell('J', width: colJW, height: colLettersH),
+                _buildExcelHeaderCell('K', width: colKW, height: colLettersH),
               ],
             ),
           ),
           const Divider(height: 1, color: Color(0xFFCBD5E1)),
 
-          // Rows 7 to 22: 4 Teams under Adviser 1
-          for (var t = 0; t < adviser1Teams.length; t++) ...[
-            _buildSharedTeam4RowsBlock(
-              teamName: adviser1Teams[t].team,
-              moduleName: adviser1Teams[t].module,
-              members: adviser1Teams[t].members,
-              rowNums: [
-                (currentRow++).toString(),
-                (currentRow++).toString(),
-                (currentRow++).toString(),
-                (currentRow++).toString(),
-              ],
-              isAlt: t % 2 == 1,
-            ),
-            const Divider(height: 1, color: Color(0xFFE2E8F0)),
-          ],
-
-          // Row 23: Blank Row (like Excel Picture 3)
-          _buildBlankSpreadsheetRow((currentRow++).toString()),
-          const Divider(height: 1, color: Color(0xFFCBD5E1)),
-
-          // Row 24: ADVISER 2
-          _buildAdviserDividerRow(
-            rowNum: (currentRow++).toString(),
-            adviserName: adviser2Name,
-            badgeText: 'Faculty Adviser (4 Teams)',
-          ),
-          const Divider(height: 1, color: Color(0xFFCBD5E1)),
-
-          // Row 25: Table Header
-          Container(
-            color: const Color(0xFFE2E8F0),
-            child: Row(
-              children: [
-                _buildGutterCell((currentRow++).toString(), isHeader: true),
-                _buildColumnHeaderCell('Team Name', flex: 3, isRequired: true),
-                _buildColumnHeaderCell('Names', flex: 4, isRequired: true),
-                _buildColumnHeaderCell('Project / Module', flex: 4, isRequired: true),
-              ],
-            ),
-          ),
-          const Divider(height: 1, color: Color(0xFFCBD5E1)),
-
-          // Rows 26 to 41: 4 Teams under Adviser 2
-          for (var t = 0; t < adviser2Teams.length; t++) ...[
-            _buildSharedTeam4RowsBlock(
-              teamName: adviser2Teams[t].team,
-              moduleName: adviser2Teams[t].module,
-              members: adviser2Teams[t].members,
-              rowNums: [
-                (currentRow++).toString(),
-                (currentRow++).toString(),
-                (currentRow++).toString(),
-                (currentRow++).toString(),
-              ],
-              isAlt: t % 2 == 1,
-            ),
-            if (t < adviser2Teams.length - 1)
-              const Divider(height: 1, color: Color(0xFFE2E8F0)),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBlankSpreadsheetRow(String rowNum) {
-    return Container(
-      color: Colors.white,
-      height: 22,
-      child: Row(
-        children: [
-          _buildGutterCell(rowNum),
-          const Expanded(child: SizedBox.shrink()),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSharedTeam4RowsBlock({
-    required String teamName,
-    required String moduleName,
-    required List<String> members,
-    required List<String> rowNums,
-    bool isAlt = false,
-  }) {
-    const memberRowH = 28.0;
-    const blockH = memberRowH * 4 + 3.0; // 115.0
-
-    return SizedBox(
-      height: blockH,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Gutter column (row numbers)
+          // 35 Data Rows
           SizedBox(
-            width: 26,
-            height: blockH,
-            child: Column(
-              children: List.generate(4, (index) {
-                return SizedBox(
-                  height: index < 3 ? memberRowH + 1.0 : memberRowH,
+            height: rowH * 35,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Gutter Column: Row numbers 1 to 35
+                SizedBox(
+                  width: gutterW,
+                  child: Column(
+                    children: List.generate(35, (index) {
+                      return _buildExcelGutterCell('${index + 1}', width: gutterW, height: rowH);
+                    }),
+                  ),
+                ),
+
+                // Columns A & B: Left Teams (Team Name & Project)
+                SizedBox(
+                  width: colAW + colBW,
                   child: Column(
                     children: [
-                      SizedBox(height: memberRowH, child: _buildGutterCell(rowNums[index])),
-                      if (index < 3) const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                    ],
-                  ),
-                );
-              }),
-            ),
-          ),
-          // Team Name (Row 1 has value, rows 2-4 are blank cells like Picture 3)
-          Expanded(
-            flex: 3,
-            child: SizedBox(
-              height: blockH,
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: memberRowH,
-                    child: Container(
-                      alignment: Alignment.centerLeft,
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                      child: Text(
-                        teamName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                          color: _ink,
+                      // Row 1: Header
+                      SizedBox(
+                        height: rowH,
+                        child: Row(
+                          children: [
+                            _buildExcelTableHeadCell('Team Name *', width: colAW, height: rowH),
+                            _buildExcelTableHeadCell(projectColTitle, width: colBW, height: rowH),
+                          ],
                         ),
                       ),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                  for (var i = 0; i < 3; i++) ...[
-                    SizedBox(
-                      height: memberRowH,
-                      child: const SizedBox.shrink(),
-                    ),
-                    if (i < 2) const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          // Names (4 individual rows, 1st is Leader)
-          Expanded(
-            flex: 4,
-            child: SizedBox(
-              height: blockH,
-              child: Column(
-                children: List.generate(4, (m) {
-                  final isLeader = m == 0;
-                  return SizedBox(
-                    height: m < 3 ? memberRowH + 1.0 : memberRowH,
-                    child: Column(
-                      children: [
-                        Container(
-                          height: memberRowH,
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                          alignment: Alignment.centerLeft,
+                      // Rows 2 to 33: 8 Teams (4 rows per team)
+                      for (var t = 0; t < leftTeams.length; t++)
+                        _buildTeamAndProjectUnmergedCells(
+                          teamName: leftTeams[t].team,
+                          projectName: leftTeams[t].item,
+                          colAW: colAW,
+                          colBW: colBW,
+                          rowH: rowH,
+                        ),
+                      // Rows 34 & 35: Empty padding rows
+                      for (var r = 0; r < 2; r++)
+                        SizedBox(
+                          height: rowH,
                           child: Row(
                             children: [
-                              Expanded(
-                                child: Text(
-                                  members[m],
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: isLeader ? FontWeight.w800 : FontWeight.w500,
-                                    color: isLeader ? _maroon : _ink,
-                                  ),
-                                ),
-                              ),
-                              if (isLeader)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFFE4E6),
-                                    borderRadius: BorderRadius.circular(2),
-                                  ),
-                                  child: const Text(
-                                    'LEADER',
-                                    style: TextStyle(
-                                      fontSize: 8,
-                                      fontWeight: FontWeight.w800,
-                                      color: _maroon,
-                                    ),
-                                  ),
-                                ),
+                              _buildExcelEmptyCell(width: colAW, height: rowH),
+                              _buildExcelEmptyCell(width: colBW, height: rowH),
                             ],
                           ),
                         ),
-                        if (m < 3) const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                    ],
+                  ),
+                ),
+
+                // Column C: Section (BSIT-4A merged across rows 2 to 33)
+                SizedBox(
+                  width: colCW,
+                  child: Column(
+                    children: [
+                      _buildExcelTableHeadCell('Section *', width: colCW, height: rowH),
+                      _buildExcelMergedCell(
+                        text: leftSectionName,
+                        width: colCW,
+                        height: rowH * 32,
+                      ),
+                      _buildExcelEmptyCell(width: colCW, height: rowH * 2),
+                    ],
+                  ),
+                ),
+
+                // Column D: Adviser (Prof. Alex Santos [rows 2-17], Prof. Elena Ramos [rows 18-33])
+                SizedBox(
+                  width: colDW,
+                  child: Column(
+                    children: [
+                      _buildExcelTableHeadCell(adviserColTitle, width: colDW, height: rowH),
+                      if (isCapstone) ...[
+                        _buildExcelMergedCell(
+                          text: 'Prof. Alex Santos',
+                          width: colDW,
+                          height: rowH * 16,
+                        ),
+                        _buildExcelMergedCell(
+                          text: 'Prof. Elena Ramos',
+                          width: colDW,
+                          height: rowH * 16,
+                        ),
+                      ] else ...[
+                        _buildExcelMergedCell(
+                          text: 'Prof. Alex Santos',
+                          width: colDW,
+                          height: rowH * 32,
+                        ),
                       ],
-                    ),
-                  );
-                }),
-              ),
-            ),
-          ),
-          // Project / Module (Row 1 has value, rows 2-4 are blank cells like Picture 3)
-          Expanded(
-            flex: 4,
-            child: SizedBox(
-              height: blockH,
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: memberRowH,
-                    child: Container(
-                      alignment: Alignment.centerLeft,
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                      child: Text(
-                        moduleName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF334155),
+                      _buildExcelEmptyCell(width: colDW, height: rowH * 2),
+                    ],
+                  ),
+                ),
+
+                // Column E: Left Team Members (32 rows, 4 per team)
+                SizedBox(
+                  width: colEW,
+                  child: Column(
+                    children: [
+                      _buildExcelTableHeadCell('Team Members *', width: colEW, height: rowH),
+                      for (var t = 0; t < leftTeams.length; t++)
+                        for (var m = 0; m < leftTeams[t].members.length; m++)
+                          _buildExcelMemberCell(
+                            name: leftTeams[t].members[m],
+                            isLeader: m == 0,
+                            width: colEW,
+                            height: rowH,
+                          ),
+                      _buildExcelEmptyCell(width: colEW, height: rowH * 2),
+                    ],
+                  ),
+                ),
+
+                // Column F: Empty Separator Column
+                SizedBox(
+                  width: colFW,
+                  child: Column(
+                    children: List.generate(35, (index) {
+                      return _buildExcelEmptyCell(width: colFW, height: rowH, isSeparator: true);
+                    }),
+                  ),
+                ),
+
+                // Columns G & H: Right Teams (System Name/PM metadata, Header, Teams & Modules)
+                SizedBox(
+                  width: colGW + colHW,
+                  child: Column(
+                    children: [
+                      // Row 1: System Name
+                      SizedBox(
+                        height: rowH,
+                        child: Row(
+                          children: [
+                            _buildExcelLabelCell('System Name', width: colGW, height: rowH),
+                            _buildExcelValueCell(systemName, width: colHW, height: rowH),
+                          ],
                         ),
                       ),
-                    ),
+                      // Row 2: Project Manager
+                      SizedBox(
+                        height: rowH,
+                        child: Row(
+                          children: [
+                            _buildExcelLabelCell('Project Manager', width: colGW, height: rowH),
+                            _buildExcelValueCell(projectManager, width: colHW, height: rowH),
+                          ],
+                        ),
+                      ),
+                      // Row 3: Header Row
+                      SizedBox(
+                        height: rowH,
+                        child: Row(
+                          children: [
+                            _buildExcelTableHeadCell('Team Name *', width: colGW, height: rowH),
+                            _buildExcelTableHeadCell('Module *', width: colHW, height: rowH),
+                          ],
+                        ),
+                      ),
+                      // Rows 4 to 35: 8 Teams (4 rows per team)
+                      for (var t = 0; t < rightTeams.length; t++)
+                        _buildTeamAndProjectUnmergedCells(
+                          teamName: rightTeams[t].team,
+                          projectName: rightTeams[t].item,
+                          colAW: colGW,
+                          colBW: colHW,
+                          rowH: rowH,
+                        ),
+                    ],
                   ),
-                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                  for (var i = 0; i < 3; i++) ...[
-                    SizedBox(
-                      height: memberRowH,
-                      child: const SizedBox.shrink(),
+                ),
+
+                // Column I: Section (BSIT-4B merged across rows 4 to 35)
+                SizedBox(
+                  width: colIW,
+                  child: Column(
+                    children: [
+                      _buildExcelEmptyCell(width: colIW, height: rowH * 2),
+                      _buildExcelTableHeadCell('Section *', width: colIW, height: rowH),
+                      _buildExcelMergedCell(
+                        text: rightSectionName,
+                        width: colIW,
+                        height: rowH * 32,
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Column J: Adviser (Prof. Roberto Gomez [rows 4-19], Prof. Cynthia Morales [rows 20-35])
+                SizedBox(
+                  width: colJW,
+                  child: Column(
+                    children: [
+                      _buildExcelEmptyCell(width: colJW, height: rowH * 2),
+                      _buildExcelTableHeadCell(adviserColTitle, width: colJW, height: rowH),
+                      if (isCapstone) ...[
+                        _buildExcelMergedCell(
+                          text: 'Prof. Roberto Gomez',
+                          width: colJW,
+                          height: rowH * 16,
+                        ),
+                        _buildExcelMergedCell(
+                          text: 'Prof. Cynthia Morales',
+                          width: colJW,
+                          height: rowH * 16,
+                        ),
+                      ] else ...[
+                        _buildExcelMergedCell(
+                          text: 'Prof. Alex Santos',
+                          width: colJW,
+                          height: rowH * 32,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                // Column K: Right Team Members (32 rows, 4 per team)
+                SizedBox(
+                  width: colKW,
+                  child: Column(
+                    children: [
+                      _buildExcelEmptyCell(width: colKW, height: rowH * 2),
+                      _buildExcelTableHeadCell('Team Members *', width: colKW, height: rowH),
+                      for (var t = 0; t < rightTeams.length; t++)
+                        for (var m = 0; m < rightTeams[t].members.length; m++)
+                          _buildExcelMemberCell(
+                            name: rightTeams[t].members[m],
+                            isLeader: m == 0,
+                            width: colKW,
+                            height: rowH,
+                          ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const Divider(height: 1, color: Color(0xFFCBD5E1)),
+
+          // Bottom Excel Sheet Tab Bar
+          Container(
+            height: 32,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(7)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        border: Border(
+                          left: BorderSide(color: Color(0xFFCBD5E1)),
+                          right: BorderSide(color: Color(0xFFCBD5E1)),
+                          top: BorderSide(color: Color(0xFF16A34A), width: 2),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.table_chart_outlined, size: 12, color: Color(0xFF16A34A)),
+                          const SizedBox(width: 6),
+                          Text(
+                            isCapstone ? 'defensys_team_roster_template' : 'defensys_pit_team_roster_template',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    if (i < 2) const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.add, size: 15, color: Color(0xFF64748B)),
                   ],
-                ],
-              ),
+                ),
+                const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Ready',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                    ),
+                    SizedBox(width: 16),
+                    Text(
+                      '100%',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildExcelHeaderCell(String text, {required double width, required double height}) {
+    return Container(
+      width: width,
+      height: height,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        border: Border.all(color: const Color(0xFFCBD5E1), width: 0.5),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF475569),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExcelGutterCell(String text, {required double width, required double height}) {
+    return Container(
+      width: width,
+      height: height,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        border: Border.all(color: const Color(0xFFCBD5E1), width: 0.5),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF64748B),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExcelTableHeadCell(String text, {required double width, required double height}) {
+    return Container(
+      width: width,
+      height: height,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      alignment: Alignment.centerLeft,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE2E8F0),
+        border: Border.all(color: const Color(0xFFCBD5E1), width: 0.5),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF0F172A),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExcelLabelCell(String text, {required double width, required double height}) {
+    return Container(
+      width: width,
+      height: height,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      alignment: Alignment.centerLeft,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        border: Border.all(color: const Color(0xFFCBD5E1), width: 0.5),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF334155),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExcelValueCell(String text, {required double width, required double height}) {
+    return Container(
+      width: width,
+      height: height,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      alignment: Alignment.centerLeft,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFCBD5E1), width: 0.5),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF1E293B),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExcelEmptyCell(
+      {required double width, required double height, bool isSeparator = false}) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: isSeparator ? const Color(0xFFF8FAFC) : Colors.white,
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 0.5),
+      ),
+    );
+  }
+
+  Widget _buildExcelMergedCell({
+    required String text,
+    required double width,
+    required double height,
+  }) {
+    return Container(
+      width: width,
+      height: height,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        border: Border.all(color: const Color(0xFFCBD5E1), width: 0.5),
+      ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF1E293B),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExcelMemberCell({
+    required String name,
+    required bool isLeader,
+    required double width,
+    required double height,
+  }) {
+    return Container(
+      width: width,
+      height: height,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      alignment: Alignment.centerLeft,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: const Color(0xFFCBD5E1), width: 0.5),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: isLeader ? FontWeight.w800 : FontWeight.w500,
+                color: isLeader ? _maroon : _ink,
+              ),
+            ),
+          ),
+          if (isLeader)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFE4E6),
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: const Text(
+                'LEADER',
+                style: TextStyle(
+                  fontSize: 8,
+                  fontWeight: FontWeight.w800,
+                  color: _maroon,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTeamAndProjectUnmergedCells({
+    required String teamName,
+    required String projectName,
+    required double colAW,
+    required double colBW,
+    required double rowH,
+  }) {
+    return Column(
+      children: [
+        // Row 1 of team: values
+        SizedBox(
+          height: rowH,
+          child: Row(
+            children: [
+              Container(
+                width: colAW,
+                height: rowH,
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                alignment: Alignment.centerLeft,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: const Color(0xFFCBD5E1), width: 0.5),
+                ),
+                child: Text(
+                  teamName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: _ink,
+                  ),
+                ),
+              ),
+              Container(
+                width: colBW,
+                height: rowH,
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                alignment: Alignment.centerLeft,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: const Color(0xFFCBD5E1), width: 0.5),
+                ),
+                child: Text(
+                  projectName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF334155),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Rows 2, 3, 4 of team: empty unmerged cells
+        for (var r = 0; r < 3; r++)
+          SizedBox(
+            height: rowH,
+            child: Row(
+              children: [
+                _buildExcelEmptyCell(width: colAW, height: rowH),
+                _buildExcelEmptyCell(width: colBW, height: rowH),
+              ],
+            ),
+          ),
+      ],
     );
   }
 

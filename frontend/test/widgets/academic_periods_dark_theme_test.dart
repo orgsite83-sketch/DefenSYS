@@ -61,9 +61,10 @@ void main() {
 
     // Verify Academic Period Management header & cards are present
     expect(find.text('Academic Period Management'), findsOneWidget);
-    expect(find.text('Capstone program'), findsOneWidget);
     expect(find.text('School Years'), findsOneWidget);
     expect(find.text('Semesters (A.Y. 2025-2026)'), findsOneWidget);
+    expect(find.text('Manage Active Term ↗'), findsOneWidget);
+    expect(find.text('LIVE'), findsOneWidget);
 
     // Verify the School Years Card surface color is Mist Dark Surface
     final schoolYearsCard = find.ancestor(
@@ -74,15 +75,6 @@ void main() {
     final boxDecoration = container.decoration as BoxDecoration?;
     expect(boxDecoration?.color, equals(DefensysTokens.mistSurface));
     expect((boxDecoration?.border as Border?)?.top.color, equals(DefensysTokens.mistBorder));
-
-    // Verify the Capstone Program Card surface is Mist Dark Surface
-    final capstoneCard = find.ancestor(
-      of: find.text('Capstone program'),
-      matching: find.byType(Container),
-    );
-    final capstoneContainer = tester.widget<Container>(capstoneCard.first);
-    final capstoneDecoration = capstoneContainer.decoration as BoxDecoration?;
-    expect(capstoneDecoration?.color, equals(DefensysTokens.mistSurface));
 
     // Verify the Status Banner has dark crimson styling instead of flat red
     final statusBannerFinder = find.ancestor(

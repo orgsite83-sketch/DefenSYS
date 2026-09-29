@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../navigation/admin_route_paths.dart';
 import '../../../../services/academic_period_provider.dart';
+import '../../../../services/admin/user_management_provider.dart';
 import '../../../../services/defense_scheduler_provider.dart';
 import '../../../../services/defense_stages_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
@@ -65,6 +66,7 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
   Future<void> _loadData() async {
     ref.read(academicPeriodProvider.notifier).fetchPeriods();
     ref.read(defenseStagesProvider.notifier).fetchStages();
+    ref.read(userManagementProvider.notifier).fetchUsers();
     _loadPitEvents();
   }
 
@@ -116,6 +118,7 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(academicPeriodProvider);
+    final userState = ref.watch(userManagementProvider);
     final semester = _findSemester(state);
 
     if (state.isLoading && semester == null) {
@@ -248,7 +251,8 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                   case 0:
                     return _buildCapstoneTab(semester, state.isSaving);
                   case 1:
-                    return _buildPitTab(semester, state.isSaving);
+                    return _buildPitTab(
+                        semester, state.isSaving, userState.users);
                   case 2:
                   default:
                     return _buildMasterControlsTab(semester, state.isSaving);
@@ -831,71 +835,306 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
     );
   }
 
-  Widget _buildPitTab(Map<String, dynamic> semester, bool isSaving) {
+  Map<String, dynamic>? _findPitLeadForYear(
+    List<Map<String, dynamic>> users,
+    String yearKey,
+  ) {
+    for (final user in users) {
+      final isLead = user['is_pit_lead'] == true ||
+          (user['roles'] is Map && user['roles']['is_pit_lead'] == true);
+      if (!isLead) continue;
+
+      final rawYear = (user['pit_lead_year'] ??
+              (user['roles'] is Map ? user['roles']['pit_lead_year'] : null))
+          ?.toString()
+          .trim()
+          .toLowerCase() ??
+          '';
+
+      if (yearKey == '1st Year') {
+        if (rawYear.contains('1st') ||
+            rawYear.contains('first') ||
+            rawYear.contains('101')) {
+          return user;
+        }
+      } else if (yearKey == '2nd Year') {
+        if (rawYear.contains('2nd') ||
+            rawYear.contains('second') ||
+            rawYear.contains('201')) {
+          return user;
+        }
+      } else if (yearKey == '3rd Year') {
+        if (rawYear.contains('3rd') ||
+            rawYear.contains('third') ||
+            rawYear.contains('301')) {
+          return user;
+        }
+      }
+    }
+    return null;
+  }
+
+  String _getUserDisplayName(Map<String, dynamic> user) {
+    final first = (user['first_name'] ?? '').toString().trim();
+    final last = (user['last_name'] ?? '').toString().trim();
+    if (first.isNotEmpty || last.isNotEmpty) {
+      return '$first $last'.trim();
+    }
+    final name = (user['name'] ?? user['username'] ?? '').toString().trim();
+    if (name.isNotEmpty) return name;
+    return (user['email'] ?? 'Faculty Lead').toString().trim();
+  }
+
+  bool _eventMatchesCohort(Map<String, dynamic> config, String yearKey) {
+    final name = (config['event_name']?.toString() ?? '').toLowerCase();
+    final code = (config['event_code']?.toString() ?? '').toLowerCase();
+    final combined = '$name $code';
+
+    if (yearKey == '1st Year') {
+      return combined.contains('1st') ||
+          combined.contains('first') ||
+          combined.contains('101') ||
+          combined.contains('concept');
+    } else if (yearKey == '2nd Year') {
+      return combined.contains('2nd') ||
+          combined.contains('second') ||
+          combined.contains('201') ||
+          combined.contains('design') ||
+          combined.contains('architect');
+    } else if (yearKey == '3rd Year') {
+      return combined.contains('3rd') ||
+          combined.contains('third') ||
+          combined.contains('301') ||
+          combined.contains('readiness') ||
+          combined.contains('pre-capstone');
+    }
+    return false;
+  }
+
+  Future<void> _togglePitEventPeerEval(
+    Map<String, dynamic> config,
+    bool newValue,
+  ) async {
+    if (config['is_locked'] == true) {
+      showValidationToast(
+        context,
+        config['lock_reason']?.toString() ??
+            'Peer evaluation settings are locked because defenses are scheduled.',
+      );
+      return;
+    }
+
+    final previousValue = config['peer_grading_enabled'] != false;
+    final eventName = config['event_name']?.toString() ?? 'PIT Event';
+
+    setState(() {
+      config['peer_grading_enabled'] = newValue;
+    });
+
+    final payload = <String, dynamic>{
+      if (widget.semesterId != null) 'semester_id': widget.semesterId,
+      'event_name': config['event_name'],
+      if (config['event_code'] != null) 'event_code': config['event_code'],
+      'panel_weight': config['panel_weight'] is int
+          ? config['panel_weight']
+          : int.tryParse(config['panel_weight']?.toString() ?? '80') ?? 80,
+      'peer_weight': config['peer_weight'] is int
+          ? config['peer_weight']
+          : int.tryParse(config['peer_weight']?.toString() ?? '20') ?? 20,
+      if (config['panel_rubric_id'] != null)
+        'panel_rubric_id': config['panel_rubric_id'],
+      if (config['peer_rubric_id'] != null)
+        'peer_rubric_id': config['peer_rubric_id'],
+      if (config['archive_file_template'] != null)
+        'archive_file_template': config['archive_file_template'],
+      'deliverables': config['deliverables'] ?? [],
+      'peer_grading_enabled': newValue,
+    };
+
+    final success = await ref
+        .read(defenseSchedulerProvider.notifier)
+        .savePitEventConfig(payload);
+
+    if (mounted) {
+      if (success) {
+        showSuccessToast(
+          context,
+          newValue
+              ? 'Peer evaluation enabled for $eventName.'
+              : 'Peer evaluation disabled for $eventName.',
+        );
+      } else {
+        setState(() {
+          config['peer_grading_enabled'] = previousValue;
+        });
+        final err = ref.read(defenseSchedulerProvider).error ??
+            'Failed to update peer evaluation setting.';
+        showErrorToast(context, err);
+      }
+    }
+  }
+
+  Widget _buildPitTab(
+    Map<String, dynamic> semester,
+    bool isSaving,
+    List<Map<String, dynamic>> users,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // PIT Structure Info Card
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: _card(
-                title: '📌 PIT Cohort Structure (1st–3rd Year)',
-                description:
-                    'Project in Lieu of Thesis / Practicum milestone demo structure',
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'About PIT Cohorts:',
-                        style: TextStyle(
-                          color: _inkColor,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'PIT runs parallel across 1st Year (CS 101 Concept Pitch), 2nd Year (CS 201 System Design / Architecture), and 3rd Year (CS 301 Capstone Readiness). Each event represents a course milestone defense.',
-                        style: TextStyle(
-                          color: _mutedColor,
-                          fontSize: 12.5,
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: _isDark
-                              ? const Color(0xFF1E1B4B).withValues(alpha: 0.3)
-                              : const Color(0xFFEEF2FF),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: _isDark
-                                ? const Color(0xFF3730A3)
-                                : const Color(0xFFC7D2FE),
+        _buildPitGovernanceBanner(),
+        const SizedBox(height: 20),
+        _buildPitPolicyOverviewCard(),
+        const SizedBox(height: 24),
+        ..._buildCohortCards(users, isSaving),
+      ],
+    );
+  }
+
+  Widget _buildPitGovernanceBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: _surfaceColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _isDark ? const Color(0xFF3730A3) : const Color(0xFFC7D2FE),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: _isDark ? 0.25 : 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _isDark
+                      ? const Color(0xFF1E1B4B)
+                      : const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.admin_panel_settings_rounded,
+                  size: 20,
+                  color: Color(0xFF6366F1),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'Faculty Lead Ownership & Admin Oversight',
+                            style: TextStyle(
+                              color: _inkColor,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.2,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        child: Row(
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _isDark
+                                ? const Color(0xFF312E81)
+                                : const Color(0xFFE0E7FF),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Governance Model',
+                            style: TextStyle(
+                              color: _isDark
+                                  ? const Color(0xFFA5B4FC)
+                                  : const Color(0xFF4338CA),
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Operational responsibility is delegated to assigned PIT Year Coordinators. Admins maintain supervisory compliance and master review authorizations.',
+                      style: TextStyle(
+                        color: _mutedColor,
+                        fontSize: 12.5,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              OutlinedButton.icon(
+                onPressed: () => context.push(AdminRoutes.users),
+                icon: const Icon(Icons.manage_accounts_outlined, size: 16),
+                label: const Text('Manage PIT Leads in User Management ↗'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _inkColor,
+                  side: BorderSide(color: _borderColor),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  textStyle: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _panelBgColor,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: _borderColor),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.person_pin_rounded,
+                          size: 18, color: Color(0xFF2563EB)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Icon(Icons.info_outline_rounded,
-                                size: 18, color: Color(0xFF6366F1)),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                'Note: PIT does NOT have assigned faculty advisers. PIT grading relies exclusively on Panel Evaluators (80%) + Student Peer Reviews (20%).',
-                                style: TextStyle(
-                                  color: _isDark
-                                      ? const Color(0xFFA5B4FC)
-                                      : const Color(0xFF3730A3),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                            Text(
+                              'PIT Coordinator (Faculty Lead)',
+                              style: TextStyle(
+                                color: _inkColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
                               ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Operationally owns student team formation, assigns panel evaluators, oversees pitch deliverables, and guides defense schedules.',
+                              style: TextStyle(
+                                  color: _mutedColor,
+                                  fontSize: 11.5,
+                                  height: 1.3),
                             ),
                           ],
                         ),
@@ -904,156 +1143,665 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 18),
-            Expanded(
-              child: _card(
-                title: '📝 PIT Evaluation Policy',
-                description:
-                    'Grading formula and rubric rules for PIT milestone events',
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
+              const SizedBox(width: 14),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _panelBgColor,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: _borderColor),
+                  ),
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: _panelBgColor,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: _borderColor),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Panelist Weight',
-                                    style: TextStyle(
-                                        color: _mutedColor, fontSize: 11),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '80%',
-                                    style: TextStyle(
-                                      color: _inkColor,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  Text(
-                                    'Defense Panel Rubric',
-                                    style: TextStyle(
-                                        color: _mutedColor, fontSize: 10.5),
-                                  ),
-                                ],
+                      const Icon(Icons.security_rounded,
+                          size: 18, color: Color(0xFF10B981)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Administrator (Institutional Oversight)',
+                              style: TextStyle(
+                                color: _inkColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: _panelBgColor,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: _borderColor),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Peer Evaluation',
-                                    style: TextStyle(
-                                        color: _mutedColor, fontSize: 11),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '20%',
-                                    style: TextStyle(
-                                      color: _inkColor,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  Text(
-                                    'Student Peer Rubric',
-                                    style: TextStyle(
-                                        color: _mutedColor, fontSize: 10.5),
-                                  ),
-                                ],
-                              ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Authorizes academic term activation, assigns faculty leads, audits grading completeness, and toggles event peer review permissions.',
+                              style: TextStyle(
+                                  color: _mutedColor,
+                                  fontSize: 11.5,
+                                  height: 1.3),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      Text(
-                        'Peer Evaluation Help Guide:',
-                        style: TextStyle(
-                            color: _inkColor,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 4),
-                      OutlinedButton.icon(
-                        onPressed: () =>
-                            showPeerGradingHelpDialog(context, isPit: true),
-                        icon: const Icon(Icons.help_outline_rounded, size: 15),
-                        label: const Text('View PIT Peer Evaluation Guide'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _inkColor,
-                          side: BorderSide(color: _borderColor),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
               ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPitPolicyOverviewCard() {
+    return _card(
+      title: '📌 PIT Cohort Structure (1st–3rd Year)',
+      description:
+          'Project in Lieu of Thesis / Practicum milestone demo structure & evaluation rubric weights',
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'About PIT Cohorts:',
+                    style: TextStyle(
+                      color: _inkColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'PIT runs parallel across 1st Year (CS 101 Concept Pitch), 2nd Year (CS 201 System Design / Architecture), and 3rd Year (CS 301 Capstone Readiness). Each event represents a course milestone defense.',
+                    style: TextStyle(
+                      color: _mutedColor,
+                      fontSize: 12.5,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _isDark
+                          ? const Color(0xFF1E1B4B).withValues(alpha: 0.3)
+                          : const Color(0xFFEEF2FF),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _isDark
+                            ? const Color(0xFF3730A3)
+                            : const Color(0xFFC7D2FE),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline_rounded,
+                            size: 18, color: Color(0xFF6366F1)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Note: PIT does NOT have assigned faculty advisers. PIT grading relies exclusively on Panel Evaluators (80%) + Student Peer Reviews (20%).',
+                            style: TextStyle(
+                              color: _isDark
+                                  ? const Color(0xFFA5B4FC)
+                                  : const Color(0xFF3730A3),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 24),
+            Expanded(
+              flex: 2,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: _panelBgColor,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: _borderColor),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Panelist Weight',
+                                style:
+                                    TextStyle(color: _mutedColor, fontSize: 11),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '80%',
+                                style: TextStyle(
+                                  color: _inkColor,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Text(
+                                'Defense Panel Rubric',
+                                style: TextStyle(
+                                    color: _mutedColor, fontSize: 10.5),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: _panelBgColor,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: _borderColor),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Peer Evaluation',
+                                style:
+                                    TextStyle(color: _mutedColor, fontSize: 11),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '20%',
+                                style: TextStyle(
+                                  color: _inkColor,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Text(
+                                'Student Peer Rubric',
+                                style: TextStyle(
+                                    color: _mutedColor, fontSize: 10.5),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    'Peer Evaluation Help Guide:',
+                    style: TextStyle(
+                      color: _inkColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  OutlinedButton.icon(
+                    onPressed: () =>
+                        showPeerGradingHelpDialog(context, isPit: true),
+                    icon: const Icon(Icons.help_outline_rounded, size: 15),
+                    label: const Text('View PIT Peer Evaluation Guide'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _inkColor,
+                      side: BorderSide(color: _borderColor),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      textStyle: const TextStyle(fontSize: 11.5),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
-        const SizedBox(height: 22),
+      ),
+    );
+  }
 
-        // Configured PIT Events for this term
+  List<Widget> _buildCohortCards(
+    List<Map<String, dynamic>> users,
+    bool isSaving,
+  ) {
+    final cohorts = [
+      {
+        'key': '1st Year',
+        'title': '1st Year Cohort — CS 101',
+        'course': 'Concept Pitch & Problem Formulation',
+        'desc':
+            'Freshman teams formulate problem statements, persona interviews, and initial technical feasibility.',
+      },
+      {
+        'key': '2nd Year',
+        'title': '2nd Year Cohort — CS 201',
+        'course': 'System Architecture & Design Prototype',
+        'desc':
+            'Sophomore teams present system architecture, ER diagrams, data flow models, and interactive UI mockups.',
+      },
+      {
+        'key': '3rd Year',
+        'title': '3rd Year Cohort — CS 301',
+        'course': 'Capstone Readiness & Prototype Validation',
+        'desc':
+            'Junior teams validate functional MVPs and readiness for Senior Capstone transition.',
+      },
+    ];
+
+    final matchedEventIds = <dynamic>{};
+    final cohortWidgets = <Widget>[];
+
+    for (final cohort in cohorts) {
+      final key = cohort['key'] as String;
+      final lead = _findPitLeadForYear(users, key);
+      final cohortEvents = _pitEventConfigs.where((c) {
+        final matches = _eventMatchesCohort(c, key);
+        if (matches) matchedEventIds.add(c['id'] ?? c['event_name']);
+        return matches;
+      }).toList();
+
+      cohortWidgets.add(
         _card(
-          title: '🚀 Configured PIT Events for this Term',
-          description:
-              'Milestone pitch events configured for 1st, 2nd, and 3rd year cohorts',
-          actionLabel: 'Manage PIT Events ↗',
-          onActionTap: () => context.push('/faculty/pit-events'),
+          title: cohort['title'] as String,
+          description: '${cohort['course']} • ${cohort['desc']}',
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: _buildCohortLeadBanner(lead, key),
+              ),
               if (_loadingPitConfigs)
                 const Padding(
-                  padding: EdgeInsets.all(32),
+                  padding: EdgeInsets.all(24),
                   child: Center(
                     child: CircularProgressIndicator(color: _maroon),
                   ),
                 )
-              else if (_pitEventConfigs.isEmpty)
+              else if (cohortEvents.isEmpty)
                 Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: DefensysEmptyState.table(
-                    icon: Icons.event_available_outlined,
-                    title: 'No PIT Events Configured for this Term',
-                    description:
-                        'PIT event themes (e.g. Concept Pitch, System Pitch) can be configured in PIT Events Management.',
-                    primaryAction: DefensysEmptyAction(
-                      label: 'Open PIT Events Management',
-                      icon: Icons.launch_rounded,
-                      onPressed: () => context.push('/faculty/pit-events'),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: _panelBgColor,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: _borderColor),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline_rounded,
+                            size: 16, color: _mutedColor),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'No milestone pitch events scheduled for $key yet. The assigned PIT Coordinator manages pitch events and defense schedules for this cohort.',
+                            style: TextStyle(
+                              color: _mutedColor,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 )
               else
-                ..._pitEventConfigs.map((config) => _buildPitEventRow(config)),
+                ...cohortEvents.map(
+                  (config) => _buildCohortEventItem(config, isSaving),
+                ),
             ],
           ),
         ),
-      ],
+      );
+      cohortWidgets.add(const SizedBox(height: 20));
+    }
+
+    // Unmatched events (if any)
+    final unmatched = _pitEventConfigs
+        .where((c) => !matchedEventIds.contains(c['id'] ?? c['event_name']))
+        .toList();
+    if (unmatched.isNotEmpty) {
+      cohortWidgets.add(
+        _card(
+          title: '📌 Additional PIT Events',
+          description:
+              'Events that are not specifically mapped to a 1st, 2nd, or 3rd year cohort title',
+          child: Column(
+            children: unmatched
+                .map((config) => _buildCohortEventItem(config, isSaving))
+                .toList(),
+          ),
+        ),
+      );
+    }
+
+    return cohortWidgets;
+  }
+
+  Widget _buildCohortLeadBanner(Map<String, dynamic>? lead, String yearKey) {
+    if (lead != null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: _isDark
+              ? const Color(0xFF1E293B).withValues(alpha: 0.5)
+              : const Color(0xFFF0FDF4),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: _isDark ? const Color(0xFF334155) : const Color(0xFFBBF7D0),
+          ),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 13,
+              backgroundColor: _isDark
+                  ? const Color(0xFF0F172A)
+                  : const Color(0xFFDCFCE7),
+              child: const Icon(
+                Icons.person_rounded,
+                size: 15,
+                color: Color(0xFF16A34A),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Row(
+                children: [
+                  Text(
+                    'PIT Coordinator: ',
+                    style: TextStyle(
+                      color: _mutedColor,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Flexible(
+                    child: Text(
+                      _getUserDisplayName(lead),
+                      style: TextStyle(
+                        color: _inkColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (lead['email'] != null) ...[
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        '(${lead['email']})',
+                        style: TextStyle(
+                          color: _mutedColor,
+                          fontSize: 12,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => context.push(AdminRoutes.users),
+              icon: const Icon(Icons.open_in_new_rounded, size: 13),
+              label: const Text('Coordinator Profile'),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                textStyle: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: _isDark
+            ? const Color(0xFF3B2912).withValues(alpha: 0.4)
+            : const Color(0xFFFEF3C7),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: _isDark ? const Color(0xFF78350F) : const Color(0xFFFDE68A),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.warning_amber_rounded,
+            size: 18,
+            color: Color(0xFFD97706),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'No PIT Coordinator assigned for $yearKey. Assign a faculty coordinator in User Management to manage this cohort.',
+              style: TextStyle(
+                color: _isDark
+                    ? const Color(0xFFFDE68A)
+                    : const Color(0xFF92400E),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: () => context.push(AdminRoutes.users),
+            icon: const Icon(Icons.person_add_outlined, size: 13),
+            label: const Text('Assign Lead ↗'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _isDark
+                  ? const Color(0xFFFDE68A)
+                  : const Color(0xFF92400E),
+              side: BorderSide(
+                color: _isDark
+                    ? const Color(0xFFB45309)
+                    : const Color(0xFFF59E0B),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              minimumSize: const Size(0, 30),
+              textStyle: const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCohortEventItem(
+    Map<String, dynamic> config,
+    bool isSaving,
+  ) {
+    final eventName = config['event_name']?.toString() ?? 'PIT Event';
+    final panelWeight = config['panel_weight']?.toString() ?? '80';
+    final peerWeight = config['peer_weight']?.toString() ?? '20';
+    final isLocked = config['is_locked'] == true;
+    final peerEnabled = config['peer_grading_enabled'] != false;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: _surfaceColor,
+        border: Border(bottom: BorderSide(color: _borderColor)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: _isDark
+                  ? const Color(0xFF1E1B4B)
+                  : const Color(0xFFEEF2FF),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Icon(
+              Icons.flag_rounded,
+              size: 16,
+              color: Color(0xFF6366F1),
+            ),
+          ),
+          const SizedBox(width: 14),
+          // Event title and weights
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        eventName,
+                        style: TextStyle(
+                          color: _inkColor,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (isLocked) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 2.5),
+                        decoration: BoxDecoration(
+                          color: _isDark
+                              ? const Color(0xFF3B181F)
+                              : const Color(0xFFFEE2E2),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.lock_rounded,
+                                size: 11,
+                                color: _isDark
+                                    ? const Color(0xFFFCA5A5)
+                                    : _maroon),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Defenses Scheduled (Locked)',
+                              style: TextStyle(
+                                color: _isDark
+                                    ? const Color(0xFFFCA5A5)
+                                    : _maroon,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'Weights: $panelWeight% Panel / $peerWeight% Peer',
+                  style: TextStyle(color: _mutedColor, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          // Interactive Peer Evaluation Switch
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: _panelBgColor,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: _borderColor),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Peer Evaluation',
+                      style: TextStyle(
+                        color: _inkColor,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: peerEnabled
+                                ? const Color(0xFF10B981)
+                                : _mutedColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          peerEnabled ? 'OPEN' : 'CLOSED',
+                          style: TextStyle(
+                            color: peerEnabled
+                                ? (_isDark
+                                    ? const Color(0xFF34D399)
+                                    : const Color(0xFF047857))
+                                : _mutedColor,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 10),
+                Tooltip(
+                  message: isLocked
+                      ? (config['lock_reason']?.toString() ??
+                          'Locked: Defenses scheduled')
+                      : (peerEnabled
+                          ? 'Click to turn off student peer evaluation for this event'
+                          : 'Click to turn on student peer evaluation for this event'),
+                  child: Switch.adaptive(
+                    value: peerEnabled,
+                    activeColor: const Color(0xFF10B981),
+                    onChanged: isSaving
+                        ? null
+                        : (val) => _togglePitEventPeerEval(config, val),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1262,77 +2010,7 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
     );
   }
 
-  Widget _buildPitEventRow(Map<String, dynamic> config) {
-    final eventName = config['event_name']?.toString() ?? 'PIT Event';
-    final panelWeight = config['panel_weight']?.toString() ?? '80';
-    final peerWeight = config['peer_weight']?.toString() ?? '20';
-    final isLocked = config['is_locked'] == true;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        border: Border(bottom: BorderSide(color: _borderColor)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: _isDark
-                  ? const Color(0xFF1E1B4B)
-                  : const Color(0xFFEEF2FF),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: const Icon(
-              Icons.flag_rounded,
-              size: 16,
-              color: Color(0xFF6366F1),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  eventName,
-                  style: TextStyle(
-                    color: _inkColor,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Weights: $panelWeight% Panel / $peerWeight% Peer',
-                  style: TextStyle(color: _mutedColor, fontSize: 12),
-                ),
-              ],
-            ),
-          ),
-          if (isLocked)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-              decoration: BoxDecoration(
-                color: _isDark
-                    ? const Color(0xFF3B181F)
-                    : const Color(0xFFFEE2E2),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                'Defenses Scheduled',
-                style: TextStyle(
-                  color: _isDark ? const Color(0xFFFCA5A5) : _maroon,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
 
   Widget _card({
     required String title,

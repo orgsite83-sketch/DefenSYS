@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     AcademicPeriodListCreateView,
+    SchoolYearDetailView,
     SemesterActivateView,
     SemesterCreateView,
     SemesterStatusView,
@@ -11,6 +12,7 @@ from .views import (
 
 urlpatterns = [
     path('', AcademicPeriodListCreateView.as_view(), name='academic_periods'),
+    path('<int:school_year_id>/', SchoolYearDetailView.as_view(), name='academic_period_detail'),
     path('<int:school_year_id>/semesters/', SemesterCreateView.as_view(), name='academic_period_semesters'),
     path('semesters/<int:semester_id>/transition-preview/', SemesterTransitionPreviewView.as_view(), name='academic_period_semester_transition_preview'),
     path('semesters/<int:semester_id>/activate/', SemesterActivateView.as_view(), name='academic_period_semester_activate'),

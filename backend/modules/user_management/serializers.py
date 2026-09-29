@@ -138,6 +138,9 @@ class ManagedUserSerializer(serializers.ModelSerializer):
         }
 
     def get_team_id(self, obj):
+        prefetched = getattr(obj, '_prefetched_objects_cache', {}).get('team_memberships')
+        if prefetched is not None:
+            return str(prefetched[0].team_id) if prefetched else None
         membership = obj.team_memberships.first()
         return str(membership.team_id) if membership else None
 
@@ -146,10 +149,12 @@ class ManagedUserSerializer(serializers.ModelSerializer):
         return full_name or obj.username
 
     def get_facultyRoles(self, obj):
-        from user_management.models import SectionInstructorAssignment
-        is_pit_instructor = SectionInstructorAssignment.objects.filter(
-            faculty=obj, is_active=True
-        ).exists()
+        is_pit_instructor = False
+        if obj.role in ['faculty', 'admin']:
+            from user_management.models import SectionInstructorAssignment
+            is_pit_instructor = SectionInstructorAssignment.objects.filter(
+                faculty=obj, is_active=True
+            ).exists()
         return {
             'panelist': obj.is_panelist,
             'pitLead': obj.is_pit_lead,
@@ -164,6 +169,8 @@ class ManagedUserSerializer(serializers.ModelSerializer):
         return compute_display_role(obj)
 
     def get_instructor_assignments(self, obj):
+        if obj.role not in ['faculty', 'admin']:
+            return []
         from user_management.models import SectionInstructorAssignment
         from academic_period_management.services import active_semester
         sem = active_semester()

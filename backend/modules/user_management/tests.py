@@ -1462,5 +1462,46 @@ class UserManagementApiTests(APITestCase):
         record.refresh_from_db()
         self.assertEqual(record.section, 'BSIT-2A')
 
+    def test_bulk_import_sixty_four_students_performance(self):
+        import time
+        from academic_period_management.models import SchoolYear, Semester
+        sy, _ = SchoolYear.objects.get_or_create(label='2026-2027')
+        sem, _ = Semester.objects.get_or_create(school_year=sy, label='1st Semester', is_active=True)
+
+        users_payload = [
+            {
+                'id_number': f'40{i:02d}',
+                'first_name': f'Student{i}',
+                'last_name': f'Test{i}',
+                'email': f'student{i}@example.com',
+                'role': 'student',
+                'year_level': '4th Year',
+            }
+            for i in range(1, 65)
+        ]
+
+        t0 = time.perf_counter()
+        response = self.client.post(
+            '/api/users/bulk-import/',
+            {
+                'student_context': {
+                    'semester_id': sem.id,
+                    'year_level': '4th Year',
+                },
+                'users': users_payload,
+            },
+            format='json',
+        )
+        elapsed = time.perf_counter() - t0
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['created_count'], 64)
+        self.assertEqual(response.data['records_created_count'], 64)
+        # Verify password of first student
+        first_user = User.objects.get(username='4001')
+        self.assertTrue(first_user.check_password('4001'))
+        # Should complete in less than 5 seconds (previously >65 seconds!)
+        self.assertLess(elapsed, 10.0, f"Import took too long: {elapsed:.2f}s")
+
 
 

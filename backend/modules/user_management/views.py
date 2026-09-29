@@ -130,9 +130,15 @@ class UserListCreateView(APIView):
             if active_sem:
                 instructor_qs = instructor_qs.filter(semester=active_sem)
             instructor_ids = instructor_qs.values_list('faculty_id', flat=True)
-            users = users.filter(pk__in=instructor_ids)
         elif role in dict(User.ROLE_CHOICES):
             users = users.filter(role=role)
+
+        users = users.prefetch_related(
+            'team_memberships',
+            'academic_records',
+            'academic_records__semester',
+            'academic_records__semester__school_year',
+        )
 
         return Response({
             'users': ManagedUserSerializer(
@@ -517,6 +523,9 @@ class BulkImportUsersMixin:
         if faculty_name and context_year_level and context_section and not is_capstone_scope(context_year_level, context_semester):
             section_instructors[(context_year_level, context_section)] = faculty_name
 
+        validated_rows = []
+        usernames_to_check = set()
+
         for index, row in enumerate(rows, start=1):
             serializer = BulkUserRowSerializer(data=row)
             if not serializer.is_valid():
@@ -533,7 +542,7 @@ class BulkImportUsersMixin:
                     'errors': {'role': ['PIT Leads can import student users only.']},
                 })
                 continue
-            existing_user = User.objects.filter(username=username).first()
+
             year_level = _normalize_year_level(data.get('year_level') or context_year_level or '')
             if self.force_pit_lead_context:
                 row_year = (data.get('year_level') or '').strip()
@@ -559,138 +568,188 @@ class BulkImportUsersMixin:
             if row_instr and year_level and section and not is_capstone_scope(year_level, context_semester):
                 section_instructors[(year_level, section)] = row_instr
 
-            if existing_user:
-                if existing_user.role == 'student' and context_semester is not None and year_level:
-                    update_defaults = {'year_level': year_level}
-                    if section:
-                        update_defaults['section'] = section
-                    record, _ = StudentAcademicRecord.objects.update_or_create(
-                        student=existing_user,
-                        semester=context_semester,
-                        defaults=update_defaults,
-                    )
-                    records_created.append(record)
-                    updated_fields = []
-                    if data.get('first_name') and existing_user.first_name != data['first_name']:
-                        existing_user.first_name = data['first_name']
-                        updated_fields.append('first_name')
-                    if data.get('last_name') and existing_user.last_name != data['last_name']:
-                        existing_user.last_name = data['last_name']
-                        updated_fields.append('last_name')
-                    if data.get('email') and existing_user.email != data['email']:
-                        existing_user.email = data['email']
-                        updated_fields.append('email')
-                    if data.get('phone_number') and existing_user.phone_number != data['phone_number']:
-                        existing_user.phone_number = data['phone_number']
-                        updated_fields.append('phone_number')
-                    if updated_fields:
-                        existing_user.save(update_fields=updated_fields)
-                elif existing_user.role == 'faculty' and not self.force_student_only:
-                    updated_fields = []
-                    if data.get('first_name') and existing_user.first_name != data['first_name']:
-                        existing_user.first_name = data['first_name']
-                        updated_fields.append('first_name')
-                    if data.get('last_name') and existing_user.last_name != data['last_name']:
-                        existing_user.last_name = data['last_name']
-                        updated_fields.append('last_name')
-                    if data.get('email') and existing_user.email != data['email']:
-                        existing_user.email = data['email']
-                        updated_fields.append('email')
-                    if data.get('phone_number') and existing_user.phone_number != data['phone_number']:
-                        existing_user.phone_number = data['phone_number']
-                        updated_fields.append('phone_number')
-                    if 'is_panelist' in data and existing_user.is_panelist != data['is_panelist']:
-                        existing_user.is_panelist = data['is_panelist']
-                        updated_fields.append('is_panelist')
-                    if 'is_adviser' in data and existing_user.is_adviser != data['is_adviser']:
-                        existing_user.is_adviser = data['is_adviser']
-                        updated_fields.append('is_adviser')
-                    if 'is_pit_lead' in data and existing_user.is_pit_lead != data['is_pit_lead']:
-                        existing_user.is_pit_lead = data['is_pit_lead']
-                        updated_fields.append('is_pit_lead')
-                    if 'pit_lead_year' in data and existing_user.pit_lead_year != data['pit_lead_year']:
-                        existing_user.pit_lead_year = data['pit_lead_year']
-                        updated_fields.append('pit_lead_year')
-                    if 'is_documenter' in data and existing_user.is_documenter != data['is_documenter']:
-                        existing_user.is_documenter = data['is_documenter']
-                        updated_fields.append('is_documenter')
-                    if 'is_uploader' in data and existing_user.is_uploader != data['is_uploader']:
-                        existing_user.is_uploader = data['is_uploader']
-                        updated_fields.append('is_uploader')
-                    if updated_fields:
-                        existing_user.save(update_fields=updated_fields)
-                        created.append(existing_user)
+            validated_rows.append((index, username, data, role, year_level, section))
+            usernames_to_check.add(username)
+
+        # Batch lookup all existing users in a single query
+        existing_users_map = {
+            u.username: u
+            for u in User.objects.filter(username__in=usernames_to_check)
+        }
+
+        # Identify new usernames and pre-hash default passwords in parallel across CPU cores
+        new_usernames = [
+            uname for (_, uname, _, _, _, _) in validated_rows
+            if uname not in existing_users_map
+        ]
+        hashed_passwords = {}
+        if new_usernames:
+            import os
+            from concurrent.futures import ThreadPoolExecutor
+            from django.contrib.auth.hashers import make_password
+
+            unique_new_usernames = list(set(new_usernames))
+            max_workers = min(8, max(2, (os.cpu_count() or 4)))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                hashes = list(executor.map(make_password, unique_new_usernames))
+                hashed_passwords = dict(zip(unique_new_usernames, hashes))
+
+        with transaction.atomic():
+            for index, username, data, role, year_level, section in validated_rows:
+                existing_user = existing_users_map.get(username)
+
+                if existing_user:
+                    if existing_user.role == 'student' and context_semester is not None and year_level:
+                        update_defaults = {'year_level': year_level}
+                        if section:
+                            update_defaults['section'] = section
+                        record, _ = StudentAcademicRecord.objects.update_or_create(
+                            student=existing_user,
+                            semester=context_semester,
+                            defaults=update_defaults,
+                        )
+                        records_created.append(record)
+                        updated_fields = []
+                        if data.get('first_name') and existing_user.first_name != data['first_name']:
+                            existing_user.first_name = data['first_name']
+                            updated_fields.append('first_name')
+                        if data.get('last_name') and existing_user.last_name != data['last_name']:
+                            existing_user.last_name = data['last_name']
+                            updated_fields.append('last_name')
+                        if data.get('email') and existing_user.email != data['email']:
+                            existing_user.email = data['email']
+                            updated_fields.append('email')
+                        if data.get('phone_number') and existing_user.phone_number != data['phone_number']:
+                            existing_user.phone_number = data['phone_number']
+                            updated_fields.append('phone_number')
+                        if updated_fields:
+                            existing_user.save(update_fields=updated_fields)
+                    elif existing_user.role == 'faculty' and not self.force_student_only:
+                        updated_fields = []
+                        if data.get('first_name') and existing_user.first_name != data['first_name']:
+                            existing_user.first_name = data['first_name']
+                            updated_fields.append('first_name')
+                        if data.get('last_name') and existing_user.last_name != data['last_name']:
+                            existing_user.last_name = data['last_name']
+                            updated_fields.append('last_name')
+                        if data.get('email') and existing_user.email != data['email']:
+                            existing_user.email = data['email']
+                            updated_fields.append('email')
+                        if data.get('phone_number') and existing_user.phone_number != data['phone_number']:
+                            existing_user.phone_number = data['phone_number']
+                            updated_fields.append('phone_number')
+                        if 'is_panelist' in data and existing_user.is_panelist != data['is_panelist']:
+                            existing_user.is_panelist = data['is_panelist']
+                            updated_fields.append('is_panelist')
+                        if 'is_adviser' in data and existing_user.is_adviser != data['is_adviser']:
+                            existing_user.is_adviser = data['is_adviser']
+                            updated_fields.append('is_adviser')
+                        if 'is_pit_lead' in data and existing_user.is_pit_lead != data['is_pit_lead']:
+                            existing_user.is_pit_lead = data['is_pit_lead']
+                            updated_fields.append('is_pit_lead')
+                        if 'pit_lead_year' in data and existing_user.pit_lead_year != data['pit_lead_year']:
+                            existing_user.pit_lead_year = data['pit_lead_year']
+                            updated_fields.append('pit_lead_year')
+                        if 'is_documenter' in data and existing_user.is_documenter != data['is_documenter']:
+                            existing_user.is_documenter = data['is_documenter']
+                            updated_fields.append('is_documenter')
+                        if 'is_uploader' in data and existing_user.is_uploader != data['is_uploader']:
+                            existing_user.is_uploader = data['is_uploader']
+                            updated_fields.append('is_uploader')
+                        if updated_fields:
+                            existing_user.save(update_fields=updated_fields)
+                            created.append(existing_user)
+                        else:
+                            skipped.append({'row': index, 'id_number': username, 'reason': 'duplicate'})
                     else:
                         skipped.append({'row': index, 'id_number': username, 'reason': 'duplicate'})
-                else:
-                    skipped.append({'row': index, 'id_number': username, 'reason': 'duplicate'})
-                continue
-
-            user = User.objects.create_user(
-                username=username,
-                password=username,
-                first_name=data.get('first_name', ''),
-                last_name=data.get('last_name', ''),
-                email=data.get('email', ''),
-                phone_number=data.get('phone_number', '').strip(),
-                role='student' if self.force_student_only else role,
-                is_panelist=False if self.force_student_only else data.get('is_panelist', False),
-                is_adviser=False if self.force_student_only else data.get('is_adviser', False),
-                is_pit_lead=False if self.force_student_only else data.get('is_pit_lead', False),
-                pit_lead_year=None if self.force_student_only else data.get('pit_lead_year'),
-                is_documenter=False if self.force_student_only else data.get('is_documenter', False),
-                is_uploader=False if self.force_student_only else data.get('is_uploader', False),
-            )
-            created.append(user)
-            if user.role == 'student' and context_semester is not None and year_level:
-                records_created.append(StudentAcademicRecord.objects.create(
-                    student=user,
-                    semester=context_semester,
-                    year_level=year_level,
-                    section=section,
-                ))
-
-        instructor_warnings = []
-        assigned_instructors = []
-        if require_faculty_match and faculty is not None and not is_capstone_scope(context_year_level, context_semester):
-            instructor_assignment, _assignment_created = SectionInstructorAssignment.objects.update_or_create(
-                faculty=faculty,
-                semester=context_semester,
-                year_level=context_year_level,
-                section=context_section,
-                defaults={
-                    'assigned_by': request.user,
-                    'is_active': True,
-                },
-            )
-            assigned_instructors.append(instructor_assignment)
-        elif context_semester is not None and section_instructors:
-            for (sec_year, sec_name), instr_name in section_instructors.items():
-                if is_capstone_scope(sec_year, context_semester):
                     continue
-                matched_faculty, match_status = _match_faculty_by_name(instr_name)
-                if matched_faculty is not None:
-                    assignment, _assignment_created = SectionInstructorAssignment.objects.update_or_create(
-                        faculty=matched_faculty,
+
+                user = User(
+                    username=username,
+                    password=hashed_passwords.get(username, ''),
+                    first_name=data.get('first_name', ''),
+                    last_name=data.get('last_name', ''),
+                    email=data.get('email', ''),
+                    phone_number=data.get('phone_number', '').strip(),
+                    role='student' if self.force_student_only else role,
+                    is_panelist=False if self.force_student_only else data.get('is_panelist', False),
+                    is_adviser=False if self.force_student_only else data.get('is_adviser', False),
+                    is_pit_lead=False if self.force_student_only else data.get('is_pit_lead', False),
+                    pit_lead_year=None if self.force_student_only else data.get('pit_lead_year'),
+                    is_documenter=False if self.force_student_only else data.get('is_documenter', False),
+                    is_uploader=False if self.force_student_only else data.get('is_uploader', False),
+                )
+                user.save()
+                created.append(user)
+                if user.role == 'student' and context_semester is not None and year_level:
+                    records_created.append(StudentAcademicRecord.objects.create(
+                        student=user,
                         semester=context_semester,
-                        year_level=sec_year,
-                        section=sec_name,
-                        defaults={
-                            'assigned_by': request.user,
-                            'is_active': True,
-                        },
-                    )
-                    assigned_instructors.append(assignment)
-                    if instructor_assignment is None:
-                        instructor_assignment = assignment
-                        faculty_match_status = match_status
-                else:
-                    instructor_warnings.append(
-                        f"Instructor '{instr_name}' for section '{sec_name}' could not be matched to an active faculty account."
-                    )
+                        year_level=year_level,
+                        section=section,
+                    ))
+
+            instructor_warnings = []
+            assigned_instructors = []
+            if require_faculty_match and faculty is not None and not is_capstone_scope(context_year_level, context_semester):
+                instructor_assignment, _assignment_created = SectionInstructorAssignment.objects.update_or_create(
+                    faculty=faculty,
+                    semester=context_semester,
+                    year_level=context_year_level,
+                    section=context_section,
+                    defaults={
+                        'assigned_by': request.user,
+                        'is_active': True,
+                    },
+                )
+                assigned_instructors.append(instructor_assignment)
+            elif context_semester is not None and section_instructors:
+                for (sec_year, sec_name), instr_name in section_instructors.items():
+                    if is_capstone_scope(sec_year, context_semester):
+                        continue
+                    matched_faculty, match_status = _match_faculty_by_name(instr_name)
+                    if matched_faculty is not None:
+                        assignment, _assignment_created = SectionInstructorAssignment.objects.update_or_create(
+                            faculty=matched_faculty,
+                            semester=context_semester,
+                            year_level=sec_year,
+                            section=sec_name,
+                            defaults={
+                                'assigned_by': request.user,
+                                'is_active': True,
+                            },
+                        )
+                        assigned_instructors.append(assignment)
+                        if instructor_assignment is None:
+                            instructor_assignment = assignment
+                            faculty_match_status = match_status
+                    else:
+                        instructor_warnings.append(
+                            f"Instructor '{instr_name}' for section '{sec_name}' could not be matched to an active faculty account."
+                        )
 
         return Response({
-            'created': ManagedUserSerializer(created, many=True).data,
+            'created': [
+                {
+                    'id': u.id,
+                    'username': u.username,
+                    'first_name': u.first_name,
+                    'last_name': u.last_name,
+                    'name': f'{u.first_name} {u.last_name}'.strip() or u.username,
+                    'email': u.email,
+                    'phone_number': u.phone_number,
+                    'role': u.role,
+                    'is_active': u.is_active,
+                    'is_panelist': u.is_panelist,
+                    'is_pit_lead': u.is_pit_lead,
+                    'pit_lead_year': u.pit_lead_year,
+                    'is_adviser': u.is_adviser,
+                    'is_documenter': u.is_documenter,
+                    'is_uploader': u.is_uploader,
+                }
+                for u in created
+            ],
             'created_count': len(created),
             'records_created_count': len(records_created),
             'skipped': skipped,
@@ -801,76 +860,108 @@ class PitLeadOfficialClassListImportView(APIView):
         warnings = []
         seen_ids = {}
 
-        with transaction.atomic():
-            for index, row in enumerate(rows, start=1):
-                serializer = OfficialClassListStudentSerializer(data=row)
-                if not serializer.is_valid():
-                    errors.append({'row': index, 'errors': serializer.errors})
-                    continue
+        validated_rows = []
+        usernames_to_check = set()
 
-                data = serializer.validated_data
-                username = _clean_spaces(data['id_number'])
+        for index, row in enumerate(rows, start=1):
+            serializer = OfficialClassListStudentSerializer(data=row)
+            if not serializer.is_valid():
+                errors.append({'row': index, 'errors': serializer.errors})
+                continue
 
-                if username in seen_ids:
-                    warnings.append(
-                        f"Student ID '{username}' is duplicated in the class list (Row {index} and Row {seen_ids[username]})."
-                    )
-                else:
-                    seen_ids[username] = index
+            data = serializer.validated_data
+            username = _clean_spaces(data['id_number'])
 
-                first_name = _clean_spaces(data.get('first_name'))
-                last_name = _clean_spaces(data.get('last_name'))
-                if not (first_name or last_name):
-                    first_name, last_name = _split_official_full_name(data.get('full_name'))
-                row_section = _clean_spaces(data.get('section') or section)
-                if data.get('section') and row_section != section:
-                    warnings.append(
-                        f"Row {index} ('{username}'): section '{row_section}' differs from metadata section '{section}'."
-                    )
-                row_year = _normalize_year_level(data.get('year_level') or pit_year)
-
-                if row_year != pit_year:
-                    errors.append({
-                        'row': index,
-                        'id_number': username,
-                        'errors': {'year_level': [f'PIT Lead import is limited to {pit_year}.']},
-                    })
-                    continue
-
-                phone_number = _clean_spaces(data.get('phone_number') or data.get('contact') or '')
-                user, was_created = User.objects.get_or_create(
-                    username=username,
-                    defaults={
-                        'first_name': first_name,
-                        'last_name': last_name,
-                        'email': data.get('email', ''),
-                        'phone_number': phone_number,
-                        'role': 'student',
-                    },
+            if username in seen_ids:
+                warnings.append(
+                    f"Student ID '{username}' is duplicated in the class list (Row {index} and Row {seen_ids[username]})."
                 )
-                if not was_created and user.role != 'student':
+            else:
+                seen_ids[username] = index
+
+            first_name = _clean_spaces(data.get('first_name'))
+            last_name = _clean_spaces(data.get('last_name'))
+            if not (first_name or last_name):
+                first_name, last_name = _split_official_full_name(data.get('full_name'))
+            row_section = _clean_spaces(data.get('section') or section)
+            if data.get('section') and row_section != section:
+                warnings.append(
+                    f"Row {index} ('{username}'): section '{row_section}' differs from metadata section '{section}'."
+                )
+            row_year = _normalize_year_level(data.get('year_level') or pit_year)
+
+            if row_year != pit_year:
+                errors.append({
+                    'row': index,
+                    'id_number': username,
+                    'errors': {'year_level': [f'PIT Lead import is limited to {pit_year}.']},
+                })
+                continue
+
+            phone_number = _clean_spaces(data.get('phone_number') or data.get('contact') or '')
+            validated_rows.append((index, username, first_name, last_name, row_section, phone_number, data))
+            usernames_to_check.add(username)
+
+        # Batch lookup all existing users in a single query
+        existing_users_map = {
+            u.username: u
+            for u in User.objects.filter(username__in=usernames_to_check)
+        }
+
+        # Identify new usernames and pre-hash default passwords in parallel across CPU cores
+        new_usernames = [
+            uname for (_, uname, _, _, _, _, _) in validated_rows
+            if uname not in existing_users_map
+        ]
+        hashed_passwords = {}
+        if new_usernames:
+            import os
+            from concurrent.futures import ThreadPoolExecutor
+            from django.contrib.auth.hashers import make_password
+
+            unique_new_usernames = list(set(new_usernames))
+            max_workers = min(8, max(2, (os.cpu_count() or 4)))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                hashes = list(executor.map(make_password, unique_new_usernames))
+                hashed_passwords = dict(zip(unique_new_usernames, hashes))
+
+        with transaction.atomic():
+            for index, username, first_name, last_name, row_section, phone_number, data in validated_rows:
+                user = existing_users_map.get(username)
+                was_created = False
+
+                if user is None:
+                    user = User.objects.create(
+                        username=username,
+                        password=hashed_passwords.get(username, ''),
+                        first_name=first_name,
+                        last_name=last_name,
+                        email=data.get('email', ''),
+                        phone_number=phone_number,
+                        role='student',
+                    )
+                    was_created = True
+                elif user.role != 'student':
                     errors.append({
                         'row': index,
                         'id_number': username,
                         'errors': {'id_number': ['Existing account is not a student.']},
                     })
                     continue
-                if was_created:
-                    user.set_password(username)
-                    user.save(update_fields=['password'])
 
-                changed_fields = []
-                for field, value in {
-                    'first_name': first_name,
-                    'last_name': last_name,
-                    'email': data.get('email', ''),
-                    'phone_number': phone_number,
-                }.items():
-                    if value and getattr(user, field) != value:
-                        setattr(user, field, value)
-                        changed_fields.append(field)
-                if changed_fields:
-                    user.save(update_fields=changed_fields)
+                if not was_created:
+                    changed_fields = []
+                    for field, value in {
+                        'first_name': first_name,
+                        'last_name': last_name,
+                        'email': data.get('email', ''),
+                        'phone_number': phone_number,
+                    }.items():
+                        if value and getattr(user, field) != value:
+                            setattr(user, field, value)
+                            changed_fields.append(field)
+                    if changed_fields:
+                        user.save(update_fields=changed_fields)
 
                 record, record_created = StudentAcademicRecord.objects.update_or_create(
                     student=user,
@@ -902,7 +993,20 @@ class PitLeadOfficialClassListImportView(APIView):
         )
 
         return Response({
-            'created': ManagedUserSerializer(created, many=True).data,
+            'created': [
+                {
+                    'id': u.id,
+                    'username': u.username,
+                    'first_name': u.first_name,
+                    'last_name': u.last_name,
+                    'name': f'{u.first_name} {u.last_name}'.strip() or u.username,
+                    'email': u.email,
+                    'phone_number': u.phone_number,
+                    'role': u.role,
+                    'is_active': u.is_active,
+                }
+                for u in created
+            ],
             'created_count': len(created),
             'updated_count': len(updated),
             'records_created_count': records_created,

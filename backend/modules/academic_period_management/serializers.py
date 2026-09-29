@@ -57,6 +57,36 @@ class SchoolYearCreateSerializer(serializers.Serializer):
         return SchoolYear.objects.create(label=validated_data['label'])
 
 
+class SchoolYearUpdateSerializer(serializers.Serializer):
+    label = serializers.CharField(required=False, allow_blank=False, max_length=9)
+    school_year = serializers.CharField(required=False, allow_blank=False, max_length=9)
+
+    def validate(self, attrs):
+        label = (attrs.get('label') or attrs.get('school_year') or '').strip()
+        if not label:
+            raise serializers.ValidationError({'school_year': 'This field is required.'})
+
+        try:
+            validate_school_year_label(label)
+        except Exception as exc:
+            raise serializers.ValidationError({'school_year': exc.messages}) from exc
+
+        instance = getattr(self, 'instance', None)
+        qs = SchoolYear.objects.filter(label=label)
+        if instance:
+            qs = qs.exclude(pk=instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError({'school_year': 'This school year already exists.'})
+
+        attrs['label'] = label
+        return attrs
+
+    def update(self, instance, validated_data):
+        instance.label = validated_data['label']
+        instance.save(update_fields=['label'])
+        return instance
+
+
 class SemesterCreateSerializer(serializers.Serializer):
     label = serializers.ChoiceField(choices=[choice[0] for choice in Semester.TERM_CHOICES])
 

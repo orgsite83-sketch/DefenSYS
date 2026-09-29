@@ -223,7 +223,7 @@ ParsedBulkCsvResult _parseMultiColumnTeamMatrix(
 
     final blockHeaders = <String>[];
     for (var c = colStart; c < colEnd && c < headerRow.length; c++) {
-      blockHeaders.add(headerRow[c].trim().toLowerCase().replaceFirst('\ufeff', ''));
+      blockHeaders.add(headerRow[c].trim().toLowerCase().replaceAll('*', '').replaceAll(':', '').trim().replaceFirst('\ufeff', ''));
     }
 
     int findInBlock(bool Function(String) test) {
@@ -292,7 +292,8 @@ ParsedBulkCsvResult _parseMultiColumnTeamMatrix(
           'team_name': teamName,
           'project_title': project.isNotEmpty ? project : teamName,
           'year_level': yearLevel,
-          if (yearLevel.isNotEmpty) 'level': '$yearLevel PIT',
+          if (yearLevel.isNotEmpty)
+            'level': yearLevel == '4th Year' ? '4th Year Capstone' : '$yearLevel PIT',
           'member_ids': <String>[if (member.isNotEmpty) member],
           'leader_id': member,
           if (blockSection.isNotEmpty) 'section': blockSection,
@@ -331,7 +332,7 @@ ParsedBulkCsvResult _parseMultiColumnTeamMatrix(
   );
 }
 
-ParsedBulkCsvResult parseTeamBulkCsv(String csv) {
+ParsedBulkCsvResult parseTeamBulkCsv(String csv, {bool isSubBlock = false}) {
   final rawLines = csv
       .split(RegExp(r'\r?\n'))
       .map((line) => line.replaceAll('\r', ''))
@@ -345,12 +346,99 @@ ParsedBulkCsvResult parseTeamBulkCsv(String csv) {
   var projectManager = '';
 
   final matrix = rawLines.map(_parseCsvLine).toList();
+
+  // Check for multi-column / side-by-side section matrices (e.g. 2A/2B/2C or unified blueprint A-E and G-K)
+  if (!isSubBlock) {
+    final multiColIndices = <int>[];
+    for (var r = 0; r < matrix.length && r < 10; r++) {
+      for (var c = 0; c < matrix[r].length; c++) {
+        final h = matrix[r][c].trim().toLowerCase().replaceAll('*', '').replaceAll(':', '').trim().replaceFirst('\ufeff', '');
+        if (h == 'team name' || h == 'team_name') {
+          if (!multiColIndices.contains(c)) {
+            multiColIndices.add(c);
+          }
+        }
+      }
+    }
+    multiColIndices.sort();
+
+    if (multiColIndices.length > 1) {
+      final blockResults = <ParsedBulkCsvResult>[];
+      final maxCols = matrix.map((row) => row.length).fold(0, (a, b) => a > b ? a : b);
+
+      for (var b = 0; b < multiColIndices.length; b++) {
+        final colStart = multiColIndices[b];
+        final colEnd = (b + 1 < multiColIndices.length)
+            ? multiColIndices[b + 1]
+            : maxCols;
+
+        final subMatrix = <List<String>>[];
+        for (final row in matrix) {
+          if (colStart >= row.length) continue;
+          final end = colEnd < row.length ? colEnd : row.length;
+          final slice = row.sublist(colStart, end).toList();
+          while (slice.isNotEmpty && slice.last.trim().isEmpty) {
+            slice.removeLast();
+          }
+          if (slice.any((cell) => cell.trim().isNotEmpty)) {
+            subMatrix.add(slice);
+          }
+        }
+
+        if (subMatrix.isNotEmpty) {
+          final blockCsv = subMatrix
+              .map((r) => r.map(_csvCell).join(','))
+              .join('\n');
+          final res = parseTeamBulkCsv(blockCsv, isSubBlock: true);
+          if (res.rows.isNotEmpty) {
+            blockResults.add(res);
+          }
+        }
+      }
+
+      if (blockResults.isNotEmpty) {
+        final allRows = <Map<String, dynamic>>[];
+        final allSections = <String>{};
+        String? combinedSystemName;
+        String? combinedProjectManager;
+        final allColumns = <String>[];
+
+        for (final res in blockResults) {
+          allRows.addAll(res.rows);
+          if (res.section != null && res.section!.isNotEmpty) {
+            for (final s in res.section!.split(',')) {
+              final st = s.trim();
+              if (st.isNotEmpty) allSections.add(st);
+            }
+          }
+          if (res.systemName != null && res.systemName!.isNotEmpty) {
+            combinedSystemName ??= res.systemName;
+          }
+          if (res.projectManager != null && res.projectManager!.isNotEmpty) {
+            combinedProjectManager ??= res.projectManager;
+          }
+          if (allColumns.isEmpty && res.csvColumns.isNotEmpty) {
+            allColumns.addAll(res.csvColumns);
+          }
+        }
+
+        return ParsedBulkCsvResult(
+          rows: allRows,
+          csvColumns: allColumns.isNotEmpty ? allColumns : const ['team_name', 'project_title', 'team_members', 'section'],
+          section: allSections.isNotEmpty ? allSections.join(', ') : null,
+          systemName: combinedSystemName,
+          projectManager: combinedProjectManager,
+        );
+      }
+    }
+  }
+
   var lineIndex = -1;
 
   for (var i = 0; i < matrix.length; i++) {
     final row = matrix[i];
     final headers = row
-        .map((cell) => cell.trim().toLowerCase().replaceFirst('\ufeff', ''))
+        .map((cell) => cell.trim().toLowerCase().replaceAll('*', '').replaceAll(':', '').trim().replaceFirst('\ufeff', ''))
         .toSet();
     final hasTeamName = headers.contains('team name') || headers.contains('team_name');
     final hasMembers = headers.contains('team members') ||
@@ -376,7 +464,7 @@ ParsedBulkCsvResult parseTeamBulkCsv(String csv) {
   // Check for multi-column section matrix (e.g. 2A, 2B, 2C side-by-side)
   final teamNameIndices = <int>[];
   for (var c = 0; c < matrix[lineIndex].length; c++) {
-    final h = matrix[lineIndex][c].trim().toLowerCase().replaceFirst('\ufeff', '');
+    final h = matrix[lineIndex][c].trim().toLowerCase().replaceAll('*', '').replaceAll(':', '').trim().replaceFirst('\ufeff', '');
     if (h == 'team name' || h == 'team_name') {
       teamNameIndices.add(c);
     }
@@ -399,7 +487,7 @@ ParsedBulkCsvResult parseTeamBulkCsv(String csv) {
     final row = matrix[i];
     final rowText = row.join(' ').trim();
     final normalized = row
-        .map((cell) => cell.trim().toLowerCase().replaceFirst('\ufeff', ''))
+        .map((cell) => cell.trim().toLowerCase().replaceAll('*', '').replaceAll(':', '').trim().replaceFirst('\ufeff', ''))
         .toList();
 
     void readMeta(List<String> labels, void Function(String val) setVal) {
@@ -418,7 +506,19 @@ ParsedBulkCsvResult parseTeamBulkCsv(String csv) {
       readMeta(const ['section', 'class section', 'class_section'], (val) => section = val);
       if (section.isEmpty) {
         final m = RegExp(r'(?:SECTION|CLASS\s*SECTION)\s*:\s*(.+)', caseSensitive: false).firstMatch(rowText);
-        if (m != null) section = m.group(1)!.trim();
+        if (m != null) {
+          section = m.group(1)!.trim();
+        } else {
+          final bsitMatch = RegExp(r'\b(BSIT-[1-4][A-Za-z])\b', caseSensitive: false).firstMatch(rowText);
+          if (bsitMatch != null) {
+            section = bsitMatch.group(1)!.toUpperCase();
+          } else {
+            final simpleMatch = RegExp(r'\b([1-4][A-Za-z])\b', caseSensitive: false).firstMatch(rowText);
+            if (simpleMatch != null) {
+              section = simpleMatch.group(1)!.toUpperCase();
+            }
+          }
+        }
       }
     }
     if (systemName.isEmpty) {
@@ -460,7 +560,7 @@ ParsedBulkCsvResult parseTeamBulkCsv(String csv) {
   }
 
   final headers = _parseCsvLine(lines.first)
-      .map((header) => header.trim().toLowerCase().replaceFirst('\ufeff', ''))
+      .map((header) => header.trim().toLowerCase().replaceAll('*', '').replaceAll(':', '').trim().replaceFirst('\ufeff', ''))
       .toList();
 
   final isClientFormat = (headers.contains('team name') || headers.contains('team_name')) &&
@@ -651,10 +751,25 @@ ParsedBulkCsvResult parseTeamBulkCsv(String csv) {
         if (currentTeam != null && (currentTeam['member_ids'] as List).isNotEmpty) {
           parsedRows.add(currentTeam);
         }
+        String inferredYear = '';
+        if (effectiveSection.isNotEmpty) {
+          final digits = effectiveSection.replaceAll(RegExp(r'[^0-9]'), '');
+          if (digits.startsWith('1')) {
+            inferredYear = '1st Year';
+          } else if (digits.startsWith('2')) {
+            inferredYear = '2nd Year';
+          } else if (digits.startsWith('3')) {
+            inferredYear = '3rd Year';
+          } else if (digits.startsWith('4')) {
+            inferredYear = '4th Year';
+          }
+        }
         currentTeam = {
           'team_name': teamName,
           'project_title': project.isNotEmpty ? project : teamName,
-          'year_level': '',
+          'year_level': inferredYear,
+          if (inferredYear.isNotEmpty)
+            'level': inferredYear == '4th Year' ? '4th Year Capstone' : '$inferredYear PIT',
           'member_ids': <String>[if (member.isNotEmpty) member],
           'leader_id': member,
           if (effectiveAdviser.isNotEmpty) 'adviser_name': effectiveAdviser,

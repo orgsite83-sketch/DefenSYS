@@ -86,12 +86,15 @@ void main() {
     // 2. Check that the "Delete School Year" secondary action button is visible in the empty state
     expect(find.text('Delete School Year'), findsOneWidget);
 
-    // 3. Check edit icon tooltip or icon
-    final editIcon = find.byIcon(Icons.edit_outlined);
-    expect(editIcon, findsOneWidget);
+    // 3. Open school year options menu
+    final optionsMenu = find.byTooltip('School year options');
+    expect(optionsMenu, findsOneWidget);
+    await tester.tap(optionsMenu);
+    await tester.pumpAndSettle();
 
-    // 4. Tap the edit icon to open edit dialog
-    await tester.tap(editIcon);
+    // 4. Tap "Edit School Year" to open edit dialog
+    expect(find.text('Edit School Year'), findsOneWidget);
+    await tester.tap(find.text('Edit School Year'));
     await tester.pumpAndSettle();
 
     expect(find.text('Edit School Year'), findsOneWidget);

@@ -84,14 +84,19 @@ void main() {
 
     expect(find.text('Official Capstone Team Sheet Blueprint'), findsOneWidget);
 
-    // Switch to tab 1 (Single Shared System)
-    final sharedTab = find.text('Single Shared System (Modules)');
-    expect(sharedTab, findsOneWidget);
-    await tester.tap(sharedTab);
-    await tester.pumpAndSettle();
-
-    expect(find.text('Single Shared System (Modules)'), findsWidgets);
+    // Direct Unified Side-by-Side Blueprint shows both BSIT-4A and BSIT-4B without tabs
     expect(find.textContaining('BSIT-4A'), findsWidgets);
     expect(find.textContaining('BSIT-4B'), findsWidgets);
+    expect(find.text('Hospital Management System'), findsOneWidget);
+    expect(find.text('Juan Dela Cruz'), findsWidgets);
+
+    // Both systems feature 2 advisers (4 teams per adviser)
+    expect(find.text('Prof. Alex Santos'), findsWidgets);
+    expect(find.text('Prof. Elena Ramos'), findsWidgets);
+    expect(find.text('Prof. Roberto Gomez'), findsWidgets);
+    expect(find.text('Prof. Cynthia Morales'), findsWidgets);
+
+    expect(find.text('Download Excel Template (.xlsx)'), findsOneWidget);
+    expect(find.text('Download Team Roster Template (.csv)'), findsOneWidget);
   });
 }

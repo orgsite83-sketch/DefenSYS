@@ -114,10 +114,26 @@ def compute_display_role(user):
         semester = _active_semester()
         label = 'Student'
         record = None
-        if semester:
-            record = user.academic_records.filter(semester=semester).first()
-        if not record:
-            record = user.academic_records.order_by('-semester__school_year__label', '-semester__label').first()
+        prefetched = getattr(user, '_prefetched_objects_cache', {}).get('academic_records')
+        if prefetched is not None:
+            records = list(prefetched)
+            if semester:
+                record = next((r for r in records if r.semester_id == semester.id), None)
+            if not record and records:
+                # Sort by school year and semester label
+                record = sorted(
+                    records,
+                    key=lambda r: (
+                        r.semester.school_year.label if r.semester and getattr(r.semester, 'school_year', None) else '',
+                        r.semester.label if r.semester else '',
+                    ),
+                    reverse=True,
+                )[0]
+        else:
+            if semester:
+                record = user.academic_records.filter(semester=semester).first()
+            if not record:
+                record = user.academic_records.order_by('-semester__school_year__label', '-semester__label').first()
         if record:
             label = record.year_level
         return {'key': 'student', 'label': label, 'tone': 'student'}

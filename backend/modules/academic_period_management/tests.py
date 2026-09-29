@@ -386,3 +386,58 @@ class AcademicPeriodApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['active_semester'], '1st Semester, A.Y. 2026-2027')
         self.assertEqual(response.data['migration']['phase'], 15)
+
+    def test_delete_empty_school_year_succeeds(self):
+        sy = SchoolYear.objects.create(label='2028-2029')
+        response = self.client.delete(f'/api/academic-periods/{sy.id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(SchoolYear.objects.filter(id=sy.id).exists())
+
+    def test_delete_school_year_with_semesters_blocked(self):
+        sy = SchoolYear.objects.create(label='2028-2029')
+        Semester.objects.create(school_year=sy, label=Semester.FIRST)
+        response = self.client.delete(f'/api/academic-periods/{sy.id}/')
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(SchoolYear.objects.filter(id=sy.id).exists())
+
+    def test_patch_school_year_label_succeeds(self):
+        sy = SchoolYear.objects.create(label='2028-2029')
+        response = self.client.patch(
+            f'/api/academic-periods/{sy.id}/',
+            {'school_year': '2029-2030'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        sy.refresh_from_db()
+        self.assertEqual(sy.label, '2029-2030')
+
+    def test_patch_school_year_invalid_label_fails(self):
+        sy = SchoolYear.objects.create(label='2028-2029')
+        response = self.client.patch(
+            f'/api/academic-periods/{sy.id}/',
+            {'school_year': '2028-2030'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_delete_empty_inactive_semester_succeeds(self):
+        sy = SchoolYear.objects.create(label='2028-2029')
+        sem = Semester.objects.create(school_year=sy, label=Semester.SUMMER, is_active=False)
+        response = self.client.delete(f'/api/academic-periods/semesters/{sem.id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Semester.objects.filter(id=sem.id).exists())
+
+    def test_delete_active_semester_blocked(self):
+        sy = SchoolYear.objects.create(label='2028-2029')
+        sem = Semester.objects.create(school_year=sy, label=Semester.FIRST, is_active=True)
+        response = self.client.delete(f'/api/academic-periods/semesters/{sem.id}/')
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(Semester.objects.filter(id=sem.id).exists())
+
+    def test_delete_semester_with_teams_blocked(self):
+        sy = SchoolYear.objects.create(label='2028-2029')
+        sem = Semester.objects.create(school_year=sy, label=Semester.FIRST, is_active=False)
+        self._team(sem, name='Protected Team')
+        response = self.client.delete(f'/api/academic-periods/semesters/{sem.id}/')
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(Semester.objects.filter(id=sem.id).exists())

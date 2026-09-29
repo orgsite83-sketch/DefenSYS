@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:defensys/utils/team_bulk_import_csv.dart';
+import 'package:defensys/screens/web/admin/widgets/template_blueprint_models.dart';
 
 void main() {
   group('parseTeamBulkCsv', () {
@@ -249,6 +250,101 @@ Group 8,Christian Lim,Wards
       expect(result.rows[7]['project_title'], 'Wards');
       expect(result.rows[7]['member_ids'], ['Christian Lim', 'Joshua Navarro']);
       expect(result.rows[7]['leader_id'], 'Christian Lim');
+    });
+
+    test('parses unified 5-column shared system template with Module column and System Name header', () {
+      const csv = '''System Name,Hospital Management System
+Project Manager,Juan Dela Cruz
+
+Team Name,Module,Section,Adviser,Team Members
+Team MedRecord,Patient Records,BSIT-4B,Prof. Roberto Gomez,Juan Dela Cruz
+,,,,Maria Santos
+,,,,Mark Reyes
+,,,,Anna Garcia
+Team MedBilling,Billing,BSIT-4B,Prof. Roberto Gomez,David Aquino
+,,,,Sarah Ocampo
+,,,,Daniel Rivera
+,,,,Jasmine Morales
+''';
+
+      final result = parseTeamBulkCsv(csv);
+      expect(result.rows, hasLength(2));
+      expect(result.systemName, 'Hospital Management System');
+      expect(result.projectManager, 'Juan Dela Cruz');
+      expect(result.section, 'BSIT-4B');
+
+      expect(result.rows[0]['team_name'], 'Team MedRecord');
+      expect(result.rows[0]['project_title'], 'Patient Records');
+      expect(result.rows[0]['section'], 'BSIT-4B');
+      expect(result.rows[0]['adviser_name'], 'Prof. Roberto Gomez');
+      expect(result.rows[0]['system_name'], 'Hospital Management System');
+      expect(result.rows[0]['project_manager'], 'Juan Dela Cruz');
+      expect(result.rows[0]['member_ids'], ['Juan Dela Cruz', 'Maria Santos', 'Mark Reyes', 'Anna Garcia']);
+      expect(result.rows[0]['leader_id'], 'Juan Dela Cruz');
+
+      expect(result.rows[1]['team_name'], 'Team MedBilling');
+      expect(result.rows[1]['project_title'], 'Billing');
+      expect(result.rows[1]['section'], 'BSIT-4B');
+      expect(result.rows[1]['adviser_name'], 'Prof. Roberto Gomez');
+      expect(result.rows[1]['member_ids'], ['David Aquino', 'Sarah Ocampo', 'Daniel Rivera', 'Jasmine Morales']);
+      expect(result.rows[1]['leader_id'], 'David Aquino');
+    });
+
+    test('parses unified combined cohort import (4A independent + 4B shared in one file)', () {
+      const csv = '''Team Name,Capstone Project,Section,Adviser,Team Members
+Team SkyLedger,Alumni Career Tracker,BSIT-4A,Prof. Alex Santos,Marcus Villar
+,,,,Patricia Ong
+,,,,Ethan Salazar
+,,,,Zoe Castillo
+Team BioPulse,AI-Powered Vital Triage,BSIT-4A,Prof. Alex Santos,Ryan Torres
+,,,,Nina Villanueva
+,,,,Diego Garcia
+,,,,Patricia Ramos
+
+System Name,Hospital Management System
+Project Manager,Juan Dela Cruz
+Team Name,Module,Section,Adviser,Team Members
+Team MedRecord,Patient Records,BSIT-4B,Prof. Roberto Gomez,Juan Dela Cruz
+,,,,Maria Santos
+,,,,Mark Reyes
+,,,,Anna Garcia
+Team MedBilling,Billing,BSIT-4B,Prof. Roberto Gomez,David Aquino
+,,,,Sarah Ocampo
+,,,,Daniel Rivera
+,,,,Jasmine Morales
+''';
+
+      final result = parseTeamBulkCsv(csv);
+      expect(result.rows, hasLength(4));
+
+      final sec4A = result.rows.where((r) => r['section'] == 'BSIT-4A').toList();
+      final sec4B = result.rows.where((r) => r['section'] == 'BSIT-4B').toList();
+      expect(sec4A, hasLength(2));
+      expect(sec4B, hasLength(2));
+
+      // 4A has individual capstone projects and NO system_name
+      expect(sec4A[0]['team_name'], 'Team SkyLedger');
+      expect(sec4A[0]['project_title'], 'Alumni Career Tracker');
+      expect(sec4A[0]['adviser_name'], 'Prof. Alex Santos');
+      expect(sec4A[0].containsKey('system_name'), isFalse);
+
+      expect(sec4A[1]['team_name'], 'Team BioPulse');
+      expect(sec4A[1]['project_title'], 'AI-Powered Vital Triage');
+      expect(sec4A[1]['adviser_name'], 'Prof. Alex Santos');
+      expect(sec4A[1].containsKey('system_name'), isFalse);
+
+      // 4B has assigned modules and DOES have system_name & project_manager
+      expect(sec4B[0]['team_name'], 'Team MedRecord');
+      expect(sec4B[0]['project_title'], 'Patient Records');
+      expect(sec4B[0]['adviser_name'], 'Prof. Roberto Gomez');
+      expect(sec4B[0]['system_name'], 'Hospital Management System');
+      expect(sec4B[0]['project_manager'], 'Juan Dela Cruz');
+
+      expect(sec4B[1]['team_name'], 'Team MedBilling');
+      expect(sec4B[1]['project_title'], 'Billing');
+      expect(sec4B[1]['adviser_name'], 'Prof. Roberto Gomez');
+      expect(sec4B[1]['system_name'], 'Hospital Management System');
+      expect(sec4B[1]['project_manager'], 'Juan Dela Cruz');
     });
 
     test('parses official department team roster with independent systems per team (no system name preamble)', () {
@@ -527,6 +623,69 @@ V.O.I.D.,Xian Salac,Security,Redcrew,Earl John Parami,Billing,TECH4CE,Baguingco,
       expect(result.rows[5]['project_manager'], 'Candawan');
       expect(result.rows[5]['member_ids'], ['Baguingco', 'Igoy']);
     });
+
+    test('parses 11-column side-by-side unified capstone blueprint template (left to right)', () {
+      final bp = teamGroupingBlueprints.first;
+      final result = parseTeamBulkCsv(bp.rawCsv);
+
+      // Total 16 teams: 8 teams from BSIT-4A and 8 teams from BSIT-4B
+      expect(result.rows, hasLength(16));
+      expect(result.systemName, 'Hospital Management System');
+      expect(result.projectManager, 'Juan Dela Cruz');
+      expect(result.section, contains('BSIT-4A'));
+      expect(result.section, contains('BSIT-4B'));
+
+      // Check first 4A team
+      expect(result.rows[0]['team_name'], 'Team SkyLedger');
+      expect(result.rows[0]['project_title'], 'Alumni Career Tracker');
+      expect(result.rows[0]['section'], 'BSIT-4A');
+      expect(result.rows[0]['adviser_name'], 'Prof. Alex Santos');
+      expect(result.rows[0]['member_ids'], ['Marcus Villar', 'Patricia Ong', 'Ethan Salazar', 'Zoe Castillo']);
+      expect(result.rows[0]['leader_id'], 'Marcus Villar');
+
+      // Check 4A team under second adviser (Prof. Elena Ramos)
+      expect(result.rows[4]['team_name'], 'Team CyberGuard');
+      expect(result.rows[4]['section'], 'BSIT-4A');
+      expect(result.rows[4]['adviser_name'], 'Prof. Elena Ramos');
+
+      // Check first 4B team (Team MedRecord)
+      expect(result.rows[8]['team_name'], 'Team MedRecord');
+      expect(result.rows[8]['project_title'], 'Patient Records');
+      expect(result.rows[8]['section'], 'BSIT-4B');
+      expect(result.rows[8]['adviser_name'], 'Prof. Roberto Gomez');
+      expect(result.rows[8]['project_manager'], 'Juan Dela Cruz');
+      expect(result.rows[8]['system_name'], 'Hospital Management System');
+      expect(result.rows[8]['member_ids'], ['Juan Dela Cruz', 'Maria Santos', 'Mark Reyes', 'Anna Garcia']);
+      expect(result.rows[8]['leader_id'], 'Juan Dela Cruz');
+
+      // Check 4B team under second adviser (Prof. Cynthia Morales)
+      expect(result.rows[12]['team_name'], 'Team MedTriage');
+      expect(result.rows[12]['section'], 'BSIT-4B');
+      expect(result.rows[12]['adviser_name'], 'Prof. Cynthia Morales');
+    });
+
+    test('parses 11-column side-by-side unified PIT blueprint template (left to right)', () {
+      final bp = pitTeamGroupingBlueprints.first;
+      final result = parseTeamBulkCsv(bp.rawCsv);
+
+      expect(result.rows, hasLength(16));
+      expect(result.systemName, 'Societree');
+      expect(result.projectManager, 'Juan Dela Cruz');
+      expect(result.section, contains('BSIT-2A'));
+      expect(result.section, contains('BSIT-2B'));
+
+      // Check Group 1 in 2A
+      expect(result.rows[0]['team_name'], 'Group 1');
+      expect(result.rows[0]['project_title'], 'Smart Campus Navigation System');
+      expect(result.rows[0]['section'], 'BSIT-2A');
+      expect(result.rows[0]['adviser_name'], 'Prof. Alex Santos');
+
+      // Check Group 1 in 2B
+      expect(result.rows[8]['team_name'], 'Group 1');
+      expect(result.rows[8]['project_title'], 'Site Module');
+      expect(result.rows[8]['section'], 'BSIT-2B');
+      expect(result.rows[8]['adviser_name'], 'Prof. Alex Santos');
+    });
   });
 
   group('rowsToTeamCsv', () {
@@ -705,6 +864,122 @@ BSIT-4B,Patricia Ramos,Prof. Roberto Gomez,Prof. Cynthia Morales,Campus Logistic
         'Laura Dern',
       ]);
       expect(result.rows[2]['leader_id'], 'Ian McKellen');
+    });
+
+    test('parses arbitrary data formatted in the unified template layout (margins, side-by-side, headers with colons, metadata)', () {
+      const csv = '''
+,,,
+,,,
+,,,
+,Team Name:,Capstone Project,Section,Adviser,Team Members,,System Name:,Smart Energy Grid,,,
+,Team Solaris,Photovoltaic Monitoring,BSIT-4A,Dr. Vance Walker,Alice Cooper,,Project Manager:,Bob Dylan,,,
+,,,,,Brian May,,Team Name:,Module,Section,Adviser,Team Members
+,,,,,Roger Taylor,,Team GridRecord,Telemetry Module,BSIT-4B,Dr. Nora Fatehi,Bob Dylan
+,,,,,John Deacon,,,,,,Charlie Watts
+,Team Nova,Battery Storage Optimizer,,,David Bowie,,Team GridBilling,Tariff Module,BSIT-4B,Dr. Nora Fatehi,Keith Richards
+,,,,,Freddie Mercury,,,,,,Mick Jagger
+''';
+
+      final result = parseTeamBulkCsv(csv);
+      expect(result.rows, hasLength(4));
+      expect(result.systemName, 'Smart Energy Grid');
+      expect(result.projectManager, 'Bob Dylan');
+      expect(result.section, contains('BSIT-4A'));
+      expect(result.section, contains('BSIT-4B'));
+
+      final recognizedHeaders = {
+        'team_name', 'project_title', 'level', 'year_level', 'member_ids',
+        'leader_id', 'adviser_id', 'adviser_name', 'team name', 'capstone project',
+        'pit project', 'project', 'project title', 'adviser', 'team members', 'members',
+        'section', 'class section', 'class_section', 'names', 'modules', 'module',
+        'system name', 'system_name', 'project manager', 'project_manager', 'pm', 'instructor',
+      };
+      final cleanCols = result.csvColumns
+          .map((c) => c.trim().toLowerCase().replaceAll('*', '').replaceAll(':', '').trim())
+          .where((c) => c.isNotEmpty)
+          .toList();
+      expect(cleanCols.every(recognizedHeaders.contains), isTrue);
+
+      expect(result.rows[0]['team_name'], 'Team Solaris');
+      expect(result.rows[0]['project_title'], 'Photovoltaic Monitoring');
+      expect(result.rows[0]['section'], 'BSIT-4A');
+      expect(result.rows[0]['year_level'], '4th Year');
+      expect(result.rows[0]['level'], '4th Year Capstone');
+      expect(result.rows[0]['adviser_name'], 'Dr. Vance Walker');
+      expect(result.rows[0]['member_ids'], ['Alice Cooper', 'Brian May', 'Roger Taylor', 'John Deacon']);
+
+      expect(result.rows[1]['team_name'], 'Team Nova');
+      expect(result.rows[1]['project_title'], 'Battery Storage Optimizer');
+      expect(result.rows[1]['section'], 'BSIT-4A');
+      expect(result.rows[1]['year_level'], '4th Year');
+      expect(result.rows[1]['level'], '4th Year Capstone');
+      expect(result.rows[1]['adviser_name'], 'Dr. Vance Walker');
+      expect(result.rows[1]['member_ids'], ['David Bowie', 'Freddie Mercury']);
+
+      expect(result.rows[2]['team_name'], 'Team GridRecord');
+      expect(result.rows[2]['project_title'], 'Telemetry Module');
+      expect(result.rows[2]['section'], 'BSIT-4B');
+      expect(result.rows[2]['year_level'], '4th Year');
+      expect(result.rows[2]['level'], '4th Year Capstone');
+      expect(result.rows[2]['adviser_name'], 'Dr. Nora Fatehi');
+      expect(result.rows[2]['system_name'], 'Smart Energy Grid');
+      expect(result.rows[2]['project_manager'], 'Bob Dylan');
+      expect(result.rows[2]['member_ids'], ['Bob Dylan', 'Charlie Watts']);
+
+      expect(result.rows[3]['team_name'], 'Team GridBilling');
+      expect(result.rows[3]['project_title'], 'Tariff Module');
+      expect(result.rows[3]['section'], 'BSIT-4B');
+      expect(result.rows[3]['year_level'], '4th Year');
+      expect(result.rows[3]['level'], '4th Year Capstone');
+      expect(result.rows[3]['adviser_name'], 'Dr. Nora Fatehi');
+      expect(result.rows[3]['member_ids'], ['Keith Richards', 'Mick Jagger']);
+    });
+
+    test('dynamically supports adding a 3rd section with mixed Different Systems and One System formats side-by-side', () {
+      const csv = '''
+,Team Name:,Capstone Project,Section,Adviser,Team Members,,System Name:,Hospital Management System,,,,,System Name:,Campus Logistics System,,,
+,Team Alpha,Alumni Tracker,BSIT-4A,Prof. Santos,Alice Cooper,,Project Manager:,Lucas Hernandez,,,,,Project Manager:,Jane Doe,,,
+,,,,,Brian May,,Team Name:,Module,Section,Adviser,Team Members,,Team Name:,Module,Section,Adviser,Team Members
+,,,,,Roger Taylor,,Team MedRecord,Patient Records,BSIT-4B,Prof. Gomez,Lucas Hernandez,,Team Fleet,Vehicle Tracking,BSIT-4C,Prof. Ramos,Jane Doe
+,,,,,John Deacon,,,,,,Camille Santos,,,,,,Mark Spencer
+''';
+
+      final result = parseTeamBulkCsv(csv);
+      expect(result.rows, hasLength(3));
+      expect(result.section, contains('BSIT-4A'));
+      expect(result.section, contains('BSIT-4B'));
+      expect(result.section, contains('BSIT-4C'));
+
+      // Check Section 4A (Different Systems)
+      expect(result.rows[0]['team_name'], 'Team Alpha');
+      expect(result.rows[0]['project_title'], 'Alumni Tracker');
+      expect(result.rows[0]['section'], 'BSIT-4A');
+      expect(result.rows[0]['year_level'], '4th Year');
+      expect(result.rows[0]['level'], '4th Year Capstone');
+      expect(result.rows[0]['adviser_name'], 'Prof. Santos');
+      expect(result.rows[0]['member_ids'], ['Alice Cooper', 'Brian May', 'Roger Taylor', 'John Deacon']);
+
+      // Check Section 4B (One Shared System: Hospital Management System)
+      expect(result.rows[1]['team_name'], 'Team MedRecord');
+      expect(result.rows[1]['project_title'], 'Patient Records');
+      expect(result.rows[1]['section'], 'BSIT-4B');
+      expect(result.rows[1]['year_level'], '4th Year');
+      expect(result.rows[1]['level'], '4th Year Capstone');
+      expect(result.rows[1]['system_name'], 'Hospital Management System');
+      expect(result.rows[1]['project_manager'], 'Lucas Hernandez');
+      expect(result.rows[1]['adviser_name'], 'Prof. Gomez');
+      expect(result.rows[1]['member_ids'], ['Lucas Hernandez', 'Camille Santos']);
+
+      // Check Section 4C (One Shared System: Campus Logistics System)
+      expect(result.rows[2]['team_name'], 'Team Fleet');
+      expect(result.rows[2]['project_title'], 'Vehicle Tracking');
+      expect(result.rows[2]['section'], 'BSIT-4C');
+      expect(result.rows[2]['year_level'], '4th Year');
+      expect(result.rows[2]['level'], '4th Year Capstone');
+      expect(result.rows[2]['system_name'], 'Campus Logistics System');
+      expect(result.rows[2]['project_manager'], 'Jane Doe');
+      expect(result.rows[2]['adviser_name'], 'Prof. Ramos');
+      expect(result.rows[2]['member_ids'], ['Jane Doe', 'Mark Spencer']);
     });
   });
 

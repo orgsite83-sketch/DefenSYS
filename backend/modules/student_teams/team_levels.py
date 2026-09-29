@@ -275,8 +275,9 @@ def resolve_team_level(*, user, year_level='', level='', member_ids=None, semest
 
 def _normalize_csv_columns(columns):
     return {
-        (column or '').strip().lower().replace(' ', '_')
+        (column or '').strip().lower().replace(' ', '_').replace(':', '').replace('*', '')
         for column in (columns or [])
+        if (column or '').strip()
     }
 
 
@@ -297,12 +298,21 @@ def prepare_bulk_row(
     is_pit_lead = user_is_pit_lead_only(user)
     section_import = bool(section_import)
 
+    data = dict(row)
+    is_pit_section_import = (
+        section_import
+        and not (data.get('level') and 'capstone' in data.get('level', '').lower())
+        and not (data.get('year_level') and '4th' in data.get('year_level', '').lower())
+        and not (data.get('section') and '4' in str(data.get('section', '')))
+        and not (import_section and '4' in import_section)
+    )
+
     if check_template:
         # Use explicit CSV columns when available; fall back to row keys for backwards compat
         columns_to_check = set(csv_columns) if csv_columns else set(row.keys())
         normalized_columns = _normalize_csv_columns(columns_to_check)
         pit_template = {'team_name', 'project_title', 'member_ids', 'leader_id'}
-        if is_pit_lead or (is_admin and section_import):
+        if is_pit_lead or (is_admin and is_pit_section_import):
             if normalized_columns & {'adviser_id', 'year_level'}:
                 return None, [
                     "Wrong Template: PIT import templates should not contain 'adviser_id' or 'year_level' columns."
@@ -316,8 +326,8 @@ def prepare_bulk_row(
                     "Wrong Template: PIT import templates must contain 'team_name', 'project_title', 'member_ids', and 'leader_id' columns (or 'Team Name' and 'Team Members' for multi-row format)."
                 ]
         elif is_admin:
-            is_client_template = 'team_name' in normalized_columns and (
-                'team_members' in normalized_columns or 'members' in normalized_columns
+            is_client_template = ('team_name' in normalized_columns or 'team name' in normalized_columns) and (
+                'team_members' in normalized_columns or 'members' in normalized_columns or 'team members' in normalized_columns
             )
             is_defensys_template = 'adviser_id' in normalized_columns and 'year_level' in normalized_columns
             is_direct_api_payload = not csv_columns and {'team_name', 'member_ids', 'leader_id'}.issubset(normalized_columns)
@@ -326,14 +336,18 @@ def prepare_bulk_row(
                     "Wrong Template: Capstone import templates must contain 'year_level' and 'adviser_id' columns (or 'Team Name' and 'Team Members' for client format)."
                 ]
 
-    data = dict(row)
     if section_import and is_admin:
-        year = normalize_year_level(data.get('year_level', '')) or '2nd Year'
-        data['year_level'] = year
-        data['level'] = f'{year} PIT'
-        section = ' '.join((import_section or data.get('section') or '').strip().split())
-        if section:
-            data['section'] = section
+        if is_pit_section_import:
+            year = normalize_year_level(data.get('year_level', '')) or '2nd Year'
+            data['year_level'] = year
+            data['level'] = f'{year} PIT'
+        else:
+            year = normalize_year_level(data.get('year_level', '')) or '4th Year'
+            data['year_level'] = year
+            data['level'] = f'{year} Capstone'
+        sec = data.get('section') or import_section or ''
+        if sec and ',' not in sec:
+            data['section'] = ' '.join(sec.strip().split())
         return data, []
     explicit_year = normalize_year_level(data.get('year_level', ''))
 
@@ -349,6 +363,19 @@ def prepare_bulk_row(
             data['year_level'] = inferred
         elif explicit_year:
             data['year_level'] = explicit_year
+        elif data.get('section'):
+            sec = str(data.get('section', '')).strip()
+            digits = ''.join(c for c in sec if c.isdigit())
+            if digits.startswith('1'):
+                data['year_level'] = '1st Year'
+            elif digits.startswith('2'):
+                data['year_level'] = '2nd Year'
+            elif digits.startswith('3'):
+                data['year_level'] = '3rd Year'
+            elif digits.startswith('4'):
+                data['year_level'] = '4th Year'
+            else:
+                data['year_level'] = ''
         else:
             data['year_level'] = ''
     elif user_is_pit_lead_only(user):

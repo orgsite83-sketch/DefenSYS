@@ -435,6 +435,73 @@ class StudentTeamApiTests(APITestCase):
             record = StudentAcademicRecord.objects.get(student=s, semester=self.second_semester)
             self.assertEqual(record.section, 'BSIT-4A')
 
+    def test_bulk_import_multi_section_mixed_different_and_shared_systems(self):
+        self._activate_capstone_intake_semester()
+        student_3 = User.objects.create_user(
+            username='2024-0003',
+            password='pass12345',
+            role='student',
+            first_name='Mark',
+            last_name='Reyes',
+        )
+        student_4 = User.objects.create_user(
+            username='2024-0004',
+            password='pass12345',
+            role='student',
+            first_name='Anna',
+            last_name='Garcia',
+        )
+        for s in (student_3, student_4):
+            StudentAcademicRecord.objects.create(
+                student=s,
+                semester=self.second_semester,
+                year_level='3rd Year',
+            )
+
+        response = self.client.post(
+            '/api/teams/bulk-import/',
+            {
+                'section': 'BSIT-4A, BSIT-4B',
+                'teams': [
+                    {
+                        'team_name': 'Team Independent',
+                        'project_title': 'Independent Project Alpha',
+                        'level': StudentTeam.LEVEL_3_CAPSTONE,
+                        'year_level': '3rd Year',
+                        'section': 'BSIT-4A',
+                        'member_ids': ['Juan Dela Cruz', 'Maria Santos'],
+                        'leader_id': 'Juan Dela Cruz',
+                        'adviser_id': 'Ada Lovelace',
+                    },
+                    {
+                        'team_name': 'Team Shared Module',
+                        'project_title': 'Patient Records Module',
+                        'level': StudentTeam.LEVEL_3_CAPSTONE,
+                        'year_level': '3rd Year',
+                        'section': 'BSIT-4B',
+                        'system_name': 'Hospital Management System',
+                        'project_manager': 'Mark Reyes',
+                        'member_ids': ['Mark Reyes', 'Anna Garcia'],
+                        'leader_id': 'Mark Reyes',
+                        'adviser_id': 'Ada Lovelace',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['created_count'], 2)
+        team_a = StudentTeam.objects.get(name='Team Independent')
+        team_b = StudentTeam.objects.get(name='Team Shared Module')
+        self.assertEqual(team_a.section, 'BSIT-4A')
+        self.assertEqual(team_b.section, 'BSIT-4B')
+
+        from .models import SectionAssignment
+        sec_assign = SectionAssignment.objects.get(section='BSIT-4B', semester=self.second_semester)
+        self.assertEqual(sec_assign.system_name, 'Hospital Management System')
+        self.assertEqual(sec_assign.project_manager_id, student_3.id)
+
     def test_bulk_import_accepts_mixed_case_names(self):
         self._activate_capstone_intake_semester()
         response = self.client.post(
@@ -746,6 +813,70 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.data['created_count'], 1)
         plain_faculty.refresh_from_db()
         self.assertTrue(plain_faculty.is_adviser)
+
+    def test_bulk_import_recognizes_adviser_with_titles_and_honorifics(self):
+        self._activate_capstone_intake_semester()
+        jonathan = User.objects.create_user(
+            username='208',
+            password='pass12345',
+            role='faculty',
+            first_name='Jonathan',
+            last_name='Beltran',
+        )
+        maricel = User.objects.create_user(
+            username='207',
+            password='pass12345',
+            role='faculty',
+            first_name='Maricel',
+            last_name='Suarez',
+        )
+
+        test_variants = [
+            ('Team 1', 'Prof. Jonathan Beltran'),
+            ('Team 2', 'Dr. Jonathan Beltran'),
+            ('Team 3', 'Engr. Jonathan Beltran, MSIT, PhD'),
+            ('Team 4', 'Jonathan Beltran, PhD'),
+            ('Team 5', 'Beltran, Prof. Jonathan'),
+            ('Team 6', 'Prof. Beltran'),
+            ('Team 7', 'Prof. Maricel Suarez'),
+        ]
+
+        response = self.client.post(
+            '/api/teams/bulk-import/preview/',
+            {
+                'teams': [self._bulk_team_row(name, adv) for name, adv in test_variants],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        summary = response.data['summary']
+        self.assertEqual(summary['total'], 7)
+        self.assertEqual(summary['with_adviser'], 7)
+        self.assertEqual(summary['adviser_invalid'], 0)
+        self.assertEqual(summary['ready'], 7)
+
+        rows = {item['team_name']: item for item in response.data['rows']}
+        for name, _ in test_variants:
+            self.assertEqual(rows[name]['adviser_status'], 'valid', f'{name} should be valid')
+            self.assertEqual(rows[name]['issues'], [], f'{name} should have 0 issues')
+            self.assertTrue(rows[name]['ready'], f'{name} should be ready')
+        self.assertEqual(rows['Team 1']['adviser_name'], 'Jonathan Beltran')
+        self.assertEqual(rows['Team 7']['adviser_name'], 'Maricel Suarez')
+
+        # Also test the actual bulk import creation
+        create_resp = self.client.post(
+            '/api/teams/bulk-import/',
+            {
+                'teams': [self._bulk_team_row('Team Import 1', 'Prof. Jonathan Beltran')],
+            },
+            format='json',
+        )
+        self.assertEqual(create_resp.status_code, 201)
+        self.assertEqual(create_resp.data['created_count'], 1)
+        imported_team = StudentTeam.objects.get(name='Team Import 1')
+        self.assertEqual(imported_team.adviser, jonathan)
+
 
     def test_bulk_import_preview_rejects_pit_lead_wrong_template(self):
         self._activate_capstone_intake_semester()

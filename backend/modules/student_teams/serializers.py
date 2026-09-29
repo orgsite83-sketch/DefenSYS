@@ -615,6 +615,8 @@ class BulkTeamRowSerializer(serializers.Serializer):
     section = serializers.CharField(required=False, allow_blank=True, max_length=80)
     member_ids = serializers.ListField(child=serializers.CharField(), min_length=1, max_length=4)
     leader_id = serializers.CharField()
+    system_name = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    project_manager = serializers.CharField(required=False, allow_blank=True, max_length=255)
     adviser_name = serializers.CharField(required=False, allow_blank=True)
     adviser_id = serializers.CharField(required=False, allow_blank=True)
 

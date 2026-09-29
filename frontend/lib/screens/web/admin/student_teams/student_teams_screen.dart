@@ -16,6 +16,7 @@ import 'package:defensys/services/student_teams_provider.dart';
 import 'package:defensys/services/unsaved_changes_provider.dart';
 import 'package:defensys/services/user_management_provider.dart';
 import 'package:defensys/utils/csv_file_io.dart';
+import 'package:defensys/utils/export/team_roster_excel_generator.dart';
 import 'package:defensys/utils/team_bulk_import_csv.dart';
 import 'package:defensys/utils/team_bulk_import_draft.dart';
 import 'package:defensys/widgets/confirm_dialog.dart';
@@ -266,32 +267,22 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   }
 
   Future<void> _downloadCsvTemplate() async {
-    if (_isPitLeadManager) {
-      final year = _pitLeadYear ?? '3rd Year';
-      final content = sampleTeamCsvForYear(year, isCapstoneAdmin: false);
-      final sectionPrefix = year.contains('2')
-          ? 'Section,BSIT-2A\n'
-          : year.contains('3')
-              ? 'Section,BSIT-3A\n'
-              : year.contains('4')
-                  ? 'Section,BSIT-4A\n'
-                  : 'Section,BSIT-1A\n';
-      await downloadTextFile(
-        filename: sampleTeamCsvFilenameForYear(year),
-        content: '$sectionPrefix$content',
-      );
-      return;
-    }
-
-    await downloadTextFile(
-      filename: 'defensys-official-capstone-template.csv',
-      content: 'Section,BSIT-4A\n'
-          'Team Name,Capstone Project,Adviser,Team Members\n'
-          'Team SkyLedger,Alumni Career Tracker,Prof. Alex Santos,"VILLAR, Marcus"\n'
-          ',,,"ONG, Patricia"\n'
-          ',,,"SALAZAR, Ethan"\n'
-          ',,,"CASTILLO, Zoe"\n',
+    final isCapstone = !_isPitLeadManager;
+    final bytes = generateOfficialTeamRosterExcelBytes(isCapstone: isCapstone);
+    final filename = isCapstone
+        ? 'defensys-official-capstone-template.xlsx'
+        : 'defensys-official-pit-template.xlsx';
+    await downloadBinaryFile(
+      filename: filename,
+      bytes: bytes,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     );
+    if (mounted) {
+      showSuccessToast(
+        context,
+        'Sample ${isCapstone ? 'Capstone' : 'PIT'} Excel template (.xlsx) downloaded.',
+      );
+    }
   }
 
   Future<void> _loadBulkDraft() async {
@@ -462,9 +453,19 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   void _applyParsedRows(ParsedBulkCsvResult result) {
     final normalized = result.rows.map((row) => Map<String, dynamic>.from(row)).toList();
     _deriveLevelsOnRows(normalized);
+    final isMultiSection = (result.section ?? '').contains(',');
+    final singleSection = isMultiSection ? null : result.section?.trim();
+    if (singleSection != null && singleSection.isNotEmpty) {
+      for (final r in normalized) {
+        if ((r['section'] ?? '').toString().trim().isEmpty) {
+          r['section'] = singleSection;
+        }
+      }
+    }
     setState(() {
       _parsedBulkRows = normalized;
-      _section = result.section;
+      _csvColumns = result.csvColumns;
+      _section = singleSection;
       _systemName = result.systemName;
       _projectManager = result.projectManager;
       _bulkCsv = rowsToTeamCsv(
@@ -532,7 +533,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
           for (var r = minR; r <= maxR; r++) {
             for (var c = minC; c <= maxC; c++) {
               if (r == start.rowIndex && c == start.columnIndex) continue;
-              sheet.cell(xl.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r)).value = startVal;
+              sheet.updateCell(xl.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r), startVal);
             }
           }
         }
@@ -576,52 +577,6 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   void _processCsvContent(String csv) {
     if (!mounted) return;
 
-    final lines = csv
-        .split(RegExp(r'\r?\n'))
-        .map((line) => line.trim())
-        .where((line) => line.isNotEmpty)
-        .toList();
-    List<String> headers = [];
-    if (lines.isNotEmpty) {
-      headers = lines.first
-          .split(',')
-          .map((header) => header.trim().toLowerCase().replaceFirst('\ufeff', ''))
-          .toList();
-
-      String? warning;
-      final isClientTemplate = (headers.contains('team name') || headers.contains('team_name')) &&
-          (headers.contains('team members') || headers.contains('team_members') || headers.contains('members') || headers.contains('names'));
-      final recognizedHeaders = {
-        'team_name', 'project_title', 'level', 'year_level', 'member_ids',
-        'leader_id', 'adviser_id', 'adviser_name', 'team name', 'capstone project',
-        'pit project', 'project', 'project title', 'adviser', 'team members', 'members',
-        'section', 'class section', 'class_section', 'names', 'modules', 'module',
-      };
-      final unrecognized = headers.where((h) => !recognizedHeaders.contains(h)).toList();
-
-      if (unrecognized.isNotEmpty) {
-        warning = 'Wrong template? Unrecognized column(s) detected: ${unrecognized.join(", ")}. Please use the correct CSV template.';
-      } else if (!_isCapstoneAdmin) {
-        if (!isClientTemplate) {
-          if (headers.contains('adviser_id') || headers.contains('adviser_name') || headers.contains('year_level')) {
-            warning = 'Wrong template? PIT import templates should not contain "adviser_name" or "year_level" columns. These will be ignored or cleared.';
-          } else if (!headers.contains('member_ids') || !headers.contains('leader_id')) {
-            warning = 'Wrong template? PIT import templates must contain "team_name", "project_title", "member_ids", and "leader_id" columns (or "Team Name" and "Team Members" for multi-row format).';
-          }
-        }
-      } else {
-        if (!isClientTemplate) {
-          if ((!headers.contains('adviser_id') && !headers.contains('adviser_name')) || !headers.contains('year_level')) {
-            warning = 'Wrong template? Capstone import templates should contain "year_level" and "adviser_name" columns (or "Team Name" and "Team Members" for client format).';
-          }
-        }
-      }
-      setState(() {
-        _templateWarning = warning;
-        _csvColumns = headers;
-      });
-    }
-
     final result = parseTeamBulkCsvWithContext(
       csv,
       isCapstoneAdmin: _isCapstoneAdmin,
@@ -631,6 +586,48 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       _snack('Selected file is not a valid DefenSYS team CSV template.');
       return;
     }
+
+    String? warning;
+    final recognizedHeaders = {
+      'team_name', 'project_title', 'level', 'year_level', 'member_ids',
+      'leader_id', 'adviser_id', 'adviser_name', 'team name', 'capstone project',
+      'pit project', 'project', 'project title', 'adviser', 'team members', 'members',
+      'section', 'class section', 'class_section', 'names', 'modules', 'module',
+      'system name', 'system_name', 'project manager', 'project_manager', 'pm', 'instructor',
+    };
+
+    final cleanCols = result.csvColumns
+        .map((c) => c.trim().toLowerCase().replaceAll('*', '').replaceAll(':', '').trim().replaceFirst('\ufeff', ''))
+        .where((c) => c.isNotEmpty)
+        .toList();
+
+    final unrecognized = cleanCols.where((h) => !recognizedHeaders.contains(h)).toList();
+
+    final isClientTemplate = (cleanCols.contains('team name') || cleanCols.contains('team_name')) &&
+        (cleanCols.contains('team members') || cleanCols.contains('team_members') || cleanCols.contains('members') || cleanCols.contains('names'));
+
+    if (unrecognized.isNotEmpty) {
+      warning = 'Wrong template? Unrecognized column(s) detected: ${unrecognized.join(", ")}. Please use the correct CSV template.';
+    } else if (!_isCapstoneAdmin) {
+      if (!isClientTemplate) {
+        if (cleanCols.contains('adviser_id') || cleanCols.contains('adviser_name') || cleanCols.contains('year_level')) {
+          warning = 'Wrong template? PIT import templates should not contain "adviser_name" or "year_level" columns. These will be ignored or cleared.';
+        } else if (!cleanCols.contains('member_ids') || !cleanCols.contains('leader_id')) {
+          warning = 'Wrong template? PIT import templates must contain "team_name", "project_title", "member_ids", and "leader_id" columns (or "Team Name" and "Team Members" for multi-row format).';
+        }
+      }
+    } else {
+      if (!isClientTemplate) {
+        if ((!cleanCols.contains('adviser_id') && !cleanCols.contains('adviser_name')) || !cleanCols.contains('year_level')) {
+          warning = 'Wrong template? Capstone import templates should contain "year_level" and "adviser_name" columns (or "Team Name" and "Team Members" for client format).';
+        }
+      }
+    }
+
+    setState(() {
+      _templateWarning = warning;
+      _csvColumns = result.csvColumns;
+    });
 
     _applyParsedRows(result);
   }
@@ -836,6 +833,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       'member_ids': <String>[],
       'leader_id': '',
       'adviser_name': '',
+      if (_section != null && _section!.isNotEmpty) 'section': _section,
     };
     _deriveLevelOnRow(row);
     setState(() {

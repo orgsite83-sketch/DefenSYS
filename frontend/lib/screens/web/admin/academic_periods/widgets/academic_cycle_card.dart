@@ -212,46 +212,102 @@ class AcademicCycleCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Tooltip(
-                    message: 'Edit school year label',
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(6),
-                      onTap: isSaving ? null : onEditYear,
-                      child: Padding(
-                        padding: const EdgeInsets.all(6),
-                        child: Icon(
-                          Icons.edit_outlined,
-                          size: 16,
-                          color: mutedColor,
+                  PopupMenuButton<String>(
+                    tooltip: 'School year options',
+                    icon: Icon(
+                      Icons.more_horiz_rounded,
+                      size: 20,
+                      color: mutedColor,
+                    ),
+                    splashRadius: 18,
+                    color: surfaceColor,
+                    elevation: 4,
+                    shadowColor:
+                        Colors.black.withValues(alpha: isDark ? 0.4 : 0.12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: BorderSide(color: borderColor),
+                    ),
+                    itemBuilder: (context) => [
+                      PopupMenuItem<String>(
+                        value: 'edit',
+                        enabled: !isSaving,
+                        height: 38,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.edit_outlined,
+                              size: 16,
+                              color: mutedColor,
+                            ),
+                            const SizedBox(width: 10),
+                            Flexible(
+                              child: Text(
+                                'Edit School Year',
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: inkColor,
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Tooltip(
-                    message: semesters.isEmpty
-                        ? 'Delete school year'
-                        : 'Delete all semesters first',
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(6),
-                      onTap: (semesters.isEmpty && !isSaving)
-                          ? onDeleteYear
-                          : null,
-                      child: Padding(
-                        padding: const EdgeInsets.all(6),
-                        child: Icon(
-                          Icons.delete_outline_rounded,
-                          size: 16,
-                          color: semesters.isEmpty
-                              ? (isDark
-                                  ? const Color(0xFFF87171)
-                                  : const Color(0xFFDC2626))
-                              : (isDark
-                                  ? const Color(0xFF52525B)
-                                  : const Color(0xFFCBD5E1)),
+                      PopupMenuItem<String>(
+                        value: 'delete',
+                        enabled:
+                            semesters.isEmpty && !isSaving && onDeleteYear != null,
+                        height: 38,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.delete_outline_rounded,
+                              size: 16,
+                              color: (semesters.isEmpty &&
+                                      !isSaving &&
+                                      onDeleteYear != null)
+                                  ? (isDark
+                                      ? const Color(0xFFF87171)
+                                      : const Color(0xFFDC2626))
+                                  : (isDark
+                                      ? const Color(0xFF52525B)
+                                      : const Color(0xFFCBD5E1)),
+                            ),
+                            const SizedBox(width: 10),
+                            Flexible(
+                              child: Text(
+                                'Delete School Year',
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: (semesters.isEmpty &&
+                                          !isSaving &&
+                                          onDeleteYear != null)
+                                      ? (isDark
+                                          ? const Color(0xFFF87171)
+                                          : const Color(0xFFDC2626))
+                                      : (isDark
+                                          ? const Color(0xFF52525B)
+                                          : const Color(0xFFCBD5E1)),
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
+                    ],
+                    onSelected: (val) {
+                      if (val == 'edit') {
+                        onEditYear();
+                      } else if (val == 'delete') {
+                        onDeleteYear?.call();
+                      }
+                    },
                   ),
                 ],
               ),
@@ -304,7 +360,7 @@ class AcademicCycleCard extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    _headerCell('TERM', 140, headerTextColor),
+                    _headerCell('TERM', 150, headerTextColor),
                     _headerCell('STATUS', 200, headerTextColor),
                     _headerCell('PROGRAM TRACKS', 220, headerTextColor),
                     _headerCell('EVALUATION CONTROLS', 160, headerTextColor),
@@ -653,45 +709,99 @@ class AcademicCycleCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Tooltip(
-                    message: isActive
-                        ? 'Active semester (activate another semester to switch)'
-                        : 'Activate semester',
-                    child: DefensysUi.flatSwitch(
-                      value: isActive,
-                      scale: 0.8,
-                      activeTrackColor:
-                          isDark ? const Color(0xFFE11D48) : _maroon,
-                      onChanged: isSaving
-                          ? null
-                          : (v) => onToggleSemesterActive(sem, v),
+                  PopupMenuButton<String>(
+                    tooltip: 'More options',
+                    icon: Icon(
+                      Icons.more_horiz_rounded,
+                      size: 20,
+                      color: mutedColor,
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  Tooltip(
-                    message: isActive
-                        ? 'Cannot delete active semester'
-                        : 'Delete semester',
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(6),
-                      onTap: (!isActive && !isSaving)
-                          ? () => onDeleteSemester(sem)
-                          : null,
-                      child: Padding(
-                        padding: const EdgeInsets.all(6),
-                        child: Icon(
-                          Icons.delete_outline_rounded,
-                          size: 16,
-                          color: !isActive
-                              ? (isDark
-                                  ? const Color(0xFFF87171)
-                                  : const Color(0xFFDC2626))
-                              : (isDark
-                                  ? const Color(0xFF52525B)
-                                  : const Color(0xFFCBD5E1)),
+                    splashRadius: 18,
+                    color: surfaceColor,
+                    elevation: 4,
+                    shadowColor:
+                        Colors.black.withValues(alpha: isDark ? 0.4 : 0.12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      side: BorderSide(color: borderColor),
+                    ),
+                    itemBuilder: (context) => [
+                      if (!isActive)
+                        PopupMenuItem<String>(
+                          value: 'activate',
+                          height: 38,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.flash_on_rounded,
+                                size: 16,
+                                color: isDark
+                                    ? const Color(0xFF34D399)
+                                    : const Color(0xFF059669),
+                              ),
+                              const SizedBox(width: 10),
+                              Flexible(
+                                child: Text(
+                                  'Set as Active Semester',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: inkColor,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      PopupMenuItem<String>(
+                        value: 'delete',
+                        enabled: !isActive && !isSaving,
+                        height: 38,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.delete_outline_rounded,
+                              size: 16,
+                              color: (!isActive && !isSaving)
+                                  ? (isDark
+                                      ? const Color(0xFFF87171)
+                                      : const Color(0xFFDC2626))
+                                  : (isDark
+                                      ? const Color(0xFF52525B)
+                                      : const Color(0xFFCBD5E1)),
+                            ),
+                            const SizedBox(width: 10),
+                            Flexible(
+                              child: Text(
+                                'Delete Semester',
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: (!isActive && !isSaving)
+                                      ? (isDark
+                                          ? const Color(0xFFF87171)
+                                          : const Color(0xFFDC2626))
+                                      : (isDark
+                                          ? const Color(0xFF52525B)
+                                          : const Color(0xFFCBD5E1)),
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ),
+                    ],
+                    onSelected: (val) {
+                      if (val == 'activate') {
+                        onToggleSemesterActive(sem, true);
+                      } else if (val == 'delete') {
+                        onDeleteSemester(sem);
+                      }
+                    },
                   ),
                 ],
               ),

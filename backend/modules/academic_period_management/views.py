@@ -1,3 +1,4 @@
+from django.db.models import ProtectedError
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
@@ -12,6 +13,7 @@ from .models import SchoolYear, Semester
 from .serializers import (
     SchoolYearCreateSerializer,
     SchoolYearSerializer,
+    SchoolYearUpdateSerializer,
     SemesterCreateSerializer,
     SemesterSerializer,
 )
@@ -57,6 +59,49 @@ class AcademicPeriodListCreateView(APIView):
             'school_year': SchoolYearSerializer(school_year).data,
             'active_semester': active_semester_payload(),
         }, status=status.HTTP_201_CREATED)
+
+
+class SchoolYearDetailView(APIView):
+    permission_classes = [IsAuthenticated, IsSystemAdmin]
+
+    def patch(self, request, school_year_id):
+        school_year = get_object_or_404(SchoolYear, pk=school_year_id)
+        serializer = SchoolYearUpdateSerializer(
+            instance=school_year,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        school_year = serializer.save()
+
+        school_years = SchoolYear.objects.prefetch_related('semesters').all()
+        return Response({
+            'school_year': SchoolYearSerializer(school_year).data,
+            'school_years': SchoolYearSerializer(school_years, many=True).data,
+            'active_semester': active_semester_payload(),
+            'message': f'School year renamed to {school_year.label}.',
+        })
+
+    def delete(self, request, school_year_id):
+        school_year = get_object_or_404(SchoolYear.objects.prefetch_related('semesters'), pk=school_year_id)
+        if school_year.semesters.exists():
+            raise ValidationError({
+                'detail': 'Cannot delete school year with existing semesters. Please delete all semesters first.'
+            })
+        label = school_year.label
+        try:
+            school_year.delete()
+        except ProtectedError:
+            raise ValidationError({
+                'detail': f'Cannot delete school year {label} because it is referenced by other records.'
+            })
+
+        school_years = SchoolYear.objects.prefetch_related('semesters').all()
+        return Response({
+            'detail': f'School year {label} deleted.',
+            'school_years': SchoolYearSerializer(school_years, many=True).data,
+            'active_semester': active_semester_payload(),
+        }, status=status.HTTP_200_OK)
 
 
 class SemesterCreateView(APIView):
@@ -150,6 +195,36 @@ class SemesterStatusView(APIView):
             ),
             'active_semester': active_semester_payload(),
         })
+
+    def delete(self, request, semester_id):
+        semester = get_object_or_404(
+            Semester.objects.select_related('school_year'),
+            pk=semester_id,
+        )
+        if semester.is_active:
+            raise ValidationError({
+                'detail': 'Cannot delete the currently active semester. Activate another semester first.'
+            })
+
+        if hasattr(semester, 'student_records') and semester.student_records.exists():
+            raise ValidationError({
+                'detail': 'Cannot delete semester: Enrolled student records exist for this term.'
+            })
+
+        display_name = semester.display_name
+        try:
+            semester.delete()
+        except ProtectedError:
+            raise ValidationError({
+                'detail': 'Cannot delete semester: It contains dependent records (teams, grades, schedules, or rubrics).'
+            })
+
+        school_years = SchoolYear.objects.prefetch_related('semesters').all()
+        return Response({
+            'detail': f'Semester {display_name} deleted.',
+            'school_years': SchoolYearSerializer(school_years, many=True).data,
+            'active_semester': active_semester_payload(),
+        }, status=status.HTTP_200_OK)
 
 
 class SemesterTransitionPreviewView(APIView):

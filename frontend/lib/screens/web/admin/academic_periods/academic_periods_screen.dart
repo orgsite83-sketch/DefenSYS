@@ -8,8 +8,6 @@ import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import '../widgets/defensys_admin_shell.dart';
-import '../grade_center/grade_center_shared.dart'
-    show showPeerGradingHelpDialog;
 import 'semester_detail_screen.dart';
 import 'widgets/academic_cycle_card.dart';
 
@@ -23,6 +21,7 @@ class AcademicPeriodsScreen extends ConsumerStatefulWidget {
 
 class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
   final Set<int> _expandedYearIds = {};
+  bool _hasInitializedExpansion = false;
   static const _line = DefensysTokens.border;
   static const _ink = DefensysUi.textDark;
   static const _muted = DefensysUi.steelGrey;
@@ -87,14 +86,10 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
             icon: Icons.calendar_month_rounded,
             title: 'Academic Period Management',
             subtitle:
-                'Configure school years, capstone intake, and active semesters.',
+                'Configure academic cycles, terms, and drill into semester program tracks.',
           ),
           const SizedBox(height: 22),
           _statusBanner(state),
-          if (state.activeSemester != null) ...[
-            const SizedBox(height: 16),
-            _capstoneProgramCard(state),
-          ],
           if (state.error != null) ...[
             const SizedBox(height: 12),
             _notice(state.error!, warning: true),
@@ -211,46 +206,83 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
             ),
           ),
           const SizedBox(width: 16),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: isActive
-                  ? (isDark ? const Color(0xFF064E3B) : const Color(0xFF10B981))
-                  : (isDark ? const Color(0xFF27272A) : const Color(0xFFF1F5F9)),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color: isActive
-                    ? (isDark ? const Color(0xFF059669) : const Color(0xFF059669))
-                    : (isDark ? const Color(0xFF3F3F46) : const Color(0xFFE2E8F0)),
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isActive
+                      ? (isDark ? const Color(0xFF064E3B) : const Color(0xFF10B981))
+                      : (isDark ? const Color(0xFF27272A) : const Color(0xFFF1F5F9)),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: isActive
+                        ? (isDark ? const Color(0xFF059669) : const Color(0xFF059669))
+                        : (isDark ? const Color(0xFF3F3F46) : const Color(0xFFE2E8F0)),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: isActive
+                            ? (isDark ? const Color(0xFF34D399) : Colors.white)
+                            : (isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8)),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isActive ? 'LIVE' : 'INACTIVE',
+                      style: TextStyle(
+                        color: isActive
+                            ? (isDark ? const Color(0xFF34D399) : Colors.white)
+                            : (isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569)),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: isActive
-                        ? (isDark ? const Color(0xFF34D399) : Colors.white)
-                        : (isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8)),
-                    shape: BoxShape.circle,
+              if (isActive)
+                ElevatedButton.icon(
+                  onPressed: () => _navigateToSemesterDetail(active),
+                  icon: const Icon(Icons.tune_rounded, size: 14),
+                  label: const Text('Manage Active Term ↗'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isDark
+                        ? const Color(0xFF3B181F)
+                        : Colors.white,
+                    foregroundColor: isDark
+                        ? const Color(0xFFFCA5A5)
+                        : _maroon,
+                    side: BorderSide(
+                      color: isDark
+                          ? const Color(0xFF7F1D1D)
+                          : Colors.white.withValues(alpha: 0.4),
+                    ),
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 13, vertical: 8),
+                    minimumSize: const Size(0, 32),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  isActive ? 'LIVE' : 'INACTIVE',
-                  style: TextStyle(
-                    color: isActive
-                        ? (isDark ? const Color(0xFF34D399) : Colors.white)
-                        : (isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569)),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.8,
-                  ),
-                ),
-              ],
-            ),
+            ],
           ),
         ],
       ),
@@ -262,6 +294,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
     Map<String, dynamic>? selectedYear,
   ) {
     if (state.schoolYears.isEmpty) {
+      _hasInitializedExpansion = false;
       return _card(
         title: 'School Years',
         description:
@@ -290,7 +323,8 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
     final defaultExpandId = activeYearId ??
         (selectedYear != null ? _asInt(selectedYear['id']) : null) ??
         _asInt(state.schoolYears.first['id']);
-    if (_expandedYearIds.isEmpty && defaultExpandId != null) {
+    if (!_hasInitializedExpansion && defaultExpandId != null) {
+      _hasInitializedExpansion = true;
       _expandedYearIds.add(defaultExpandId);
     }
 
@@ -1006,354 +1040,6 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
         ],
       ),
     );
-  }
-
-  Widget _capstoneProgramCard(AcademicPeriodState state) {
-    final active = state.activeSemester!;
-    final semesterId = _asInt(active['id']);
-    final phaseLabel = _capstonePhaseLabel(
-      active['capstone_program_phase']?.toString(),
-    );
-    final teamCreationOn = active['capstone_team_creation_enabled'] == true;
-    final peerOn = active['capstone_peer_evaluation_enabled'] != false;
-    final adviserOn = active['capstone_adviser_grading_enabled'] != false;
-    final saving = state.isSaving;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: _isDark ? 0.25 : 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: _isDark
-                      ? const Color(0xFF3B181F)
-                      : const Color(0xFFFEE2E2),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: _isDark
-                        ? const Color(0xFF7F1D1D)
-                        : const Color(0xFFFECACA),
-                  ),
-                ),
-                child: Icon(
-                  Icons.rocket_launch_rounded,
-                  color: _isDark ? const Color(0xFFF87171) : _maroon,
-                  size: 17,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Capstone program',
-                    style: TextStyle(
-                      color: _inkColor,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Configure cohort intake, team formation window, and evaluation routing',
-                    style: TextStyle(
-                      color: _mutedColor,
-                      fontSize: 12.5,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          _capstoneSettingRow(
-            label: 'Program phase',
-            child: Row(
-              children: [
-                _capstoneChip(phaseLabel, emphasized: true),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Capstone-specific phase. PIT for 1st-3rd year cohorts is active during both terms.',
-                    style: TextStyle(
-                      color: _mutedColor,
-                      fontSize: 12,
-                      height: 1.35,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          _capstoneSettingRow(
-            label: 'Team creation',
-            child: Row(
-              children: [
-                _capstoneChip(
-                  teamCreationOn ? 'Open' : 'Closed',
-                  emphasized: teamCreationOn,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    active['capstone_mode_message']?.toString() ??
-                        (teamCreationOn
-                            ? 'New capstone teams can be created on Student Teams.'
-                            : 'Team creation follows the active term calendar.'),
-                    style: TextStyle(
-                      color: _mutedColor,
-                      fontSize: 12,
-                      height: 1.35,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Divider(height: 1, color: _borderColor),
-          ),
-          Text(
-            'Evaluation (term-wide)',
-            style: TextStyle(
-              color: _inkColor,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 10),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final stacked = constraints.maxWidth < 720;
-              final peerPanel = _evaluationTogglePanel(
-                title: 'Peer evaluation',
-                subtitle: 'Student Peer Eval tab for Capstone teams.',
-                value: peerOn,
-                enabled: !saving && semesterId != null,
-                helpTooltip: 'Click for Capstone Peer Evaluation Workflow Guide',
-                onHelpTap: () =>
-                    showPeerGradingHelpDialog(context, isPit: false),
-                onChanged: (value) {
-                  if (semesterId == null) return;
-                  ref
-                      .read(academicPeriodProvider.notifier)
-                      .updateSemesterEvaluationSettings(
-                        semesterId,
-                        peerEvaluationEnabled: value,
-                      );
-                },
-              );
-              final adviserPanel = _evaluationTogglePanel(
-                title: 'Adviser grading',
-                subtitle: 'Advisers can submit scores for teams they advise.',
-                value: adviserOn,
-                enabled: !saving && semesterId != null,
-                onChanged: (value) {
-                  if (semesterId == null) return;
-                  ref
-                      .read(academicPeriodProvider.notifier)
-                      .updateSemesterEvaluationSettings(
-                        semesterId,
-                        adviserGradingEnabled: value,
-                      );
-                },
-              );
-              if (stacked) {
-                return Column(
-                  children: [
-                    peerPanel,
-                    const SizedBox(height: 10),
-                    adviserPanel,
-                  ],
-                );
-              }
-              return Row(
-                children: [
-                  Expanded(child: peerPanel),
-                  const SizedBox(width: 12),
-                  Expanded(child: adviserPanel),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _capstoneSettingRow({required String label, required Widget child}) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 120,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: _mutedColor,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-        Expanded(child: child),
-      ],
-    );
-  }
-
-  Widget _evaluationTogglePanel({
-    required String title,
-    required String subtitle,
-    required bool value,
-    required bool enabled,
-    required ValueChanged<bool> onChanged,
-    VoidCallback? onHelpTap,
-    String? helpTooltip,
-  }) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-      decoration: BoxDecoration(
-        color: _panelBgColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        title,
-                        style: TextStyle(
-                          color: _inkColor,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    if (onHelpTap != null) ...[
-                      const SizedBox(width: 6),
-                      Tooltip(
-                        message: helpTooltip ?? 'View Guide',
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(999),
-                          onTap: onHelpTap,
-                          child: Padding(
-                            padding: const EdgeInsets.all(2),
-                            child: Icon(
-                              Icons.help_outline_rounded,
-                              size: 15,
-                              color: _isDark
-                                  ? const Color(0xFF71717A)
-                                  : const Color(0xFF94A3B8),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: _mutedColor,
-                    fontSize: 11.5,
-                    height: 1.3,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Switch(
-            value: value,
-            onChanged: enabled ? onChanged : null,
-            activeThumbColor: _isDark ? const Color(0xFFF87171) : _maroon,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _capstoneChip(String label, {bool emphasized = false}) {
-    final isOpen = label == 'Capstone 1' || label == 'Open';
-    Color bg;
-    Color fg;
-    Color border;
-
-    if (_isDark) {
-      if (emphasized && isOpen) {
-        bg = const Color(0xFF064E3B).withValues(alpha: 0.4);
-        fg = const Color(0xFF34D399);
-        border = const Color(0xFF059669).withValues(alpha: 0.6);
-      } else {
-        bg = const Color(0xFF27272A);
-        fg = const Color(0xFFA1A1AA);
-        border = const Color(0xFF3F3F46);
-      }
-    } else {
-      bg = emphasized && isOpen
-          ? const Color(0xFFECFDF5)
-          : const Color(0xFFF1F5F9);
-      fg = emphasized && isOpen
-          ? const Color(0xFF047857)
-          : const Color(0xFF475569);
-      border = emphasized && isOpen
-          ? const Color(0xFFA7F3D0)
-          : const Color(0xFFE2E8F0);
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: border),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w600),
-      ),
-    );
-  }
-
-  String _capstonePhaseLabel(String? phase) {
-    switch (phase) {
-      case 'capstone_1':
-        return 'Capstone 1';
-      case 'capstone_2':
-        return 'Capstone 2';
-      case 'none':
-      default:
-        return 'Closed';
-    }
   }
 
   String _activeBannerSubtitle(Map<String, dynamic> active) {

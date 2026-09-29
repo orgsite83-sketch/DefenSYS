@@ -501,26 +501,28 @@ class BulkImportTeamsPreviewView(APIView):
         csv_columns = request.data.get('csv_columns')
         if csv_columns is not None and not isinstance(csv_columns, list):
             csv_columns = None
+        is_multi_section = ',' in section
+        effective_section = '' if is_multi_section else section
         preview_rows, summary = preview_bulk_teams(
             rows,
             adviser_filter=adviser_filter,
             user=request.user,
             csv_columns=csv_columns,
-            section_import=bool(section),
-            import_section=section,
+            section_import=bool(effective_section),
+            import_section=effective_section,
         )
 
         system_name = request.data.get('system_name', '').strip()
         pm_name = request.data.get('project_manager', '').strip()
         section_assignment = None
 
-        if section:
+        if effective_section:
             pm_user = None
             pm_error = None
             if pm_name:
                 pm_user, pm_error = resolve_user_by_full_name(pm_name, role='student', field_label='Project Manager')
             section_assignment = {
-                'section': section,
+                'section': effective_section,
                 'system_name': system_name,
                 'project_manager_name': pm_name,
                 'project_manager_valid': pm_user is not None if pm_name else True,
@@ -551,27 +553,45 @@ class BulkImportTeamsView(APIView):
         system_name = request.data.get('system_name', '').strip()
         pm_name = request.data.get('project_manager', '').strip()
 
-        if section:
-            pm_user = None
-            if pm_name:
-                pm_user, pm_error = resolve_user_by_full_name(pm_name, role='student', field_label='Project Manager')
-                if pm_error:
-                    return Response({'detail': pm_error}, status=status.HTTP_400_BAD_REQUEST)
-            
+        is_multi_section = ',' in section
+        effective_section = '' if is_multi_section else section
+
+        section_meta = {}
+        if effective_section and (system_name or pm_name):
+            section_meta[effective_section] = {'system_name': system_name, 'project_manager': pm_name}
+        for row in rows:
+            sec = (row.get('section') or '').strip()
+            row_sys = (row.get('system_name') or '').strip()
+            row_pm = (row.get('project_manager') or '').strip()
+            if sec and (row_sys or row_pm):
+                if sec not in section_meta:
+                    section_meta[sec] = {'system_name': row_sys, 'project_manager': row_pm}
+                else:
+                    if row_sys and not section_meta[sec]['system_name']:
+                        section_meta[sec]['system_name'] = row_sys
+                    if row_pm and not section_meta[sec]['project_manager']:
+                        section_meta[sec]['project_manager'] = row_pm
+
+        if section_meta:
             active = active_semester()
-            if not active:
-                return Response({'detail': 'No active semester is configured.'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            year_level = (getattr(request.user, 'pit_lead_year', None) or '2nd Year').strip() or '2nd Year'
-            SectionAssignment.objects.update_or_create(
-                section=section,
-                semester=active,
-                defaults={
-                    'system_name': system_name,
-                    'project_manager': pm_user,
-                    'year_level': year_level,
-                }
-            )
+            if active:
+                for sec, meta in section_meta.items():
+                    pm_user = None
+                    if meta['project_manager']:
+                        pm_user, pm_err = resolve_user_by_full_name(meta['project_manager'], role='student', field_label='Project Manager')
+                        if pm_err and effective_section:
+                            return Response({'detail': pm_err}, status=status.HTTP_400_BAD_REQUEST)
+                    sec_digits = ''.join(c for c in sec if c.isdigit())
+                    sec_year = '4th Year' if sec_digits.startswith('4') else (getattr(request.user, 'pit_lead_year', None) or '2nd Year').strip()
+                    SectionAssignment.objects.update_or_create(
+                        section=sec,
+                        semester=active,
+                        defaults={
+                            'system_name': meta['system_name'],
+                            'project_manager': pm_user,
+                            'year_level': sec_year,
+                        }
+                    )
 
         adviser_filter = _normalize_adviser_filter(request.data.get('adviser_filter'))
         csv_columns = request.data.get('csv_columns')
@@ -589,8 +609,8 @@ class BulkImportTeamsView(APIView):
                 request.user,
                 check_template=True,
                 csv_columns=csv_columns,
-                section_import=bool(section),
-                import_section=section,
+                section_import=bool(effective_section),
+                import_section=effective_section,
             )
             if prep_issues:
                 errors.append({
@@ -605,8 +625,8 @@ class BulkImportTeamsView(APIView):
                 data=prepared,
                 context={
                     'user': request.user,
-                    'section_import': bool(section),
-                    'import_section': section,
+                    'section_import': bool(effective_section),
+                    'import_section': effective_section,
                 },
             )
             if not row_serializer.is_valid():
@@ -623,8 +643,8 @@ class BulkImportTeamsView(APIView):
                 adviser_filter=adviser_filter,
                 user=request.user,
                 csv_columns=csv_columns,
-                section_import=bool(section),
-                import_section=section,
+                section_import=bool(effective_section),
+                import_section=effective_section,
             )
             team_name = result['team_name']
             if not result['ready']:
@@ -650,8 +670,8 @@ class BulkImportTeamsView(APIView):
                 context={
                     'assigned_by': request.user,
                     'user': request.user,
-                    'section_import': bool(section),
-                    'import_section': section,
+                    'section_import': bool(effective_section),
+                    'import_section': effective_section,
                 },
             )
             if not serializer.is_valid():

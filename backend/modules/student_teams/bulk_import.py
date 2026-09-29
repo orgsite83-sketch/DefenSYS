@@ -1,3 +1,4 @@
+import re
 from django.contrib.auth import get_user_model
 
 from .models import StudentTeam, TeamMembership
@@ -18,6 +19,114 @@ ADVISER_FILTER_WITH_ADVISER = 'with_adviser'
 ADVISER_FILTER_WITHOUT_ADVISER = 'without_adviser'
 
 
+PREFIX_PATTERNS = [
+    r'associate\s+professor',
+    r'assistant\s+professor',
+    r'assoc\.?\s*prof\.?',
+    r'asst\.?\s*prof\.?',
+    r'prof(?:essor)?\.?',
+    r'dr\.?',
+    r'doctor',
+    r'engr\.?',
+    r'engineer',
+    r'atty\.?',
+    r'attorney',
+    r'arch(?:itect)?\.?',
+    r'dean',
+    r'chair(?:person)?',
+    r'inst(?:ructor)?\.?',
+    r'lect(?:urer)?\.?',
+    r'hon(?:orable)?\.?',
+    r'rev(?:erend)?\.?',
+    r'pastor|pst\.?',
+    r'fr\.?|father',
+    r'mr\.?',
+    r'mrs\.?',
+    r'ms\.?',
+    r'mx\.?',
+    r'sir',
+    r'ma[\'\’]?am|mam',
+]
+
+SUFFIX_PATTERNS = [
+    r'ph\.?d\.?',
+    r'd\.?eng\.?',
+    r'd\.?i\.?t\.?',
+    r'd\.?b\.?a\.?',
+    r'ed\.?d\.?',
+    r'm\.?d\.?',
+    r'j\.?d\.?',
+    r'sc\.?d\.?',
+    r'm\.?sc\.?',
+    r'm\.?s\.?',
+    r'm\.?a\.?',
+    r'm\.?eng\.?',
+    r'm\.?i\.?t\.?',
+    r'm\.?s\.?i\.?t\.?',
+    r'm\.?b\.?a\.?',
+    r'm\.?p\.?a\.?',
+    r'm\.?ed\.?',
+    r'b\.?sc\.?',
+    r'b\.?s\.?',
+    r'b\.?a\.?',
+    r'b\.?s\.?i\.?t\.?',
+    r'p\.?e\.?',
+    r'c\.?p\.?a\.?',
+    r'rce|ece|ree|rme',
+    r'pmp|cisa|cissp',
+    r'jr\.?|sr\.?',
+    r'ii|iii|iv|v',
+]
+
+PREFIX_RE = re.compile(r'^(?:' + '|'.join(PREFIX_PATTERNS) + r')\b[\s\.]*', re.IGNORECASE)
+SUFFIX_RE = re.compile(r'(?:[\s,\.]+|\b)(?:' + '|'.join(SUFFIX_PATTERNS) + r')\.?$', re.IGNORECASE)
+SUFFIX_ISOLATED_RE = re.compile(r'^(?:' + '|'.join(SUFFIX_PATTERNS) + r')\.?$', re.IGNORECASE)
+
+
+def _strip_token(token):
+    prev = None
+    s = (token or '').strip()
+    while s and s != prev:
+        prev = s
+        s = SUFFIX_RE.sub('', s).strip()
+        s = PREFIX_RE.sub('', s).strip()
+    return s
+
+
+def clean_person_name(name):
+    """
+    Strip academic, professional, and courtesy titles/honorifics (e.g. 'Prof.', 'Dr.',
+    'Engr.', 'Atty.', 'PhD', 'MSIT') from a person's name string so it can match
+    a user registered in the system.
+    """
+    if not name:
+        return ''
+    s = name.strip()
+    prev = None
+    while s and s != prev:
+        prev = s
+        s = SUFFIX_RE.sub('', s).strip()
+        s = PREFIX_RE.sub('', s).strip()
+
+    if ',' in s:
+        raw_parts = [p.strip() for p in s.split(',')]
+        valid_parts = []
+        for p in raw_parts:
+            if not p or SUFFIX_ISOLATED_RE.match(p.strip().rstrip('.')):
+                continue
+            cleaned = _strip_token(p)
+            if cleaned:
+                valid_parts.append(cleaned)
+        if len(valid_parts) == 2:
+            return f'{valid_parts[1]} {valid_parts[0]}'
+        elif len(valid_parts) == 1:
+            return valid_parts[0]
+        elif valid_parts:
+            return ' '.join(valid_parts)
+
+    return _strip_token(s)
+
+
 def normalize_name(value):
     return ' '.join((value or '').strip().split()).casefold()
 
@@ -35,9 +144,16 @@ def _users_matching_full_name(value, *, role=None):
             queryset = queryset.filter(role=role)
 
     matches = []
+    cleaned_input = normalize_name(clean_person_name(value))
     for user in queryset:
-        if normalize_name(display_name(user)) == normalized:
+        d_name = display_name(user)
+        user_norm = normalize_name(d_name)
+        if user_norm == normalized:
             matches.append(user)
+        elif cleaned_input:
+            user_clean = normalize_name(clean_person_name(d_name))
+            if user_clean == cleaned_input or user_norm == cleaned_input:
+                matches.append(user)
     return matches
 
 
@@ -52,8 +168,10 @@ def _user_by_username_ref(raw, *, role=None):
 
 
 def _users_matching_initial_and_surname(surname, initial, *, role=None):
-    norm_surname = normalize_name(surname)
-    norm_initial = normalize_name(initial.rstrip('.'))
+    clean_sur = clean_person_name(surname)
+    norm_surname = normalize_name(clean_sur or surname)
+    clean_init = clean_person_name(initial)
+    norm_initial = normalize_name((clean_init or initial).rstrip('.'))
     if not norm_surname or not norm_initial:
         return []
     queryset = User.objects.all()
@@ -65,14 +183,19 @@ def _users_matching_initial_and_surname(surname, initial, *, role=None):
     matches = []
     for user in queryset:
         user_last = normalize_name(user.last_name)
+        user_last_clean = normalize_name(clean_person_name(user.last_name))
         user_first = normalize_name(user.first_name)
-        if user_last == norm_surname and user_first.startswith(norm_initial):
+        user_first_clean = normalize_name(clean_person_name(user.first_name))
+        last_matches = (user_last == norm_surname or user_last_clean == norm_surname)
+        first_matches = (user_first.startswith(norm_initial) or user_first_clean.startswith(norm_initial))
+        if last_matches and first_matches:
             matches.append(user)
     return matches
 
 
 def _users_matching_surname_only(surname, *, role=None):
-    norm_surname = normalize_name(surname)
+    clean_sur = clean_person_name(surname)
+    norm_surname = normalize_name(clean_sur or surname)
     if not norm_surname:
         return []
     queryset = User.objects.all()
@@ -83,26 +206,14 @@ def _users_matching_surname_only(surname, *, role=None):
             queryset = queryset.filter(role=role)
     matches = []
     for user in queryset:
-        if normalize_name(user.last_name) == norm_surname:
+        user_last = normalize_name(user.last_name)
+        user_last_clean = normalize_name(clean_person_name(user.last_name))
+        if user_last == norm_surname or user_last_clean == norm_surname:
             matches.append(user)
     return matches
 
 
-def resolve_user_by_full_name(value, *, role=None, field_label='User'):
-    """
-    Resolve a CSV reference by student/faculty ID (username) or full display name,
-    with smart support for:
-    - Exact student/faculty ID
-    - Full name ("First Last")
-    - Inverted name with comma ("Last, First")
-    - Surname + Initial ("Garcia, M." / "M. Garcia")
-    - Unique surname within cohort ("Baguingco")
-    Returns (user_or_none, error_message_or_none).
-    """
-    raw = (value or '').strip()
-    if not raw:
-        return None, None
-
+def _resolve_user_by_name_or_id(raw, *, role=None, field_label='User'):
     # 1. By ID (username)
     by_username = _user_by_username_ref(raw, role=role)
     if by_username is not None:
@@ -188,9 +299,41 @@ def resolve_user_by_full_name(value, *, role=None, field_label='User'):
     return None, f'{field_label} "{raw}": no user found with that name.'
 
 
+def resolve_user_by_full_name(value, *, role=None, field_label='User'):
+    """
+    Resolve a CSV reference by student/faculty ID (username) or full display name,
+    with smart support for:
+    - Exact student/faculty ID
+    - Full name ("First Last")
+    - Inverted name with comma ("Last, First")
+    - Surname + Initial ("Garcia, M." / "M. Garcia")
+    - Unique surname within cohort ("Baguingco")
+    - Academic/courtesy titles and honorifics ("Prof. Jonathan Beltran", "Dr. Beltran")
+    Returns (user_or_none, error_message_or_none).
+    """
+    raw = (value or '').strip()
+    if not raw:
+        return None, None
+
+    user, error = _resolve_user_by_name_or_id(raw, role=role, field_label=field_label)
+    if user is not None:
+        return user, None
+
+    cleaned = clean_person_name(raw)
+    if cleaned and normalize_name(cleaned) != normalize_name(raw):
+        c_user, c_error = _resolve_user_by_name_or_id(cleaned, role=role, field_label=field_label)
+        if c_user is not None:
+            return c_user, None
+        if c_error and 'multiple users' in c_error:
+            return None, c_error
+
+    return None, error
+
+
 def resolve_adviser(name_or_username):
     """
     Resolve CSV adviser reference (full name, surname, or username/faculty ID) to a User and validation status.
+    Supports academic titles and honorifics (e.g., 'Prof. Jonathan Beltran', 'Dr. Beltran', 'Jonathan Beltran, PhD').
     Returns (user_or_none, status, display_name_or_empty).
     """
     raw = (name_or_username or '').strip()
@@ -233,9 +376,64 @@ def resolve_adviser(name_or_username):
                 return None, ADVISER_STATUS_INACTIVE, display_name(user)
             return user, ADVISER_STATUS_VALID, display_name(user)
 
+    # 5. Smart title / honorific fallback (e.g. "Prof. Jonathan Beltran", "Dr. Beltran", "Jonathan Beltran, PhD")
+    cleaned = clean_person_name(raw)
+    if cleaned and normalize_name(cleaned) != normalize_name(raw):
+        c_user = _user_by_username_ref(cleaned, role=['faculty', 'admin'])
+        if c_user:
+            if not c_user.is_active:
+                return None, ADVISER_STATUS_INACTIVE, display_name(c_user)
+            return c_user, ADVISER_STATUS_VALID, display_name(c_user)
+
+        c_matches = _users_matching_full_name(cleaned, role=['faculty', 'admin'])
+        if len(c_matches) == 1:
+            user = c_matches[0]
+            if not user.is_active:
+                return None, ADVISER_STATUS_INACTIVE, display_name(user)
+            return user, ADVISER_STATUS_VALID, display_name(user)
+
+        if ',' in cleaned:
+            parts = [p.strip() for p in cleaned.split(',', 1)]
+            inverted = f"{parts[1]} {parts[0]}"
+            inv_matches = _users_matching_full_name(inverted, role=['faculty', 'admin'])
+            if len(inv_matches) == 1:
+                user = inv_matches[0]
+                if not user.is_active:
+                    return None, ADVISER_STATUS_INACTIVE, display_name(user)
+                return user, ADVISER_STATUS_VALID, display_name(user)
+
+        c_words = cleaned.split()
+        if len(c_words) == 1 and not (',' in cleaned):
+            sur_matches = _users_matching_surname_only(cleaned, role=['faculty', 'admin'])
+            if len(sur_matches) == 1:
+                user = sur_matches[0]
+                if not user.is_active:
+                    return None, ADVISER_STATUS_INACTIVE, display_name(user)
+                return user, ADVISER_STATUS_VALID, display_name(user)
+
+        if len(c_words) == 2:
+            w0 = c_words[0].rstrip('.').strip()
+            w1 = c_words[1].rstrip('.').strip()
+            if len(w0) == 1 and w0.isalpha():
+                init_matches = _users_matching_initial_and_surname(c_words[1], w0, role=['faculty', 'admin'])
+                if len(init_matches) == 1:
+                    user = init_matches[0]
+                    if not user.is_active:
+                        return None, ADVISER_STATUS_INACTIVE, display_name(user)
+                    return user, ADVISER_STATUS_VALID, display_name(user)
+            elif len(w1) == 1 and w1.isalpha():
+                init_matches = _users_matching_initial_and_surname(c_words[0], w1, role=['faculty', 'admin'])
+                if len(init_matches) == 1:
+                    user = init_matches[0]
+                    if not user.is_active:
+                        return None, ADVISER_STATUS_INACTIVE, display_name(user)
+                    return user, ADVISER_STATUS_VALID, display_name(user)
+
     all_matches = _users_matching_full_name(raw)
+    if not all_matches and cleaned:
+        all_matches = _users_matching_full_name(cleaned)
     if not all_matches:
-        any_user = _user_by_username_ref(raw)
+        any_user = _user_by_username_ref(raw) or (cleaned and _user_by_username_ref(cleaned))
         if any_user:
             return None, ADVISER_STATUS_NOT_ADVISER, display_name(any_user)
         return None, ADVISER_STATUS_USER_NOT_FOUND, ''
@@ -467,6 +665,7 @@ def preview_bulk_teams(
                 'adviser_id': (row.get('adviser_id') or row.get('adviser_name') or '').strip(),
                 'adviser_name': (row.get('adviser_name') or row.get('adviser_id') or '').strip(),
                 'adviser_status': ADVISER_STATUS_NONE,
+                'section': (row.get('section') or '').strip(),
                 'ready': False,
                 'issues': prep_issues,
             })
@@ -494,6 +693,7 @@ def preview_bulk_teams(
                 'adviser_id': (row.get('adviser_id') or row.get('adviser_name') or '').strip(),
                 'adviser_name': (row.get('adviser_name') or row.get('adviser_id') or '').strip(),
                 'adviser_status': ADVISER_STATUS_NONE,
+                'section': (row.get('section') or '').strip(),
                 'ready': False,
                 'issues': ['; '.join(format_bulk_import_errors(row_serializer.errors))],
             })

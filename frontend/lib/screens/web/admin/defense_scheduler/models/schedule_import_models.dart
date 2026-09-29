@@ -428,17 +428,55 @@ ImportNameMatch matchTeam(
   return ImportNameMatch(message: 'Team "${row.teamName}" was not found.');
 }
 
+final _prefixRegExp = RegExp(
+  r"^(?:associate\s+professor|assistant\s+professor|assoc\.?\s*prof\.?|asst\.?\s*prof\.?|prof(?:essor)?\.?|dr\.?|doctor|engr\.?|engineer|atty\.?|attorney|arch(?:itect)?\.?|dean|chair(?:person)?|inst(?:ructor)?\.?|lect(?:urer)?\.?|hon(?:orable)?\.?|rev(?:erend)?\.?|pastor|pst\.?|fr\.?|father|mr\.?|mrs\.?|ms\.?|mx\.?|sir|ma['\u2019]?am|mam)\b[\s\.]*",
+  caseSensitive: false,
+);
+
+final _suffixRegExp = RegExp(
+  r'(?:[\s,\.]+|\b)(?:ph\.?d\.?|d\.?eng\.?|d\.?i\.?t\.?|d\.?b\.?a\.?|ed\.?d\.?|m\.?d\.?|j\.?d\.?|sc\.?d\.?|m\.?sc\.?|m\.?s\.?|m\.?a\.?|m\.?eng\.?|m\.?i\.?t\.?|m\.?s\.?i\.?t\.?|m\.?b\.?a\.?|m\.?p\.?a\.?|m\.?ed\.?|b\.?sc\.?|b\.?s\.?|b\.?a\.?|b\.?s\.?i\.?t\.?|p\.?e\.?|c\.?p\.?a\.?|rce|ece|ree|rme|pmp|cisa|cissp|jr\.?|sr\.?|ii|iii|iv|v)\.?$',
+  caseSensitive: false,
+);
+
+String cleanPersonName(String value) {
+  var s = value.trim();
+  String? prev;
+  while (s != prev) {
+    prev = s;
+    s = s.replaceAll(_suffixRegExp, '').trim();
+    s = s.replaceAll(_prefixRegExp, '').trim();
+  }
+  if (s.contains(',')) {
+    final parts = s.split(',').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+    if (parts.length == 2) {
+      final last = parts[0].replaceAll(_prefixRegExp, '').trim();
+      final first = parts[1].replaceAll(_prefixRegExp, '').trim();
+      return '$first $last'.trim();
+    }
+  }
+  return s;
+}
+
 ImportNameMatch matchPanelist(String rawName, DefenseSchedulerState state) {
   final name = normalizeName(rawName);
   if (name.isEmpty) {
     return const ImportNameMatch(message: 'Panelist name is missing.');
   }
   final pool = state.faculty.isNotEmpty ? state.faculty : state.panelists;
+  final cleanInput = normalizeName(cleanPersonName(rawName));
 
-  // 1. Exact full name / username
+  // 1. Exact full name / username / title-cleaned name
   final exact = pool.where((panelist) {
-    return normalizeName(panelist['name']?.toString() ?? '') == name ||
-        normalizeName(panelist['username']?.toString() ?? '') == name;
+    final pName = panelist['name']?.toString() ?? '';
+    final pUser = panelist['username']?.toString() ?? '';
+    final normPName = normalizeName(pName);
+    final normPUser = normalizeName(pUser);
+    if (normPName == name || normPUser == name) return true;
+    if (cleanInput.isNotEmpty) {
+      final cleanPName = normalizeName(cleanPersonName(pName));
+      if (cleanPName == cleanInput || normPName == cleanInput) return true;
+    }
+    return false;
   }).toList();
   if (exact.length == 1) {
     return ImportNameMatch(id: asInt(exact.first['id']));
@@ -447,12 +485,15 @@ ImportNameMatch matchPanelist(String rawName, DefenseSchedulerState state) {
     return ImportNameMatch(message: 'Panelist "$rawName" is ambiguous.');
   }
 
-  // 2. Exact Last Name
+  // 2. Exact Last Name (checking raw and cleaned)
+  final cleanLastInput = cleanInput.split(RegExp(r'\s+')).last;
   final lastNameMatches = pool.where((panelist) {
     final display = panelist['name']?.toString() ?? '';
     final parts = display.trim().split(RegExp(r'\s+'));
     final last = parts.isEmpty ? '' : parts.last;
-    return normalizeName(last) == name;
+    final normLast = normalizeName(last);
+    final cleanLast = normalizeName(cleanPersonName(last));
+    return normLast == name || normLast == cleanInput || (cleanLastInput.isNotEmpty && cleanLast == cleanLastInput && cleanInput.split(RegExp(r'\s+')).length == 1);
   }).toList();
   if (lastNameMatches.length == 1) {
     return ImportNameMatch(id: asInt(lastNameMatches.first['id']));
@@ -471,7 +512,8 @@ ImportNameMatch matchPanelist(String rawName, DefenseSchedulerState state) {
     final last = parts.isEmpty ? '' : parts.last;
     final simFull = stringSimilarity(rawName, display);
     final simLast = stringSimilarity(rawName, last);
-    if (simFull >= 0.85 || simLast >= 0.85) {
+    final simClean = cleanInput.isNotEmpty ? stringSimilarity(cleanInput, normalizeName(cleanPersonName(display))) : 0.0;
+    if (simFull >= 0.85 || simLast >= 0.85 || simClean >= 0.85) {
       fuzzyMatches.add(panelist);
     }
   }
@@ -493,11 +535,20 @@ ImportNameMatch matchDocumenter(String rawName, DefenseSchedulerState state) {
     return const ImportNameMatch();
   }
   final pool = state.faculty.isNotEmpty ? state.faculty : state.documenters;
+  final cleanInput = normalizeName(cleanPersonName(rawName));
 
-  // 1. Exact full name / username
+  // 1. Exact full name / username / title-cleaned name
   final exact = pool.where((doc) {
-    return normalizeName(doc['name']?.toString() ?? '') == name ||
-        normalizeName(doc['username']?.toString() ?? '') == name;
+    final dName = doc['name']?.toString() ?? '';
+    final dUser = doc['username']?.toString() ?? '';
+    final normDName = normalizeName(dName);
+    final normDUser = normalizeName(dUser);
+    if (normDName == name || normDUser == name) return true;
+    if (cleanInput.isNotEmpty) {
+      final cleanDName = normalizeName(cleanPersonName(dName));
+      if (cleanDName == cleanInput || normDName == cleanInput) return true;
+    }
+    return false;
   }).toList();
   if (exact.length == 1) {
     return ImportNameMatch(id: asInt(exact.first['id']));
@@ -506,12 +557,15 @@ ImportNameMatch matchDocumenter(String rawName, DefenseSchedulerState state) {
     return ImportNameMatch(message: 'Documenter "$rawName" is ambiguous.');
   }
 
-  // 2. Exact Last Name
+  // 2. Exact Last Name (checking raw and cleaned)
+  final cleanLastInput = cleanInput.split(RegExp(r'\s+')).last;
   final lastNameMatches = pool.where((doc) {
     final display = doc['name']?.toString() ?? '';
     final parts = display.trim().split(RegExp(r'\s+'));
     final last = parts.isEmpty ? '' : parts.last;
-    return normalizeName(last) == name;
+    final normLast = normalizeName(last);
+    final cleanLast = normalizeName(cleanPersonName(last));
+    return normLast == name || normLast == cleanInput || (cleanLastInput.isNotEmpty && cleanLast == cleanLastInput && cleanInput.split(RegExp(r'\s+')).length == 1);
   }).toList();
   if (lastNameMatches.length == 1) {
     return ImportNameMatch(id: asInt(lastNameMatches.first['id']));
