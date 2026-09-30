@@ -8,6 +8,7 @@ import '../../../../services/auth_provider.dart';
 import '../../../../services/rubric_engine_provider.dart';
 import '../../../../services/unsaved_changes_provider.dart';
 import '../../../../theme/app_theme.dart';
+import '../../../../theme/defensys_button_styles.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
@@ -972,21 +973,11 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     required String label,
     required VoidCallback? onTap,
   }) {
-    return SizedBox(
-      height: 40,
-      child: ElevatedButton.icon(
-        onPressed: onTap,
-        icon: Icon(icon, size: 18),
-        label: Text(label),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: DefensysUi.primaryMaroon,
-          foregroundColor: DefensysUi.accentGold,
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-        ),
-      ),
+    return ElevatedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon),
+      label: Text(label),
+      style: DefensysButtonStyles.primary(context),
     );
   }
 

@@ -1,9 +1,10 @@
+from grading.constants import PASS_GRADE_THRESHOLD
 import logging
 from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -208,7 +209,7 @@ class TeamGrade(models.Model):
                 return 'for_redefense'
         if self.final_grade is None:
             return 'pending'
-        return 'passed' if self.final_grade >= Decimal('75.00') else 'failed'
+        return 'passed' if self.final_grade >= PASS_GRADE_THRESHOLD else 'failed'
 
     def clean(self):
         errors = {}
@@ -229,6 +230,8 @@ class TeamGrade(models.Model):
             raise ValidationError(errors)
 
     def recalculate(self, keep_published=False):
+        if keep_published and self.status in self.LOCKED_STATUSES and not self.is_complete:
+            raise ValidationError({'status': 'A published grade cannot be made incomplete. Reopen it explicitly first.'})
         if self.is_complete:
             total = (
                 self.panel_score * Decimal(self.panel_weight)
@@ -261,6 +264,7 @@ class TeamGrade(models.Model):
         self.published_at = timezone.now()
         self.save()
 
+    @transaction.atomic
     def save(self, *args, clean=True, **kwargs):
         if self.scope == self.SCOPE_PIT:
             self.adviser_weight = 0

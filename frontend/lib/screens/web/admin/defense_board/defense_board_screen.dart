@@ -9,6 +9,7 @@ import '../../../../services/authenticated_client.dart';
 import '../../../../services/defense_board_provider.dart';
 import '../../../../services/defense_scheduler_provider.dart';
 import '../../../../theme/app_theme.dart';
+import '../../../../theme/defensys_button_styles.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../defense_scheduler/components/team_readiness_tracker.dart';
@@ -1090,134 +1091,66 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             alignment: WrapAlignment.end,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              // Tertiary / Quick Direct Action: Manual Schedule Form
-              SizedBox(
-                height: 40,
-                child: OutlinedButton.icon(
-                  onPressed: _openManualScheduleDialog,
-                  style: OutlinedButton.styleFrom(
-                    elevation: 0,
-                    foregroundColor: _textPrimaryColor,
-                    side: BorderSide(color: _borderColor),
-                    backgroundColor: _surfaceColor,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  icon: Icon(
-                    Icons.edit_calendar_outlined,
-                    size: 16,
-                    color: _textSecondaryColor,
-                  ),
-                  label: Text(
-                    'Manual Schedule',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      color: _textPrimaryColor,
-                    ),
-                  ),
-                ),
+              OutlinedButton.icon(
+                onPressed: _openManualScheduleDialog,
+                style: DefensysButtonStyles.secondary(context),
+                icon: const Icon(Icons.edit_calendar_outlined),
+                label: const Text('Manual Schedule'),
               ),
-              // Secondary / File Ingestion Action: Import Schedule (Warm Amber Pill)
-              SizedBox(
-                height: 40,
-                child: OutlinedButton.icon(
-                  onPressed: _openImportScheduleDialog,
-                  style: OutlinedButton.styleFrom(
-                    elevation: 0,
-                    foregroundColor: _isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E),
-                    side: BorderSide(color: _isDark ? const Color(0xFFB45309).withValues(alpha: 0.6) : const Color(0xFFFCD34D)),
-                    backgroundColor: _isDark ? const Color(0xFF78350F).withValues(alpha: 0.3) : const Color(0xFFFFFBEB),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  icon: Icon(
-                    Icons.upload_file_rounded,
-                    size: 16,
-                    color: _isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
-                  ),
-                  label: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Import Schedule',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13,
-                          color: _isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E),
+              OutlinedButton.icon(
+                onPressed: _openImportScheduleDialog,
+                style: DefensysButtonStyles.secondary(context),
+                icon: const Icon(Icons.upload_file_rounded),
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Import Schedule'),
+                    if (_hasImportDraft) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1.5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _isDark
+                              ? const Color(0xFFD97706)
+                              : const Color(0xFFB45309),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'DRAFT',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            letterSpacing: 0.5,
+                          ),
                         ),
                       ),
-                      if (_hasImportDraft) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                          decoration: BoxDecoration(
-                            color: _isDark ? const Color(0xFFD97706) : const Color(0xFFB45309),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Text(
-                            'DRAFT',
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-                      ],
                     ],
-                  ),
+                  ],
                 ),
               ),
-              // Primary Hero CTA: Generate Schedule (Academic Maroon + Gold Accent)
-              SizedBox(
-                height: 40,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    if (currentView == DefenseOperationsView.readiness && readyCount > 0) {
-                      _openScheduler(
-                        scope: effectiveReadinessScope,
-                        stageId: _selectedReadinessStageId,
-                        eventName: _selectedReadinessEventName,
-                      );
-                    } else {
-                      _openScheduler();
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    elevation: 1,
-                    shadowColor: AppColors.maroon.withValues(alpha: 0.3),
-                    backgroundColor: AppColors.maroon,
-                    foregroundColor: Colors.white,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  icon: const Icon(
-                    Icons.auto_awesome_rounded,
-                    size: 16,
-                    color: AppColors.gold,
-                  ),
-                  label: Text(
-                    currentView == DefenseOperationsView.readiness && readyCount > 0
-                        ? 'Schedule $readyCount Ready ${readyCount == 1 ? 'Team' : 'Teams'}'
-                        : 'Generate Schedule',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                      color: Colors.white,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
+              ElevatedButton.icon(
+                onPressed: () {
+                  if (currentView == DefenseOperationsView.readiness &&
+                      readyCount > 0) {
+                    _openScheduler(
+                      scope: effectiveReadinessScope,
+                      stageId: _selectedReadinessStageId,
+                      eventName: _selectedReadinessEventName,
+                    );
+                  } else {
+                    _openScheduler();
+                  }
+                },
+                style: DefensysButtonStyles.primary(context),
+                icon: const Icon(Icons.auto_awesome_rounded),
+                label: Text(
+                  currentView == DefenseOperationsView.readiness && readyCount > 0
+                      ? 'Schedule $readyCount Ready ${readyCount == 1 ? 'Team' : 'Teams'}'
+                      : 'Generate Schedule',
                 ),
               ),
             ],

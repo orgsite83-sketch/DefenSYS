@@ -1,3 +1,5 @@
+from grading.constants import PASS_GRADE_THRESHOLD
+from defensys_backend.file_cleanup import delete_repository_file_on_commit, replacement_file_name
 import csv
 import io
 import re
@@ -168,7 +170,7 @@ def _complete_passing_grades(scope):
         scope=scope,
         panel_score__isnull=False,
         peer_score__isnull=False,
-        final_grade__gte=Decimal('75.00'),
+        final_grade__gte=PASS_GRADE_THRESHOLD,
     )
     if scope == TeamGrade.SCOPE_CAPSTONE:
         grades = grades.filter(Q(adviser_weight=0) | Q(adviser_score__isnull=False))
@@ -350,7 +352,7 @@ def pit_upload_diagnostics(year_level, semester=None):
     )
     ready_for_archive = len(pit_archive_upload_queue(year_level, semester=semester))
     unpublished_passed = pit_grades.filter(
-        final_grade__gte=Decimal('75.00'),
+        final_grade__gte=PASS_GRADE_THRESHOLD,
     ).exclude(
         status=TeamGrade.STATUS_PUBLISHED,
     ).count()
@@ -596,7 +598,7 @@ def capstone_upload_diagnostics(semester=None):
     )
     ready_for_archive = len(capstone_archive_upload_queue(semester=semester))
     unpublished_passed = capstone_grades.filter(
-        final_grade__gte=Decimal('75.00'),
+        final_grade__gte=PASS_GRADE_THRESHOLD,
     ).exclude(
         status=TeamGrade.STATUS_PUBLISHED,
     ).count()
@@ -1217,9 +1219,8 @@ def _save_pit_archive_entry(user, *, file_name, file_obj, selected_year, academi
         },
     )
     if file_obj is not None:
-        if entry.file:
-            entry.file.delete(save=False)
-        entry.file.save(file_name, file_obj, save=False)
+        delete_repository_file_on_commit(entry.file)
+        entry.file.save(replacement_file_name(file_name), file_obj, save=False)
         entry.file_size = str(getattr(file_obj, 'size', '') or entry.file_size or '')
         entry.save()
         message = 'PIT file uploaded with document'
@@ -1422,9 +1423,8 @@ def _save_capstone_archive_entry(
         },
     )
     if file_obj is not None:
-        if entry.file:
-            entry.file.delete(save=False)
-        entry.file.save(file_name, file_obj, save=False)
+        delete_repository_file_on_commit(entry.file)
+        entry.file.save(replacement_file_name(file_name), file_obj, save=False)
         entry.file_size = str(getattr(file_obj, 'size', '') or entry.file_size or '')
         entry.save()
         message = 'Capstone file uploaded with document'

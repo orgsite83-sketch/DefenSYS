@@ -130,7 +130,7 @@ def panelist_result_payload(team_grade, panelist_key):
     }
     team_status = status_map.get(team_grade.status, 'Pending')
     if team_grade.final_grade is not None:
-        team_status = 'Approved' if team_grade.final_grade >= Decimal('75.00') else 'Failed'
+        team_status = 'Approved' if team_grade.final_grade >= PASS_GRADE_THRESHOLD else 'Failed'
 
     panel_w = team_grade.panel_weight
     peer_w = team_grade.peer_weight
@@ -910,12 +910,6 @@ def resolve_canonical_capstone_grade(grade):
     canonical = canonical_capstone_grade_for_team(grade.team, grade.semester, grade.stage_label)
     if canonical is None:
         return grade
-    if canonical.pk != grade.pk:
-        if _grade_has_score_data(grade):
-            _merge_stale_grade(grade, canonical)
-        else:
-            grade.delete()
-        canonical.refresh_from_db()
     return canonical
 
 
@@ -946,7 +940,7 @@ def _is_stale_placeholder(stale, canonical, schedule):
         return False
     if stale.stage_label == canonical.stage_label:
         return False
-    return True
+    return _is_unscheduled_placeholder_label(stale.stage_label)
 
 
 def _cleanup_stale_grades_for_schedule(canonical, schedule):
@@ -976,7 +970,7 @@ def _is_stale_unscheduled_placeholder(stale, canonical):
         return False
     if stale.stage_label == canonical.stage_label:
         return False
-    return True
+    return _is_unscheduled_placeholder_label(stale.stage_label)
 
 
 def _cleanup_stale_grades_for_unscheduled_team(canonical, team):
@@ -1315,7 +1309,7 @@ class GradeContextService:
             team=team,
             scope=scope,
             status=TeamGrade.STATUS_PUBLISHED,
-            final_grade__gte=Decimal('75.00'),
+            final_grade__gte=PASS_GRADE_THRESHOLD,
         )
         if semester:
             grades = grades.filter(semester=semester)

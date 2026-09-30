@@ -1,5 +1,6 @@
 import 'package:defensys/services/project_archive_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/theme/defensys_button_styles.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:flutter/material.dart';
 
@@ -40,29 +41,6 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
-  Widget _primaryButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback? onTap,
-  }) {
-    return SizedBox(
-      height: 40,
-      child: ElevatedButton.icon(
-        onPressed: onTap,
-        icon: Icon(icon, size: 16, color: AppColors.gold),
-        label: Text(label),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.maroon,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          padding: const EdgeInsets.symmetric(horizontal: 18),
-          textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
-        ),
-      ),
-    );
   }
 
   Widget _metricCard({
@@ -191,25 +169,23 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
         if (onManageProgramStageAccess != null) ...[
           OutlinedButton.icon(
             onPressed: onManageProgramStageAccess,
-            icon: const Icon(Icons.tune_rounded, size: 15),
+            icon: const Icon(Icons.tune_rounded),
             label: const Text('Program Stage Access ▾'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: isDark ? const Color(0xFFF87171) : AppColors.maroon,
-              side: BorderSide(color: isDark ? const Color(0xFFF87171) : AppColors.maroon),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
+            style: DefensysButtonStyles.secondary(context),
           ),
           const SizedBox(width: 12),
         ],
-        _primaryButton(
-          icon: state.isExporting
-              ? Icons.hourglass_top_rounded
-              : Icons.file_download_rounded,
-          label: state.isExporting ? 'Exporting...' : 'Export Archive Records',
-          onTap: (state.isSaving || state.isExporting) ? null : onExportCsv,
+        OutlinedButton.icon(
+          icon: Icon(
+            state.isExporting
+                ? Icons.hourglass_top_rounded
+                : Icons.file_download_rounded,
+          ),
+          label: Text(
+            state.isExporting ? 'Exporting...' : 'Export Archive Records',
+          ),
+          onPressed: (state.isSaving || state.isExporting) ? null : onExportCsv,
+          style: DefensysButtonStyles.secondary(context),
         ),
       ],
     );

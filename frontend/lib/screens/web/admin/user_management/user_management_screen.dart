@@ -7,6 +7,7 @@ import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/academic/student_academic_records_provider.dart';
 import 'package:defensys/services/user_management_provider.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
+import 'package:defensys/theme/defensys_button_styles.dart';
 import 'package:defensys/widgets/confirm_dialog.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 
@@ -396,33 +397,24 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   Widget _buildHeaderActions(UserManagementState state) {
     if (_currentTab == UserManagementTab.students) {
       final studentState = ref.watch(studentAcademicRecordsProvider);
-      return Row(
-        mainAxisSize: MainAxisSize.min,
+      return Wrap(
+        spacing: 12,
+        runSpacing: 8,
+        alignment: WrapAlignment.end,
         children: [
           OutlinedButton.icon(
+            onPressed: studentState.isSaving ? null : _showAddStudentDialog,
+            icon: const Icon(Icons.person_add_rounded),
+            label: const Text('Add Single Student'),
+            style: DefensysButtonStyles.secondary(context),
+          ),
+          ElevatedButton.icon(
             onPressed: studentState.isSaving
                 ? null
                 : () => _openStudentBatchHub(StudentHubMode.freshIntake),
-            icon: const Icon(Icons.dynamic_feed_rounded, size: 16),
+            icon: const Icon(Icons.dynamic_feed_rounded),
             label: const Text('Batch Enrollment'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: DefensysUi.primaryMaroon,
-              side: const BorderSide(color: DefensysUi.primaryMaroon),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            ),
-          ),
-          const SizedBox(width: 12),
-          ElevatedButton.icon(
-            onPressed: studentState.isSaving ? null : _showAddStudentDialog,
-            icon: const Icon(Icons.person_add_rounded, size: 16),
-            label: const Text('Add Single Student'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: DefensysUi.primaryMaroon,
-              foregroundColor: Colors.white,
-            ),
+            style: DefensysButtonStyles.primary(context),
           ),
         ],
       );

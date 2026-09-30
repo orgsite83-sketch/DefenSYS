@@ -6,6 +6,7 @@ import '../../../../services/academic_period_provider.dart';
 import '../../../../services/pit_instructor_provider.dart';
 import '../../../../services/pit_lead_cohort_provider.dart';
 import '../../../../services/user_management_provider.dart';
+import '../../../../theme/defensys_button_styles.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/defensys_skeleton.dart';
 import '../../../../widgets/feedback/empty_state.dart';
@@ -421,49 +422,28 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
     PitInstructorState instructorState,
   ) {
     if (_currentTab == _PitUserManagementTab.students) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
+      return Wrap(
+        spacing: 12,
+        runSpacing: 8,
+        alignment: WrapAlignment.end,
         children: [
           OutlinedButton.icon(
-            onPressed: cohortState.isSaving ? null : () => _openStudentBatchHub(),
-            icon: const Icon(Icons.dynamic_feed_rounded, size: 16),
-            label: const Text('Batch Enrollment'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _maroon,
-              side: const BorderSide(color: _maroon),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            ),
+            onPressed: cohortState.isSaving ? null : _showAddStudentDialog,
+            icon: const Icon(Icons.person_add_rounded),
+            label: const Text('Add Single Student'),
+            style: DefensysButtonStyles.secondary(context),
           ),
-          const SizedBox(width: 12),
           OutlinedButton.icon(
             onPressed: cohortState.isSaving ? null : _openRolloverPreview,
-            icon: const Icon(Icons.update_rounded, size: 16),
+            icon: const Icon(Icons.update_rounded),
             label: const Text('Rollover Preview'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _maroon,
-              side: const BorderSide(color: _maroon),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            ),
+            style: DefensysButtonStyles.secondary(context),
           ),
-          const SizedBox(width: 12),
           ElevatedButton.icon(
-            onPressed: cohortState.isSaving ? null : _showAddStudentDialog,
-            icon: const Icon(Icons.person_add_rounded, size: 16),
-            label: const Text('Add Single Student'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _maroon,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            ),
+            onPressed: cohortState.isSaving ? null : () => _openStudentBatchHub(),
+            icon: const Icon(Icons.dynamic_feed_rounded),
+            label: const Text('Batch Enrollment'),
+            style: DefensysButtonStyles.primary(context),
           ),
         ],
       );

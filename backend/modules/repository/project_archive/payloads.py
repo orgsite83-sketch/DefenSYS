@@ -165,16 +165,8 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
             ).exists()
 
     files = list(submission.files.all().order_by('-uploaded_at'))
-    if len(files) > 1:
-        latest = files[0]
-        for extra in files[1:]:
-            try:
-                if extra.file:
-                    extra.file.delete(save=False)
-            except Exception:
-                pass
-            extra.delete()
-        files = [latest]
+    # Preserve the existing latest-file presentation without deleting stored history.
+    files = files[:1]
 
     if not files:
         entry_id = f'pit-deliverable-{submission.id}' if is_pit else f'capstone-{submission.id}'

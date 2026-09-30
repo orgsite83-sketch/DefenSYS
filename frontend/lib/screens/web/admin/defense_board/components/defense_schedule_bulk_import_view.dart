@@ -11,6 +11,7 @@ import 'package:defensys/services/defense_stages_provider.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/utils/defense_schedule_import_parser.dart';
+import 'package:defensys/utils/export/defense_schedule_excel_generator.dart';
 import 'package:defensys/utils/import/schedule_import_draft.dart';
 import 'package:defensys/utils/state/unsaved_changes.dart';
 import 'package:defensys/utils/string_matching_utils.dart';
@@ -1071,7 +1072,7 @@ class _DefenseScheduleBulkImportViewState
                 OutlinedButton.icon(
                   onPressed: _downloadSampleTemplate,
                   icon: const Icon(Icons.download_rounded, size: 14),
-                  label: const Text('Download Sample Template'),
+                  label: const Text('Download Sample Template (.xlsx)'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _ink,
                     side: const BorderSide(color: Color(0xFFCBD5E1)),
@@ -3161,29 +3162,22 @@ class _DefenseScheduleBulkImportViewState
 
 
   Future<void> _downloadSampleTemplate() async {
-    if (_isPit) {
-      await downloadTextFile(
-        filename: 'defensys-pit-defense-schedule-template.csv',
-        content: 'DAY 1 - MAY 18, 2026,,,,,,,\n'
-            'SMART ROOM,,,,,,,\n'
-            '#,Time,Team Name,Adviser,Panel Chair,Panel Member 1,Panel Member 2,Panel Member 3\n'
-            '1,8:00 - 9:00,Team SkyLedger,Prof. Alex Santos,Suarez,Beltran,Corpuz,Villanueva\n'
-            '2,9:00 - 10:00,Team BioPulse,,Suarez,Beltran,Corpuz,Villanueva\n'
-            '3,10:00 - 11:00,Team SafeCity,,Tan,Reyes,Cruz,Santos\n'
-            '4,11:00 - 12:00,Team CodeLearners,,Tan,Reyes,Cruz,Santos\n',
+    try {
+      await downloadBinaryFile(
+        filename: _isPit
+            ? 'defensys-pit-defense-schedule-template.xlsx'
+            : 'defensys-capstone-defense-schedule-template.xlsx',
+        bytes: generateDefenseScheduleExcelBytes(isCapstone: !_isPit),
+        mimeType:
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       );
-    } else {
-      await downloadTextFile(
-        filename: 'defensys-capstone-defense-schedule-template.csv',
-        content: 'Concept Proposal,,,,,,,,\n'
-            '6/18/2026,,,,,,,,\n'
-            'Room 301,,,,,,,,\n'
-            '#,Time,Team Name,Adviser,Panel Chair,Panel Member 1,Panel Member 2,Panel Member 3,Documenter\n'
-            '1,8:00 - 9:00,Team Apex,Prof. Alex Santos,Dr. Alan Turing,Prof. Ada Lovelace,Dr. Grace Hopper,Prof. Claude Shannon,Engr. Mark Mendoza\n'
-            '2,9:00 - 10:00,Team Horizon,,Dr. Alan Turing,Prof. Ada Lovelace,Dr. Grace Hopper,Prof. Claude Shannon,\n'
-            '3,10:00 - 11:00,Team Nexus,,Dr. Maria Santos,Prof. Robert Taylor,Dr. Grace Miller,Engr. Alan Cruz,\n'
-            '4,11:00 - 12:00,Team Pulse,,Dr. Maria Santos,Prof. Robert Taylor,Dr. Grace Miller,Engr. Alan Cruz,\n',
-      );
+    } catch (_) {
+      if (mounted) {
+        showErrorToast(
+          context,
+          'Unable to download the schedule template. Please try again.',
+        );
+      }
     }
   }
 
@@ -3345,7 +3339,7 @@ class _DefenseScheduleBulkImportViewState
                           _downloadSampleTemplate();
                         },
                         icon: const Icon(Icons.download_rounded, size: 15),
-                        label: const Text('Download Sample Template (.csv)'),
+                        label: const Text('Download Sample Template (.xlsx)'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: _ink,
                           side: const BorderSide(color: _line),
@@ -3428,8 +3422,8 @@ class _DefenseScheduleBulkImportViewState
                       const SizedBox(width: 5),
                       Text(
                         isPit
-                            ? 'pit_defense_schedule.csv'
-                            : 'capstone_defense_schedule.csv',
+                            ? 'pit_defense_schedule.xlsx'
+                            : 'capstone_defense_schedule.xlsx',
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -4464,4 +4458,3 @@ class _CommitteeSessionGroup {
   int get issueCount => rows.where((r) => !r.ready).length;
   int get totalCount => rows.length;
 }
-

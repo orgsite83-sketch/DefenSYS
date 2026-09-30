@@ -1,6 +1,5 @@
-"""Resolve uploaded file URLs for API responses (local, presigned S3, or authenticated proxy)."""
+"""Resolve private uploaded files to the authenticated media proxy."""
 
-from django.conf import settings
 from django.urls import reverse
 
 
@@ -8,19 +7,10 @@ def resolve_uploaded_file_url(request, file_field):
     """
     Return a client-fetchable URL for an uploaded file.
 
-    - S3: django-storages presigned URL via storage.url()
-    - DEBUG + local disk: absolute /media/ URL
-    - Production + local disk: authenticated API proxy
+    Use the same authenticated proxy in development and production.
     """
     if not file_field:
         return ''
-
-    storage = file_field.storage
-    relative = storage.url(file_field.name)
-    if settings.DEBUG:
-        if request is not None:
-            return request.build_absolute_uri(relative)
-        return relative
 
     if request is not None:
         return request.build_absolute_uri(

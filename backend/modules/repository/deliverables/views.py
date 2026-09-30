@@ -292,7 +292,6 @@ class CompileWeeklyReportsView(APIView):
     permission_classes = [CanManageDeliverables]
 
     def post(self, request):
-        from student_teams.models import StudentTeam
         from .models import DeliverableSubmission
         from .pdf_generator import generate_weekly_reports_pdf
         
@@ -305,10 +304,11 @@ class CompileWeeklyReportsView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
+        team = get_allowed_team(request, team_id)
+        if not check_deliverable_write_permission(request.user, team):
+            return Response({'detail': 'You do not have permission to manage deliverables for this team.'}, status=status.HTTP_403_FORBIDDEN)
+
         try:
-            # Get team
-            team = StudentTeam.objects.get(id=team_id)
-            
             # Import WeeklyProgressReport model
             try:
                 from student_teams.weekly_progress.models import WeeklyProgressReport
@@ -336,24 +336,15 @@ class CompileWeeklyReportsView(APIView):
             file_name = f'{team.name.replace(" ", "_")}_WeeklyReports_Compiled.pdf'
             file_size = f'{len(pdf_content) / 1024:.2f} KB'
             
-            submission, created = DeliverableSubmission.objects.update_or_create(
-                team=team,
-                stage_label=stage_label,
-                deliverable_id='WPR',
-                defaults={
-                    'label': 'Weekly Progress Report',
-                    'deliverable_type': DeliverableSubmission.TYPE_PRE,
-                    'required': True,
-                    'file_name': file_name,
-                    'file_size': file_size,
-                    'uploaded_by': request.user,
-                }
+            from django.core.files.base import ContentFile
+            created = not DeliverableSubmission.objects.filter(
+                team=team, stage_label=stage_label, deliverable_id='WPR',
+            ).exists()
+            upsert_submission(
+                team, stage_label, 'WPR', file_name, file_size, request.user,
+                file=ContentFile(pdf_content, name=file_name),
             )
-            
-            # Optionally save PDF file to storage
-            # from django.core.files.base import ContentFile
-            # submission.file.save(file_name, ContentFile(pdf_content))
-            
+
             return Response({
                 'success': True,
                 'file_name': file_name,
@@ -362,16 +353,8 @@ class CompileWeeklyReportsView(APIView):
                 'created': created,
             }, status=status.HTTP_200_OK)
             
-        except StudentTeam.DoesNotExist:
-            return Response(
-                {'error': 'Team not found.'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        except Exception as e:
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        except (PermissionError, ValueError, ValidationError) as exc:
+            return deliverable_error_response(exc)
 
 
 class CapstoneDeliverableReviewView(APIView):

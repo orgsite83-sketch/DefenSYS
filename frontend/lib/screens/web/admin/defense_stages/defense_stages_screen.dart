@@ -8,6 +8,7 @@ import '../../../../services/academic_period_provider.dart';
 import '../../../../services/rubric_engine_provider.dart';
 import '../../../../services/unsaved_changes_provider.dart';
 import '../../../../theme/app_theme.dart';
+import '../../../../theme/defensys_button_styles.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
@@ -189,47 +190,21 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           spacing: 12,
           runSpacing: 12,
           children: [
-            SizedBox(
-              height: 42,
-              child: OutlinedButton.icon(
-                onPressed: state.isSaving
-                    ? null
-                    : () => ref
-                          .read(defenseStagesProvider.notifier)
-                          .fetchStages(),
-                icon: const Icon(Icons.sync_rounded, size: 17),
-                label: const Text('Refresh Stages'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _textPrimaryColor,
-                  side: BorderSide(color: _borderColor),
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  textStyle: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
+            TextButton.icon(
+              onPressed: state.isSaving
+                  ? null
+                  : () => ref
+                        .read(defenseStagesProvider.notifier)
+                        .fetchStages(),
+              icon: const Icon(Icons.sync_rounded),
+              label: const Text('Refresh Stages'),
+              style: DefensysButtonStyles.tertiary(context),
             ),
-            SizedBox(
-              height: 42,
-              child: ElevatedButton.icon(
-                onPressed: state.isSaving ? null : () => _showStageDialog(),
-                icon: const Icon(Icons.add_rounded, size: 19),
-                label: const Text('Add Stage'),
-                style: ElevatedButton.styleFrom(
-                  elevation: 0,
-                  backgroundColor: AppColors.maroon,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  textStyle: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.1,
-                  ),
-                ),
-              ),
+            ElevatedButton.icon(
+              onPressed: state.isSaving ? null : () => _showStageDialog(),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Add Stage'),
+              style: DefensysButtonStyles.primary(context),
             ),
           ],
         ),

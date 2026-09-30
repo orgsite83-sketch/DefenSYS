@@ -1,9 +1,7 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'panelist_models.dart';
 import '../../../utils/universal_file_viewer.dart';
 import '../../../config/api_config.dart';
@@ -1016,40 +1014,23 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       ),
     );
 
+    var loadingOpen = true;
     try {
-      if (kIsWeb) {
-        final bytes = await ref
-            .read(authenticatedHttpClientProvider)
-            .fetchAuthenticatedFile(fileUrl);
-        if (mounted && Navigator.canPop(context)) Navigator.pop(context);
-        if (!mounted) return;
-        await viewFileInDialog(
-          context: context,
-          fileBytes: bytes,
-          fileName: fileName,
-        );
-      } else {
-        if (mounted && Navigator.canPop(context)) Navigator.pop(context);
-        final resolvedUrl = ApiConfig.authenticatedMediaUrl(fileUrl);
-        final uri = Uri.parse(resolvedUrl);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        } else {
-          if (mounted) showErrorToast(context, 'Cannot open file: $resolvedUrl');
-        }
-      }
+      final bytes = await ref
+          .read(authenticatedHttpClientProvider)
+          .fetchAuthenticatedFile(fileUrl);
+      if (!mounted) return;
+      Navigator.pop(context);
+      loadingOpen = false;
+      await viewFileInDialog(
+        context: context,
+        fileBytes: bytes,
+        fileName: fileName,
+      );
     } catch (e) {
-      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
-      if (mounted) {
-        try {
-          final uri = Uri.parse(ApiConfig.authenticatedMediaUrl(fileUrl));
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        } catch (_) {
-          if (mounted) {
-            showErrorToast(context, 'Error opening file: $e');
-          }
-        }
-      }
+      if (!mounted) return;
+      if (loadingOpen && Navigator.canPop(context)) Navigator.pop(context);
+      showErrorToast(context, 'Error opening file: $e');
     }
   }
 

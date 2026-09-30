@@ -16,10 +16,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from django.conf import settings
-from django.conf.urls.static import static
 
-from defensys_backend.media_views import AuthenticatedMediaFileView
+from defensys_backend.media_views import AuthenticatedMediaFileView, PublicAvatarFileView
 from defensys_backend.views import HealthCheckView
 from authentication_access_control.password_reset import (
     ConfirmPasswordResetAPIView,
@@ -28,6 +26,8 @@ from authentication_access_control.password_reset import (
 )
 
 urlpatterns = [
+    path('media/avatars/<path:file_path>', PublicAvatarFileView.as_view()),
+    path('media/<path:file_path>', AuthenticatedMediaFileView.as_view()),
     path('admin/', admin.site.urls),
     path('api/health/', HealthCheckView.as_view(), name='health_check'),
     path('api/', include('authentication_access_control.urls')),
@@ -51,7 +51,3 @@ urlpatterns = [
     path('api/password-reset/verify-otp/', VerifyPasswordResetOTPView.as_view(), name='password_reset_verify_otp'),
     path('api/password-reset/confirm/', ConfirmPasswordResetAPIView.as_view(), name='password_reset_confirm'),
 ]
-
-# Serve media files in development (local disk only)
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

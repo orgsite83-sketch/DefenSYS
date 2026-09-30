@@ -1132,7 +1132,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Widget _buildESignatureCard(Map<String, dynamic> user) {
     final eSigPath = user['e_signature']?.toString();
     final eSigUrl = eSigPath != null && eSigPath.isNotEmpty
-        ? ApiConfig.publicMediaUrl(eSigPath)
+        ? ApiConfig.authenticatedMediaUrl(eSigPath)
         : null;
 
     return Container(
@@ -1270,6 +1270,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       padding: const EdgeInsets.all(12),
                       child: Image.network(
                         eSigUrl,
+                        headers: {
+                          'Authorization': 'Bearer ${ref.watch(authProvider).token}',
+                        },
                         fit: BoxFit.contain,
                         errorBuilder: (_, __, ___) => const Column(
                           mainAxisAlignment: MainAxisAlignment.center,

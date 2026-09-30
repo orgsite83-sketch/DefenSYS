@@ -1,3 +1,4 @@
+from defensys_backend.file_cleanup import delete_repository_file_on_commit, replacement_file_name
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
@@ -1060,16 +1061,8 @@ def submission_payload(submission):
         return None
         
     files_list = list(submission.files.all().order_by('-uploaded_at'))
-    if len(files_list) > 1:
-        latest = files_list[0]
-        for extra in files_list[1:]:
-            try:
-                if extra.file:
-                    extra.file.delete(save=False)
-            except Exception:
-                pass
-            extra.delete()
-        files_list = [latest]
+    # Preserve the existing latest-file presentation without deleting stored history.
+    files_list = files_list[:1]
 
     files_data = []
     for f in files_list:
@@ -1271,7 +1264,7 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
         )
 
     # Ensure DeliverableSubmission container exists
-    submission, created = DeliverableSubmission.objects.get_or_create(
+    submission, created = DeliverableSubmission.objects.select_for_update().get_or_create(
         team=team,
         stage_label=stage_label,
         deliverable_id=deliverable_id,
@@ -1317,21 +1310,12 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
         file_obj = submission.files.order_by('uploaded_at').first()
         # Clean up any secondary duplicate files if they exist from past uploads
         for extra in submission.files.exclude(id=file_obj.id):
-            try:
-                if extra.file:
-                    extra.file.delete(save=False)
-            except Exception:
-                pass
+            delete_repository_file_on_commit(extra.file)
             extra.delete()
 
-    target_file_name = file_name.strip()
+    target_file_name = replacement_file_name(file_name.strip())
     if file_obj and file_obj.file and file is not None:
-        import os
-        target_file_name = os.path.basename(file_obj.file.name)
-        try:
-            file_obj.file.delete(save=False)
-        except Exception:
-            pass
+        delete_repository_file_on_commit(file_obj.file)
 
     if file_obj:
         file_obj.file_name = file_name.strip()
@@ -1388,11 +1372,7 @@ def remove_submission(team, stage_label, deliverable_id, file_id=None):
     if file_id:
         file_to_delete = submission.files.filter(id=file_id).first()
         if file_to_delete:
-            if file_to_delete.file:
-                try:
-                    file_to_delete.file.delete(save=False)
-                except Exception:
-                    pass
+            delete_repository_file_on_commit(file_to_delete.file)
             file_to_delete.delete()
             deleted = 1
             
@@ -1413,11 +1393,8 @@ def remove_submission(team, stage_label, deliverable_id, file_id=None):
             submission.save()
     else:
         for f in submission.files.all():
-            if f.file:
-                try:
-                    f.file.delete(save=False)
-                except Exception:
-                    pass
+            delete_repository_file_on_commit(f.file)
+        delete_repository_file_on_commit(submission.file)
         submission.delete()
         deleted = 1
 

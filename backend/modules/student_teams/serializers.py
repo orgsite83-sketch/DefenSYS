@@ -309,64 +309,6 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         if len(members) != len(member_ids):
             raise serializers.ValidationError({'member_ids': 'All members must be valid student users.'})
 
-        # Check if any student is already in another team
-        team_id = self.context.get('team_id')  # Current team ID when updating
-        target_level = attrs.get('level') or (self.instance.level if self.instance else '')
-        is_pit_team = 'PIT' in target_level.upper() if target_level else False
-        event_name = (attrs.get('current_defense_stage') or (self.instance.current_defense_stage if self.instance else '') or '').strip()
-
-        for student_id in member_ids:
-            if is_pit_team:
-                existing_memberships = TeamMembership.objects.filter(
-                    student_id=student_id,
-                    team__semester__is_active=True,
-                    team__level__icontains='PIT',
-                )
-                if team_id:
-                    existing_memberships = existing_memberships.exclude(team_id=team_id)
-
-                if event_name:
-                    # In PIT, a student cannot be in more than one team for the SAME PIT event
-                    existing_in_event = existing_memberships.filter(
-                        Q(team__current_defense_stage=event_name)
-                        | Q(team__defense_schedules__event_name=event_name)
-                    ).distinct()
-                    if existing_in_event.exists():
-                        student = User.objects.get(pk=student_id)
-                        current_team = existing_in_event.first().team
-                        student_name = display_name(student)
-                        raise serializers.ValidationError({
-                            'member_ids': f'{student_name} is already assigned to team "{current_team.name}" for {event_name}. A student can only be in one team per PIT event.'
-                        })
-                else:
-                    # If no event is specified, check against other PIT teams that also have no event specified
-                    existing_unassigned = existing_memberships.filter(
-                        Q(team__current_defense_stage__isnull=True) | Q(team__current_defense_stage='')
-                    ).distinct()
-                    if existing_unassigned.exists():
-                        student = User.objects.get(pk=student_id)
-                        current_team = existing_unassigned.first().team
-                        student_name = display_name(student)
-                        raise serializers.ValidationError({
-                            'member_ids': f'{student_name} is already assigned to team "{current_team.name}". A student can only be in one team at a time.'
-                        })
-            else:
-                # Capstone: student can only be in one Capstone team per semester
-                existing_memberships = TeamMembership.objects.filter(
-                    student_id=student_id,
-                    team__semester__is_active=True,
-                    team__level__icontains='Capstone',
-                )
-                if team_id:
-                    existing_memberships = existing_memberships.exclude(team_id=team_id)
-                if existing_memberships.exists():
-                    student = User.objects.get(pk=student_id)
-                    current_team = existing_memberships.first().team
-                    student_name = display_name(student)
-                    raise serializers.ValidationError({
-                        'member_ids': f'{student_name} is already assigned to team "{current_team.name}". A student can only be in one Capstone team at a time.'
-                    })
-
         try:
             attrs['leader'] = User.objects.get(pk=attrs['leader_id'], role='student')
         except User.DoesNotExist as exc:
@@ -470,6 +412,12 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             except ValueError as exc:
                 raise serializers.ValidationError({'non_field_errors': [str(exc)]}) from exc
 
+        self._assert_members_available(
+            member_ids, semester, attrs['level'],
+            attrs.get('current_defense_stage'),
+            self.instance.pk if self.instance else None,
+        )
+
         existing = StudentTeam.objects.filter(name=attrs['name'], level=attrs['level'])
         team_id = self.context.get('team_id')
         if team_id:
@@ -490,6 +438,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
     @transaction.atomic
     def create(self, validated_data):
         member_ids = validated_data.pop('member_ids')
+        self._lock_members(member_ids)
         reason = validated_data.pop('adviser_change_reason', '')
         team = StudentTeam.objects.create(
             name=validated_data['name'],
@@ -520,6 +469,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
     @transaction.atomic
     def update(self, instance, validated_data):
         member_ids = validated_data.pop('member_ids')
+        self._lock_members(member_ids)
         reason = validated_data.pop('adviser_change_reason', '')
         previous_adviser_id = instance.adviser_id
         instance.name = validated_data['name']
@@ -560,33 +510,50 @@ class StudentTeamWriteSerializer(serializers.Serializer):
 
         return active
 
-    def _sync_members(self, team, member_ids, leader_id):
-        # Remove old memberships for this team
-        team.memberships.all().delete()
-        
-        # Remove students from conflicting teams in the same semester
-        if team.is_pit:
-            event_name = (team.current_defense_stage or '').strip()
+    @staticmethod
+    def _lock_members(member_ids):
+        # Lock stable student rows: membership rows do not exist yet on creation.
+        # Ordering ensures overlapping concurrent assignments lock consistently.
+        list(User.objects.select_for_update().filter(pk__in=member_ids).order_by('pk'))
+
+    @staticmethod
+    def _assert_members_available(member_ids, semester, level, event_name, team_id=None):
+        conflicts = TeamMembership.objects.filter(
+            student_id__in=member_ids, team__semester=semester,
+        ).exclude(team_id=team_id)
+        if 'PIT' in level.upper():
+            conflicts = conflicts.filter(team__level__icontains='PIT')
+            event_name = (event_name or '').strip()
             if event_name:
-                TeamMembership.objects.filter(
-                    student_id__in=member_ids,
-                    team__semester=team.semester,
-                    team__current_defense_stage=event_name,
-                ).exclude(team=team).delete()
+                conflicts = conflicts.filter(
+                    Q(team__current_defense_stage=event_name)
+                    | Q(team__defense_schedules__event_name=event_name)
+                )
             else:
-                TeamMembership.objects.filter(
-                    student_id__in=member_ids,
-                    team__semester=team.semester,
-                    team__level__icontains='PIT',
-                    team__current_defense_stage__in=['', None],
-                ).exclude(team=team).delete()
+                conflicts = conflicts.filter(
+                    Q(team__current_defense_stage__isnull=True)
+                    | Q(team__current_defense_stage='')
+                )
         else:
-            TeamMembership.objects.filter(
-                student_id__in=member_ids,
-                team__semester=team.semester,
-                team__level__icontains='Capstone',
-            ).exclude(team=team).delete()
-        
+            conflicts = conflicts.filter(team__level__icontains='Capstone')
+        conflict = conflicts.select_related('team', 'student').first()
+        if conflict:
+            rule = 'one PIT team per event' if 'PIT' in level.upper() else 'one Capstone team'
+            raise serializers.ValidationError({
+                'member_ids': f'{display_name(conflict.student)} is already assigned to team '
+                f'"{conflict.team.name}". A student can only be in {rule} per semester.',
+            })
+
+    @transaction.atomic
+    def _sync_members(self, team, member_ids, leader_id):
+        self._lock_members(member_ids)
+        # Recheck after locking, including when another request assigned a student
+        # between serializer validation and saving. Never delete another team's roster.
+        self._assert_members_available(
+            member_ids, team.semester, team.level, team.current_defense_stage, team.pk,
+        )
+        team.memberships.all().delete()
+
         # Create new memberships
         memberships = [
             TeamMembership(

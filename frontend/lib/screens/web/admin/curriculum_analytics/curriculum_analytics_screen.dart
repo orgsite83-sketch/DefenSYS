@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../services/academic/curriculum_analytics_provider.dart';
 import '../../../../services/auth/auth_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
+import '../../../../theme/defensys_button_styles.dart';
 import '../../../../widgets/export/export.dart';
 import 'widgets/curriculum_academic_highlights.dart';
 import 'widgets/curriculum_projects_donut.dart';
@@ -214,7 +215,7 @@ class _CurriculumAnalyticsScreenState
         : (years.isNotEmpty ? years.first : '');
 
     return Container(
-      height: 38,
+      height: 44,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: DefensysTokens.surfaceOf(context),
@@ -816,16 +817,9 @@ class _CurriculumAnalyticsScreenState
   }) {
     return ElevatedButton.icon(
       onPressed: onTap,
-      icon: Icon(icon, size: 16, color: Colors.white),
+      icon: Icon(icon),
       label: Text(label),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: DefensysTokens.maroonOf(context),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
-      ),
+      style: DefensysButtonStyles.primary(context),
     );
   }
 
@@ -836,17 +830,9 @@ class _CurriculumAnalyticsScreenState
   }) {
     return OutlinedButton.icon(
       onPressed: onTap,
-      icon: Icon(icon, size: 16, color: DefensysTokens.textPrimaryOf(context)),
+      icon: Icon(icon),
       label: Text(label),
-      style: OutlinedButton.styleFrom(
-        backgroundColor: DefensysTokens.surfaceOf(context),
-        foregroundColor: DefensysTokens.textPrimaryOf(context),
-        side: BorderSide(color: DefensysTokens.borderOf(context)),
-        elevation: 0,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
-      ),
+      style: DefensysButtonStyles.secondary(context),
     );
   }
 
@@ -907,5 +893,4 @@ class _CurriculumAnalyticsScreenState
     return {};
   }
 }
-
 
