@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:defensys/theme/defensys_tokens.dart';
+import 'package:defensys/widgets/confirm_dialog.dart';
+import 'schedule_import_review_widgets.dart';
+
 import 'package:defensys/navigation/admin_route_paths.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
@@ -79,13 +83,20 @@ class _DefenseScheduleBulkImportViewState
 
   bool _rubricLoading = false;
   bool _importBusy = false;
+  bool _awaitingImportConfirmation = false;
   List<String> _importErrors = [];
 
   Timer? _draftDebounce;
-  bool _draftRestored = false;
   DateTime? _draftSavedAt;
   String? _lastSavedSnapshot;
   bool _showIssuesOnly = false;
+  bool _showDraftRestoredNotice = false;
+  bool _showSettings = false;
+  String? _filterDate;
+  String? _filterRoom;
+  String? _importResultMessage;
+  final Set<String> _collapsedSessions = {};
+  final ScrollController _reviewScrollController = ScrollController();
 
   bool get _isPit => widget.scope == 'pit';
 
@@ -108,6 +119,7 @@ class _DefenseScheduleBulkImportViewState
   @override
   void dispose() {
     _draftDebounce?.cancel();
+    _reviewScrollController.dispose();
     _searchCtrl.dispose();
     _dateController.dispose();
     _roomController.dispose();
@@ -153,10 +165,7 @@ class _DefenseScheduleBulkImportViewState
       _panelWeight = existingDraft.panelWeight;
       _peerWeight = existingDraft.peerWeight;
 
-      _evaluateStageMatching(
-        parsed: _parsed!,
-        schedState: schedState,
-      );
+      _evaluateStageMatching(parsed: _parsed!, schedState: schedState);
 
       if (existingDraft.stageId != null) {
         _importStageId = existingDraft.stageId;
@@ -170,13 +179,14 @@ class _DefenseScheduleBulkImportViewState
       if (existingDraft.eventName.isNotEmpty) {
         _importEventName = existingDraft.eventName;
         if (_headerMatch != null && _headerMatch!.isMatched) {
-          if (_headerMatch!.label.toLowerCase() == _importEventName.toLowerCase()) {
+          if (_headerMatch!.label.toLowerCase() ==
+              _importEventName.toLowerCase()) {
             _mismatchWarning = null;
           }
         }
       }
 
-      _draftRestored = true;
+      _showDraftRestoredNotice = true;
       _draftSavedAt = existingDraft.savedAt;
       _lastSavedSnapshot = _currentDraftSnapshot();
     }
@@ -215,7 +225,7 @@ class _DefenseScheduleBulkImportViewState
       rowCount: _parsed!.rows.length,
     );
     await saveScheduleImportDraft(draft);
-    _draftSavedAt = draft.savedAt;
+    if (mounted) setState(() => _draftSavedAt = draft.savedAt);
     _lastSavedSnapshot = _currentDraftSnapshot();
     if (showToast && mounted) {
       showSuccessToast(context, 'Schedule import draft saved.');
@@ -236,7 +246,14 @@ class _DefenseScheduleBulkImportViewState
     setState(() {
       _parsed = null;
       _fileName = null;
-      _draftRestored = false;
+      _showDraftRestoredNotice = false;
+      _showSettings = false;
+      _filterDate = null;
+      _filterRoom = null;
+      _searchCtrl.clear();
+      _showIssuesOnly = false;
+      _collapsedSessions.clear();
+      _importResultMessage = null;
       _draftSavedAt = null;
       _headerMatch = null;
       _mismatchWarning = null;
@@ -331,9 +348,11 @@ class _DefenseScheduleBulkImportViewState
         _panelRubricName = config['panel_rubric_name']?.toString();
         _peerRubricName = config['peer_rubric_name']?.toString();
         _panelWeight =
-            int.tryParse(config['panel_weight']?.toString() ?? '') ?? _panelWeight;
+            int.tryParse(config['panel_weight']?.toString() ?? '') ??
+            _panelWeight;
         _peerWeight =
-            int.tryParse(config['peer_weight']?.toString() ?? '') ?? _peerWeight;
+            int.tryParse(config['peer_weight']?.toString() ?? '') ??
+            _peerWeight;
       } else {
         _panelRubricId = null;
         _peerRubricId = null;
@@ -434,13 +453,13 @@ class _DefenseScheduleBulkImportViewState
     try {
       final configuredStages = _isPit
           ? schedState.pitEvents
-              .map((e) => e['event_name']?.toString() ?? '')
-              .where((n) => n.isNotEmpty)
-              .toList()
+                .map((e) => e['event_name']?.toString() ?? '')
+                .where((n) => n.isNotEmpty)
+                .toList()
           : schedState.defenseStages
-              .map((s) => s['label']?.toString() ?? '')
-              .where((l) => l.isNotEmpty)
-              .toList();
+                .map((s) => s['label']?.toString() ?? '')
+                .where((l) => l.isNotEmpty)
+                .toList();
 
       final parsedResult = parseScheduleImportFile(
         bytes: bytes,
@@ -448,10 +467,7 @@ class _DefenseScheduleBulkImportViewState
         configuredStages: configuredStages,
       );
 
-      _evaluateStageMatching(
-        parsed: parsedResult,
-        schedState: schedState,
-      );
+      _evaluateStageMatching(parsed: parsedResult, schedState: schedState);
 
       final defaultRoom = parsedResult.room?.trim() ?? '';
       final rowsWithInitialRoom = defaultRoom.isNotEmpty
@@ -466,7 +482,17 @@ class _DefenseScheduleBulkImportViewState
       setState(() {
         _parsed = parsedResult.copyWith(rows: rowsWithInitialRoom);
         _fileName = file.name;
-        _draftRestored = false;
+        _importErrors = [];
+        _draftSavedAt = null;
+        _lastSavedSnapshot = null;
+        _showDraftRestoredNotice = false;
+        _showSettings = false;
+        _filterDate = null;
+        _filterRoom = null;
+        _searchCtrl.clear();
+        _showIssuesOnly = false;
+        _collapsedSessions.clear();
+        _importResultMessage = null;
         if (parsedResult.date != null && parsedResult.date!.isNotEmpty) {
           _dateController.text = normalizeImportDate(parsedResult.date!);
         }
@@ -529,16 +555,14 @@ class _DefenseScheduleBulkImportViewState
     return _isPit ? 'PIT Term' : 'Capstone Term';
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final schedState = ref.watch(defenseSchedulerProvider);
-    final activeSemLabel = _getActiveSemLabel(schedState);
-
-    final previewRows = _parsed == null
+  List<ScheduleImportPreviewRow> _buildPreviewRows(
+    DefenseSchedulerState state,
+  ) {
+    return _parsed == null
         ? <ScheduleImportPreviewRow>[]
         : buildScheduleImportPreviewRows(
             _parsed!,
-            schedState,
+            state,
             scope: widget.scope,
             stageId: _importStageId,
             eventName: _importEventName,
@@ -553,160 +577,275 @@ class _DefenseScheduleBulkImportViewState
             panelWeight: _panelWeight,
             peerWeight: _peerWeight,
           );
+  }
 
-    final readyRows = previewRows.where((row) => row.ready).toList();
-    final redefenseRows = previewRows.where((row) => row.isRedefense).length;
-    final passedRows = previewRows.where((row) => row.isAlreadyPassed).length;
-    final issueRows = previewRows.length - readyRows.length;
-    final totalRows = previewRows.length;
+  @override
+  Widget build(BuildContext context) {
+    final schedState = ref.watch(defenseSchedulerProvider);
+    final activeSemLabel = _getActiveSemLabel(schedState);
+    final previewRows = _buildPreviewRows(schedState);
+    final readyCount = previewRows.where((row) => row.ready).length;
+    final hasFile = _parsed != null;
 
     return PopScope(
-      canPop: !_isDirty(),
+      canPop: !_importBusy && !_isDirty(),
       onPopInvokedWithResult: (didPop, _) async {
-        if (didPop) return;
+        if (didPop || _importBusy) return;
         final canClose = await _handleAttemptClose();
-        if (canClose && mounted) {
-          widget.onBack();
-        }
+        if (canClose && mounted) widget.onBack();
       },
-      child: SingleChildScrollView(
-        padding: DefensysUi.contentPadding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DefensysPageHeader(
-              icon: Icons.schedule_send_rounded,
-              title: _isPit
-                  ? 'Bulk Import PIT Defense Schedules'
-                  : 'Bulk Import Capstone Defense Schedules',
-              subtitle: _isPit
-                  ? 'Upload and parse PIT defense timetables, match panel assignments, and commit ready slots.'
-                  : 'Upload and parse Capstone timetable spreadsheets, match panelists, and schedule defense slots.',
-              actions: Row(
-                mainAxisSize: MainAxisSize.min,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              controller: _reviewScrollController,
+              padding: DefensysUi.contentPadding,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (activeSemLabel.isNotEmpty) ...[
-                    _headerPill(activeSemLabel),
-                    const SizedBox(width: 10),
-                  ],
-                  OutlinedButton.icon(
-                    onPressed: _importBusy
-                        ? null
-                        : () async {
-                            final canClose = await _handleAttemptClose();
-                            if (canClose && mounted) {
-                              widget.onBack();
-                            }
-                          },
-                    icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                    label: const Text('Back to Defense Board'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _ink,
-                      side: const BorderSide(color: _line),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+                  _buildReviewPageHeader(activeSemLabel, hasFile),
+                  const SizedBox(height: 20),
+                  Text(
+                    hasFile
+                        ? 'Upload complete  /  Review & resolve  /  Import'
+                        : 'Upload spreadsheet  /  Review & resolve  /  Import',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: DefensysTokens.textSecondaryOf(context),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  if (hasFile)
+                    ScheduleImportFileSummary(
+                      fileName: _fileName,
+                      slotCount: previewRows.length,
+                      savedAt: _draftSavedAt,
+                      busy: _importBusy,
+                      onReplace: _pickFile,
+                      onViewGuide: () => _showScheduleBlueprintModal(
+                        context,
+                        isPit: _isPit,
+                        activeSemLabel: activeSemLabel,
+                      ),
+                    )
+                  else
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final format = _buildScheduleFormatCard(activeSemLabel);
+                        final upload = _buildScheduleUploadCard(0, 0);
+                        if (constraints.maxWidth < 960) {
+                          return Column(
+                            children: [
+                              upload,
+                              const SizedBox(height: 18),
+                              format,
+                            ],
+                          );
+                        }
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(flex: 5, child: format),
+                            const SizedBox(width: 20),
+                            Expanded(flex: 6, child: upload),
+                          ],
+                        );
+                      },
+                    ),
+                  const SizedBox(height: 16),
+                  if (_showDraftRestoredNotice && hasFile) ...[
+                    _buildDraftRestoredBanner(),
+                    const SizedBox(height: 16),
+                  ],
+                  if (_mismatchWarning != null) ...[
+                    _buildMismatchBanner(
+                      message: _mismatchWarning!,
+                      onDismiss: () => setState(() => _mismatchWarning = null),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  if (_parsed?.isRedefense == true) ...[
+                    _buildRedefenseBanner(),
+                    const SizedBox(height: 16),
+                  ],
+                  if (hasFile)
+                    _buildPreflightReviewCard(
+                      schedState: schedState,
+                      previewRows: previewRows,
+                    ),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
-
-            // Top 2-Column Section: Left is Smart Format Guide, Right is Primary Upload Action
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final isWide = constraints.maxWidth >= 960;
-                if (!isWide) {
-                  return Column(
-                    children: [
-                      _buildScheduleFormatCard(activeSemLabel),
-                      const SizedBox(height: 18),
-                      _buildScheduleUploadCard(totalRows, readyRows.length),
-                    ],
-                  );
-                }
-
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      flex: 5,
-                      child: _buildScheduleFormatCard(activeSemLabel),
-                    ),
-                    const SizedBox(width: 20),
-                    Expanded(
-                      flex: 6,
-                      child: _buildScheduleUploadCard(
-                        totalRows,
-                        readyRows.length,
-                      ),
-                    ),
-                  ],
-                );
-              },
+          ),
+          if (hasFile)
+            ScheduleImportActionBar(
+              totalCount: previewRows.length,
+              readyCount: readyCount,
+              busy: _importBusy,
+              validating: _rubricLoading,
+              onSave: () => _persistDraft(showToast: true),
+              onDiscard: _confirmDiscardDraft,
+              onImport: () => _importReadySlots(previewRows),
             ),
-            const SizedBox(height: 16),
-
-            // Draft Restored Notification Banner
-            if (_draftRestored && _parsed != null) ...[
-              _buildDraftRestoredBanner(
-                savedAt: _draftSavedAt,
-                rowCount: _parsed!.rows.length,
-                onDiscard: _discardDraft,
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // Mismatch Warning Banner
-            if (_mismatchWarning != null) ...[
-              _buildMismatchBanner(
-                message: _mismatchWarning!,
-                onDismiss: () => setState(() => _mismatchWarning = null),
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // Re-defense Notice Banner
-            if (_parsed?.isRedefense == true) ...[
-              _buildRedefenseBanner(),
-              const SizedBox(height: 16),
-            ],
-
-            // Preflight Defense Schedule Intake Review Card (Unified Table Card)
-            _buildPreflightReviewCard(
-              schedState: schedState,
-              previewRows: previewRows,
-              readyRows: readyRows,
-              redefenseRows: redefenseRows,
-              passedRows: passedRows,
-              issueRows: issueRows,
-              totalRows: totalRows,
-            ),
-          ],
-        ),
+        ],
       ),
     );
+  }
+
+  Future<void> _confirmDiscardDraft() async {
+    final confirmed = await confirmDestructive(
+      context,
+      title: 'Discard schedule draft?',
+      message:
+          'This removes the staged spreadsheet and your unsaved schedule changes.',
+      confirmLabel: 'Discard draft',
+    );
+    if (confirmed && mounted) await _discardDraft();
+  }
+
+  Widget _buildReviewPageHeader(String semester, bool hasFile) {
+    final actions = Wrap(
+      spacing: 12,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        _headerPill(semester),
+        OutlinedButton.icon(
+          onPressed: _importBusy
+              ? null
+              : () async {
+                  final canClose = await _handleAttemptClose();
+                  if (canClose && mounted) widget.onBack();
+                },
+          icon: const Icon(Icons.arrow_back_rounded, size: 16),
+          label: const Text('Back to Defense Board'),
+        ),
+      ],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 1000;
+        final heading = DefensysPageHeader(
+          icon: Icons.schedule_send_rounded,
+          title: hasFile
+              ? 'Review defense schedule'
+              : 'Import defense schedule',
+          subtitle: hasFile
+              ? 'Check assignments and resolve issues before importing.'
+              : 'Upload a ${_isPit ? 'PIT' : 'Capstone'} timetable to review and schedule defense slots.',
+          actions: narrow ? null : actions,
+        );
+        return narrow
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [heading, const SizedBox(height: 16), actions],
+              )
+            : heading;
+      },
+    );
+  }
+
+  Future<void> _importReadySlots(
+    List<ScheduleImportPreviewRow> previewRows,
+  ) async {
+    if (_importBusy || _awaitingImportConfirmation || _rubricLoading) return;
+    final readyRows = previewRows.where((row) => row.ready).toList();
+    if (readyRows.isEmpty) return;
+    final excluded = previewRows.length - readyRows.length;
+    try {
+      if (excluded > 0) {
+        _awaitingImportConfirmation = true;
+        final confirmed = await showConfirmDialog(
+          context,
+          title: 'Import ${readyRows.length} ready slots?',
+          message:
+              '$excluded ${excluded == 1 ? 'slot needs' : 'slots need'} attention and will be excluded from this import. These slots will remain in your draft.',
+          confirmLabel: 'Import ${readyRows.length} slots',
+        );
+        if (!confirmed || !mounted) return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _importBusy = true;
+        _importErrors = [];
+        _importResultMessage = null;
+      });
+      final result = await ref
+          .read(defenseSchedulerProvider.notifier)
+          .importSchedules(readyRows.map((row) => row.toPayload()).toList());
+      if (!mounted) return;
+      final created = result['created'] as int? ?? 0;
+      final errors =
+          (result['errors'] as List?)?.map((e) => e.toString()).toList() ??
+          <String>[];
+      final importedIndices =
+          (result['imported_indices'] as List?)?.whereType<int>().toList() ??
+          <int>[];
+      // Remove only confirmed successes so retrying does not recreate imported slots.
+      final importedSources = importedIndices
+          .where((index) => index >= 0 && index < readyRows.length)
+          .map((index) => readyRows[index].source)
+          .toSet();
+      if (_parsed != null && importedSources.isNotEmpty) {
+        _parsed = _parsed!.copyWith(
+          rows: _parsed!.rows
+              .where((row) => !importedSources.contains(row))
+              .toList(),
+        );
+      }
+      final remaining = _parsed?.rows.length ?? 0;
+      if (errors.isEmpty && remaining == 0) {
+        _draftDebounce?.cancel();
+        await clearScheduleImportDraft(scope: widget.scope);
+        if (!mounted) return;
+        _lastSavedSnapshot = null;
+        showSuccessToast(
+          context,
+          'Imported $created defense schedule slots. View them on the Defense Board.',
+        );
+        widget.onBack();
+      } else {
+        setState(() {
+          _importErrors = errors;
+          _importResultMessage = created > 0
+              ? 'Imported $created slots. $remaining ${remaining == 1 ? 'slot remains' : 'slots remain'} in your draft.'
+              : null;
+          _collapsedSessions.clear();
+        });
+        await _persistDraft();
+        if (_reviewScrollController.hasClients) {
+          _reviewScrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+          );
+        }
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _importErrors = ['Unable to import slots: $error']);
+      }
+    } finally {
+      _awaitingImportConfirmation = false;
+      if (mounted) setState(() => _importBusy = false);
+    }
   }
 
   Widget _headerPill(String text) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: DefensysTokens.surfaceHigherOf(context),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 11.5,
           fontWeight: FontWeight.w600,
-          color: Color(0xFF5D6678),
+          color: DefensysTokens.textSecondaryOf(context),
         ),
       ),
     );
@@ -731,10 +870,7 @@ class _DefenseScheduleBulkImportViewState
     );
   }
 
-  Widget _buildTemplateSpecTag(
-    String label, {
-    bool isRequired = false,
-  }) {
+  Widget _buildTemplateSpecTag(String label, {bool isRequired = false}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -769,70 +905,6 @@ class _DefenseScheduleBulkImportViewState
         ],
       ),
     );
-  }
-
-  Widget _buildHeaderStatBadge({
-    required String label,
-    required int count,
-    required Color color,
-    required Color bgColor,
-    required Color borderColor,
-    required IconData icon,
-    VoidCallback? onTap,
-    bool isSelected = false,
-  }) {
-    final badge = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4.5),
-      decoration: BoxDecoration(
-        color: isSelected ? color.withValues(alpha: 0.12) : bgColor,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: isSelected ? color : borderColor,
-          width: isSelected ? 1.5 : 1,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: 13,
-            color: color,
-          ),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-              color: isSelected ? color : const Color(0xFF475569),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            '$count',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (onTap != null) {
-      return Tooltip(
-        message: isSelected ? 'Show all slots' : 'Filter by $label slots',
-        waitDuration: const Duration(milliseconds: 400),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(6),
-          child: badge,
-        ),
-      );
-    }
-    return badge;
   }
 
   Widget _buildScheduleFormatCard(String activeSemLabel) {
@@ -876,7 +948,7 @@ class _DefenseScheduleBulkImportViewState
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Target Term: $activeSemLabel â€¢ Standard Defense Timetable Format',
+                        'Target Term: $activeSemLabel · Standard Defense Timetable Format',
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
@@ -1058,8 +1130,10 @@ class _DefenseScheduleBulkImportViewState
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _ink,
                     side: const BorderSide(color: Color(0xFFCBD5E1)),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 9,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -1076,8 +1150,10 @@ class _DefenseScheduleBulkImportViewState
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _ink,
                     side: const BorderSide(color: Color(0xFFCBD5E1)),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 9,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -1144,12 +1220,9 @@ class _DefenseScheduleBulkImportViewState
                       const SizedBox(height: 2),
                       Text(
                         hasFile
-                            ? '$_fileName â€¢ $totalRows slot(s) staged â€¢ $readyCount ready'
+                            ? '$_fileName · $totalRows slot(s) staged · $readyCount ready'
                             : 'Supports official Microsoft Excel (.xlsx) and CSV (.csv) timetables',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: _muted,
-                        ),
+                        style: const TextStyle(fontSize: 12, color: _muted),
                       ),
                     ],
                   ),
@@ -1164,8 +1237,10 @@ class _DefenseScheduleBulkImportViewState
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 24,
+                  horizontal: 16,
+                ),
                 decoration: BoxDecoration(
                   color: hasFile
                       ? const Color(0xFFF0FDF4)
@@ -1203,7 +1278,7 @@ class _DefenseScheduleBulkImportViewState
                     const SizedBox(height: 4),
                     Text(
                       hasFile
-                          ? '$readyCount ready to schedule Â· ${issueCount > 0 ? '$issueCount needing review' : 'all valid'}'
+                          ? '$readyCount ready to schedule · ${issueCount > 0 ? '$issueCount needing review' : 'all valid'}'
                           : 'Multi-panelist, documenter, and custom rooms auto-matched',
                       textAlign: TextAlign.center,
                       style: TextStyle(
@@ -1249,75 +1324,34 @@ class _DefenseScheduleBulkImportViewState
     );
   }
 
-  Widget _buildDraftRestoredBanner({
-    required DateTime? savedAt,
-    required int rowCount,
-    required VoidCallback onDiscard,
-  }) {
-    final timeStr = savedAt != null
-        ? '${savedAt.hour.toString().padLeft(2, '0')}:${savedAt.minute.toString().padLeft(2, '0')}'
-        : '';
-
+  Widget _buildDraftRestoredBanner() {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF93C5FD)),
+        color: DefensysTokens.surfaceHigherOf(context),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
       ),
       child: Row(
         children: [
-          const Icon(Icons.history_rounded, color: Color(0xFF2563EB), size: 20),
-          const SizedBox(width: 12),
+          Icon(
+            Icons.history_rounded,
+            size: 18,
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+          const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Restored from saved draft ($rowCount staged ${rowCount == 1 ? 'row' : 'rows'}${timeStr.isNotEmpty ? ' Â· Saved at $timeStr' : ''})',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1E3A8A),
-                  ),
-                ),
-                const SizedBox(height: 2),
-                const Text(
-                  'Your previously uploaded schedule and configurations have been restored.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF3B82F6),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
+            child: Text(
+              'Draft restored. Your spreadsheet and settings are ready to review.',
+              style: TextStyle(
+                fontSize: 13,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
             ),
           ),
-          const SizedBox(width: 12),
-          OutlinedButton.icon(
-            onPressed: onDiscard,
-            icon: const Icon(
-              Icons.delete_outline_rounded,
-              size: 15,
-              color: Color(0xFFDC2626),
-            ),
-            label: const Text(
-              'Discard Draft',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFFDC2626),
-              ),
-            ),
-            style: OutlinedButton.styleFrom(
-              side: const BorderSide(color: Color(0xFFFCA5A5)),
-              backgroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
+          IconButton(
+            tooltip: 'Dismiss draft notification',
+            onPressed: () => setState(() => _showDraftRestoredNotice = false),
+            icon: const Icon(Icons.close_rounded, size: 18),
           ),
         ],
       ),
@@ -1418,8 +1452,8 @@ class _DefenseScheduleBulkImportViewState
     }
     final effectiveStageId =
         stageItems.any((item) => item.value == _importStageId)
-            ? _importStageId
-            : null;
+        ? _importStageId
+        : null;
 
     final pitEventItems = <DropdownMenuItem<String>>[];
     final seenEvents = <String>{};
@@ -1427,22 +1461,25 @@ class _DefenseScheduleBulkImportViewState
       final name = e['event_name']?.toString() ?? '';
       if (name.isNotEmpty && seenEvents.add(name)) {
         pitEventItems.add(
-          DropdownMenuItem<String>(
-            value: name,
-            child: Text(name),
-          ),
+          DropdownMenuItem<String>(value: name, child: Text(name)),
         );
       }
     }
     final effectiveEventName =
         pitEventItems.any((e) => e.value == _importEventName)
-            ? _importEventName
-            : null;
+        ? _importEventName
+        : null;
 
-    final pRubricName =
-        _getRubricName(schedState, _panelRubricId, _panelRubricName);
-    final aRubricName =
-        _getRubricName(schedState, _adviserRubricId, _adviserRubricName);
+    final pRubricName = _getRubricName(
+      schedState,
+      _panelRubricId,
+      _panelRubricName,
+    );
+    final aRubricName = _getRubricName(
+      schedState,
+      _adviserRubricId,
+      _adviserRubricName,
+    );
     final peRubricName = _isPit
         ? _getPeerRubricName(schedState, _peerRubricId, _peerRubricName)
         : _getRubricName(schedState, _peerRubricId, _peerRubricName);
@@ -1461,10 +1498,10 @@ class _DefenseScheduleBulkImportViewState
       if (_peerRubricId == null) missingPitRubrics.add('Peer');
     }
     final isPitRubricMissing = missingPitRubrics.isNotEmpty;
-    final isRubricMissing =
-        _isPit ? isPitRubricMissing : isCapstoneRubricMissing;
-    final missingRubrics =
-        _isPit ? missingPitRubrics : missingCapstoneRubrics;
+    final isRubricMissing = _isPit
+        ? isPitRubricMissing
+        : isCapstoneRubricMissing;
+    final missingRubrics = _isPit ? missingPitRubrics : missingCapstoneRubrics;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1473,9 +1510,7 @@ class _DefenseScheduleBulkImportViewState
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
           decoration: const BoxDecoration(
             color: Color(0xFFF8FAFC),
-            border: Border(
-              bottom: BorderSide(color: Color(0xFFE2E8F0)),
-            ),
+            border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
           ),
           child: Wrap(
             spacing: 16,
@@ -1484,7 +1519,10 @@ class _DefenseScheduleBulkImportViewState
             children: [
               // 1. Target Scope Group (Stage or PIT Event + Match indicator)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(8),
@@ -1503,13 +1541,19 @@ class _DefenseScheduleBulkImportViewState
                     Container(
                       padding: const EdgeInsets.all(5),
                       decoration: BoxDecoration(
-                        color: _isPit ? const Color(0xFFEFF6FF) : const Color(0xFFFEF2F2),
+                        color: _isPit
+                            ? const Color(0xFFEFF6FF)
+                            : const Color(0xFFFEF2F2),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Icon(
-                        _isPit ? Icons.event_note_rounded : Icons.school_outlined,
+                        _isPit
+                            ? Icons.event_note_rounded
+                            : Icons.school_outlined,
                         size: 15,
-                        color: _isPit ? const Color(0xFF2563EB) : DefensysUi.primaryMaroon,
+                        color: _isPit
+                            ? const Color(0xFF2563EB)
+                            : DefensysUi.primaryMaroon,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -1530,13 +1574,17 @@ class _DefenseScheduleBulkImportViewState
                         if (_isPit) ...[
                           DropdownButtonHideUnderline(
                             child: DropdownButton<String>(
-                              key: ValueKey('compact_pit_event_$effectiveEventName'),
+                              key: ValueKey(
+                                'compact_pit_event_$effectiveEventName',
+                              ),
                               value: effectiveEventName,
                               isDense: true,
                               hint: const Text(
                                 'Select PIT event',
                                 style: TextStyle(
-                                    fontSize: 12, color: Color(0xFF94A3B8)),
+                                  fontSize: 12,
+                                  color: Color(0xFF94A3B8),
+                                ),
                               ),
                               icon: const Padding(
                                 padding: EdgeInsets.only(left: 4),
@@ -1555,14 +1603,18 @@ class _DefenseScheduleBulkImportViewState
                               onChanged: (val) async {
                                 setState(() {
                                   _importEventName = val ?? '';
-                                  if (_headerMatch != null && _headerMatch!.isMatched) {
-                                    if (_headerMatch!.label.toLowerCase() == (val ?? '').toLowerCase()) {
+                                  if (_headerMatch != null &&
+                                      _headerMatch!.isMatched) {
+                                    if (_headerMatch!.label.toLowerCase() ==
+                                        (val ?? '').toLowerCase()) {
                                       _mismatchWarning = null;
                                     } else {
                                       _mismatchWarning =
                                           'File header specifies "${_headerMatch!.sourceText}" (matched to "${_headerMatch!.label}"), while selected target event is "$val".';
                                     }
-                                  } else if (_headerMatch != null && !_headerMatch!.isMatched && _headerMatch!.sourceText.isNotEmpty) {
+                                  } else if (_headerMatch != null &&
+                                      !_headerMatch!.isMatched &&
+                                      _headerMatch!.sourceText.isNotEmpty) {
                                     _mismatchWarning =
                                         'File header specifies event "${_headerMatch!.sourceText}", which does not match selected event "$val" (or any registered PIT event for this semester).';
                                   }
@@ -1582,7 +1634,9 @@ class _DefenseScheduleBulkImportViewState
                               hint: const Text(
                                 'Select stage',
                                 style: TextStyle(
-                                    fontSize: 12, color: Color(0xFF94A3B8)),
+                                  fontSize: 12,
+                                  color: Color(0xFF94A3B8),
+                                ),
                               ),
                               icon: const Padding(
                                 padding: EdgeInsets.only(left: 4),
@@ -1601,25 +1655,34 @@ class _DefenseScheduleBulkImportViewState
                               onChanged: (val) async {
                                 setState(() {
                                   _importStageId = val;
-                                  if (_headerMatch != null && _headerMatch!.isMatched) {
-                                    final matchedId = asInt(_headerMatch!.item?['id']);
+                                  if (_headerMatch != null &&
+                                      _headerMatch!.isMatched) {
+                                    final matchedId = asInt(
+                                      _headerMatch!.item?['id'],
+                                    );
                                     if (matchedId == val) {
                                       _mismatchWarning = null;
                                     } else {
-                                      final targetObj = schedState.defenseStages.firstWhere(
-                                        (s) => asInt(s['id']) == val,
-                                        orElse: () => <String, dynamic>{},
-                                      );
-                                      final targetLabel = targetObj['label'] ?? '';
+                                      final targetObj = schedState.defenseStages
+                                          .firstWhere(
+                                            (s) => asInt(s['id']) == val,
+                                            orElse: () => <String, dynamic>{},
+                                          );
+                                      final targetLabel =
+                                          targetObj['label'] ?? '';
                                       _mismatchWarning =
                                           'File header specifies "${_headerMatch!.sourceText}" (matched to "${_headerMatch!.label}"), while selected target stage is "$targetLabel".';
                                     }
-                                  } else if (_headerMatch != null && !_headerMatch!.isMatched && _headerMatch!.sourceText.isNotEmpty) {
-                                    final targetObj = schedState.defenseStages.firstWhere(
-                                      (s) => asInt(s['id']) == val,
-                                      orElse: () => <String, dynamic>{},
-                                    );
-                                    final targetLabel = targetObj['label'] ?? '';
+                                  } else if (_headerMatch != null &&
+                                      !_headerMatch!.isMatched &&
+                                      _headerMatch!.sourceText.isNotEmpty) {
+                                    final targetObj = schedState.defenseStages
+                                        .firstWhere(
+                                          (s) => asInt(s['id']) == val,
+                                          orElse: () => <String, dynamic>{},
+                                        );
+                                    final targetLabel =
+                                        targetObj['label'] ?? '';
                                     _mismatchWarning =
                                         'File header specifies stage "${_headerMatch!.sourceText}", which does not match selected stage "$targetLabel" (or any stage in your Academic Stage Chain).';
                                   }
@@ -1640,11 +1703,7 @@ class _DefenseScheduleBulkImportViewState
               ),
 
               // Vertical Divider between Scope and Parameters
-              Container(
-                height: 28,
-                width: 1,
-                color: const Color(0xFFCBD5E1),
-              ),
+              Container(height: 28, width: 1, color: const Color(0xFFCBD5E1)),
 
               // 2. Schedule Parameters Group (Date + Duration)
               Row(
@@ -1676,9 +1735,14 @@ class _DefenseScheduleBulkImportViewState
                           final picked = await showDatePicker(
                             context: context,
                             initialDate:
-                                DateTime.tryParse(_dateController.text) ?? today,
+                                DateTime.tryParse(_dateController.text) ??
+                                today,
                             firstDate: today,
-                            lastDate: DateTime(now.year + 3, now.month, now.day),
+                            lastDate: DateTime(
+                              now.year + 3,
+                              now.month,
+                              now.day,
+                            ),
                           );
                           if (picked != null) {
                             setState(() {
@@ -1784,7 +1848,9 @@ class _DefenseScheduleBulkImportViewState
                                   border: InputBorder.none,
                                   hintText: '60',
                                   hintStyle: TextStyle(
-                                      fontSize: 12, color: Color(0xFF94A3B8)),
+                                    fontSize: 12,
+                                    color: Color(0xFF94A3B8),
+                                  ),
                                 ),
                                 onChanged: (_) {
                                   setState(() {});
@@ -1809,11 +1875,7 @@ class _DefenseScheduleBulkImportViewState
               ),
 
               // Vertical Divider between Parameters and Rubrics
-              Container(
-                height: 28,
-                width: 1,
-                color: const Color(0xFFCBD5E1),
-              ),
+              Container(height: 28, width: 1, color: const Color(0xFFCBD5E1)),
 
               // 3. Evaluation Rubrics Group
               Row(
@@ -1853,8 +1915,8 @@ class _DefenseScheduleBulkImportViewState
                       _compactRubricPill(
                         label: 'Adviser',
                         value: aRubricName,
-                        isAssigned: _adviserRubricId != null &&
-                            aRubricName.isNotEmpty,
+                        isAssigned:
+                            _adviserRubricId != null && aRubricName.isNotEmpty,
                       ),
                     ],
                     const SizedBox(width: 6),
@@ -1910,7 +1972,9 @@ class _DefenseScheduleBulkImportViewState
             style: TextStyle(
               fontSize: 10.5,
               fontWeight: FontWeight.w600,
-              color: isAssigned ? const Color(0xFF166534) : const Color(0xFF991B1B),
+              color: isAssigned
+                  ? const Color(0xFF166534)
+                  : const Color(0xFF991B1B),
             ),
           ),
           Text(
@@ -1937,9 +2001,7 @@ class _DefenseScheduleBulkImportViewState
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       decoration: const BoxDecoration(
         color: Color(0xFFFFFBEB),
-        border: Border(
-          bottom: BorderSide(color: Color(0xFFFDE68A)),
-        ),
+        border: Border(bottom: BorderSide(color: Color(0xFFFDE68A))),
       ),
       child: Row(
         children: [
@@ -1967,15 +2029,18 @@ class _DefenseScheduleBulkImportViewState
               if (_isPit) {
                 context.go(FacultyRoutes.pitEvents);
               } else if (_importStageId != null) {
-                context.go(AdminRoutes.defenseStageEdit(
-                  _importStageId!,
-                  initialTab: 1,
-                ));
+                context.go(
+                  AdminRoutes.defenseStageEdit(_importStageId!, initialTab: 1),
+                );
               } else {
                 context.go(AdminRoutes.defenseStages);
               }
             },
-            icon: const Icon(Icons.tune_rounded, size: 13, color: Color(0xFF92400E)),
+            icon: const Icon(
+              Icons.tune_rounded,
+              size: 13,
+              color: Color(0xFF92400E),
+            ),
             label: Text(
               _isPit ? 'Configure Event' : 'Configure Stage Rubrics',
               style: const TextStyle(
@@ -2009,7 +2074,11 @@ class _DefenseScheduleBulkImportViewState
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.check_circle_outline, size: 12, color: Color(0xFF16A34A)),
+            const Icon(
+              Icons.check_circle_outline,
+              size: 12,
+              color: Color(0xFF16A34A),
+            ),
             const SizedBox(width: 4),
             Text(
               'Matched: "${match.sourceText}"',
@@ -2060,7 +2129,11 @@ class _DefenseScheduleBulkImportViewState
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.warning_amber_rounded, size: 12, color: Color(0xFFB45309)),
+          const Icon(
+            Icons.warning_amber_rounded,
+            size: 12,
+            color: Color(0xFFB45309),
+          ),
           const SizedBox(width: 4),
           Text(
             'Header in file: "${match.sourceText}"',
@@ -2075,507 +2148,228 @@ class _DefenseScheduleBulkImportViewState
     );
   }
 
+  void _clearReviewFilters() {
+    setState(() {
+      _searchCtrl.clear();
+      _showIssuesOnly = false;
+      _filterDate = null;
+      _filterRoom = null;
+    });
+  }
+
+  Widget _buildSettingsSummary(DefenseSchedulerState state) {
+    final stage = state.defenseStages
+        .where((s) => asInt(s['id']) == _importStageId)
+        .firstOrNull;
+    final label = _isPit ? _importEventName : stage?['label']?.toString() ?? '';
+    final complete =
+        _panelRubricId != null &&
+        _peerRubricId != null &&
+        (_isPit || _adviserRubricId != null);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              children: [
+                Text(
+                  label.isEmpty
+                      ? 'Select a ${_isPit ? 'PIT event' : 'defense stage'}'
+                      : label,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: DefensysTokens.textPrimaryOf(context),
+                  ),
+                ),
+                Text(
+                  '${_durationController.text} minutes per slot',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                ),
+                Text(
+                  _rubricLoading
+                      ? 'Checking rubrics...'
+                      : complete
+                      ? 'Rubrics configured'
+                      : 'Rubrics incomplete',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: !complete && !_rubricLoading
+                        ? DefensysTokens.goldOf(context)
+                        : DefensysTokens.textSecondaryOf(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          TextButton.icon(
+            onPressed: _importBusy
+                ? null
+                : () => setState(() => _showSettings = !_showSettings),
+            icon: Icon(
+              _showSettings ? Icons.expand_less : Icons.tune_rounded,
+              size: 16,
+            ),
+            label: Text(_showSettings ? 'Hide settings' : 'Edit settings'),
+            style: TextButton.styleFrom(
+              foregroundColor: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPreflightReviewCard({
     required DefenseSchedulerState schedState,
     required List<ScheduleImportPreviewRow> previewRows,
-    required List<ScheduleImportPreviewRow> readyRows,
-    required int redefenseRows,
-    required int passedRows,
-    required int issueRows,
-    required int totalRows,
   }) {
-    final activeSemLabel = _getActiveSemLabel(schedState);
     final query = _searchCtrl.text.trim().toLowerCase();
-
+    final issueCount = previewRows.where((row) => !row.ready).length;
+    final dates = previewRows.map((row) => row.date).toSet().toList()..sort();
+    final rooms = previewRows.map((row) => row.room).toSet().toList()..sort();
+    final selectedDate = dates.contains(_filterDate) ? _filterDate : null;
+    final selectedRoom = rooms.contains(_filterRoom) ? _filterRoom : null;
     final filteredRows = previewRows.where((row) {
       if (_showIssuesOnly && row.ready) return false;
-      if (query.isNotEmpty) {
-        final team = row.teamLabel.toLowerCase();
-        final project = row.projectLabel.toLowerCase();
-        final adviser = row.source.adviser.toLowerCase();
-        final panel = row.panelLabel.toLowerCase();
-        final room = row.room.toLowerCase();
-        final matches = team.contains(query) ||
-            project.contains(query) ||
-            adviser.contains(query) ||
-            panel.contains(query) ||
-            room.contains(query);
-        if (!matches) return false;
-      }
-      return true;
+      if (selectedDate != null && row.date != selectedDate) return false;
+      if (selectedRoom != null && row.room != selectedRoom) return false;
+      if (query.isEmpty) return true;
+      return [
+        row.teamLabel,
+        row.projectLabel,
+        row.source.adviser,
+        row.panelLabel,
+        row.room,
+        row.source.documenter,
+      ].any((value) => value.toLowerCase().contains(query));
     }).toList();
+    final noIssues =
+        _showIssuesOnly &&
+        issueCount == 0 &&
+        query.isEmpty &&
+        selectedDate == null &&
+        selectedRoom == null;
 
     return DefensysCard(
       padding: EdgeInsets.zero,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Table Header (Unified with Capstone Stages style)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 18, 24, 16),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFFEE2E2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.table_chart_rounded,
-                    color: DefensysUi.primaryMaroon,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Defense Schedule Review',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          color: DefensysUi.textDark,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                      SizedBox(height: 3),
-                      Text(
-                        'Verify time slots, venue availability, panelist rosters, and evaluation rubrics before confirming.',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: DefensysUi.steelGrey,
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    if (activeSemLabel.isNotEmpty) _headerPill(activeSemLabel),
-                    if (totalRows > 0) ...[
-                      _buildHeaderStatBadge(
-                        label: 'Ready',
-                        count: readyRows.length,
-                        color: const Color(0xFF16A34A),
-                        bgColor: const Color(0xFFF0FDF4),
-                        borderColor: const Color(0xFFBBF7D0),
-                        icon: Icons.check_circle_rounded,
-                      ),
-                      if (issueRows > 0)
-                        _buildHeaderStatBadge(
-                          label: 'Needs Attention',
-                          count: issueRows,
-                          color: const Color(0xFFD97706),
-                          bgColor: _showIssuesOnly
-                              ? const Color(0xFFFEF2F2)
-                              : const Color(0xFFFFFBEB),
-                          borderColor: _showIssuesOnly
-                              ? const Color(0xFFFECACA)
-                              : const Color(0xFFFDE68A),
-                          icon: Icons.warning_amber_rounded,
-                          onTap: () =>
-                              setState(() => _showIssuesOnly = !_showIssuesOnly),
-                          isSelected: _showIssuesOnly,
-                        ),
-                      if (redefenseRows > 0)
-                        _buildHeaderStatBadge(
-                          label: 'Re-defense',
-                          count: redefenseRows,
-                          color: const Color(0xFF7E22CE),
-                          bgColor: const Color(0xFFFAF5FF),
-                          borderColor: const Color(0xFFE9D5FF),
-                          icon: Icons.replay_rounded,
-                        ),
-                      if (passedRows > 0)
-                        _buildHeaderStatBadge(
-                          label: 'Already Passed',
-                          count: passedRows,
-                          color: const Color(0xFF64748B),
-                          bgColor: const Color(0xFFF1F5F9),
-                          borderColor: const Color(0xFFCBD5E1),
-                          icon: Icons.history_rounded,
-                        ),
-                      _buildHeaderStatBadge(
-                        label: 'Total Slots',
-                        count: totalRows,
-                        color: const Color(0xFF475569),
-                        bgColor: const Color(0xFFF8FAFC),
-                        borderColor: const Color(0xFFE2E8F0),
-                        icon: Icons.layers_outlined,
-                      ),
-                    ] else
-                      _headerPill('0 slots staged'),
-                  ],
-                ),
-              ],
+          _buildSettingsSummary(schedState),
+          if (_showSettings)
+            AbsorbPointer(
+              absorbing: _importBusy,
+              child: _buildCompactSessionToolbar(schedState),
             ),
+          Divider(height: 1, color: DefensysTokens.borderOf(context)),
+          ScheduleImportFilterBar(
+            totalCount: previewRows.length,
+            issueCount: issueCount,
+            issuesOnly: _showIssuesOnly,
+            searchController: _searchCtrl,
+            enabled: !_importBusy,
+            onSearchChanged: (_) => setState(() {}),
+            onIssuesOnlyChanged: (value) =>
+                setState(() => _showIssuesOnly = value),
+            dates: dates,
+            rooms: rooms,
+            selectedDate: selectedDate,
+            selectedRoom: selectedRoom,
+            onDateChanged: (value) => setState(() => _filterDate = value),
+            onRoomChanged: (value) => setState(() => _filterRoom = value),
+            onClear: _clearReviewFilters,
           ),
-          const Divider(height: 1, color: Color(0xFFE5E7EB)),
-
-          // Unified Compact Session & Grading Configuration Toolbar
-          _buildCompactSessionToolbar(schedState),
-
-          // Search + Filter Toolbar
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 12, 24, 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: 38,
-                    child: TextField(
-                      controller: _searchCtrl,
-                      onChanged: (_) => setState(() {}),
-                      style: const TextStyle(fontSize: 13),
-                      decoration: InputDecoration(
-                        prefixIcon: const Icon(
-                          Icons.search_rounded,
-                          size: 18,
-                          color: _muted,
-                        ),
-                        suffixIcon: _searchCtrl.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(
-                                  Icons.clear_rounded,
-                                  size: 16,
-                                  color: _muted,
-                                ),
-                                onPressed: () {
-                                  _searchCtrl.clear();
-                                  setState(() {});
-                                },
-                              )
-                            : null,
-                        hintText:
-                            'Search by team name, project title, adviser, panelist, or room...',
-                        hintStyle:
-                            const TextStyle(fontSize: 12.5, color: _muted),
-                        contentPadding:
-                            const EdgeInsets.symmetric(horizontal: 12),
-                        filled: true,
-                        fillColor: const Color(0xFFF9FAFB),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(6),
-                          borderSide:
-                              const BorderSide(color: Color(0xFFD1D5DB)),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(6),
-                          borderSide:
-                              const BorderSide(color: Color(0xFFD1D5DB)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(6),
-                          borderSide: const BorderSide(color: _maroon),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                FilterChip(
-                  label: Text(
-                    issueRows > 0
-                        ? 'Issues only ($issueRows)'
-                        : 'Issues only',
-                  ),
-                  selected: _showIssuesOnly,
-                  onSelected: _importBusy
-                      ? null
-                      : (val) => setState(() => _showIssuesOnly = val),
-                  selectedColor: const Color(0xFFFEF2F2),
-                  checkmarkColor: const Color(0xFFDC2626),
-                  side: BorderSide(
-                    color: _showIssuesOnly
-                        ? const Color(0xFFFECACA)
-                        : const Color(0xFFCBD5E1),
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  labelStyle: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: _showIssuesOnly
-                        ? const Color(0xFFDC2626)
-                        : const Color(0xFF475569),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1, color: Color(0xFFE5E7EB)),
-
-          // Error box if import failed
-          if (_importErrors.isNotEmpty) ...[
+          if (_importResultMessage != null)
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-              child: _buildImportErrorBox(_importErrors),
-            ),
-          ],
-
-          // Table Content
-          if (previewRows.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 56, horizontal: 24),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.table_rows_rounded,
-                      size: 38,
-                      color: Color(0xFF98A2B3),
-                    ),
-                    SizedBox(height: 10),
-                    Text(
-                      'No Schedule Slots Staged',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: _ink,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Choose or drop a timetable spreadsheet above to begin preflight review.',
-                      style: TextStyle(fontSize: 12, color: _muted),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          else if (filteredRows.isEmpty)
-            Container(
-              margin: const EdgeInsets.all(24),
-              padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: _line),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+              child: Row(
                 children: [
                   const Icon(
-                    Icons.search_off_rounded,
-                    size: 30,
-                    color: _muted,
+                    Icons.check_circle_outline,
+                    size: 20,
+                    color: DefensysTokens.successText,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _showIssuesOnly
-                        ? 'No schedule slots currently have validation issues.'
-                        : 'No staged slots match the current search filter.',
-                    style: const TextStyle(
-                      color: _ink,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _importResultMessage!,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: DefensysTokens.textPrimaryOf(context),
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Try clearing the search query or disable the "Issues only" filter.',
-                    style: TextStyle(color: _muted, fontSize: 11.5),
+                  TextButton(
+                    onPressed: _importBusy ? null : () => widget.onBack(),
+                    child: const Text('View Defense Board'),
                   ),
+                ],
+              ),
+            ),
+          if (_importErrors.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+              child: _buildImportErrorBox(_importErrors),
+            ),
+          Divider(height: 1, color: DefensysTokens.borderOf(context)),
+          if (filteredRows.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
+              child: Column(
+                children: [
+                  Icon(
+                    noIssues
+                        ? Icons.task_alt_rounded
+                        : Icons.search_off_rounded,
+                    size: 32,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    previewRows.isEmpty
+                        ? 'No schedule slots found'
+                        : noIssues
+                        ? 'No slots need attention'
+                        : 'No matching schedule slots',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: DefensysTokens.textPrimaryOf(context),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    previewRows.isEmpty
+                        ? 'Check the spreadsheet format and replace the file.'
+                        : noIssues
+                        ? 'All slots passed validation. Review them in the All tab.'
+                        : 'Try a different search or clear your filters.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: DefensysTokens.textSecondaryOf(context),
+                    ),
+                  ),
+                  if (previewRows.isNotEmpty)
+                    TextButton(
+                      onPressed: _clearReviewFilters,
+                      child: Text(
+                        noIssues ? 'View all slots' : 'Clear filters',
+                      ),
+                    ),
                 ],
               ),
             )
           else
-            _buildGroupedSlotsDataTable(filteredRows),
-
-          const Divider(height: 1, color: Color(0xFFE5E7EB)),
-
-          // Table Footer Actions Toolbar
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 14, 24, 14),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.info_outline_rounded,
-                  size: 14,
-                  color: Color(0xFF667085),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    previewRows.isNotEmpty
-                        ? '${readyRows.length} of $totalRows defense slots ready to import'
-                        : 'Review panel assignments and room availability before confirming import.',
-                    style: const TextStyle(
-                      color: Color(0xFF667085),
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                if (_draftRestored &&
-                    _parsed != null &&
-                    _parsed!.rows.isNotEmpty) ...[
-                  TextButton.icon(
-                    onPressed: _importBusy ? null : _discardDraft,
-                    icon: const Icon(
-                      Icons.delete_outline_rounded,
-                      size: 14,
-                      color: Color(0xFFDC2626),
-                    ),
-                    label: const Text(
-                      'Discard Draft',
-                      style: TextStyle(
-                        color: Color(0xFFDC2626),
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                if (_parsed != null && _parsed!.rows.isNotEmpty) ...[
-                  OutlinedButton.icon(
-                    onPressed: _importBusy
-                        ? null
-                        : () async {
-                            await _persistDraft(showToast: true);
-                            setState(() => _draftRestored = true);
-                          },
-                    icon: const Icon(Icons.save_as_rounded, size: 14),
-                    label: const Text('Save Draft'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _ink,
-                      side: const BorderSide(color: Color(0xFFD0D5DD)),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      textStyle: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                OutlinedButton(
-                  onPressed: _importBusy
-                      ? null
-                      : () async {
-                          final canClose = await _handleAttemptClose();
-                          if (canClose && mounted) {
-                            widget.onBack();
-                          }
-                        },
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _ink,
-                    side: const BorderSide(color: Color(0xFFD0D5DD)),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 10,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    textStyle: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13,
-                    ),
-                  ),
-                  child: const Text('Cancel'),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  onPressed: _importBusy || readyRows.isEmpty
-                      ? null
-                      : () async {
-                          setState(() {
-                            _importBusy = true;
-                            _importErrors = [];
-                          });
-                          final payloads =
-                              readyRows.map((row) => row.toPayload()).toList();
-                          final result = await ref
-                              .read(defenseSchedulerProvider.notifier)
-                              .importSchedules(payloads);
-                          if (!mounted) return;
-                          setState(() => _importBusy = false);
-
-                          final createdCount = result['created'] as int? ?? 0;
-                          final errors = (result['errors'] as List?)
-                                  ?.map((e) => e.toString())
-                                  .toList() ??
-                              [];
-
-                          if (errors.isEmpty) {
-                            await clearScheduleImportDraft(scope: widget.scope);
-                            if (mounted) {
-                              showSuccessToast(
-                                context,
-                                'Successfully imported $createdCount defense schedule slots.',
-                              );
-                              widget.onBack();
-                            }
-                          } else {
-                            if (mounted) {
-                              setState(() {
-                                _importErrors = errors;
-                              });
-                            }
-                          }
-                        },
-                  icon: _importBusy
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Icon(
-                          Icons.check_circle_outline_rounded,
-                          size: 16,
-                        ),
-                  label: Text(
-                    _importBusy
-                        ? 'Importing Slots...'
-                        : (readyRows.isNotEmpty
-                            ? 'Import ${readyRows.length} Ready Slot${readyRows.length == 1 ? '' : 's'}'
-                            : 'Import Ready Slots'),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _maroon,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 11,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    textStyle: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+            _buildGroupedSlotsDataTable(filteredRows, allRows: previewRows),
         ],
       ),
     );
@@ -2585,6 +2379,7 @@ class _DefenseScheduleBulkImportViewState
     if (_parsed == null) return;
     final targetSheetRows = group.rows.map((r) => r.source.sheetRow).toSet();
     final trimmed = newDate.trim();
+    if (_filterDate == group.date) _filterDate = trimmed;
     final updatedRows = _parsed!.rows.map((r) {
       if (targetSheetRows.contains(r.sheetRow)) {
         return r.copyWith(date: trimmed);
@@ -2602,6 +2397,7 @@ class _DefenseScheduleBulkImportViewState
     if (_parsed == null) return;
     final targetSheetRows = group.rows.map((r) => r.source.sheetRow).toSet();
     final trimmed = newRoom.trim();
+    if (_filterRoom == group.room) _filterRoom = trimmed;
     final updatedRows = _parsed!.rows.map((r) {
       if (targetSheetRows.contains(r.sheetRow)) {
         return r.copyWith(room: trimmed);
@@ -2615,26 +2411,86 @@ class _DefenseScheduleBulkImportViewState
     _scheduleDraftSave();
   }
 
-  Widget _buildGroupedSlotsDataTable(List<ScheduleImportPreviewRow> rows) {
-    final groups = _partitionIntoCommitteeGroups(rows);
+  Widget _buildGroupedSlotsDataTable(
+    List<ScheduleImportPreviewRow> rows, {
+    required List<ScheduleImportPreviewRow> allRows,
+  }) {
+    final visibleSources = rows.map((row) => row.source).toSet();
+    final allGroups = _partitionIntoCommitteeGroups(allRows);
+    final groups = allGroups
+        .where(
+          (group) =>
+              group.rows.any((row) => visibleSources.contains(row.source)),
+        )
+        .toList();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${rows.length} slots across ${groups.length} ${groups.length == 1 ? 'session' : 'sessions'}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                ),
+              ),
+              TextButton(
+                style: TextButton.styleFrom(
+                  foregroundColor: DefensysTokens.textSecondaryOf(context),
+                ),
+                onPressed: _importBusy
+                    ? null
+                    : () => setState(() => _collapsedSessions.clear()),
+                child: const Text('Expand all'),
+              ),
+              TextButton(
+                style: TextButton.styleFrom(
+                  foregroundColor: DefensysTokens.textSecondaryOf(context),
+                ),
+                onPressed: _importBusy
+                    ? null
+                    : () => setState(
+                        () => _collapsedSessions.addAll(
+                          groups.map((group) => group.identity),
+                        ),
+                      ),
+                child: const Text('Collapse all'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           for (var i = 0; i < groups.length; i++) ...[
             if (i > 0) const SizedBox(height: 16),
-            _CommitteeSessionCard(
-              key: ValueKey('session_card_${i}_${groups[i].date}_${groups[i].room}_${groups[i].chair}'),
-              group: groups[i],
-              sessionIndex: i + 1,
-              totalSessions: groups.length,
-              isPit: _isPit,
-              onDateChanged: (newDate) =>
-                  _updateSessionDate(groups[i], newDate),
-              onVenueChanged: (newVenue) =>
-                  _updateSessionVenue(groups[i], newVenue),
-              table: _buildCommitteeTable(groups[i]),
+            ScheduleImportSessionCard(
+              key: ValueKey('session_${groups[i].identity}'),
+              index: allGroups.indexOf(groups[i]) + 1,
+              date: groups[i].date,
+              room: groups[i].room,
+              timeSpan: groups[i].timeSpanLabel,
+              chair: groups[i].chair,
+              panelMembers: groups[i].panelMembers,
+              documenter: _isPit ? null : groups[i].documenter,
+              totalCount: groups[i].totalCount,
+              issueCount: groups[i].issueCount,
+              expanded: !_collapsedSessions.contains(groups[i].identity),
+              enabled: !_importBusy,
+              onToggle: () => setState(() {
+                final id = groups[i].identity;
+                if (!_collapsedSessions.remove(id)) _collapsedSessions.add(id);
+              }),
+              onDateChanged: (date) => _updateSessionDate(groups[i], date),
+              onRoomChanged: (room) => _updateSessionVenue(groups[i], room),
+              table: _buildCommitteeTable(
+                groups[i],
+                visibleRows: groups[i].rows
+                    .where((row) => visibleSources.contains(row.source))
+                    .toList(),
+              ),
             ),
           ],
         ],
@@ -2658,8 +2514,8 @@ class _DefenseScheduleBulkImportViewState
       final date = row.date.trim();
 
       // Key groups all rows that share the same committee block
-      final key =
-          '$date|$room|$chair|$panelSignature|$documenter'.toLowerCase();
+      final key = '$date|$room|$chair|$panelSignature|$documenter'
+          .toLowerCase();
 
       if (groupMap.containsKey(key)) {
         groupMap[key]!.rows.add(row);
@@ -2680,7 +2536,10 @@ class _DefenseScheduleBulkImportViewState
     return orderedGroups;
   }
 
-  Widget _buildCommitteeTable(_CommitteeSessionGroup group) {
+  Widget _buildCommitteeTable(
+    _CommitteeSessionGroup group, {
+    required List<ScheduleImportPreviewRow> visibleRows,
+  }) {
     return LayoutBuilder(
       builder: (context, constraints) {
         return SingleChildScrollView(
@@ -2688,14 +2547,16 @@ class _DefenseScheduleBulkImportViewState
           child: ConstrainedBox(
             constraints: BoxConstraints(minWidth: constraints.maxWidth),
             child: DataTable(
-              dataRowMinHeight: 52,
+              dataRowMinHeight: 60,
               dataRowMaxHeight: double.infinity,
-              headingRowHeight: 40,
-              headingRowColor: WidgetStateProperty.all(const Color(0xFFFBFCFD)),
-              headingTextStyle: const TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF475569),
+              headingRowHeight: 44,
+              headingRowColor: WidgetStateProperty.all(
+                DefensysTokens.surfaceHigherOf(context),
+              ),
+              headingTextStyle: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: DefensysTokens.textSecondaryOf(context),
                 letterSpacing: 0.2,
               ),
               columns: const [
@@ -2703,18 +2564,20 @@ class _DefenseScheduleBulkImportViewState
                 DataColumn(label: Text('Time Slot')),
                 DataColumn(label: Text('Team & Project')),
                 DataColumn(label: Text('Adviser')),
-                DataColumn(label: Text('Validation Issues')),
+                DataColumn(label: Text('Issues / notices')),
               ],
-              rows: group.rows.map((row) {
+              rows: visibleRows.map((row) {
                 return DataRow(
                   color: WidgetStateProperty.all(
-                    row.ready
+                    DefensysTokens.isDark(context)
+                        ? DefensysTokens.surfaceOf(context)
+                        : row.ready
                         ? (row.isRedefense
-                            ? const Color(0xFFFAF5FF)
-                            : Colors.white)
+                              ? const Color(0xFFFAF5FF)
+                              : DefensysTokens.surfaceOf(context))
                         : (row.isAlreadyPassed
-                            ? const Color(0xFFF8FAFC)
-                            : const Color(0xFFFFFBEB).withValues(alpha: 0.5)),
+                              ? const Color(0xFFF8FAFC)
+                              : const Color(0xFFFFFBEB).withValues(alpha: 0.5)),
                   ),
                   cells: [
                     DataCell(_importStatusChip(row)),
@@ -2722,18 +2585,18 @@ class _DefenseScheduleBulkImportViewState
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.access_time_rounded,
                             size: 14,
-                            color: Color(0xFF64748B),
+                            color: DefensysTokens.textSecondaryOf(context),
                           ),
                           const SizedBox(width: 6),
                           Text(
                             row.timeLabel,
-                            style: const TextStyle(
-                              fontSize: 12,
+                            style: TextStyle(
+                              fontSize: 13,
                               fontWeight: FontWeight.w700,
-                              color: Color(0xFF334155),
+                              color: DefensysTokens.textPrimaryOf(context),
                             ),
                           ),
                         ],
@@ -2748,10 +2611,10 @@ class _DefenseScheduleBulkImportViewState
                           children: [
                             Text(
                               row.teamLabel,
-                              style: const TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFF1E293B),
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: DefensysTokens.textPrimaryOf(context),
                               ),
                             ),
                             if (row.projectLabel.isNotEmpty &&
@@ -2760,9 +2623,11 @@ class _DefenseScheduleBulkImportViewState
                                 row.projectLabel,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: Color(0xFF64748B),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: DefensysTokens.textSecondaryOf(
+                                    context,
+                                  ),
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
@@ -2773,8 +2638,8 @@ class _DefenseScheduleBulkImportViewState
                                 padding: const EdgeInsets.only(top: 2),
                                 child: Text(
                                   'Override Room: ${row.room}',
-                                  style: const TextStyle(
-                                    fontSize: 10,
+                                  style: TextStyle(
+                                    fontSize: 12,
                                     fontWeight: FontWeight.w700,
                                     color: Color(0xFF0369A1),
                                   ),
@@ -2789,10 +2654,10 @@ class _DefenseScheduleBulkImportViewState
                         row.source.adviser.isNotEmpty
                             ? row.source.adviser
                             : '-',
-                        style: const TextStyle(
-                          fontSize: 12,
+                        style: TextStyle(
+                          fontSize: 13,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFF334155),
+                          color: DefensysTokens.textPrimaryOf(context),
                         ),
                       ),
                     ),
@@ -2816,26 +2681,8 @@ class _DefenseScheduleBulkImportViewState
     BuildContext context,
     ScheduleImportPreviewRow row,
   ) {
-    if (row.ready) {
-      return const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            Icons.check_circle_rounded,
-            size: 14,
-            color: Color(0xFF027A48),
-          ),
-          SizedBox(width: 6),
-          Text(
-            'All fields verified',
-            style: TextStyle(
-              color: Color(0xFF027A48),
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      );
+    if (row.ready && row.warnings.isEmpty) {
+      return const SizedBox.shrink();
     }
 
     final issueWidgets = <Widget>[];
@@ -2855,7 +2702,9 @@ class _DefenseScheduleBulkImportViewState
             if (row.scope == 'pit') {
               context.go(FacultyRoutes.pitEvents);
             } else if (row.stageId != null) {
-              context.go(AdminRoutes.defenseStageEdit(row.stageId!, initialTab: 1));
+              context.go(
+                AdminRoutes.defenseStageEdit(row.stageId!, initialTab: 1),
+              );
             } else {
               context.go(AdminRoutes.defenseStages);
             }
@@ -2887,12 +2736,16 @@ class _DefenseScheduleBulkImportViewState
     }
 
     if (row.slotIssues.isNotEmpty) {
-      final hasFileIssue = row.source.parseIssues.isNotEmpty ||
-          row.source.chair.trim().isEmpty;
-      final needsFacultyReview = !hasFileIssue && row.slotIssues.any((s) =>
-          s.toLowerCase().contains('panel') ||
-          s.toLowerCase().contains('documenter') ||
-          s.toLowerCase().contains('faculty'));
+      final hasFileIssue =
+          row.source.parseIssues.isNotEmpty || row.source.chair.trim().isEmpty;
+      final needsFacultyReview =
+          !hasFileIssue &&
+          row.slotIssues.any(
+            (s) =>
+                s.toLowerCase().contains('panel') ||
+                s.toLowerCase().contains('documenter') ||
+                s.toLowerCase().contains('faculty'),
+          );
       issueWidgets.add(
         _issueCategoryPill(
           prefix: hasFileIssue ? 'File' : 'Slot',
@@ -3007,10 +2860,7 @@ class _DefenseScheduleBulkImportViewState
     );
 
     if (tooltip != null) {
-      return Tooltip(
-        message: tooltip,
-        child: pillWidget,
-      );
+      return Tooltip(message: tooltip, child: pillWidget);
     }
     return pillWidget;
   }
@@ -3161,8 +3011,6 @@ class _DefenseScheduleBulkImportViewState
     );
   }
 
-
-
   Future<void> _downloadSampleTemplate() async {
     try {
       await downloadBinaryFile(
@@ -3196,8 +3044,10 @@ class _DefenseScheduleBulkImportViewState
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
-          insetPadding:
-              const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 32,
+          ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 1180, maxHeight: 840),
             child: Column(
@@ -3238,7 +3088,7 @@ class _DefenseScheduleBulkImportViewState
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Target Term: $activeSemLabel â€¢ Visual guide for defense timetables & panel assignments',
+                              'Target Term: $activeSemLabel · Visual guide for defense timetables & panel assignments',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: _muted,
@@ -3295,7 +3145,8 @@ class _DefenseScheduleBulkImportViewState
                                     ),
                                     children: [
                                       TextSpan(
-                                        text: 'Auto-Detection & Multi-Panelists: ',
+                                        text:
+                                            'Auto-Detection & Multi-Panelists: ',
                                         style: TextStyle(
                                           fontWeight: FontWeight.w800,
                                           color: Color(0xFF1E293B),
@@ -3319,7 +3170,9 @@ class _DefenseScheduleBulkImportViewState
                           scrollDirection: Axis.horizontal,
                           child: SizedBox(
                             width: 1040,
-                            child: _buildSampleScheduleSheetPreview(isPit: isPit),
+                            child: _buildSampleScheduleSheetPreview(
+                              isPit: isPit,
+                            ),
                           ),
                         ),
                       ],
@@ -3330,8 +3183,10 @@ class _DefenseScheduleBulkImportViewState
                 const Divider(height: 1, color: _line),
                 // Modal Footer
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 14,
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -3406,8 +3261,10 @@ class _DefenseScheduleBulkImportViewState
               runSpacing: 6,
               children: [
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(5),
@@ -3436,8 +3293,10 @@ class _DefenseScheduleBulkImportViewState
                   ),
                 ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF1F5F9),
                     borderRadius: BorderRadius.circular(5),
@@ -3484,12 +3343,27 @@ class _DefenseScheduleBulkImportViewState
                 _buildColumnHeaderCell('Time', flex: 3, isRequired: true),
                 _buildColumnHeaderCell('Team Name', flex: 3, isRequired: true),
                 _buildColumnHeaderCell('Adviser', flex: 4, isRequired: true),
-                _buildColumnHeaderCell('Panel Chair', flex: 4, isRequired: true),
-                _buildColumnHeaderCell('Panel Member 1', flex: 4, isRequired: true),
-                _buildColumnHeaderCell('Panel Member 2', flex: 4, isRequired: true),
-                _buildColumnHeaderCell('Panel Member 3', flex: 4, isRequired: true),
-                if (!isPit)
-                  _buildColumnHeaderCell('Documenter', flex: 4),
+                _buildColumnHeaderCell(
+                  'Panel Chair',
+                  flex: 4,
+                  isRequired: true,
+                ),
+                _buildColumnHeaderCell(
+                  'Panel Member 1',
+                  flex: 4,
+                  isRequired: true,
+                ),
+                _buildColumnHeaderCell(
+                  'Panel Member 2',
+                  flex: 4,
+                  isRequired: true,
+                ),
+                _buildColumnHeaderCell(
+                  'Panel Member 3',
+                  flex: 4,
+                  isRequired: true,
+                ),
+                if (!isPit) _buildColumnHeaderCell('Documenter', flex: 4),
               ],
             ),
           ),
@@ -3554,7 +3428,8 @@ class _DefenseScheduleBulkImportViewState
                   child: Column(
                     children: [
                       SizedBox(height: slotH, child: _buildGutterCell(rowNum)),
-                      if (index < 3) const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                      if (index < 3)
+                        const Divider(height: 1, color: Color(0xFFE2E8F0)),
                     ],
                   ),
                 );
@@ -3568,13 +3443,41 @@ class _DefenseScheduleBulkImportViewState
               height: blockH,
               child: Column(
                 children: [
-                  SizedBox(height: slotH, child: _buildSubCell('1', isBold: true, color: const Color(0xFF475569))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      '1',
+                      isBold: true,
+                      color: const Color(0xFF475569),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell('2', isBold: true, color: const Color(0xFF475569))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      '2',
+                      isBold: true,
+                      color: const Color(0xFF475569),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell('3', isBold: true, color: const Color(0xFF475569))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      '3',
+                      isBold: true,
+                      color: const Color(0xFF475569),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell('4', isBold: true, color: const Color(0xFF475569))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      '4',
+                      isBold: true,
+                      color: const Color(0xFF475569),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -3586,13 +3489,41 @@ class _DefenseScheduleBulkImportViewState
               height: blockH,
               child: Column(
                 children: [
-                  SizedBox(height: slotH, child: _buildSubCell('8:00 - 9:00', isBold: true, color: const Color(0xFF334155))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      '8:00 - 9:00',
+                      isBold: true,
+                      color: const Color(0xFF334155),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell('9:00 - 10:00', isBold: true, color: const Color(0xFF334155))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      '9:00 - 10:00',
+                      isBold: true,
+                      color: const Color(0xFF334155),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell('10:00 - 11:00', isBold: true, color: const Color(0xFF334155))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      '10:00 - 11:00',
+                      isBold: true,
+                      color: const Color(0xFF334155),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell('11:00 - 12:00', isBold: true, color: const Color(0xFF334155))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      '11:00 - 12:00',
+                      isBold: true,
+                      color: const Color(0xFF334155),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -3604,13 +3535,41 @@ class _DefenseScheduleBulkImportViewState
               height: blockH,
               child: Column(
                 children: [
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Team SkyLedger' : 'Team Apex', isBold: true, color: const Color(0xFF1E293B))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Team SkyLedger' : 'Team Apex',
+                      isBold: true,
+                      color: const Color(0xFF1E293B),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Team BioPulse' : 'Team Horizon', isBold: true, color: const Color(0xFF1E293B))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Team BioPulse' : 'Team Horizon',
+                      isBold: true,
+                      color: const Color(0xFF1E293B),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Team SafeCity' : 'Team Nexus', isBold: true, color: const Color(0xFF1E293B))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Team SafeCity' : 'Team Nexus',
+                      isBold: true,
+                      color: const Color(0xFF1E293B),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Team CodeLearners' : 'Team Pulse', isBold: true, color: const Color(0xFF1E293B))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Team CodeLearners' : 'Team Pulse',
+                      isBold: true,
+                      color: const Color(0xFF1E293B),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -3646,13 +3605,41 @@ class _DefenseScheduleBulkImportViewState
               height: blockH,
               child: Column(
                 children: [
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Suarez' : 'Dr. Alan Turing', isBold: true, color: _maroon)),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Suarez' : 'Dr. Alan Turing',
+                      isBold: true,
+                      color: _maroon,
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Suarez' : 'Dr. Alan Turing', isBold: true, color: _maroon)),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Suarez' : 'Dr. Alan Turing',
+                      isBold: true,
+                      color: _maroon,
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Tan' : 'Dr. Maria Santos', isBold: true, color: _maroon)),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Tan' : 'Dr. Maria Santos',
+                      isBold: true,
+                      color: _maroon,
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Tan' : 'Dr. Maria Santos', isBold: true, color: _maroon)),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Tan' : 'Dr. Maria Santos',
+                      isBold: true,
+                      color: _maroon,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -3664,13 +3651,37 @@ class _DefenseScheduleBulkImportViewState
               height: blockH,
               child: Column(
                 children: [
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Beltran' : 'Prof. Ada Lovelace', color: const Color(0xFF475569))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Beltran' : 'Prof. Ada Lovelace',
+                      color: const Color(0xFF475569),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Beltran' : 'Prof. Ada Lovelace', color: const Color(0xFF475569))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Beltran' : 'Prof. Ada Lovelace',
+                      color: const Color(0xFF475569),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Reyes' : 'Prof. Robert Taylor', color: const Color(0xFF475569))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Reyes' : 'Prof. Robert Taylor',
+                      color: const Color(0xFF475569),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Reyes' : 'Prof. Robert Taylor', color: const Color(0xFF475569))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Reyes' : 'Prof. Robert Taylor',
+                      color: const Color(0xFF475569),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -3682,13 +3693,37 @@ class _DefenseScheduleBulkImportViewState
               height: blockH,
               child: Column(
                 children: [
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Corpuz' : 'Dr. Grace Hopper', color: const Color(0xFF475569))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Corpuz' : 'Dr. Grace Hopper',
+                      color: const Color(0xFF475569),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Corpuz' : 'Dr. Grace Hopper', color: const Color(0xFF475569))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Corpuz' : 'Dr. Grace Hopper',
+                      color: const Color(0xFF475569),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Cruz' : 'Dr. Grace Miller', color: const Color(0xFF475569))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Cruz' : 'Dr. Grace Miller',
+                      color: const Color(0xFF475569),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Cruz' : 'Dr. Grace Miller', color: const Color(0xFF475569))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Cruz' : 'Dr. Grace Miller',
+                      color: const Color(0xFF475569),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -3700,13 +3735,37 @@ class _DefenseScheduleBulkImportViewState
               height: blockH,
               child: Column(
                 children: [
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Villanueva' : 'Prof. Claude Shannon', color: const Color(0xFF475569))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Villanueva' : 'Prof. Claude Shannon',
+                      color: const Color(0xFF475569),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Villanueva' : 'Prof. Claude Shannon', color: const Color(0xFF475569))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Villanueva' : 'Prof. Claude Shannon',
+                      color: const Color(0xFF475569),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Santos' : 'Engr. Alan Cruz', color: const Color(0xFF475569))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Santos' : 'Engr. Alan Cruz',
+                      color: const Color(0xFF475569),
+                    ),
+                  ),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(height: slotH, child: _buildSubCell(isPit ? 'Santos' : 'Engr. Alan Cruz', color: const Color(0xFF475569))),
+                  SizedBox(
+                    height: slotH,
+                    child: _buildSubCell(
+                      isPit ? 'Santos' : 'Engr. Alan Cruz',
+                      color: const Color(0xFF475569),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -3721,7 +3780,10 @@ class _DefenseScheduleBulkImportViewState
                 decoration: BoxDecoration(
                   color: const Color(0xFFFEF3C7).withValues(alpha: 0.35),
                   borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: const Color(0xFFD97706), width: 1.5),
+                  border: Border.all(
+                    color: const Color(0xFFD97706),
+                    width: 1.5,
+                  ),
                 ),
                 alignment: Alignment.center,
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
@@ -3871,538 +3933,6 @@ class _DefenseScheduleBulkImportViewState
   }
 }
 
-class _CommitteeSessionCard extends StatefulWidget {
-  const _CommitteeSessionCard({
-    super.key,
-    required this.group,
-    required this.sessionIndex,
-    required this.totalSessions,
-    required this.isPit,
-    required this.onDateChanged,
-    required this.onVenueChanged,
-    required this.table,
-  });
-
-  final _CommitteeSessionGroup group;
-  final int sessionIndex;
-  final int totalSessions;
-  final bool isPit;
-  final ValueChanged<String> onDateChanged;
-  final ValueChanged<String> onVenueChanged;
-  final Widget table;
-
-  @override
-  State<_CommitteeSessionCard> createState() => _CommitteeSessionCardState();
-}
-
-class _CommitteeSessionCardState extends State<_CommitteeSessionCard> {
-  late TextEditingController _roomCtrl;
-  late FocusNode _roomFocusNode;
-  Timer? _debounce;
-
-  @override
-  void initState() {
-    super.initState();
-    final initialRoom =
-        widget.group.room == 'Unassigned' ? '' : widget.group.room;
-    _roomCtrl = TextEditingController(text: initialRoom);
-    _roomFocusNode = FocusNode();
-    _roomFocusNode.addListener(_onFocusChange);
-  }
-
-  void _onFocusChange() {
-    if (!_roomFocusNode.hasFocus) {
-      final val = _roomCtrl.text.trim();
-      final current =
-          widget.group.room == 'Unassigned' ? '' : widget.group.room.trim();
-      if (val != current) {
-        _debounce?.cancel();
-        widget.onVenueChanged(val);
-      }
-    }
-  }
-
-  double _calculateRoomFieldWidth(String text) {
-    final painter = TextPainter(
-      text: TextSpan(
-        text: text.isEmpty ? 'Set Venue' : text,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-      maxLines: 1,
-    )..layout();
-    return (painter.width + 10).clamp(65.0, 220.0);
-  }
-
-  Future<void> _pickSessionDate() async {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    DateTime initial = today;
-    if (widget.group.date.isNotEmpty) {
-      final parsed = DateTime.tryParse(widget.group.date);
-      if (parsed != null) {
-        initial = parsed;
-      }
-    }
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: today.subtract(const Duration(days: 365)),
-      lastDate: DateTime(now.year + 3, now.month, now.day),
-    );
-    if (picked != null) {
-      final formatted = formatScheduleDate(picked);
-      widget.onDateChanged(formatted);
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant _CommitteeSessionCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final currentRoom =
-        widget.group.room == 'Unassigned' ? '' : widget.group.room;
-    if (oldWidget.group.room != widget.group.room &&
-        !_roomFocusNode.hasFocus &&
-        _roomCtrl.text.trim() != currentRoom.trim()) {
-      _roomCtrl.text = currentRoom;
-    }
-  }
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _roomFocusNode.removeListener(_onFocusChange);
-    _roomFocusNode.dispose();
-    _roomCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color.fromRGBO(16, 24, 40, 0.03),
-            blurRadius: 4,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _buildHeader(),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
-          widget.table,
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    final group = widget.group;
-    final hasChair = group.chair.isNotEmpty && group.chair != '-';
-    final hasDoc =
-        !widget.isPit && group.documenter.isNotEmpty && group.documenter != '-';
-    final hasPanel = group.panelMembers.isNotEmpty;
-    final isRoomMissing =
-        group.room.trim().isEmpty || group.room == 'Unassigned';
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      decoration: const BoxDecoration(
-        color: Color(0xFFF8FAFC),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Session Number Circle (matching Capstone stages card design)
-              Container(
-                width: 22,
-                height: 22,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
-                ),
-                child: Text(
-                  '${widget.sessionIndex}',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF334155),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-
-              // Date Badge (Editable on click, matching Image 2 design)
-              Tooltip(
-                message: 'Click to change date for this session',
-                waitDuration: const Duration(milliseconds: 400),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: _pickSessionDate,
-                    borderRadius: BorderRadius.circular(6),
-                    hoverColor: const Color(0xFFF1F5F9),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 9,
-                        vertical: 4.5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFFCBD5E1)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.calendar_today_outlined,
-                            size: 13,
-                            color: Color(0xFF334155),
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            group.date.isNotEmpty ? group.date : 'Set Date',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF1E293B),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-
-              // Venue Badge (Always styled like Image 2, directly editable with no oval)
-              Tooltip(
-                message: 'Click to edit venue for this session',
-                waitDuration: const Duration(milliseconds: 400),
-                child: GestureDetector(
-                  onTap: () => _roomFocusNode.requestFocus(),
-                  child: Container(
-                    height: 28,
-                    padding: const EdgeInsets.symmetric(horizontal: 9),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: isRoomMissing
-                            ? const Color(0xFFF59E0B)
-                            : const Color(0xFFCBD5E1),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.meeting_room_outlined,
-                          size: 13,
-                          color: isRoomMissing
-                              ? const Color(0xFFD97706)
-                              : const Color(0xFF475569),
-                        ),
-                        const SizedBox(width: 5),
-                        SizedBox(
-                          width: _calculateRoomFieldWidth(_roomCtrl.text),
-                          child: TextField(
-                            controller: _roomCtrl,
-                            focusNode: _roomFocusNode,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: isRoomMissing
-                                  ? const Color(0xFFD97706)
-                                  : const Color(0xFF1E293B),
-                            ),
-                            cursorColor: DefensysUi.primaryMaroon,
-                            cursorWidth: 1.5,
-                            cursorHeight: 14,
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              contentPadding: EdgeInsets.zero,
-                              filled: false,
-                              fillColor: Colors.transparent,
-                              border: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              errorBorder: InputBorder.none,
-                              disabledBorder: InputBorder.none,
-                              hintText: 'Set Venue',
-                              hintStyle: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF94A3B8),
-                              ),
-                            ),
-                            onChanged: (val) {
-                              setState(() {});
-                              _debounce?.cancel();
-                              _debounce = Timer(
-                                const Duration(milliseconds: 300),
-                                () {
-                                  widget.onVenueChanged(val.trim());
-                                },
-                              );
-                            },
-                            onSubmitted: (val) {
-                              _debounce?.cancel();
-                              widget.onVenueChanged(val.trim());
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-
-              // Committee Details
-              Expanded(
-                child: Wrap(
-                  spacing: 12,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    // Chair
-                    if (hasChair)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.gavel_rounded,
-                            size: 13,
-                            color: DefensysUi.primaryMaroon,
-                          ),
-                          const SizedBox(width: 4),
-                          const Text(
-                            'Chair: ',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF64748B),
-                            ),
-                          ),
-                          Text(
-                            group.chair,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: DefensysUi.primaryMaroon,
-                            ),
-                          ),
-                        ],
-                      ),
-
-                    // Panel Members
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.groups_outlined,
-                          size: 14,
-                          color: DefensysUi.primaryMaroon,
-                        ),
-                        const SizedBox(width: 4),
-                        const Text(
-                          'Panel: ',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF64748B),
-                          ),
-                        ),
-                        Text(
-                          hasPanel
-                              ? group.panelMembers.join(', ')
-                              : 'No panel members specified',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: hasPanel
-                                ? const Color(0xFF1E293B)
-                                : const Color(0xFF94A3B8),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    // Documenter
-                    if (hasDoc)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFEF3C7),
-                          borderRadius: BorderRadius.circular(5),
-                          border: Border.all(color: const Color(0xFFFDE68A)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.edit_note_rounded,
-                              size: 13,
-                              color: Color(0xFF92400E),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Doc: ${group.documenter}',
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF92400E),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(width: 12),
-
-              // Time span badge
-              if (group.timeSpanLabel.isNotEmpty && group.timeSpanLabel != '-')
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(5),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.access_time_rounded,
-                        size: 12,
-                        color: Color(0xFF64748B),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        group.timeSpanLabel,
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF334155),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-              const SizedBox(width: 8),
-
-              // Slot count & ready badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: group.issueCount == 0
-                      ? const Color(0xFFECFDF3)
-                      : const Color(0xFFFFFBEB),
-                  borderRadius: BorderRadius.circular(5),
-                  border: Border.all(
-                    color: group.issueCount == 0
-                        ? const Color(0xFFA6F4C5)
-                        : const Color(0xFFFDE68A),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      group.issueCount == 0
-                          ? Icons.check_circle_rounded
-                          : Icons.warning_amber_rounded,
-                      size: 12,
-                      color: group.issueCount == 0
-                          ? const Color(0xFF16A34A)
-                          : const Color(0xFFD97706),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      group.issueCount == 0
-                          ? '${group.totalCount} Team${group.totalCount == 1 ? '' : 's'} Ready'
-                          : '${group.readyCount}/${group.totalCount} Ready (${group.issueCount} Issue${group.issueCount == 1 ? '' : 's'})',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        color: group.issueCount == 0
-                            ? const Color(0xFF166534)
-                            : const Color(0xFFB45309),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-
-          // Subline: Session Advisers (if available)
-          if (group.distinctAdvisers.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                const Icon(
-                  Icons.person_outline_rounded,
-                  size: 12,
-                  color: Color(0xFF64748B),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  'Adviser${group.distinctAdvisers.length > 1 ? 's' : ''} in session (${group.distinctAdvisers.length}): ',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF64748B),
-                  ),
-                ),
-                Expanded(
-                  child: Text(
-                    group.distinctAdvisers.join('  â€¢  '),
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF334155),
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 class _CommitteeSessionGroup {
   _CommitteeSessionGroup({
     required this.date,
@@ -4420,6 +3950,8 @@ class _CommitteeSessionGroup {
   final String documenter;
   final List<ScheduleImportPreviewRow> rows;
 
+  String get identity => rows.map((row) => row.source.sheetRow).join('_');
+
   String get panelLabel =>
       panelMembers.isNotEmpty ? panelMembers.join(', ') : '-';
 
@@ -4430,19 +3962,19 @@ class _CommitteeSessionGroup {
     final start = first.source.startTime.isNotEmpty
         ? first.source.startTime
         : (first.timeLabel.contains('-')
-            ? first.timeLabel.split('-').first.trim()
-            : first.timeLabel);
+              ? first.timeLabel.split('-').first.trim()
+              : first.timeLabel);
     final end = last.effectiveEndTime.isNotEmpty
         ? last.effectiveEndTime
         : (last.source.endTime.isNotEmpty
-            ? last.source.endTime
-            : (last.timeLabel.contains('-')
-                ? last.timeLabel.split('-').last.trim()
-                : last.timeLabel));
+              ? last.source.endTime
+              : (last.timeLabel.contains('-')
+                    ? last.timeLabel.split('-').last.trim()
+                    : last.timeLabel));
     if (start.isEmpty || end.isEmpty || rows.length == 1) {
       return rows.first.timeLabel;
     }
-    return '$start â€“ $end';
+    return '${scheduleReviewTime(start)} – ${scheduleReviewTime(end)}';
   }
 
   List<String> get distinctAdvisers {

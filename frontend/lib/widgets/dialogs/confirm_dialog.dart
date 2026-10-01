@@ -51,20 +51,29 @@ Future<bool> showConfirmDialog(
                 Expanded(
                   child: Text(
                     title,
-                    style: DefensysTokens.dialogTitle,
+                    style: DefensysTokens.dialogTitle.copyWith(
+                      color: DefensysTokens.textPrimaryOf(context),
+                    ),
                   ),
                 ),
               ],
             )
-          : Text(title, style: DefensysTokens.dialogTitle),
+          : Text(
+              title,
+              style: DefensysTokens.dialogTitle.copyWith(
+                color: DefensysTokens.textPrimaryOf(context),
+              ),
+            ),
       content: Text(
         message,
-        style: DefensysTokens.dialogContent,
+        style: DefensysTokens.dialogContent.copyWith(
+          color: DefensysTokens.textSecondaryOf(context),
+        ),
       ),
       actions: [
         TextButton(
           style: TextButton.styleFrom(
-            foregroundColor: DefensysTokens.textSecondary,
+            foregroundColor: DefensysTokens.textSecondaryOf(context),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           ),
           onPressed: () => Navigator.pop(dialogContext, false),

@@ -325,6 +325,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
 
     var created = 0;
     final errors = <String>[];
+    final importedIndices = <int>[];
 
     for (var index = 0; index < payloads.length; index++) {
       try {
@@ -334,6 +335,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
         );
         if (response.statusCode == 201) {
           created++;
+          importedIndices.add(index);
         } else {
           errors.add('Row ${index + 1}: ${_errorFromResponse(response)}');
         }
@@ -349,7 +351,11 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
       state = state.copyWith(error: errors.first);
     }
 
-    return {'created': created, 'errors': errors};
+    return {
+      'created': created,
+      'errors': errors,
+      'imported_indices': importedIndices,
+    };
   }
 
   Future<Map<String, dynamic>?> fetchPitEventConfig({
