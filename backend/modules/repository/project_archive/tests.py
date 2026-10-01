@@ -1006,6 +1006,41 @@ class RepositoryAuditApiTests(APITestCase):
         entry_3rd.refresh_from_db()
         self.assertEqual(entry_3rd.file_name, '3rd_year_fixed.pdf')
 
+    def test_only_admin_can_reopen_accepted_pit_post_deliverable(self):
+        submission = DeliverableSubmission.objects.create(
+            team=self.pit_team,
+            stage_label='3rd Year PIT Showcase',
+            deliverable_id='PIT_FINAL',
+            label='Final PIT Paper',
+            deliverable_type=DeliverableSubmission.TYPE_POST,
+            status=DeliverableSubmission.STATUS_ACCEPTED,
+            file_name='PIT_Final.pdf',
+            uploaded_by=self.student,
+        )
+        entry_id = f'pit-deliverable-{submission.pk}'
+        self.client.force_authenticate(user=self.pit_lead)
+        response = self.client.get('/api/repository/audit/')
+        entry = next(item for item in response.data['entries'] if item['id'] == entry_id)
+        self.assertFalse(entry['can_override'])
+        denied = self.client.post('/api/repository/audit/request-resubmission/', {
+            'entry_id': entry_id,
+            'status': 'Needs Revision',
+            'feedback': 'Incomplete final paper',
+        })
+        self.assertEqual(denied.status_code, 403)
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, DeliverableSubmission.STATUS_ACCEPTED)
+
+        self.client.force_authenticate(user=self.admin)
+        reopened = self.client.post('/api/repository/audit/request-resubmission/', {
+            'entry_id': entry_id,
+            'status': 'Needs Revision',
+            'feedback': 'Incomplete final paper',
+        })
+        self.assertEqual(reopened.status_code, 200)
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, DeliverableSubmission.STATUS_REJECTED)
+
     def test_pit_lead_forbidden_from_overriding_capstone_or_other_year_entries(self):
         # 2nd Year PIT entry (outside self.pit_lead's '3rd Year' scope)
         entry_2nd = ArchiveEntry.objects.create(

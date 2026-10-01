@@ -82,7 +82,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('capstone admin mode shows Details column without delete icon', (
+  testWidgets('capstone admin mode aligns a View action with each team row', (
     tester,
   ) async {
     await pumpTeamsScreen(
@@ -108,10 +108,12 @@ void main() {
             ),
           ),
         ),
-        dashboardProvider('admin').overrideWith(_FakeAdminDashboardNotifier.new),
-        dashboardProvider('faculty').overrideWith(
-          _FakeFacultyPitLeadDashboardNotifier.new,
-        ),
+        dashboardProvider(
+          'admin',
+        ).overrideWith(_FakeAdminDashboardNotifier.new),
+        dashboardProvider(
+          'faculty',
+        ).overrideWith(_FakeFacultyPitLeadDashboardNotifier.new),
       ],
     );
 
@@ -126,8 +128,65 @@ void main() {
     await tester.tap(find.text('Unassigned Section'));
     await tester.pumpAndSettle();
     expect(find.text('DETAILS'), findsWidgets);
-    expect(find.byIcon(Icons.info_outline), findsWidgets);
+    expect(find.text('View'), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_forward_rounded), findsOneWidget);
     expect(find.byIcon(Icons.delete_rounded), findsNothing);
+  });
+
+  testWidgets('current stage progress takes precedence over team result', (
+    tester,
+  ) async {
+    await pumpTeamsScreen(
+      tester,
+      mode: TeamListMode.capstoneAdmin,
+      overrides: [
+        studentTeamsProvider.overrideWith(
+          () => _FakeStudentTeamsNotifier(
+            const StudentTeamsState(
+              level: 'Capstone',
+              teams: [
+                {
+                  'id': 1,
+                  'name': 'Team One',
+                  'section': 'BSIT-4A',
+                  'status': 'Approved',
+                  'adviser_name': 'Adviser One',
+                  'defense_context': {
+                    'current_stage': 'Project Proposal',
+                    'stage_status': 'ready',
+                  },
+                },
+                {
+                  'id': 2,
+                  'name': 'Team Two',
+                  'section': 'BSIT-4A',
+                  'status': 'Delayed/Extended',
+                  'adviser_name': 'Adviser One',
+                  'defense_context': {
+                    'current_stage': 'Concept Proposal',
+                    'stage_status': 'passed',
+                  },
+                },
+              ],
+            ),
+          ),
+        ),
+        dashboardProvider(
+          'admin',
+        ).overrideWith(_FakeAdminDashboardNotifier.new),
+      ],
+    );
+
+    expect(find.text('teams shown'), findsOneWidget);
+    expect(find.text('1 ready to schedule'), findsOneWidget);
+    expect(find.text('1 stage passed'), findsOneWidget);
+    expect(find.text('Pending result'), findsNothing);
+    await tester.tap(find.text('BSIT-4A'));
+    await tester.pumpAndSettle();
+    expect(find.text('STAGE PROGRESS'), findsOneWidget);
+    expect(find.text('Ready to schedule'), findsOneWidget);
+    expect(find.text('Stage passed'), findsOneWidget);
+    expect(find.text('View'), findsNWidgets(2));
   });
 
   testWidgets('capstone admin shows closed dialog when window is closed', (

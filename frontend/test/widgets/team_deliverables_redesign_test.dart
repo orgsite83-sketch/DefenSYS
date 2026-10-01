@@ -78,6 +78,30 @@ void main() {
   ];
 
   group('DeliverablesTriageHelper Unit Tests', () {
+    test('review-first is stable and leaves provider order unchanged', () {
+      final ordered = DeliverablesTriageHelper.reviewFirst(mockTeams);
+      expect(ordered.map((t) => t['id']), [102, 101, 103]);
+      expect(mockTeams.map((t) => t['id']), [101, 102, 103]);
+      expect(DeliverablesTriageHelper.pendingReviewCount(mockTeams[1]), 2);
+    });
+
+    test('uploaded is not accepted or ready; waived and locked items are excluded', () {
+      final team = <String, dynamic>{'selected_stage': {
+        'required_complete': true, 'deliverables_configured': true,
+        'pre': [
+          {'uploaded': true, 'submission': {'status': 'pending'}},
+          {'uploaded': true, 'submission': {'status': 'accepted'}},
+          {'uploaded': true, 'submission': {'status': 'rejected'}},
+          {'uploaded': true, 'is_waived': true},
+          {'uploaded': true, 'locked': true},
+        ],
+      }};
+      expect(DeliverablesTriageHelper.pendingReviewCount(team), 1);
+      expect(DeliverablesTriageHelper.isReadyForDefense(team), isFalse);
+      (team['selected_stage'] as Map)['pre'] = [];
+      expect(DeliverablesTriageHelper.hasPendingReview(team), isFalse);
+    });
+
     test('matchesFilter accurately classifies teams into triage categories', () {
       // Team Alpha is endorsed and ready
       expect(DeliverablesTriageHelper.matchesFilter(mockTeams[0], TeamTriageFilter.all), isTrue);
@@ -215,7 +239,7 @@ void main() {
       );
 
       // Since activeTriageFilter is needsReview, only Team Beta matches
-      expect(find.text('Teams (1)'), findsOneWidget);
+      expect(find.text('Teams (1) - Review first'), findsOneWidget);
       expect(find.text('Team Beta'), findsWidgets);
       expect(find.text('Team Alpha'), findsNothing);
 

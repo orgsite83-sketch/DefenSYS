@@ -10,6 +10,7 @@ import '../../../../services/defense_stages_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
+import '../../../../widgets/table/defensys_segmented_control.dart';
 import '../grade_center/grade_center_shared.dart'
     show showPeerGradingHelpDialog;
 import '../widgets/defensys_admin_shell.dart';
@@ -576,58 +577,28 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
   }
 
   Widget _buildTabBar() {
-    return Container(
-      height: 46,
-      decoration: BoxDecoration(
-        color: _surfaceColor,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _borderColor),
-      ),
-      child: TabBar(
-        controller: _tabController,
-        labelColor: _maroon,
-        unselectedLabelColor: _mutedColor,
-        indicatorColor: _maroon,
-        indicatorWeight: 3,
-        indicatorSize: TabBarIndicatorSize.tab,
-        labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-        unselectedLabelStyle:
-            const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-        tabs: const [
-          Tab(
-            iconMargin: EdgeInsets.zero,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.school_outlined, size: 16),
-                SizedBox(width: 8),
-                Text('🎓 Capstone Program (4th Year)'),
-              ],
-            ),
+    return AnimatedBuilder(
+      animation: _tabController,
+      builder: (context, _) => DefensysSegmentedControl<int>(
+        value: _tabController.index,
+        items: const [
+          DefensysSegmentItem(
+            value: 0,
+            label: 'Capstone Program (4th Year)',
+            icon: Icons.school_outlined,
           ),
-          Tab(
-            iconMargin: EdgeInsets.zero,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.rocket_launch_outlined, size: 16),
-                SizedBox(width: 8),
-                Text('🚀 PIT Program (1st–3rd Year)'),
-              ],
-            ),
+          DefensysSegmentItem(
+            value: 1,
+            label: 'PIT Program (1st–3rd Year)',
+            icon: Icons.rocket_launch_outlined,
           ),
-          Tab(
-            iconMargin: EdgeInsets.zero,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.settings_outlined, size: 16),
-                SizedBox(width: 8),
-                Text('⚙️ Master Controls & Logs'),
-              ],
-            ),
+          DefensysSegmentItem(
+            value: 2,
+            label: 'Master Controls & Logs',
+            icon: Icons.settings_outlined,
           ),
         ],
+        onChanged: _tabController.animateTo,
       ),
     );
   }

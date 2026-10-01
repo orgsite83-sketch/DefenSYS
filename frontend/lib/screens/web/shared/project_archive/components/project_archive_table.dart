@@ -1112,7 +1112,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         ? const Color(0xFFD97706)
         : (isReplacementUnlocked ? const Color(0xFF0D9488) : const Color(0xFF475569));
 
-    final actionLabel = isPendingResubmission
+    final actionLabel = entry['deliverable_type'] == 'post' && status == 'Approved'
+        ? 'Reopen for Revision'
+        : isPendingResubmission
         ? 'Review Re-upload'
         : (isReplacementUnlocked
             ? 'Manage File Access'

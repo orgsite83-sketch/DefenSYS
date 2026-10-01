@@ -1,6 +1,7 @@
 import 'package:defensys/services/project_archive_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
+import 'package:defensys/widgets/table/defensys_segmented_control.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -78,77 +79,19 @@ class _ProjectArchiveScreenState
   }
 
   Widget _buildTypeTabs(RepositoryAuditState state) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    Widget segment(String label, String typeValue, bool selected) {
-      return InkWell(
-        onTap: state.isSaving
-            ? null
-            : () {
-                ref.read(repositoryAuditProvider.notifier).fetchEntries(
-                      type: typeValue,
-                      clearTeam: true,
-                      clearDeliverable: true,
-                    );
-              },
-        borderRadius: BorderRadius.circular(8),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-          decoration: BoxDecoration(
-            color: selected
-                ? (isDark ? DefensysTokens.mistSurface : Colors.white)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: selected
-                ? Border.all(
-                    color: isDark
-                        ? DefensysTokens.mistBorder
-                        : const Color(0xFFE2E8F0))
-                : Border.all(color: Colors.transparent),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: isDark
-                          ? Colors.black.withValues(alpha: 0.25)
-                          : Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 4,
-                      offset: const Offset(0, 1),
-                    ),
-                  ]
-                : null,
+    return DefensysSegmentedControl<String>(
+      value: state.type,
+      enabled: !state.isSaving,
+      items: const [
+        DefensysSegmentItem(value: 'capstone', label: 'Capstone'),
+        DefensysSegmentItem(value: 'pit', label: 'PIT'),
+        DefensysSegmentItem(value: '', label: 'All records'),
+      ],
+      onChanged: (type) => ref.read(repositoryAuditProvider.notifier).fetchEntries(
+            type: type,
+            clearTeam: true,
+            clearDeliverable: true,
           ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: selected
-                  ? (isDark ? const Color(0xFFF87171) : AppColors.maroon)
-                  : (isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B)),
-              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-              fontSize: 13,
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-            color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          segment('Capstone', 'capstone', state.type == 'capstone'),
-          const SizedBox(width: 4),
-          segment('PIT', 'pit', state.type == 'pit'),
-          const SizedBox(width: 4),
-          segment('All records', '', state.type.isEmpty),
-        ],
-      ),
     );
   }
 

@@ -55,8 +55,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     if (widget.onRefresh == null) return;
     final oldTeam = oldWidget.studentData?['team'];
     final newTeam = widget.studentData?['team'] as Map<String, dynamic>?;
-    final deliv = ref.read(capstoneDeliverablesProvider);
-    if ((oldTeam == null && newTeam != null) || (deliv.stageOptions.isEmpty && newTeam != null)) {
+    if (newTeam != null &&
+        (oldTeam?['id'] != newTeam['id'] ||
+            oldTeam?['isCapstone'] != newTeam['isCapstone'])) {
       final isCapstone = newTeam['isCapstone'] == true;
       final yearLevel = widget.studentData?['year_level']?.toString().trim();
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
@@ -185,10 +186,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
         .where((s) => s.isNotEmpty)
         .toList();
 
-    final stageOptions = delivState.stageOptions.isNotEmpty
-        ? delivState.stageOptions
-        : (backendStageOptions.isNotEmpty
-            ? backendStageOptions
+    final stageOptions = widget.studentData?.containsKey('stage_options') == true
+        ? backendStageOptions
+        : (delivState.stageOptions.isNotEmpty
+            ? delivState.stageOptions
             : stagesListOptions);
 
     final rawActiveStageName = teamData?['current_stage']?.toString() ??
@@ -200,9 +201,11 @@ class _TeamTabState extends ConsumerState<TeamTab> {
         widget.studentData?['current_stage']?.toString() ??
         (stageOptions.isNotEmpty ? stageOptions.first : '');
 
-    final activeStageName = stageOptions.any((s) => s.trim().toLowerCase() == rawActiveStageName.trim().toLowerCase())
-        ? rawActiveStageName
-        : (stageOptions.isNotEmpty ? stageOptions.first : rawActiveStageName);
+    final activeStageName = stageOptions.isEmpty
+        ? ''
+        : (stageOptions.any((s) => s.trim().toLowerCase() == rawActiveStageName.trim().toLowerCase())
+            ? rawActiveStageName
+            : stageOptions.first);
 
     final schedule = studentData?['schedule'] as Map<String, dynamic>?;
     final grades = studentData?['grades'] as Map<String, dynamic>?;
@@ -688,6 +691,47 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     required bool isCapstone,
     required void Function(int index, {int? subTabIndex})? onSelectTab,
   }) {
+    if (activeStageName.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isCapstone ? 'Current Defense Stage' : 'Upcoming PIT Event',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.bold,
+                color: DefensysTokens.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              isCapstone ? 'No defense stages configured yet' : 'No PIT events configured yet',
+              style: const TextStyle(
+                fontSize: 14.5,
+                fontWeight: FontWeight.bold,
+                color: DefensysTokens.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              isCapstone
+                  ? 'Your schedule and defense status will appear after an administrator adds a stage.'
+                  : 'Your event and schedule will appear after an administrator adds a PIT event.',
+              style: const TextStyle(fontSize: 11.5, color: DefensysTokens.textSecondary),
+            ),
+          ],
+        ),
+      );
+    }
+
     final scheduledDate = schedule?['date']?.toString() ?? schedule?['scheduled_date']?.toString();
     final startTime = schedule?['start_time']?.toString() ?? schedule?['time']?.toString();
     final room = schedule?['room']?.toString();
@@ -855,7 +899,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        activeStageName.isNotEmpty ? activeStageName : (isCapstone ? 'Concept Proposal' : 'Milestone Pitch'),
+                        activeStageName,
                         style: const TextStyle(
                           fontSize: 14.5,
                           fontWeight: FontWeight.bold,

@@ -14,6 +14,7 @@ import 'grade_center_event_teams_screen.dart';
 import 'grade_center_shared.dart';
 import 'grade_center_team_detail_screen.dart';
 import '../../../../theme/defensys_tokens.dart';
+import '../../../../widgets/table/defensys_segmented_control.dart';
 import '../widgets/defensys_admin_shell.dart';
 
 class GradeCenterScreen extends ConsumerStatefulWidget {
@@ -279,66 +280,20 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
 
   Widget _buildScopeTabs(GradeCenterState state) {
     final currentScope = _effectiveScope(state);
-
-    final tabs = [
-      {'key': 'capstone', 'label': '🚀 Capstone Stages'},
-      {'key': 'pit', 'label': '💡 PIT Expos & Events'},
-      {'key': 'all', 'label': '📊 All Scopes'},
-    ];
-
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: tabs.map((tab) {
-          final isSelected = currentScope == tab['key'] ||
-              (currentScope.isEmpty && tab['key'] == 'capstone');
-          return InkWell(
-            onTap: state.isSaving
-                ? null
-                : () {
-                    if (currentScope != tab['key']) {
-                      ref
-                          .read(gradeCenterProvider.notifier)
-                          .fetchGrades(scope: tab['key']!);
-                    }
-                  },
-            borderRadius: BorderRadius.circular(7),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: isSelected ? DefensysUi.primaryMaroon : Colors.transparent,
-                borderRadius: BorderRadius.circular(7),
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                          color: DefensysUi.primaryMaroon.withValues(alpha: 0.2),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        )
-                      ]
-                    : null,
-              ),
-              child: Text(
-                tab['label']!,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  color: isSelected
-                      ? Colors.white
-                      : (_isDark ? DefensysTokens.textSecondaryDark : DefensysUi.steelGrey),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
-      ),
+    return DefensysSegmentedControl<String>(
+      value: currentScope.isEmpty ? 'capstone' : currentScope,
+      enabled: !state.isSaving,
+      items: const [
+        DefensysSegmentItem(
+          value: 'capstone', label: 'Capstone Stages', icon: Icons.rocket_launch_rounded),
+        DefensysSegmentItem(
+          value: 'pit', label: 'PIT Expos & Events', icon: Icons.lightbulb_rounded),
+        DefensysSegmentItem(
+          value: 'all', label: 'All Scopes', icon: Icons.bar_chart_rounded),
+      ],
+      onChanged: (scope) => ref
+          .read(gradeCenterProvider.notifier)
+          .fetchGrades(scope: scope),
     );
   }
 

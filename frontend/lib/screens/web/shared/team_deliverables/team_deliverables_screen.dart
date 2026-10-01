@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/services/adviser_grading_provider.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/services/weekly_progress_provider.dart';
+import 'package:defensys/services/defense/adviser_defense_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'components/deliverables_filter_bar.dart';
@@ -105,6 +106,9 @@ class _TeamDeliverablesScreenState
       );
       ref.read(adviserGradingProvider.notifier).fetchAll();
       ref.read(weeklyProgressProvider.notifier).fetchReports();
+      if (widget.isAdviser) {
+        ref.read(adviserDefenseProvider.notifier).fetch();
+      }
     });
   }
 
@@ -124,10 +128,12 @@ class _TeamDeliverablesScreenState
         state.scope == 'pit';
     final showViewToggle = isInstructor || state.teams.length >= 3;
 
-    final filteredTeams = state.teams
-        .where((t) => DeliverablesTriageHelper.matchesFilter(t, _triageFilter))
-        .toList();
+    final filteredTeams = DeliverablesTriageHelper.reviewFirst(state.teams
+        .where((t) => DeliverablesTriageHelper.matchesFilter(t, _triageFilter)));
 
+    final pendingCount = state.teams.fold<int>(0,
+        (count, team) => count + DeliverablesTriageHelper.pendingReviewCount(team));
+    final reviewTeamCount = state.teams.where(DeliverablesTriageHelper.hasPendingReview).length;
     final content = SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -141,9 +147,12 @@ class _TeamDeliverablesScreenState
               tooltip: 'Refresh',
               onPressed: state.isSaving
                   ? null
-                  : () => ref
-                        .read(capstoneDeliverablesProvider.notifier)
-                        .fetchDeliverables(),
+                  : () {
+                      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
+                      if (widget.isAdviser) {
+                        ref.read(adviserDefenseProvider.notifier).fetch();
+                      }
+                    },
               icon: const Icon(Icons.refresh),
             ),
           ),
@@ -189,6 +198,24 @@ class _TeamDeliverablesScreenState
             showViewToggle: showViewToggle,
           ),
           const SizedBox(height: 16),
+          if (!state.isLoading && pendingCount > 0) ...[
+            _notice(Icons.fact_check_outlined,
+                '$pendingCount ${pendingCount == 1 ? 'submission' : 'submissions'} awaiting review across '
+                '$reviewTeamCount ${reviewTeamCount == 1 ? 'team' : 'teams'}. Teams needing review appear first.',
+                const Color(0xFF1D4ED8)),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton(
+                onPressed: () => setState(() {
+                  _triageFilter = TeamTriageFilter.needsReview;
+                  _activeTeamId = int.tryParse(DeliverablesTriageHelper.reviewFirst(state.teams).first['id'].toString());
+                  _viewMode = DeliverablesViewMode.dossier;
+                }),
+                child: const Text('View submissions'),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           state.isLoading
               ? const Center(
                   child: Padding(
@@ -211,6 +238,7 @@ class _TeamDeliverablesScreenState
                   : DeliverablesTablePane(
                       state: state,
                       isAdviser: widget.isAdviser,
+                      key: ValueKey(_activeTeamId),
                       initialTeamId: _activeTeamId ?? widget.initialTeamId,
                       initialTab: widget.initialTab,
                       activeTriageFilter: _triageFilter,

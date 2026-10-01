@@ -185,9 +185,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
             .where((s) => s.isNotEmpty)
             .toList() ??
         const <String>[];
-    final stageOptions = delivState.stageOptions.isNotEmpty
-        ? delivState.stageOptions
-        : backendStageOptions;
+    final stageOptions = widget.studentData?.containsKey('stage_options') == true
+        ? backendStageOptions
+        : delivState.stageOptions;
 
     final team = widget.studentData?['team'] as Map<String, dynamic>?;
     final scheduleData = widget.studentData?['schedule'] as Map<String, dynamic>? ??
@@ -217,10 +217,12 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
         widget.studentData?['current_stage']?.toString() ??
         (stageOptions.isNotEmpty ? stageOptions.first : '');
 
-    final activeStageName = stageOptions.any(
-            (s) => s.trim().toLowerCase() == rawActiveStageName.trim().toLowerCase())
-        ? rawActiveStageName
-        : (stageOptions.isNotEmpty ? stageOptions.first : rawActiveStageName);
+    final activeStageName = stageOptions.isEmpty
+        ? ''
+        : (stageOptions.any(
+                (s) => s.trim().toLowerCase() == rawActiveStageName.trim().toLowerCase())
+            ? rawActiveStageName
+            : stageOptions.first);
 
     final selectedStage = (_selectedStageForView != null &&
             stageOptions.any((s) =>
@@ -437,9 +439,40 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                 ],
               ],
 
+              if (!delivState.isLoading && stageOptions.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.account_tree_outlined, size: 28, color: DefensysTokens.steelGrey),
+                      const SizedBox(height: 12),
+                      Text(
+                        isCapstone ? 'No defense stages configured yet' : 'No PIT events configured yet',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        isCapstone
+                            ? 'Your defense timeline will appear after an administrator adds a stage.'
+                            : 'Your PIT events will appear after an administrator configures them.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 12, color: DefensysTokens.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+
               // 2. SUB-TABS: SCHEDULE, DELIVERABLES, PEER EVAL (DRIVEN DYNAMICALLY BY SELECTED STAGE)
               Builder(
                 builder: (context) {
+                  if (stageOptions.isEmpty) return const SizedBox.shrink();
                   final hasPendingDeliverables = delivState.hasPendingDeliverables;
                   final hasPendingPeer =
                       StudentTaskBadgeHelper.hasPendingPeerEval(widget.studentData);
@@ -547,11 +580,12 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                 },
               ),
 
-              const SizedBox(height: 16),
+              if (stageOptions.isNotEmpty) const SizedBox(height: 16),
 
               // 3. ACTIVE SUB-TAB VIEW (STAGE STATUS / DELIVERABLES / PEER EVAL)
               Builder(
                 builder: (context) {
+                  if (stageOptions.isEmpty) return const SizedBox.shrink();
                   switch (_activeSubIndex) {
                     case 0:
                       return _buildScheduleTab(

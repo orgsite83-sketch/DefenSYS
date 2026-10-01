@@ -875,6 +875,10 @@ def scoped_entries(user, request=None, *, include_ml=False, include_audit_trail=
         entries.extend(capstone_entry_payload(submission, **payload_kwargs))
     for submission in pit_submissions:
         entries.extend(capstone_entry_payload(submission, **payload_kwargs))
+    if scope['scope'] != 'admin':
+        for entry in entries:
+            if entry.get('deliverable_type') == DeliverableSubmission.TYPE_POST and entry.get('status') == 'Approved':
+                entry['can_override'] = False
     return sorted(entries, key=lambda item: item.get('uploaded_at'), reverse=True), scope
 
 
@@ -952,7 +956,11 @@ def repository_audit_payload(request):
     filtered, suggestions = filter_and_rank_entries(entries, query_params)
     for entry in filtered:
         if entry['type'] == ArchiveEntry.TYPE_PIT:
-            entry['can_override'] = scope['can_override']
+            entry['can_override'] = scope['can_override'] and not (
+                scope['scope'] != 'admin'
+                and entry.get('deliverable_type') == DeliverableSubmission.TYPE_POST
+                and entry.get('status') == 'Approved'
+            )
         apply_list_entry_options(
             entry,
             include_ml=include_ml,
@@ -1521,6 +1529,16 @@ def request_archive_resubmission(user, entry_id, status=ArchiveEntry.STATUS_NEED
         instance = instance.submission
 
     previous = getattr(instance, 'status', 'Approved')
+    if isinstance(instance, DeliverableSubmission) and instance.deliverable_type == DeliverableSubmission.TYPE_POST:
+        if status in {'Approved', 'accepted'}:
+            raise ValidationError('Post-defense files must be approved through deliverable review.')
+        if previous == DeliverableSubmission.STATUS_ACCEPTED:
+            if not is_admin(user):
+                raise PermissionDenied('Only an Admin can reopen an archived post-defense file.')
+            if status not in {'Needs Revision', 'rejected'}:
+                raise ValidationError('Reopen an archived file with Needs Revision status.')
+            if not (feedback or '').strip():
+                raise ValidationError('Give a reason before reopening an archived file.')
 
     # Format feedback with explicit author attribution to avoid misleading students/teams
     user_role = getattr(user, 'role', '') or 'admin'
@@ -1670,6 +1688,11 @@ def replace_archive_file(user, entry_id, file_obj):
         raise ValidationError({'file': 'A replacement PDF file is required.'})
 
     target_type, instance, scope = resolve_archive_target(user, entry_id)
+    submission = instance.submission if target_type == 'submission_file' else instance
+    if isinstance(submission, DeliverableSubmission) and submission.deliverable_type == DeliverableSubmission.TYPE_POST:
+        raise ValidationError(
+            'Reopen this post-defense file for student revision and review instead of replacing it directly.'
+        )
     previous_filename = getattr(instance, 'file_name', '') or ''
 
     file_name = getattr(file_obj, 'name', 'replacement.pdf')

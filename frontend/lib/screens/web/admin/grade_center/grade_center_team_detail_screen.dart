@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../services/grade_center_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/error_banner.dart';
+import '../../../../widgets/table/defensys_segmented_control.dart';
 import '../widgets/defensys_admin_shell.dart';
 import 'grade_center_shared.dart';
 
@@ -423,7 +424,7 @@ class _GradeCenterTeamDetailScreenState
           const SizedBox(height: 20),
 
           // Segmented View Mode Tabs (Master Grade Sheet vs Individual Rubric Breakdown)
-          _buildViewModeTabs(isDark),
+          _buildViewModeTabs(),
 
           const SizedBox(height: 16),
 
@@ -462,110 +463,24 @@ class _GradeCenterTeamDetailScreenState
   // ==========================================
   // VIEW MODE SEGMENTED TABS
   // ==========================================
-  Widget _buildViewModeTabs(bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _viewModeTabItem(
-            index: 0,
-            icon: Icons.table_chart_rounded,
-            label: 'Master Grade Sheet',
-            badge: 'Summary',
-            isDark: isDark,
-          ),
-          const SizedBox(width: 4),
-          _viewModeTabItem(
-            index: 1,
-            icon: Icons.assignment_outlined,
-            label: 'Individual Rubric Breakdown',
-            badge: 'Student Evaluations',
-            isDark: isDark,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _viewModeTabItem({
-    required int index,
-    required IconData icon,
-    required String label,
-    required String badge,
-    required bool isDark,
-  }) {
-    final isSelected = _activeViewIndex == index;
-    return InkWell(
-      onTap: () => setState(() => _activeViewIndex = index),
-      borderRadius: BorderRadius.circular(8),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? (isDark ? DefensysTokens.mistSurface : Colors.white)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: isDark ? Colors.black.withValues(alpha: 0.3) : const Color(0x0A000000),
-                    blurRadius: 4,
-                    offset: const Offset(0, 1),
-                  ),
-                ]
-              : null,
+  Widget _buildViewModeTabs() {
+    return DefensysSegmentedControl<int>(
+      value: _activeViewIndex,
+      items: const [
+        DefensysSegmentItem(
+          value: 0,
+          icon: Icons.table_chart_rounded,
+          label: 'Master Grade Sheet',
+          badgeLabel: 'Summary',
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 16,
-              color: isSelected
-                  ? (isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB))
-                  : (isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B)),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected
-                    ? (isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A))
-                    : (isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B)),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? (isDark ? const Color(0xFF1E3A8A) : const Color(0xFFEFF6FF))
-                    : (isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0).withValues(alpha: 0.6)),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                badge,
-                style: TextStyle(
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w700,
-                  color: isSelected
-                      ? (isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB))
-                      : (isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B)),
-                ),
-              ),
-            ),
-          ],
+        DefensysSegmentItem(
+          value: 1,
+          icon: Icons.assignment_outlined,
+          label: 'Individual Rubric Breakdown',
+          badgeLabel: 'Student Evaluations',
         ),
-      ),
+      ],
+      onChanged: (index) => setState(() => _activeViewIndex = index),
     );
   }
 

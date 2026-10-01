@@ -411,7 +411,7 @@ class CohortSubmissionsMatrix extends StatelessWidget {
       bg = const Color(0xFFDBEAFE);
       border = const Color(0xFFBFDBFE);
       text = const Color(0xFF1D4ED8);
-      label = 'Ready';
+      label = 'Submitted';
       icon = Icons.check_circle_outline_rounded;
     } else if (isMissing) {
       bg = const Color(0xFFFEE2E2);

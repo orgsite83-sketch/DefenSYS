@@ -223,10 +223,23 @@ class StudentTeamSerializer(serializers.ModelSerializer):
 
     def get_defense_context(self, obj):
         if obj.is_capstone:
+            stage_label = obj.current_defense_stage or obj.ready_for_stage or None
+            stage_status = None
+            if stage_label:
+                progress = next(
+                    (
+                        item for item in obj.stage_progress.all()
+                        if item.semester_id == obj.semester_id
+                        and item.defense_stage.label == stage_label
+                    ),
+                    None,
+                )
+                stage_status = progress.status if progress else None
             return {
                 'is_pit': False,
-                'current_stage': obj.current_defense_stage or obj.ready_for_stage or None,
+                'current_stage': stage_label,
                 'ready_for_stage': obj.ready_for_stage,
+                'stage_status': stage_status,
                 'deliverable_count': obj.deliverable_submissions.count(),
             }
         schedule = (

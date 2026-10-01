@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../services/grade_center_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
+import '../../../../widgets/table/defensys_segmented_control.dart';
 import 'grade_center_shared.dart';
 import '../widgets/defensys_admin_shell.dart';
 
@@ -203,7 +204,7 @@ class _GradeCenterEventTeamsScreenState
           const SizedBox(height: 20),
 
           // Dual-Mode Segmented View Tabs
-          _buildViewModeTabs(grades.length, isDark),
+          _buildViewModeTabs(grades.length),
 
           const SizedBox(height: 16),
 
@@ -254,117 +255,24 @@ class _GradeCenterEventTeamsScreenState
   // ==========================================
   // VIEW MODE SEGMENTED TABS
   // ==========================================
-  Widget _buildViewModeTabs(int teamCount, bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+  Widget _buildViewModeTabs(int teamCount) {
+    return DefensysSegmentedControl<int>(
+      value: _activeViewIndex,
+      items: [
+        const DefensysSegmentItem(
+          value: 0,
+          icon: Icons.table_chart_rounded,
+          label: 'Official University Master Grade Sheet',
+          badgeLabel: 'Stage Matrix',
         ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _viewModeTabItem(
-            index: 0,
-            icon: Icons.table_chart_rounded,
-            label: 'Official University Master Grade Sheet',
-            badge: 'Stage Matrix',
-            isDark: isDark,
-          ),
-          const SizedBox(width: 4),
-          _viewModeTabItem(
-            index: 1,
-            icon: Icons.dashboard_outlined,
-            label: 'Team Operations & Readiness',
-            badge: '$teamCount Teams',
-            isDark: isDark,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _viewModeTabItem({
-    required int index,
-    required IconData icon,
-    required String label,
-    required String badge,
-    required bool isDark,
-  }) {
-    final isSelected = _activeViewIndex == index;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => setState(() => _activeViewIndex = index),
-        borderRadius: BorderRadius.circular(7),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? (isDark ? DefensysTokens.mistSurface : Colors.white)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(7),
-            boxShadow: isSelected
-                ? (isDark
-                    ? null
-                    : const [
-                        BoxShadow(
-                          color: Color(0x0C000000),
-                          blurRadius: 4,
-                          offset: Offset(0, 1.5),
-                        ),
-                      ])
-                : null,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 15,
-                color: isSelected
-                    ? (isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB))
-                    : (isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF64748B)),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                  color: isSelected
-                      ? (isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF0F172A))
-                      : (isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF64748B)),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? (isDark ? const Color(0xFF1E3A8A) : const Color(0xFFEFF6FF))
-                      : (isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  badge,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: isSelected
-                        ? (isDark ? const Color(0xFF93C5FD) : const Color(0xFF2563EB))
-                        : (isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF64748B)),
-                  ),
-                ),
-              ),
-            ],
-          ),
+        DefensysSegmentItem(
+          value: 1,
+          icon: Icons.dashboard_outlined,
+          label: 'Team Operations & Readiness',
+          badgeLabel: '$teamCount Teams',
         ),
-      ),
+      ],
+      onChanged: (index) => setState(() => _activeViewIndex = index),
     );
   }
 

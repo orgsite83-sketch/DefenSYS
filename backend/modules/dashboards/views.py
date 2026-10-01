@@ -220,8 +220,9 @@ def _latest_academic_record(user):
 
 def _team_payload(team):
     memberships = list(team.memberships.select_related('student').all())
-    from repository.deliverables.services import current_stage_for_team
+    from repository.deliverables.services import STAGE_OPTIONS, current_stage_for_team
     active_stage = current_stage_for_team(team) if team else None
+    has_capstone_stages = not team.is_capstone or bool(list(STAGE_OPTIONS))
     return {
         'id': team.id,
         'name': team.name,
@@ -233,8 +234,8 @@ def _team_payload(team):
         'schoolYear': team.semester.school_year.label,
         'status': team.status,
         'isCapstone': team.is_capstone,
-        'currentStage': team.current_defense_stage or team.ready_for_stage or active_stage,
-        'readyForStage': team.ready_for_stage or active_stage,
+        'currentStage': (team.current_defense_stage or team.ready_for_stage or active_stage) if has_capstone_stages else None,
+        'readyForStage': (team.ready_for_stage or active_stage) if has_capstone_stages else None,
         'deliverableCount': team.deliverable_submissions.count(),
         'adviserName': _display_name(team.adviser) if team.adviser else None,
         'leaderName': _display_name(team.leader),

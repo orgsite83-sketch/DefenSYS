@@ -149,6 +149,14 @@ def current_stage_for_team(team):
         from grading.grades.models import TeamGrade
         from grading.constants import PASS_GRADE_THRESHOLD
 
+        # A stored team label or old schedule cannot create an active stage
+        # when the administrator has no active stage definitions.
+        stages = list(
+            DefenseStage.objects.filter(is_active=True).order_by('display_order', 'id')
+        )
+        if not stages:
+            return None
+
         # 1. If currently scheduled, the scheduled stage is active
         sched = (
             DefenseSchedule.objects.filter(
@@ -162,14 +170,7 @@ def current_stage_for_team(team):
         if sched and sched.defense_stage:
             return sched.defense_stage.label
 
-        # 2. Get all configured active stages in sequential order
-        stages = list(
-            DefenseStage.objects.filter(is_active=True).order_by('display_order', 'id')
-        )
-        if not stages:
-            return team.current_defense_stage or team.ready_for_stage or default_stage_label()
-
-        # 3. Check completion for each stage in order
+        # 2. Check completion for each stage in order
         completed_stage_ids = set()
         for stg in stages:
             # Check if stage is marked officially complete for this semester
@@ -200,12 +201,12 @@ def current_stage_for_team(team):
                 completed_stage_ids.add(stg.id)
                 continue
 
-        # 4. Find the first uncompleted stage in order
+        # 3. Find the first uncompleted stage in order
         for stg in stages:
             if stg.id not in completed_stage_ids:
                 return stg.label
 
-        # 5. If all configured stages are completed, return the last completed stage
+        # 4. If all configured stages are completed, return the last completed stage
         return stages[-1].label
     else:
         # For PIT: find the scheduled schedule or the first event config
@@ -680,6 +681,26 @@ def is_stage_unlocked_by_admin(team, stage_label, deliverable_type=None):
     return False
 
 
+def ensure_submission_editable(team, stage_label, deliverable_type, submission=None):
+    """Keep upload and removal rules aligned with the review state."""
+    if submission and submission.status == DeliverableSubmission.STATUS_ACCEPTED:
+        raise PermissionError(
+            'Accepted deliverables are locked. Reopen the submission for revision before changing its file.'
+        )
+
+    if deliverable_type == DeliverableSubmission.TYPE_POST:
+        if not archive_unlocked(team, stage_label):
+            raise PermissionError('Post-Defense submissions are locked until this defense is done.')
+        return
+
+    stage = defense_stage_for_label(stage_label) if team.is_capstone else None
+    endorsed = was_stage_endorsed(team, stage) if stage else team.ready_for_stage == stage_label
+    if (endorsed or is_stage_defense_done(team, stage_label)) and not is_stage_unlocked_by_admin(
+        team, stage_label, deliverable_type='pre'
+    ):
+        raise PermissionError('Pre-defense submissions are locked after endorsement or defense completion.')
+
+
 @transaction.atomic
 def toggle_stage_deliverables_unlock(team, stage_label, user, unlock_type='all', target_state=None):
     is_admin = getattr(user, 'role', None) == 'admin' or getattr(user, 'is_superuser', False)
@@ -851,7 +872,7 @@ def stage_payload(team, stage_label, evaluator=None):
     admin_unlocked_pre = is_stage_unlocked_by_admin(team, stage_label, deliverable_type='pre') or is_stage_unlocked_by_admin(team, stage_label)
     admin_unlocked_post = is_stage_unlocked_by_admin(team, stage_label, deliverable_type='post') or is_stage_unlocked_by_admin(team, stage_label)
     can_faculty_review_pre = ((not is_endorsed and not is_defense_done) or admin_unlocked_pre)
-    can_faculty_review_post = True
+    can_faculty_review_post = is_defense_done
 
     can_cancel_endorsement = bool(
         is_endorsed
@@ -909,7 +930,12 @@ def stage_payload(team, stage_label, evaluator=None):
             if stage_grade and getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_APPROVED:
                 is_waived = True
 
-        can_review_item = can_faculty_review_post if is_vault else can_faculty_review_pre
+        if is_vault:
+            can_review_item = can_faculty_review_post and (
+                submission is None or submission.status != DeliverableSubmission.STATUS_ACCEPTED
+            )
+        else:
+            can_review_item = can_faculty_review_pre
         
         suggested = ''
         if is_vault:
@@ -955,7 +981,11 @@ def stage_payload(team, stage_label, evaluator=None):
     configured = len(definitions) > 0 or is_pres
     archive_required_complete = (
         not archive_required_items
-        or all(item['uploaded'] for item in archive_required_items)
+        or all(
+            item['submission'] is not None
+            and item['submission']['status'] == DeliverableSubmission.STATUS_ACCEPTED
+            for item in archive_required_items
+        )
     )
     stage_status_detail = compute_stage_status_detail(team, stage_label, configured, archive_required_complete)
 
@@ -1042,6 +1072,11 @@ def stage_payload(team, stage_label, evaluator=None):
         'archive_uploaded': sum(1 for item in archive_items if item['uploaded']),
         'archive_total': len(archive_items),
         'archive_required_uploaded': sum(1 for item in archive_required_items if item['uploaded']),
+        'archive_required_accepted': sum(
+            1 for item in archive_required_items
+            if item['submission'] is not None
+            and item['submission']['status'] == DeliverableSubmission.STATUS_ACCEPTED
+        ),
         'archive_required_total': len(archive_required_items),
         'archive_complete': unlocked and archive_required_complete,
         'pre': pre_items,
@@ -1226,6 +1261,7 @@ def counts_payload(teams, selected_stage=None):
     archive_total = DeliverableSubmission.objects.filter(
         team__in=team_list,
         deliverable_type=DeliverableSubmission.TYPE_POST,
+        status=DeliverableSubmission.STATUS_ACCEPTED,
     ).count() if team_list else 0
 
     return {
@@ -1247,9 +1283,11 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
     definition = definition_for(team, stage_label, deliverable_id)
     if definition is None:
         raise ValueError('Deliverable does not exist for this stage.')
+    existing = DeliverableSubmission.objects.select_for_update().filter(
+        team=team, stage_label=stage_label, deliverable_id=deliverable_id,
+    ).first()
+    ensure_submission_editable(team, stage_label, definition['type'], existing)
     if definition['type'] == DeliverableSubmission.TYPE_POST:
-        if not archive_unlocked(team, stage_label):
-            raise PermissionError('Post-Defense submissions are locked until this defense is done.')
         
         # Resolve suggested archive name for metadata reference
         from repository.project_archive.services import resolve_archive_file_template
@@ -1278,19 +1316,9 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
         }
     )
 
-    # Check if this upload is a simple file replacement (Choice B: Approved status preserved)
-    was_replacement_unlocked = (
-        'Unlocked for file replacement' in (submission.feedback or '')
-        and submission.status == DeliverableSubmission.STATUS_ACCEPTED
-    )
-
     if not created:
-        if was_replacement_unlocked:
-            submission.status = DeliverableSubmission.STATUS_ACCEPTED
-            submission.feedback = ''
-        else:
-            submission.status = DeliverableSubmission.STATUS_PENDING
-            submission.feedback = ''
+        submission.status = DeliverableSubmission.STATUS_PENDING
+        submission.feedback = ''
         submission.uploaded_by = user
         submission.save(update_fields=['status', 'feedback', 'uploaded_by', 'uploaded_at'])
 
@@ -1360,13 +1388,17 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
 @transaction.atomic
 def remove_submission(team, stage_label, deliverable_id, file_id=None):
     try:
-        submission = DeliverableSubmission.objects.get(
+        submission = DeliverableSubmission.objects.select_for_update().get(
             team=team,
             stage_label=stage_label,
             deliverable_id=deliverable_id,
         )
     except DeliverableSubmission.DoesNotExist:
         return 0
+
+    ensure_submission_editable(
+        team, stage_label, submission.deliverable_type, submission,
+    )
 
     deleted = 0
     if file_id:
@@ -1472,7 +1504,7 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
     from django.utils import timezone
 
     try:
-        submission = DeliverableSubmission.objects.get(
+        submission = DeliverableSubmission.objects.select_for_update().get(
             team=team,
             stage_label=stage_label,
             deliverable_id=deliverable_id
@@ -1481,15 +1513,30 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
         raise ValueError('Deliverable submission not found.')
 
     is_admin = getattr(reviewer_user, 'role', None) == 'admin' or getattr(reviewer_user, 'is_superuser', False)
+    if not is_admin and getattr(reviewer_user, 'role', None) != 'faculty':
+        raise PermissionError('Only assigned faculty or an Admin can review deliverables.')
     is_defense_done = is_stage_defense_done(team, stage_label)
     is_post = submission.deliverable_type == DeliverableSubmission.TYPE_POST
     admin_unlocked = is_stage_unlocked_by_admin(team, stage_label, deliverable_type=submission.deliverable_type)
+
+    if is_post and submission.status == DeliverableSubmission.STATUS_ACCEPTED:
+        raise PermissionError('This file is already in the archive. An Admin must reopen it for revision.')
+    if is_post and status_val == DeliverableSubmission.STATUS_ACCEPTED and not is_defense_done:
+        raise PermissionError('Post-defense files can be approved only after this defense is complete.')
+
+    if not is_post:
+        stage = defense_stage_for_label(stage_label) if team.is_capstone else None
+        endorsed = was_stage_endorsed(team, stage) if stage else team.ready_for_stage == stage_label
+        if endorsed and not admin_unlocked:
+            raise PermissionError('Cancel endorsement or ask an Admin to unlock pre-defense review first.')
 
     if not is_post and is_defense_done and not is_admin and not admin_unlocked:
         raise PermissionError('Pre-defense deliverables for completed defenses are view-only for faculty. Resubmission requests must be unlocked by an Admin.')
 
     if status_val not in (DeliverableSubmission.STATUS_ACCEPTED, DeliverableSubmission.STATUS_REJECTED):
         raise ValueError('Invalid review status action.')
+    if is_post and status_val == DeliverableSubmission.STATUS_REJECTED and not (feedback_val or '').strip():
+        raise ValueError('Explain what the team must correct before requesting a post-defense revision.')
 
     submission.status = status_val
     submission.feedback = (feedback_val or '').strip()

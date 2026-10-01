@@ -467,6 +467,7 @@ class DashboardApiTests(APITestCase):
         self.assertFalse(response.data['peerEvalEnabled'])
 
     def test_student_dashboard_does_not_invent_capstone_stage(self):
+        DefenseStage.objects.all().delete()
         student = User.objects.create_user(
             username='student-no-stage',
             password='pass12345',
@@ -494,6 +495,46 @@ class DashboardApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.data['team']['currentStage'])
         self.assertIsNone(response.data['team']['readyForStage'])
+
+    def test_student_stage_payloads_ignore_stale_team_labels_without_configured_stages(self):
+        DefenseStage.objects.all().delete()
+        student = User.objects.create_user(
+            username='student-stale-stage',
+            password='pass12345',
+            role='student',
+        )
+        school_year, _ = SchoolYear.objects.get_or_create(label='2026-2027')
+        semester, _ = Semester.objects.get_or_create(
+            school_year=school_year,
+            label=Semester.SECOND,
+            defaults={'is_active': True},
+        )
+        team = StudentTeam.objects.create(
+            name='Team With Old Stage',
+            project_title='Old Stage Should Not Appear',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=semester,
+            leader=student,
+            ready_for_stage='Concept Proposal',
+            current_defense_stage='Concept Proposal',
+        )
+        TeamMembership.objects.create(team=team, student=student, is_leader=True)
+        self.client.force_authenticate(user=student)
+
+        dashboard = self.client.get('/api/dashboards/student/')
+        deliverables = self.client.get('/api/repository/deliverables/')
+
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertEqual(dashboard.data['stage_options'], [])
+        self.assertEqual(dashboard.data['stages'], [])
+        self.assertIsNone(dashboard.data['current_stage'])
+        self.assertIsNone(dashboard.data['team']['currentStage'])
+        self.assertIsNone(dashboard.data['team']['readyForStage'])
+        self.assertEqual(deliverables.status_code, 200)
+        self.assertEqual(deliverables.data['stage_options'], [])
+        self.assertEqual(deliverables.data['selected_stage'], '')
+        self.assertIsNone(deliverables.data['teams'][0]['current_stage'])
 
     def test_student_dashboard_does_not_show_previous_stage_grade_for_current_schedule(self):
         student = User.objects.create_user(
@@ -849,5 +890,3 @@ class DashboardApiTests(APITestCase):
         self.assertNotIn('unassigned_instructors', action_item_ids2)
         self.assertEqual(overview2['team_pipeline']['teams_with_instructor'], 1)
         self.assertEqual(overview2['team_pipeline']['teams_without_instructor'], 0)
-
-

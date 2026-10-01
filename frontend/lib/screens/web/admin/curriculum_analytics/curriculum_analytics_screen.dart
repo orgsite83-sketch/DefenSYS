@@ -5,6 +5,7 @@ import '../../../../services/auth/auth_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../theme/defensys_button_styles.dart';
 import '../../../../widgets/export/export.dart';
+import '../../../../widgets/table/defensys_segmented_control.dart';
 import 'widgets/curriculum_academic_highlights.dart';
 import 'widgets/curriculum_projects_donut.dart';
 import 'widgets/curriculum_radar_chart.dart';
@@ -268,111 +269,27 @@ class _CurriculumAnalyticsScreenState
   }
 
   // ---------------------------------------------------------------------------
-  // TRACK SWITCHER (USER MANAGEMENT STYLE COMPACT PILL TABS)
+  // TRACK SWITCHER
   // ---------------------------------------------------------------------------
 
   Widget _buildTrackSwitcher(CurriculumAnalyticsState state) {
-    final isDark = DefensysTokens.isDark(context);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: DefensysTokens.panelOf(context),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: DefensysTokens.borderOf(context)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.all(5),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildTabButton(
-            scopeKey: 'capstone',
-            label: 'Capstone Track',
-            badge: '4th Year',
-            icon: Icons.school_rounded,
-            state: state,
-          ),
-          const SizedBox(width: 6),
-          _buildTabButton(
-            scopeKey: 'pit',
-            label: 'PIT Track',
-            badge: '1st–3rd Year',
-            icon: Icons.science_rounded,
-            state: state,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabButton({
-    required String scopeKey,
-    required String label,
-    required String badge,
-    required IconData icon,
-    required CurriculumAnalyticsState state,
-  }) {
-    final isSelected = _selectedScope == scopeKey;
-    final isDark = DefensysTokens.isDark(context);
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => _changeScope(scopeKey, state),
-        borderRadius: BorderRadius.circular(8),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: isSelected ? DefensysTokens.maroonOf(context) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 17,
-                color: isSelected ? Colors.white : DefensysTokens.textSecondaryOf(context),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                  color: isSelected ? Colors.white : DefensysTokens.textPrimaryOf(context),
-                  fontFamily: DefensysTokens.fontFamily,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? Colors.white.withValues(alpha: 0.22)
-                      : (isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9)),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  badge,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: isSelected ? Colors.white : DefensysTokens.textSecondaryOf(context),
-                  ),
-                ),
-              ),
-            ],
-          ),
+    return DefensysSegmentedControl<String>(
+      value: _selectedScope,
+      items: const [
+        DefensysSegmentItem(
+          value: 'capstone',
+          label: 'Capstone Track',
+          badgeLabel: '4th Year',
+          icon: Icons.school_rounded,
         ),
-      ),
+        DefensysSegmentItem(
+          value: 'pit',
+          label: 'PIT Track',
+          badgeLabel: '1st–3rd Year',
+          icon: Icons.science_rounded,
+        ),
+      ],
+      onChanged: (scope) => _changeScope(scope, state),
     );
   }
 
@@ -893,4 +810,3 @@ class _CurriculumAnalyticsScreenState
     return {};
   }
 }
-

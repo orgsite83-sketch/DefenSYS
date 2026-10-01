@@ -919,7 +919,8 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
 
     final replacementUnlockedByAdmin = rawFeedback.contains('Unlocked for file replacement');
     final isDefenseMaterialAttempt2 = isForRedefense && item['type'] == 'pre' && item['is_defense_material'] == true;
-    final fileLocked = !isDefenseMaterialAttempt2 && !replacementUnlockedByAdmin && !isRejected && ((item['type'] == 'pre' && endorsed) || item['locked'] == true || isAccepted);
+    final fileLocked = isAccepted || (!isDefenseMaterialAttempt2 && !isRejected &&
+        ((item['type'] == 'pre' && endorsed) || item['locked'] == true));
     final isWPR = item['id'] == 'WPR';
     final feedback = replacementUnlockedByAdmin ? '' : rawFeedback;
     final rawFormat = item['file_format'] ?? item['fileFormat'];
@@ -977,6 +978,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 _buildStatusPill(
                   isWaived: isWaived,
                   isAccepted: isAccepted,
+                  isPost: item['type'] == 'post',
                   isRejected: isRejected,
                   uploaded: uploaded,
                   isRequired: isRequired,
@@ -1346,6 +1348,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
   Widget _buildStatusPill({
     required bool isWaived,
     required bool isAccepted,
+    required bool isPost,
     required bool isRejected,
     required bool uploaded,
     required bool isRequired,
@@ -1358,14 +1361,14 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: const Color(0xFF86EFAC)),
         ),
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.check_circle_rounded, size: 11, color: Color(0xFF15803D)),
-            SizedBox(width: 3.5),
+            const Icon(Icons.check_circle_rounded, size: 11, color: Color(0xFF15803D)),
+            const SizedBox(width: 3.5),
             Text(
-              'Approved',
-              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
+              isPost && isAccepted ? 'Archived' : 'Approved',
+              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
             ),
           ],
         ),
@@ -1465,6 +1468,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final sizeStr = (submission['file_size'] ?? submission['size'] ?? '').toString();
     final status = submission['status']?.toString();
     final isAccepted = status == 'accepted';
+    final isPost = item['type'] == 'post';
     final isRejected = status == 'rejected' || status == 'Needs Revision';
     final rawFeedback = (submission['feedback'] ?? item['feedback'])?.toString() ?? '';
     final isWPR = item['id'] == 'WPR';
@@ -1472,9 +1476,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final isRequired = item['required'] == true && !isWaived;
     final stageVerdict = stageGrade?['verdict']?.toString();
     final isForRedefense = stageVerdict == 'for_redefense';
-    final replacementUnlockedByAdmin = rawFeedback.contains('Unlocked for file replacement');
     final isDefenseMaterialAttempt2 = isForRedefense && item['type'] == 'pre' && item['is_defense_material'] == true;
-    final fileLocked = !isDefenseMaterialAttempt2 && !replacementUnlockedByAdmin && !isRejected && ((item['type'] == 'pre' && endorsed) || item['locked'] == true || isAccepted);
+    final fileLocked = isAccepted || (!isDefenseMaterialAttempt2 && !isRejected &&
+        ((item['type'] == 'pre' && endorsed) || item['locked'] == true));
 
     final formattedDate = _formatDateString(uploadedAt);
     final suggestedName = (item['suggested_file_name'] ?? '').toString().trim();
@@ -1632,7 +1636,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                           isWaived
                               ? 'Status: Approved with no revisions'
                               : (isAccepted
-                                  ? 'Status: Accepted for Oral Defense'
+                                  ? (isPost ? 'Status: Archived' : 'Status: Accepted for Oral Defense')
                                   : (isRejected
                                       ? 'Status: Revisions Requested'
                                       : (uploaded ? 'Status: Awaiting Faculty Review' : 'Status: Awaiting Upload'))),
@@ -1646,7 +1650,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                         ),
                         Text(
                           isAccepted
-                              ? 'Verified and cleared by the defense committee.'
+                              ? (isPost
+                                  ? 'Final file approved and available in the archive.'
+                                  : 'Verified and cleared by the defense committee.')
                               : (isRejected
                                   ? 'Please review panel remarks and submit revised file.'
                                   : (uploaded ? 'Submitted and queued for verification.' : 'Please upload document before the stage deadline.')),

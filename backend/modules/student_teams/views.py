@@ -238,7 +238,7 @@ class StudentTeamListCreateView(APIView):
 
     def _serialize_teams(self, queryset, user):
         return StudentTeamSerializer(
-            queryset,
+            queryset.prefetch_related('stage_progress__defense_stage'),
             many=True,
             context={'user': user},
         ).data

@@ -35,7 +35,6 @@ import 'e_signature_upload_dialog.dart';
 import 'documenter_dashboard_content.dart';
 import 'minutes_form_screen.dart';
 import 'capstone_instructor_info_section.dart';
-import 'faculty_base_dashboard_content.dart';
 import '../../../config/api_config.dart';
 
 enum FacultyWorkspace { faculty, pitLead, adviser, pitInstructor, documenter }
@@ -1195,30 +1194,16 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 section: 'deliverables',
                 icon: Icons.folder_open_rounded,
                 label: 'Capstone Teams',
-                isActive: _activeSection == 'deliverables',
+                isActive: const {
+                  'deliverables',
+                  'weekly_reports',
+                  'adviser_grading',
+                  'defense_board',
+                  'audit_compliance',
+                }.contains(_activeSection),
                 onTap: () => _afterSidebarAction(
                   isWide,
                   () => _goToSection('deliverables'),
-                ),
-              ),
-              _FacultyNavEntry(
-                section: 'defense_board',
-                icon: Icons.view_agenda_rounded,
-                label: 'Defense Operations',
-                isActive: _activeSection == 'defense_board',
-                onTap: () => _afterSidebarAction(
-                  isWide,
-                  () => _goToSection('defense_board'),
-                ),
-              ),
-              _FacultyNavEntry(
-                section: 'audit_compliance',
-                icon: Icons.summarize_rounded,
-                label: 'Reports',
-                isActive: _activeSection == 'audit_compliance',
-                onTap: () => _afterSidebarAction(
-                  isWide,
-                  () => _goToSection('audit_compliance'),
                 ),
               ),
             ],
@@ -1387,6 +1372,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         final initialTeamId = teamIdParam != null ? int.tryParse(teamIdParam) : null;
         final initialTab = tabParam != null ? int.tryParse(tabParam) : null;
         return TeamDeliverablesScreen(
+          key: ValueKey('deliverables_${initialTeamId ?? 'all'}_${initialTab ?? 'default'}'),
           initialScope: initialScope,
           isAdviser: ws.type == FacultyWorkspace.adviser,
           pitYearLevel: (ws.type == FacultyWorkspace.pitLead || ws.type == FacultyWorkspace.pitInstructor) ? ws.yearLevel : null,
@@ -1395,6 +1381,17 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           initialTab: initialTab,
         );
       case 'weekly_reports':
+        if (workspaceOption.type == FacultyWorkspace.adviser) {
+          final teamId = int.tryParse(
+            routerState.uri.queryParameters['teamId'] ?? '',
+          );
+          return TeamDeliverablesScreen(
+            initialScope: 'capstone',
+            isAdviser: true,
+            initialTeamId: teamId,
+            initialTab: 2,
+          );
+        }
         return Container(
           color: DefensysTokens.surfaceOf(context),
           child: const WeeklyProgressReportsScreen(),
@@ -1409,7 +1406,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           initialScope: 'capstone',
           isAdviser: true,
           initialTeamId: initialTeamId,
-          initialTab: initialTab,
+          initialTab: initialTab ?? 1,
         );
       case 'cohort':
         return Container(
@@ -1459,6 +1456,11 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           child: const ProjectArchiveScreen(),
         );
       case 'audit_compliance':
+        if (workspaceOption.type == FacultyWorkspace.adviser) {
+          return const TeamDeliverablesScreen(
+            initialScope: 'capstone', isAdviser: true, initialTab: 1,
+          );
+        }
         return Container(
           color: DefensysTokens.surfaceOf(context),
           child: const AuditComplianceScreen(),
@@ -1488,6 +1490,11 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           ),
         );
       case 'defense_board':
+        if (workspaceOption.type == FacultyWorkspace.adviser) {
+          return const TeamDeliverablesScreen(
+            initialScope: 'capstone', isAdviser: true, initialTab: 3,
+          );
+        }
         final isImport =
             GoRouterState.of(context).uri.path == FacultyRoutes.defenseScheduleBulkImport;
         return Container(
@@ -1561,13 +1568,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             if (teamId != null) 'teamId': teamId.toString(),
             'tab': '0',
           }),
-          onOpenWeeklyReports: (teamId) => _goToSection('deliverables', queryParameters: {
+          onOpenDefense: (teamId) => _goToSection('deliverables', queryParameters: {
             if (teamId != null) 'teamId': teamId.toString(),
             'tab': '3',
-          }),
-          onOpenGrading: (teamId) => _goToSection('deliverables', queryParameters: {
-            if (teamId != null) 'teamId': teamId.toString(),
-            'tab': '1',
           }),
         );
       case FacultyWorkspace.pitInstructor:
@@ -1828,11 +1831,9 @@ class _FacultyNavItemState extends State<_FacultyNavItem> {
 
 class _SidebarPanelIcon extends StatelessWidget {
   final double size;
-  final Color color;
 
   const _SidebarPanelIcon({
     this.size = 18,
-    this.color = const Color(0xFF64748B),
   });
 
   @override
@@ -1842,7 +1843,7 @@ class _SidebarPanelIcon extends StatelessWidget {
       height: size,
       child: CustomPaint(
         size: Size(size, size),
-        painter: _SidebarPanelPainter(color: color),
+        painter: _SidebarPanelPainter(color: const Color(0xFF64748B)),
       ),
     );
   }

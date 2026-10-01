@@ -115,6 +115,38 @@ class StudentTeamApiTests(APITestCase):
             TeamStageProgress.STATUS_READY,
         )
 
+    def test_team_list_reports_current_stage_progress_after_prior_stage_passed(self):
+        concept = DefenseStage.objects.get(label='Concept Proposal')
+        project = DefenseStage.objects.get(label='Project Proposal')
+        team = StudentTeam.objects.create(
+            name='Team Next Stage',
+            project_title='Stage Progress',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=self.first_semester,
+            leader=self.student_1,
+            adviser=self.adviser,
+            status=StudentTeam.STATUS_APPROVED,
+        )
+        TeamStageProgress.objects.create(
+            team=team,
+            semester=self.first_semester,
+            defense_stage=concept,
+            status=TeamStageProgress.STATUS_PASSED,
+        )
+        mark_stage_ready(team, project, user=self.adviser)
+
+        response = self.client.get('/api/teams/?level=Capstone')
+
+        self.assertEqual(response.status_code, 200)
+        listed = next(item for item in response.data['teams'] if item['id'] == team.id)
+        self.assertEqual(listed['status'], StudentTeam.STATUS_APPROVED)
+        self.assertEqual(listed['defense_context']['current_stage'], project.label)
+        self.assertEqual(
+            listed['defense_context']['stage_status'],
+            TeamStageProgress.STATUS_READY,
+        )
+
     def test_create_team_blocked_during_capstone_off_season(self):
         self.first_semester.is_active = False
         self.first_semester.save(update_fields=['is_active'])

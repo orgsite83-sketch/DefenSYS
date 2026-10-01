@@ -572,7 +572,9 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
             ),
             _buildTriageChip(
               filter: TeamTriageFilter.overdue,
-              label: 'Missing / Overdue ($overdueCount)',
+              label: widget.isAdviser
+                  ? 'Missing Requirements ($overdueCount)'
+                  : 'Missing / Overdue ($overdueCount)',
               dotColor: const Color(0xFFF59E0B),
             ),
           ],

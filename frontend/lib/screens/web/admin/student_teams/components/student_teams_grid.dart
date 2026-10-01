@@ -6,17 +6,12 @@ import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/feedback/empty_state.dart';
 import 'package:defensys/widgets/table/table.dart';
 
+import 'student_teams_stage_summary.dart';
+
 int? _asInt(dynamic value) {
   if (value is int) return value;
   if (value is num) return value.toInt();
   return int.tryParse(value?.toString() ?? '');
-}
-
-int _count(StudentTeamsState state, String key) {
-  final value = state.counts[key];
-  if (value is int) return value;
-  if (value is num) return value.toInt();
-  return int.tryParse(value?.toString() ?? '') ?? 0;
 }
 
 String _projectTitle(Map<String, dynamic> team) {
@@ -56,227 +51,7 @@ String _defenseContext(Map<String, dynamic> team) {
   if (context is String && context.trim().isNotEmpty) {
     return context;
   }
-  return _teamIsPit(team) ? 'No PIT event scheduled' : 'No defense scheduled';
-}
-
-Widget statusBadge(String status, {BuildContext? context}) {
-  final isDark = context != null && Theme.of(context).brightness == Brightness.dark;
-  final color = switch (status) {
-    'Approved' => isDark ? const Color(0xFF34D399) : const Color(0xFF047857),
-    'Failed' => isDark ? const Color(0xFFF87171) : const Color(0xFFB91C1C),
-    'Delayed/Extended' => isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
-    _ => isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
-  };
-  final bg = switch (status) {
-    'Approved' => isDark ? const Color(0xFF064E3B).withValues(alpha: 0.35) : const Color(0xFFD1FAE5),
-    'Failed' => isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.35) : const Color(0xFFFEE2E2),
-    'Delayed/Extended' => isDark ? const Color(0xFF78350F).withValues(alpha: 0.35) : const Color(0xFFFEF3C7),
-    _ => isDark ? const Color(0xFF78350F).withValues(alpha: 0.35) : const Color(0xFFFEF3C7),
-  };
-
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-    decoration: BoxDecoration(
-      color: bg,
-      borderRadius: BorderRadius.circular(999),
-      border: Border.all(color: color.withValues(alpha: isDark ? 0.6 : 0.2)),
-    ),
-    child: Text(
-      status,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(
-        color: color,
-        fontSize: 11,
-        fontWeight: FontWeight.w800,
-      ),
-    ),
-  );
-}
-
-class StudentTeamsSummaryCards extends StatelessWidget {
-  const StudentTeamsSummaryCards({
-    super.key,
-    required this.state,
-    required this.isPitContext,
-  });
-
-  final StudentTeamsState state;
-  final bool isPitContext;
-
-  @override
-  Widget build(BuildContext context) {
-    final hideAdviser = isPitContext;
-    final cards = <Widget>[
-      Expanded(
-        child: _summaryCard(
-          context: context,
-          title: 'All Teams',
-          value: _count(state, 'all'),
-          subtitle: '',
-          icon: Icons.groups_2_rounded,
-          selected: true,
-        ),
-      ),
-      const SizedBox(width: 12),
-      Expanded(
-        child: _summaryCard(
-          context: context,
-          title: 'Result Pending',
-          value: _count(state, 'pending'),
-          subtitle: 'Awaiting decision',
-          icon: Icons.schedule_rounded,
-          iconColor: const Color(0xFFB45309),
-          iconBg: const Color(0xFFFEF3C7),
-        ),
-      ),
-      const SizedBox(width: 12),
-      Expanded(
-        child: _summaryCard(
-          context: context,
-          title: 'Approved',
-          value: _count(state, 'approved'),
-          subtitle: 'Passed',
-          icon: Icons.check_circle_rounded,
-          iconColor: const Color(0xFF047857),
-          iconBg: const Color(0xFFD1FAE5),
-        ),
-      ),
-      const SizedBox(width: 12),
-      Expanded(
-        child: _summaryCard(
-          context: context,
-          title: 'Failed',
-          value: _count(state, 'failed'),
-          subtitle: 'Teams',
-          icon: Icons.cancel_rounded,
-          iconColor: const Color(0xFFB91C1C),
-          iconBg: const Color(0xFFFEE2E2),
-        ),
-      ),
-    ];
-    if (!hideAdviser) {
-      cards.addAll([
-        const SizedBox(width: 12),
-        Expanded(
-          child: _summaryCard(
-            context: context,
-            title: 'Adviser Review',
-            value: _count(state, 'no_adviser'),
-            subtitle: 'Needs Review',
-            icon: Icons.warning_rounded,
-            iconColor: const Color(0xFFD97706),
-            iconBg: const Color(0xFFFEF3C7),
-          ),
-        ),
-      ]);
-    }
-    return Row(children: cards);
-  }
-
-  Widget _summaryCard({
-    required BuildContext context,
-    required String title,
-    required int value,
-    required String subtitle,
-    required IconData icon,
-    bool selected = false,
-    Color iconColor = DefensysUi.techBlue,
-    Color iconBg = const Color(0xFFEFF6FF),
-  }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardBg = selected
-        ? (isDark ? DefensysUi.primaryMaroon.withValues(alpha: 0.2) : const Color(0xFFFFF4F4))
-        : (isDark ? DefensysTokens.mistSurface : Colors.white);
-    final borderColor = selected
-        ? DefensysUi.primaryMaroon
-        : (isDark ? DefensysTokens.mistBorder : Colors.transparent);
-    final textTitle = isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF667085);
-    final textValue = isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F2743);
-    final textSub = isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF98A2B3);
-    final actualIconBg = isDark
-        ? (selected ? const Color(0xFF28272D) : iconColor.withValues(alpha: 0.18))
-        : (selected ? const Color(0xFFF1F2F4) : iconBg);
-    final actualIconColor = selected
-        ? (isDark ? Colors.white : DefensysUi.textDark)
-        : iconColor;
-
-    return Container(
-      height: 101,
-      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
-      decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: borderColor),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.06),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: actualIconBg,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: actualIconColor, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: textTitle,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    height: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  value.toString(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: textValue,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    height: 1,
-                  ),
-                ),
-                if (subtitle.isNotEmpty) ...[
-                  const SizedBox(height: 5),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: textSub,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w500,
-                      height: 1.1,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  return _teamIsPit(team) ? 'No PIT event scheduled' : 'No stage selected';
 }
 
 class UnifiedSectionMetadataCard extends StatelessWidget {
@@ -400,24 +175,33 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
           projectTitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: _textSecondary,
-            fontSize: 12,
-          ),
+          style: TextStyle(color: _textSecondary, fontSize: 12),
         ),
         if (!isPit) ...[
           const SizedBox(height: 4),
           Row(
             children: [
-              Icon(Icons.person_outline_rounded, size: 12, color: _textSecondary),
+              Icon(
+                Icons.person_outline_rounded,
+                size: 12,
+                color: _textSecondary,
+              ),
               const SizedBox(width: 4),
-              Text(
-                adviserName.isEmpty ? 'Adviser: Unassigned' : 'Adviser: $adviserName',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  color: _textSecondary,
-                  fontWeight: FontWeight.w500,
-                  fontStyle: adviserName.isEmpty ? FontStyle.italic : FontStyle.normal,
+              Expanded(
+                child: Text(
+                  adviserName.isEmpty
+                      ? 'Adviser: Unassigned'
+                      : 'Adviser: $adviserName',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: _textSecondary,
+                    fontWeight: FontWeight.w500,
+                    fontStyle: adviserName.isEmpty
+                        ? FontStyle.italic
+                        : FontStyle.normal,
+                  ),
                 ),
               ),
             ],
@@ -602,22 +386,19 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
 
         final isExpanded = _sectionExpansionStates[section] ?? (widget.searchQuery.trim().isNotEmpty);
 
-        final pendingCount = sectionTeams.where((t) {
-          final status = t['status']?.toString().toLowerCase() ?? '';
-          return status != 'approved' && status != 'failed';
-        }).length;
-
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
             color: isDark ? DefensysTokens.mistSurface : Colors.white,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
+            border: Border.all(
+              color: isDark
+                  ? DefensysTokens.mistBorder
+                  : const Color(0xFFE5E7EB),
+            ),
           ),
           child: Theme(
-            data: Theme.of(context).copyWith(
-              dividerColor: Colors.transparent,
-            ),
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(
               key: Key('${section}_${widget.searchQuery.trim().isNotEmpty}'),
               initiallyExpanded: isExpanded,
@@ -633,62 +414,43 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                 color: DefensysUi.primaryMaroon,
                 size: 20,
               ),
-              title: Row(
+              title: Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 10,
+                runSpacing: 6,
                 children: [
                   Text(
                     section,
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 15,
-                      color: isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark,
+                      color: isDark
+                          ? DefensysTokens.textPrimaryDark
+                          : DefensysUi.textDark,
                     ),
                   ),
-                  const SizedBox(width: 10),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2.5,
+                    ),
                     decoration: BoxDecoration(
-                      color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6),
+                      color: isDark
+                          ? DefensysTokens.mistInputFill
+                          : const Color(0xFFF3F4F6),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
                       '${sectionTeams.length} ${sectionTeams.length == 1 ? 'team' : 'teams'}',
                       style: TextStyle(
                         fontSize: 11,
-                        color: isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF4B5563),
+                        color: isDark
+                            ? DefensysTokens.textSecondaryDark
+                            : const Color(0xFF4B5563),
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
-                  if (pendingCount > 0) ...[
-                    const SizedBox(width: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF78350F).withValues(alpha: 0.3) : const Color(0xFFFEF3C7),
-                        borderRadius: BorderRadius.circular(12),
-                        border: isDark ? Border.all(color: const Color(0xFF92400E)) : null,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.warning_amber_rounded,
-                            color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
-                            size: 13,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '$pendingCount Pending',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              color: isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
                 ],
               ),
               children: [
@@ -871,12 +633,20 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                       child: DefensysDataTable<Map<String, dynamic>>(
                         items: displayedTeams,
                         rowMinHeight: DefensysTableTokens.rowHeightMultiline,
+                        onRowTap: (team) {
+                          final teamId = _asInt(team['id']);
+                          if (teamId != null) widget.onOpenTeamDetail(teamId);
+                        },
                         emptyState: const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                          padding: EdgeInsets.symmetric(
+                            vertical: 24,
+                            horizontal: 16,
+                          ),
                           child: DefensysEmptyState(
                             icon: Icons.person_search_outlined,
                             title: 'No Teams for Selected Adviser',
-                            description: 'No teams are assigned to this adviser under this section.',
+                            description:
+                                'No teams are assigned to this adviser under this section.',
                             size: DefensysEmptyStateSize.compact,
                           ),
                         ),
@@ -896,39 +666,56 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                 _buildLeaderAndMembersCell(team),
                           ),
                           DefensysTableColumn<Map<String, dynamic>>(
-                            title: isPit ? 'PIT EVENT' : 'DEFENSE CONTEXT',
+                            title: isPit ? 'PIT EVENT' : 'CURRENT STAGE',
                             flex: 2.2,
                             minWidth: 170,
                             cellBuilder: (context, team, index) =>
                                 _buildDefenseContextCell(team, isPit: isPit),
                           ),
+                          if (!isPit)
+                            DefensysTableColumn<Map<String, dynamic>>(
+                              title: 'STAGE PROGRESS',
+                              flex: 1.4,
+                              minWidth: 170,
+                              cellBuilder: (context, team, index) =>
+                                  currentStageBadge(context, team),
+                            ),
                           DefensysTableColumn<Map<String, dynamic>>(
-                            title: 'TEAM RESULT',
-                            flex: 1.1,
-                            minWidth: 120,
-                            cellBuilder: (context, team, index) =>
-                                statusBadge(team['status']?.toString() ?? 'Pending', context: context),
+                            title: 'DETAILS',
+                            flex: 0.9,
+                            minWidth: 100,
+                            alignment: Alignment.center,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            headerPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                            ),
+                            cellBuilder: (context, team, index) {
+                              final teamId = _asInt(team['id']);
+                              return TextButton.icon(
+                                onPressed: teamId == null
+                                    ? null
+                                    : () => widget.onOpenTeamDetail(teamId),
+                                icon: const Icon(
+                                  Icons.arrow_forward_rounded,
+                                  size: 15,
+                                ),
+                                label: const Text('View'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: isDark
+                                      ? const Color(0xFF93C5FD)
+                                      : DefensysUi.techBlue,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                  ),
+                                  textStyle: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              );
+                            },
                           ),
                         ],
-                        stickyActionColumn: DefensysActionColumn<Map<String, dynamic>>(
-                          title: 'DETAILS',
-                          width: 72,
-                          alignment: Alignment.center,
-                          builder: (context, team, index) {
-                            final teamId = _asInt(team['id']);
-                            return Tooltip(
-                              message: 'View team details',
-                              child: InkWell(
-                                onTap: teamId != null ? () => widget.onOpenTeamDetail(teamId) : null,
-                                borderRadius: BorderRadius.circular(6),
-                                child: const Padding(
-                                  padding: EdgeInsets.all(6),
-                                  child: Icon(Icons.info_outline, color: DefensysUi.techBlue, size: 18),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
                       ),
                     ),
                   ),

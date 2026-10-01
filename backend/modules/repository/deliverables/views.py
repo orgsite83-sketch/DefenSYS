@@ -241,7 +241,10 @@ class CapstoneDeliverableRemoveView(APIView):
         if not check_deliverable_write_permission(request.user, team):
             return Response({'detail': 'You do not have permission to manage deliverables for this team.'}, status=status.HTTP_403_FORBIDDEN)
             
-        remove_submission(team, attrs['stage_label'], attrs['deliverable_id'], file_id=attrs.get('file_id'))
+        try:
+            remove_submission(team, attrs['stage_label'], attrs['deliverable_id'], file_id=attrs.get('file_id'))
+        except (PermissionError, ValueError, ValidationError) as exc:
+            return deliverable_error_response(exc)
         return Response(deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'), status=status.HTTP_200_OK)
 
 

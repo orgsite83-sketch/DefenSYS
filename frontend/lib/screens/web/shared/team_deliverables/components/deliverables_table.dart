@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/services/adviser_grading_provider.dart';
+import 'package:defensys/services/reports_provider.dart';
 import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
@@ -9,6 +10,7 @@ import 'package:defensys/utils/universal_file_viewer.dart';
 import 'package:defensys/widgets/confirm_dialog.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/screens/web/faculty/weekly_progress_reports_screen.dart';
+import 'package:defensys/screens/web/faculty/adviser/adviser_defense_tab.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/dialogs/deliverable_submission_detail_modal.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/dialogs/grade_deliverable_modal.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/dialogs/wpr_management_dialogs.dart';
@@ -90,8 +92,22 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   void initState() {
     super.initState();
     _selectedTeamId = widget.initialTeamId;
+    _showMobileDetail = widget.initialTeamId != null;
     if (widget.initialTeamId != null && widget.initialTab != null) {
       _cardActiveTabs[widget.initialTeamId!] = widget.initialTab!;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant DeliverablesTablePane oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialTeamId != oldWidget.initialTeamId &&
+        widget.initialTeamId != null) {
+      _selectedTeamId = widget.initialTeamId;
+      _showMobileDetail = true;
+      if (widget.initialTab != null) {
+        _cardActiveTabs[widget.initialTeamId!] = widget.initialTab!;
+      }
     }
   }
 
@@ -152,6 +168,10 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   }
 
   String _effectiveSelectedStage(Map<String, dynamic> team) {
+    if (widget.isAdviser && widget.state.selectedStage.isNotEmpty) {
+      return widget.state.selectedStage;
+    }
+
     final teamId = parseAsInt(team['id']);
     if (_cardSelectedStages.containsKey(teamId)) {
       return _cardSelectedStages[teamId]!;
@@ -410,17 +430,18 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   ) async {
     final deliverableName = item['label']?.toString() ?? item['id']?.toString() ?? 'Deliverable';
     final teamName = team['name']?.toString() ?? 'the team';
+    final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.check_circle_outline, color: AppColors.success, size: 22),
-            SizedBox(width: 8),
+            const Icon(Icons.check_circle_outline, color: AppColors.success, size: 22),
+            const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Accept Deliverable',
+                isPost ? 'Approve for Archive' : 'Accept Pre-Defense Requirement',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
             ),
@@ -431,11 +452,14 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Are you sure you want to accept "$deliverableName" for $teamName?',
+              isPost
+                  ? 'Approve "$deliverableName" for $teamName and add it to the archive?'
+                  : 'Accept "$deliverableName" for $teamName? This clears a pre-defense requirement for endorsement.',
               style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
             ),
-            const SizedBox(height: 12),
-            Container(
+            if (isPost) ...[
+              const SizedBox(height: 12),
+              Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: AppColors.gold.withValues(alpha: 0.1),
@@ -449,13 +473,14 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Accepting will finalize and lock this submission. Any future file replacements or revisions must be unlocked by a System Admin.',
+                      'Approval makes this file available in the archive according to its access settings. Only a System Admin can reopen it for revision.',
                       style: TextStyle(fontSize: 12, color: AppColors.textPrimary, height: 1.3),
                     ),
                   ),
                 ],
               ),
-            ),
+              ),
+            ],
           ],
         ),
         actions: [
@@ -470,7 +495,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               foregroundColor: Colors.white,
               elevation: 0,
             ),
-            child: const Text('Confirm & Accept'),
+            child: Text(isPost ? 'Approve & Archive' : 'Accept Requirement'),
           ),
         ],
       ),
@@ -491,22 +516,27 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     String stageLabel,
     Map<String, dynamic> item,
   ) async {
+    final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
     final feedbackCtrl = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: Text('Reject Deliverable: ${item['label'] ?? item['id']}'),
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) => AlertDialog(
+        title: Text('${isPost ? 'Request Revision' : 'Reject Deliverable'}: ${item['label'] ?? item['id']}'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Please provide feedback explaining why this submission is being rejected so students can revise it:',
-              style: TextStyle(fontSize: 13),
+            Text(
+              isPost
+                  ? 'Explain what the team must correct before this file can be archived:'
+                  : 'Please provide feedback explaining why this submission is being rejected so students can revise it:',
+              style: const TextStyle(fontSize: 13),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: feedbackCtrl,
+              onChanged: (_) => setDialogState(() {}),
               maxLines: 3,
               decoration: const InputDecoration(
                 hintText: 'Enter rejection remarks...',
@@ -521,24 +551,29 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(dialogCtx, true),
+            onPressed: isPost && feedbackCtrl.text.trim().isEmpty
+                ? null
+                : () => Navigator.pop(dialogCtx, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.danger,
               foregroundColor: Colors.white,
             ),
-            child: const Text('Confirm Rejection'),
+            child: Text(isPost ? 'Send Revision Request' : 'Confirm Rejection'),
           ),
         ],
+        ),
       ),
     );
 
+    final feedback = feedbackCtrl.text.trim();
+    feedbackCtrl.dispose();
     if (confirmed == true && mounted) {
       await ref.read(capstoneDeliverablesProvider.notifier).reviewDeliverable(
             teamId: parseAsInt(team['id']),
             stageLabel: stageLabel,
             deliverableId: item['id'].toString(),
             status: 'rejected',
-            feedback: feedbackCtrl.text.trim(),
+            feedback: feedback,
           );
     }
   }
@@ -674,17 +709,18 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final stages = _stageList(team);
     final currentStageObj = _stagePayload(stages, stageLabel);
     final endorsed = currentStageObj['endorsed'] == true;
-    final locked = item['locked'] == true;
+    final subStatus = submission?['status']?.toString();
+    final locked = item['locked'] == true || subStatus == 'accepted';
     final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
-    final canFacultyReview = item['can_faculty_review'] == true ||
-        (isPost
-            ? (currentStageObj['can_faculty_review_post'] != false)
-            : (currentStageObj['can_faculty_review'] != false));
+    final canFacultyReview = item['can_faculty_review'] is bool
+        ? item['can_faculty_review'] == true
+        : (isPost
+            ? currentStageObj['can_faculty_review_post'] == true
+            : currentStageObj['can_faculty_review'] == true);
 
     final isWPR = item['id']?.toString() == 'WPR' ||
         item['label']?.toString().contains('Weekly Progress Report') == true;
 
-    final subStatus = submission?['status']?.toString();
     final feedback = submission?['feedback']?.toString();
 
     return Container(
@@ -853,14 +889,14 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.check_circle_rounded, size: 12, color: AppColors.success),
-                          SizedBox(width: 4),
+                          const Icon(Icons.check_circle_rounded, size: 12, color: AppColors.success),
+                          const SizedBox(width: 4),
                           Text(
-                            'Accepted',
-                            style: TextStyle(
+                            isPost ? 'Archived' : 'Accepted',
+                            style: const TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
                               color: AppColors.success,
@@ -869,7 +905,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                         ],
                       ),
                     ),
-                    if (canFacultyReview) ...[
+                    if (canFacultyReview && !isPost) ...[
                       const SizedBox(width: 6),
                       OutlinedButton.icon(
                         onPressed: widget.state.isSaving
@@ -893,14 +929,14 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.cancel_rounded, size: 12, color: AppColors.danger),
-                          SizedBox(width: 4),
+                          const Icon(Icons.cancel_rounded, size: 12, color: AppColors.danger),
+                          const SizedBox(width: 4),
                           Text(
-                            'Rejected',
-                            style: TextStyle(
+                            isPost ? 'Needs Revision' : 'Rejected',
+                            style: const TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
                               color: AppColors.danger,
@@ -916,7 +952,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                             ? null
                             : () => _promptAcceptDialog(team, stageLabel, item),
                         icon: const Icon(Icons.check_circle_outline, size: 14),
-                        label: const Text('Accept'),
+                        label: Text(isPost ? 'Approve & Archive' : 'Accept'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.success,
                           foregroundColor: Colors.white,
@@ -933,7 +969,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                             ? null
                             : () => _promptAcceptDialog(team, stageLabel, item),
                         icon: const Icon(Icons.check_circle_outline, size: 14),
-                        label: const Text('Accept'),
+                        label: Text(isPost ? 'Approve & Archive' : 'Accept'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.success,
                           foregroundColor: Colors.white,
@@ -948,7 +984,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                             ? null
                             : () => _promptRejectDialog(team, stageLabel, item),
                         icon: const Icon(Icons.cancel_outlined, size: 14),
-                        label: const Text('Reject'),
+                        label: Text(isPost ? 'Request Revision' : 'Reject'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.danger,
                           side: const BorderSide(color: AppColors.danger),
@@ -982,6 +1018,21 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       ),
                     ],
                   ],
+                ] else if (isAdmin && isPost && subStatus == 'accepted') ...[
+                  Tooltip(
+                    message: 'Use Reopen for Revision in Repository Audit to correct this file.',
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'Archived',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.success),
+                      ),
+                    ),
+                  ),
                 ],
               ],
             ],
@@ -1038,6 +1089,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     required bool configured,
     required int done,
     required int total,
+    required int accepted,
     bool isPresentationOnly = false,
   }) {
     if (isPresentationOnly) {
@@ -1079,14 +1131,16 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       );
     }
 
-    final pct = total > 0 ? (done / total).clamp(0.0, 1.0) : 0.0;
-    final color = done == total && total > 0 ? AppColors.success : AppColors.warning;
+    final pct = total > 0 ? (accepted / total).clamp(0.0, 1.0) : 0.0;
+    final color = accepted == total && total > 0 ? AppColors.success : const Color(0xFF2563EB);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Wrap(
+          spacing: 16,
+          runSpacing: 6,
+          alignment: WrapAlignment.spaceBetween,
           children: [
             const Text(
               'Required Pre-Defense Check',
@@ -1097,7 +1151,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               ),
             ),
             Text(
-              configured ? '$done / $total Complete' : 'Not Configured',
+              configured ? '$done/$total submitted, $accepted/$total accepted' : 'Not Configured',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
@@ -1122,15 +1176,18 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
 
   Widget _archiveProgressBlock(Map<String, dynamic> stage) {
     final done = parseAsInt(stage['archive_required_uploaded']);
+    final accepted = parseAsInt(stage['archive_required_accepted']);
     final total = parseAsInt(stage['archive_required_total']);
-    final pct = total > 0 ? (done / total).clamp(0.0, 1.0) : 0.0;
-    final color = done == total && total > 0 ? AppColors.success : AppColors.gold;
+    final pct = total > 0 ? (accepted / total).clamp(0.0, 1.0) : 0.0;
+    final color = accepted == total && total > 0 ? AppColors.success : AppColors.gold;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        Wrap(
+          spacing: 16,
+          runSpacing: 6,
+          alignment: WrapAlignment.spaceBetween,
           children: [
             const Text(
               'Post-Defense Deliverables',
@@ -1141,7 +1198,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               ),
             ),
             Text(
-              '$done / $total Complete',
+              '$done/$total uploaded, $accepted/$total archived',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
@@ -1277,6 +1334,75 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
+  Future<void> _confirmEndorseTeam(
+    Map<String, dynamic> team,
+    String selectedStage,
+    bool isPresentationOnly,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Endorse Team'),
+        content: Text(
+          isPresentationOnly
+              ? 'Endorse ${team['name']} for $selectedStage? '
+                'This confirms the team is verbally prepared and ready for presentation / demo scheduling.'
+              : 'Endorse ${team['name']} for $selectedStage? '
+                'This confirms all required deliverables are complete '
+                'and the team is ready for defense scheduling.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.verified_outlined),
+            label: const Text('Endorse'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.success,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await ref.read(capstoneDeliverablesProvider.notifier).endorseTeam(
+            parseAsInt(team['id']),
+            selectedStage,
+          );
+    }
+  }
+
+  Widget _buildEndorseButton(
+    Map<String, dynamic> team,
+    String selectedStage, {
+    required bool enabled,
+    required bool isPresentationOnly,
+  }) {
+    return ElevatedButton.icon(
+      onPressed: enabled && !widget.state.isSaving
+          ? () => _confirmEndorseTeam(team, selectedStage, isPresentationOnly)
+          : null,
+      icon: const Icon(Icons.verified_outlined, size: 16),
+      label: const Text(
+        'Endorse Team',
+        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+      ),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppColors.maroon,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+    );
+  }
+
   Widget _expandedTabButton(
     int teamId,
     int tabIndex,
@@ -1386,12 +1512,14 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           decoration: const BoxDecoration(
             border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
           ),
-          child: Row(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
             children: [
               _expandedTabButton(
                 teamId,
                 0,
-                '📁 Deliverables',
+                'Deliverables',
                 badgeText: isPresentationOnly ? 'Oral / Demo' : (configured ? '$reqUploaded/$reqTotal' : null),
                 badgeColor: isPresentationOnly
                     ? const Color(0xFF4F46E5)
@@ -1399,13 +1527,20 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                         ? AppColors.success
                         : AppColors.textSecondary),
               ),
-              const SizedBox(width: 24),
-              _expandedTabButton(teamId, 1, '📊 Grades & Rubric'),
-              if (widget.state.scope == 'capstone') ...[
+              if (widget.isAdviser && widget.state.scope == 'capstone') ...[
                 const SizedBox(width: 24),
-                _expandedTabButton(teamId, 2, '📅 Weekly Reports'),
+                _expandedTabButton(teamId, 2, 'Weekly Reports'),
+                const SizedBox(width: 24),
+                _expandedTabButton(teamId, 3, 'Defense'),
+              ],
+              const SizedBox(width: 24),
+              _expandedTabButton(teamId, 1, 'Grades & Rubric'),
+              if (!widget.isAdviser && widget.state.scope == 'capstone') ...[
+                const SizedBox(width: 24),
+                _expandedTabButton(teamId, 2, 'Weekly Reports'),
               ],
             ],
+            ),
           ),
         ),
         const SizedBox(height: 16),
@@ -1472,6 +1607,10 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     configured: configuredReq,
                     done: requiredUploaded,
                     total: requiredTotal,
+                    accepted: (stage['pre'] as List? ?? []).whereType<Map>().where(
+                      (item) => item['required'] == true &&
+                          item['submission'] is Map && item['submission']['status'] == 'accepted',
+                    ).length,
                     isPresentationOnly: isPresentationOnly,
                   ),
                 );
@@ -1597,74 +1736,18 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 ),
             ],
 
-            if (canEndorse) ...[
+            if (canEndorse && !widget.isAdviser) ...[
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),
                 child: Divider(color: Color(0xFFE2E8F0), height: 1),
               ),
               Align(
                 alignment: Alignment.centerRight,
-                child: ElevatedButton.icon(
-                  onPressed: widget.state.isSaving
-                      ? null
-                      : () async {
-                          final confirmed = await showDialog<bool>(
-                            context: context,
-                            builder: (dialogContext) => AlertDialog(
-                              title: const Text('Endorse Team'),
-                              content: Text(
-                                isPresentationOnly
-                                    ? 'Endorse ${team['name']} for $selectedStage? '
-                                      'This confirms the team is verbally prepared and ready for presentation / demo scheduling.'
-                                    : 'Endorse ${team['name']} for $selectedStage? '
-                                      'This confirms all required deliverables are complete '
-                                      'and the team is ready for defense scheduling.',
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.pop(dialogContext, false),
-                                  child: const Text('Cancel'),
-                                ),
-                                ElevatedButton.icon(
-                                  onPressed: () =>
-                                      Navigator.pop(dialogContext, true),
-                                  icon: const Icon(Icons.verified_outlined),
-                                  label: const Text('Endorse'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.success,
-                                    foregroundColor: Colors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                          if (confirmed == true && mounted) {
-                            await ref
-                                .read(capstoneDeliverablesProvider.notifier)
-                                .endorseTeam(
-                                  parseAsInt(team['id']),
-                                  selectedStage,
-                                );
-                          }
-                        },
-                  icon: const Icon(Icons.verified_outlined, size: 16),
-                  label: const Text(
-                    'Endorse Team',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.maroon,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
+                child: _buildEndorseButton(
+                  team,
+                  selectedStage,
+                  enabled: true,
+                  isPresentationOnly: isPresentationOnly,
                 ),
               ),
             ] else if (canCancelEndorsement && isFacultyOrAdmin) ...[
@@ -1750,6 +1833,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             teamManualScoreCtrls: _teamManualScoreCtrls,
             teamSelectedRubrics: _teamSelectedRubrics,
           ),
+        ] else if (activeTab == 3 && widget.isAdviser) ...[
+          AdviserDefenseTab(teamId: teamId, selectedStage: selectedStage),
         ] else ...[
           SizedBox(
             height: 650,
@@ -1799,6 +1884,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       },
     );
     final adviserScore = gradeRecord['adviser_score'];
+    final showTeamMeta = !widget.isAdviser || adviserScore != null;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1818,6 +1904,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           onTap: () {
             setState(() {
               _selectedTeamId = teamId;
+              if (widget.initialTab != null) {
+                _cardActiveTabs.putIfAbsent(teamId, () => widget.initialTab!);
+              }
               _showMobileDetail = true;
             });
           },
@@ -1844,7 +1933,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                           const SizedBox(height: 2),
                           Text(
                             team['project_title']?.toString() ?? 'No Project Title',
-                            maxLines: 1,
+                            maxLines: widget.isAdviser ? 2 : 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 12,
@@ -1879,10 +1968,36 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                Row(
+                if (DeliverablesTriageHelper.hasPendingReview(team)) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEE2E2),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: const Color(0xFFFECACA)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.rate_review_rounded, size: 16, color: Color(0xFFB91C1C)),
+                        SizedBox(width: 4),
+                        Text(
+                          '${DeliverablesTriageHelper.pendingReviewCount(team)} awaiting review',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFB91C1C),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (showTeamMeta) const SizedBox(height: 10),
+                if (showTeamMeta) Row(
                   children: [
-                    if (team['current_stage']?.toString().isNotEmpty == true) ...[
+                    if (!widget.isAdviser && team['current_stage']?.toString().isNotEmpty == true) ...[
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
@@ -1901,7 +2016,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       ),
                       const SizedBox(width: 8),
                     ],
-                    if (team['adviser_name']?.toString().isNotEmpty == true) ...[
+                    if (!widget.isAdviser && team['adviser_name']?.toString().isNotEmpty == true) ...[
                       const Icon(Icons.person_outline, size: 12, color: AppColors.textSecondary),
                       const SizedBox(width: 4),
                       Expanded(
@@ -1932,32 +2047,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     ],
                   ],
                 ),
-                if (DeliverablesTriageHelper.hasPendingReview(team)) ...[
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFEE2E2),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: const Color(0xFFFECACA)),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.rate_review_rounded, size: 10, color: Color(0xFFB91C1C)),
-                        SizedBox(width: 4),
-                        Text(
-                          'Pending Review',
-                          style: TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFFB91C1C),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
@@ -2130,6 +2219,86 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
+  Future<void> _downloadTeamGradeReport(int teamId, String teamName, int gradeId) async {
+    final success = await ref.read(reportsProvider.notifier).downloadReport(
+      endpoint: 'team-grade/$teamId/',
+      queryParams: {'grade_id': gradeId.toString()},
+      defaultFilename: 'DefenSYS_${teamName.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_')}_Grade_Report.pdf',
+    );
+    if (!mounted) return;
+    if (success) {
+      showSuccessToast(context, 'Team grade report downloaded.');
+    } else {
+      showErrorToast(context, ref.read(reportsProvider).error ?? 'Unable to download the report.');
+    }
+  }
+
+  Widget _buildAdviserRoster(Map<String, dynamic> team, Map<String, dynamic> gradeRecord) {
+    final members = (team['members'] as List? ?? []).whereType<Map>().toList();
+    final gradeId = parseAsInt(gradeRecord['id']);
+    final canDownloadReport = gradeId > 0 && gradeRecord['status'] == 'published';
+    final reportLoading = ref.watch(reportsProvider).isLoading;
+
+    return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text('Team roster (${members.length})',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              if (canDownloadReport)
+                OutlinedButton.icon(
+                  onPressed: reportLoading ? null : () => _downloadTeamGradeReport(
+                    parseAsInt(team['id']), team['name']?.toString() ?? 'Team', gradeId,
+                  ),
+                  icon: const Icon(Icons.download_outlined, size: 16),
+                  label: const Text('Download grade report'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (members.isEmpty)
+            const Text('No members assigned to this team.',
+                style: TextStyle(color: AppColors.textSecondary))
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: members.map((member) {
+                final name = member['name']?.toString() ?? member['username']?.toString() ?? 'Student';
+                final isLeader = member['role'] == 'leader' || member['is_leader'] == true;
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: isLeader ? AppColors.gold.withValues(alpha: 0.12) : Colors.white,
+                    border: Border.all(color: isLeader
+                        ? AppColors.gold.withValues(alpha: 0.35) : const Color(0xFFE2E8F0)),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isLeader) ...[
+                        const Icon(Icons.star_rounded, size: 14, color: AppColors.gold),
+                        const SizedBox(width: 5),
+                      ],
+                      Text(name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      if (isLeader) ...[
+                        const SizedBox(width: 5),
+                        const Text('· Leader', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                      ],
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+        ],
+    );
+  }
+
   Widget _buildConsolidatedTeamHeader({
     required BuildContext context,
     required Map<String, dynamic> team,
@@ -2141,8 +2310,22 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     required String? currentStage,
   }) {
     final isPit = widget.state.scope == 'pit';
+    final yearLevel = team['year_level']?.toString().trim() ?? '';
+    final section = team['section']?.toString().trim() ?? '';
+    final isPresentationOnly = stagePayload['is_presentation_only'] == true;
+    final canEndorse = (stagePayload['deliverables_configured'] == true || isPresentationOnly) &&
+        (stagePayload['required_complete'] == true || isPresentationOnly) &&
+        stagePayload['endorsed'] != true;
+    final endorsementHint = isPresentationOnly
+        ? 'No uploads required. Endorse the team for presentation scheduling.'
+        : stagePayload['deliverables_configured'] != true
+            ? 'Configure pre-defense requirements before endorsing the team.'
+            : canEndorse
+                ? 'All required pre-defense deliverables are accepted. Endorse the team for defense scheduling.'
+                : 'Accept all required pre-defense deliverables, then endorse the team for defense scheduling.';
 
     return Container(
+      key: widget.isAdviser ? const Key('adviser-team-summary') : null,
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(12),
@@ -2171,7 +2354,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                             ),
                           ),
                         ),
-                        if (currentStage != null && currentStage.isNotEmpty) ...[
+                        if (!widget.isAdviser && currentStage != null && currentStage.isNotEmpty) ...[
                           const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -2192,21 +2375,23 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                         ],
                       ],
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      team['project_title']?.toString() ?? 'No Project Title',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        color: AppColors.textSecondary,
+                    if (!widget.isAdviser) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        team['project_title']?.toString() ?? 'No Project Title',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: AppColors.textSecondary,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
               const SizedBox(width: 12),
-              if (team['adviser_name']?.toString().isNotEmpty == true) ...[
+              if (!widget.isAdviser && team['adviser_name']?.toString().isNotEmpty == true) ...[
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
@@ -2232,10 +2417,53 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 ),
                 const SizedBox(width: 8),
               ],
-              _buildAvatarCluster(team, gradeRecord),
+              if (!widget.isAdviser) _buildAvatarCluster(team, gradeRecord),
+              if (widget.isAdviser && stages.isNotEmpty) ...[
+                const SizedBox(width: 12),
+                _buildStageStatusBadge(stagePayload),
+              ],
             ],
           ),
-          if (stages.isNotEmpty) ...[
+          if (widget.isAdviser) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Project title',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              team['project_title']?.toString() ?? 'No Project Title',
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            if (yearLevel.isNotEmpty || section.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 18,
+                runSpacing: 6,
+                children: [
+                  if (yearLevel.isNotEmpty)
+                    Text('Year level: $yearLevel',
+                        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                  if (section.isNotEmpty)
+                    Text('Section: $section',
+                        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                ],
+              ),
+            ],
+            const SizedBox(height: 14),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            const SizedBox(height: 12),
+            _buildAdviserRoster(team, gradeRecord ?? const <String, dynamic>{}),
+          ],
+          if (!widget.isAdviser && stages.isNotEmpty) ...[
             const SizedBox(height: 10),
             const Divider(height: 1, color: Color(0xFFE2E8F0)),
             const SizedBox(height: 10),
@@ -2405,9 +2633,78 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   ),
                   const SizedBox(width: 8),
                 ],
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Text(
+                  'Stage status',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
                 _buildStageStatusBadge(stagePayload),
               ],
             ),
+          ],
+          if (widget.isAdviser && stages.isNotEmpty && stagePayload['endorsed'] != true) ...[
+              const SizedBox(height: 14),
+              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+              const SizedBox(height: 12),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final hint = Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Next step',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        endorsementHint,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  );
+                  final button = _buildEndorseButton(
+                    team,
+                    selectedStage,
+                    enabled: canEndorse,
+                    isPresentationOnly: isPresentationOnly,
+                  );
+                  if (constraints.maxWidth < 560) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        hint,
+                        const SizedBox(height: 8),
+                        Align(alignment: Alignment.centerRight, child: button),
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      Expanded(child: hint),
+                      const SizedBox(width: 12),
+                      button,
+                    ],
+                  );
+                },
+              ),
           ],
         ],
       ),
@@ -2462,15 +2759,17 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   }
 
   Widget _buildDesktopLayout() {
-    final filteredTeams = widget.state.teams
+    final filteredTeams = DeliverablesTriageHelper.reviewFirst(widget.state.teams
         .map((t) => Map<String, dynamic>.from(t))
-        .where((t) => DeliverablesTriageHelper.matchesFilter(t, widget.activeTriageFilter))
-        .toList();
+        .where((t) => DeliverablesTriageHelper.matchesFilter(t, widget.activeTriageFilter)));
     final teamIds = filteredTeams.map((t) => parseAsInt(t['id'])).toList();
     if (_selectedTeamId == null || !teamIds.contains(_selectedTeamId)) {
       if (teamIds.isNotEmpty) {
         _selectedTeamId = teamIds.first;
       }
+    }
+    if (_selectedTeamId != null && widget.initialTab != null) {
+      _cardActiveTabs.putIfAbsent(_selectedTeamId!, () => widget.initialTab!);
     }
 
     final selectedTeam = filteredTeams.firstWhere(
@@ -2492,7 +2791,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 Padding(
                   padding: const EdgeInsets.only(left: 4, bottom: 8),
                   child: Text(
-                    'Teams (${filteredTeams.length})',
+                    'Teams (${filteredTeams.length}) - Review first',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
@@ -2516,10 +2815,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   }
 
   Widget _buildMobileLayout() {
-    final filteredTeams = widget.state.teams
+    final filteredTeams = DeliverablesTriageHelper.reviewFirst(widget.state.teams
         .map((t) => Map<String, dynamic>.from(t))
-        .where((t) => DeliverablesTriageHelper.matchesFilter(t, widget.activeTriageFilter))
-        .toList();
+        .where((t) => DeliverablesTriageHelper.matchesFilter(t, widget.activeTriageFilter)));
     final selectedTeam = filteredTeams.firstWhere(
       (t) => parseAsInt(t['id']) == _selectedTeamId,
       orElse: () => <String, dynamic>{},
@@ -2553,7 +2851,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 8),
           child: Text(
-            'Teams (${filteredTeams.length})',
+            'Teams (${filteredTeams.length}) - Review first',
             style: const TextStyle(
               fontWeight: FontWeight.bold,
               fontSize: 13,

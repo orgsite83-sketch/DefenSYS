@@ -7,6 +7,8 @@ import 'package:defensys/screens/web/faculty/faculty_dashboard.dart';
 import 'package:defensys/services/dashboard_provider.dart';
 import 'package:defensys/services/repository_provider.dart';
 import 'package:defensys/services/auth_provider.dart';
+import 'package:defensys/services/capstone_deliverables_provider.dart';
+import 'package:defensys/services/defense/adviser_defense_provider.dart';
 import 'package:defensys/notifications/notifications_provider.dart';
 import 'package:defensys/l10n/app_localizations.dart';
 
@@ -95,6 +97,24 @@ class _FakeNotificationsNotifier extends NotificationsNotifier {
 
   @override
   Future<void> fetchNotifications() async {}
+}
+
+class _FakeAdviserDeliverablesNotifier extends CapstoneDeliverablesNotifier {
+  @override
+  Future<void> fetchDeliverables({
+    String? search,
+    String? selectedStage,
+    String? status,
+    String? scope,
+    String? yearLevel,
+    String? section,
+    String? successMessage,
+  }) async {}
+}
+
+class _FakeAdviserDefenseNotifier extends AdviserDefenseNotifier {
+  @override
+  Future<void> fetch() async {}
 }
 
 void main() {
@@ -194,6 +214,10 @@ void main() {
         ),
         authProvider.overrideWith(_FakeAuthNotifier.new),
         notificationsProvider.overrideWith(_FakeNotificationsNotifier.new),
+        capstoneDeliverablesProvider.overrideWith(
+          _FakeAdviserDeliverablesNotifier.new,
+        ),
+        adviserDefenseProvider.overrideWith(_FakeAdviserDefenseNotifier.new),
       ],
     );
     addTearDown(container.dispose);

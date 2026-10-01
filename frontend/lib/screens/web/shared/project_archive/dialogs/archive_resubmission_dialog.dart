@@ -25,9 +25,11 @@ class ArchiveResubmissionDialog {
     final deliverableTypeLabel = (entry['deliverable_type_label']?.toString().isNotEmpty == true)
         ? entry['deliverable_type_label'].toString()
         : (entry['deliverable_type']?.toString().toLowerCase() == 'post' ? 'Post-Defense' : 'Pre-Defense');
+    final isPostDeliverable = entry['deliverable_type'] == 'post';
+    final isPublishedPost = isPostDeliverable && status == 'Approved';
 
     final isNeedsRevision = status == 'Needs Revision' || status == 'Rejected' || status == 'Needs Re-upload';
-    final isReplacementUnlocked = !isNeedsRevision &&
+    final isReplacementUnlocked = !isPostDeliverable && !isNeedsRevision &&
         ((entry['archive_unlocked'] == true) ||
             (entry['unlocked'] == true) ||
             existingFeedback.toLowerCase().contains('unlocked for file replacement') ||
@@ -58,7 +60,9 @@ class ArchiveResubmissionDialog {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Request File Resubmission or Replacement',
+                      isPostDeliverable
+                          ? (isPublishedPost ? 'Reopen Archive File' : 'Manage Revision Request')
+                          : 'Request File Resubmission or Replacement',
                       style: DefensysTokens.dialogTitle.copyWith(color: DefensysTokens.maroon),
                     ),
                     IconButton(
@@ -197,9 +201,13 @@ class ArchiveResubmissionDialog {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
-                    'Choose how to replace or update this file:',
-                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                  Text(
+                    isPostDeliverable
+                        ? (isPublishedPost
+                            ? 'Reopening removes this file from the archive until a replacement is reviewed and approved.'
+                            : 'This file is awaiting a corrected upload and fresh approval.')
+                        : 'Choose how to replace or update this file:',
+                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 12),
                   // Option 1: Unlock for Student Re-upload (Student Portal Action)
@@ -215,13 +223,15 @@ class ArchiveResubmissionDialog {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Row(
+                          Row(
                             children: [
-                              Icon(Icons.published_with_changes_rounded, color: Color(0xFF2563EB), size: 20),
-                              SizedBox(width: 8),
+                              const Icon(Icons.published_with_changes_rounded, color: Color(0xFF2563EB), size: 20),
+                              const SizedBox(width: 8),
                               Text(
-                                'Option 1: Request Student Re-upload (Student Portal)',
-                                style: TextStyle(
+                                isPostDeliverable
+                                    ? 'Reopen for Student Revision'
+                                    : 'Option 1: Request Student Re-upload (Student Portal)',
+                                style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 13.5,
                                   color: Color(0xFF1E40AF),
@@ -231,7 +241,9 @@ class ArchiveResubmissionDialog {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            'Unlocks the submission slot in team $teamName\'s student portal so students upload their file themselves. Choose the status outcome:',
+                            isPostDeliverable
+                                ? 'The team can replace the file. The adviser must approve it again before it returns to the archive.'
+                                : 'Unlocks the submission slot in team $teamName\'s student portal so students upload their file themselves. Choose the status outcome:',
                             style: const TextStyle(fontSize: 12, color: Color(0xFF1E3A8A)),
                           ),
                           const SizedBox(height: 12),
@@ -273,24 +285,27 @@ class ArchiveResubmissionDialog {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Row(
+                                Row(
                                   children: [
-                                    Icon(Icons.edit_note_rounded, color: Colors.orange, size: 18),
-                                    SizedBox(width: 6),
+                                    const Icon(Icons.edit_note_rounded, color: Colors.orange, size: 18),
+                                    const SizedBox(width: 6),
                                     Text(
-                                      'Choice A: Document Content Revision',
-                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Color(0xFF1E293B)),
+                                      isPostDeliverable ? 'Request a corrected final file' : 'Choice A: Document Content Revision',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Color(0xFF1E293B)),
                                     ),
                                   ],
                                 ),
                                 const SizedBox(height: 4),
-                                const Text(
-                                  'Sets status to "Needs Revision" for required manuscript corrections.',
-                                  style: TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
+                                Text(
+                                  isPostDeliverable
+                                      ? 'A reason is required when removing a published file from the archive.'
+                                      : 'Sets status to "Needs Revision" for required manuscript corrections.',
+                                  style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
                                 ),
                                 const SizedBox(height: 8),
                                 TextField(
                                   controller: feedbackController,
+                                  onChanged: (_) => setDialogState(() {}),
                                   decoration: InputDecoration(
                                     hintText: 'Adviser/Admin Remarks (e.g. "Fix Chapter 3 bibliography")',
                                     hintStyle: const TextStyle(fontSize: 11.5, color: Colors.grey),
@@ -315,10 +330,14 @@ class ArchiveResubmissionDialog {
                                       foregroundColor: Colors.white,
                                       padding: const EdgeInsets.symmetric(vertical: 8),
                                     ),
-                                    onPressed: () => Navigator.pop(dialogContext, 'unlock_needs_revision'),
+                                    onPressed: isPublishedPost && feedbackController.text.trim().isEmpty
+                                        ? null
+                                        : () => Navigator.pop(dialogContext, 'unlock_needs_revision'),
                                     icon: const Icon(Icons.send_rounded, size: 15),
                                     label: Text(
-                                      isNeedsRevision ? 'Update Remarks & Keep "Needs Revision"' : 'Unlock with "Needs Revision" Status',
+                                      isPostDeliverable
+                                          ? (isNeedsRevision ? 'Update Revision Request' : 'Reopen for Revision')
+                                          : (isNeedsRevision ? 'Update Remarks & Keep "Needs Revision"' : 'Unlock with "Needs Revision" Status'),
                                       style: const TextStyle(fontSize: 12),
                                     ),
                                   ),
@@ -328,7 +347,7 @@ class ArchiveResubmissionDialog {
                           ),
                           const SizedBox(height: 10),
                           // Sub-Option 1B: Allow Replacement (Keep Approved)
-                          Container(
+                          if (!isPostDeliverable) Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color: Colors.white,
@@ -408,7 +427,7 @@ class ArchiveResubmissionDialog {
                   ),
                   const SizedBox(height: 12),
                   // Option 2: Direct Admin Upload (Secondary)
-                  Card(
+                  if (!isPostDeliverable) Card(
                     elevation: 0,
                     color: const Color(0xFFF8FAFC),
                     shape: RoundedRectangleBorder(
@@ -531,7 +550,12 @@ class ArchiveResubmissionDialog {
           );
       if (context.mounted) {
         if (success) {
-          showSuccessToast(context, 'Unlocked for student resubmission with Needs Revision ($teamName)');
+          showSuccessToast(
+            context,
+            isPostDeliverable
+                ? 'File removed from archive; $teamName can submit a revision.'
+                : 'Unlocked for student resubmission with Needs Revision ($teamName)',
+          );
         } else {
           showErrorToast(context, 'Failed to unlock for resubmission');
         }

@@ -35,47 +35,38 @@ class DeliverablesTriageHelper {
     return activeStage != null && activeStage.isNotEmpty ? activeStage : null;
   }
 
-  static bool hasPendingReview(Map<String, dynamic> team) {
-    final activeStage = resolveActiveStage(team);
-    if (activeStage == null) return false;
+  static List<Map> items(Map<String, dynamic> stage) =>
+      (stage['deliverables'] as List?)?.whereType<Map>().toList() ??
+      [...(stage['pre'] as List? ?? []).whereType<Map>(),
+       ...(stage['post'] as List? ?? []).whereType<Map>()];
 
-    final pre = (activeStage['pre'] as List?)?.whereType<Map>().toList() ?? [];
-    final post = (activeStage['post'] as List?)?.whereType<Map>().toList() ?? [];
-    final allDeliverables = (activeStage['deliverables'] as List?)?.whereType<Map>().toList() ??
-        [...pre, ...post];
+  static bool isPending(Map item) {
+    if (item['is_waived'] == true || item['locked'] == true) return false;
+    final submission = item['submission'];
+    final status = (submission is Map ? submission['status'] :
+        item['submission_status'] ?? item['status'])?.toString().toLowerCase();
+    final uploaded = item['uploaded'] == true || submission is Map ||
+        ['pending', 'pending_review', 'submitted'].contains(status);
+    return uploaded && (status == null || status.isEmpty ||
+        ['pending', 'pending_review', 'submitted'].contains(status));
+  }
 
-    for (final d in allDeliverables) {
-      final isUploaded = d['uploaded'] == true ||
-          d['status'] == 'submitted' ||
-          d['status'] == 'pending' ||
-          d['submission_status'] == 'submitted' ||
-          d['submission_status'] == 'pending';
-      if (isUploaded && d['is_waived'] != true) {
-        final sub = d['submission'];
-        if (sub is Map) {
-          final status = sub['status']?.toString().toLowerCase();
-          if (status == null ||
-              status.isEmpty ||
-              status == 'pending' ||
-              status == 'pending_review' ||
-              status == 'submitted') {
-            return true;
-          }
-        } else {
-          return true;
-        }
-      }
+  static int pendingReviewCount(Map<String, dynamic> team) {
+    final stage = resolveActiveStage(team);
+    return stage == null ? 0 : items(stage).where(isPending).length;
+  }
+
+  static bool hasPendingReview(Map<String, dynamic> team) => pendingReviewCount(team) > 0;
+
+  // Stable partition: preserve API ordering within each group and never mutate
+  // provider state. Selection is tracked separately by team ID.
+  static List<Map<String, dynamic>> reviewFirst(Iterable<Map<String, dynamic>> teams) {
+    final pending = <Map<String, dynamic>>[];
+    final other = <Map<String, dynamic>>[];
+    for (final team in teams) {
+      (hasPendingReview(team) ? pending : other).add(team);
     }
-
-    final isPresentationOnly = activeStage['is_presentation_only'] == true;
-    final configured = activeStage['deliverables_configured'] == true || isPresentationOnly;
-    final complete = activeStage['required_complete'] == true || isPresentationOnly;
-    final endorsed = activeStage['endorsed'] == true;
-    if (configured && complete && !endorsed) {
-      return true;
-    }
-
-    return false;
+    return [...pending, ...other];
   }
 
   static bool isReadyForDefense(Map<String, dynamic> team) {
@@ -84,9 +75,8 @@ class DeliverablesTriageHelper {
 
     final endorsed = activeStage['endorsed'] == true;
     final statusDetail = activeStage['stage_status_detail']?.toString() ?? activeStage['status']?.toString();
-    final complete = activeStage['required_complete'] == true || activeStage['status'] == 'ready';
-
-    return endorsed || statusDetail == 'endorsed' || statusDetail == 'ready' || complete;
+    return !hasPendingReview(team) &&
+        (endorsed || statusDetail == 'endorsed' || statusDetail == 'ready');
   }
 
   static bool isOverdueOrMissing(Map<String, dynamic> team) {

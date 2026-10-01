@@ -713,7 +713,22 @@ class CapstoneDeliverablesApiTests(APITestCase):
         self.assertTrue(stage['archive_unlocked'])
         self.assertTrue(stage['vault_unlocked'])
         self.assertEqual(stage['archive_required_uploaded'], 1)
+        self.assertEqual(stage['archive_required_accepted'], 0)
+        self.assertFalse(stage['archive_complete'])
+        self.assertEqual(response.data['counts']['archive_files'], 0)
+
+        self.client.force_authenticate(user=self.adviser)
+        approved = self.client.post('/api/repository/deliverables/review/', {
+            'team_id': self.team.id,
+            'stage_label': 'Concept Proposal',
+            'deliverable_id': 'D4.1',
+            'status': 'accepted',
+        })
+        self.assertEqual(approved.status_code, 200)
+        stage = stage_for_team(approved.data, self.team.id)
+        self.assertEqual(stage['archive_required_accepted'], 1)
         self.assertTrue(stage['archive_complete'])
+        self.assertEqual(approved.data['counts']['archive_files'], 1)
 
     def test_officially_complete_stage_unlocks_archive_deliverables(self):
         from defense.stages.models import StageGradingConfig
@@ -782,7 +797,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
         self.assertEqual(response.data['stats']['ready_capstone_teams'], 1)
         self.assertEqual(response.data['migration']['phase'], 15)
 
-    def test_removing_required_deliverable_locks_stage_progress(self):
+    def test_accepted_pre_defense_file_cannot_be_removed_after_endorsement(self):
         required_pre = [
             item for item in SUGGESTED_DELIVERABLE_TEMPLATES['Concept Proposal']
             if item['type'] == DeliverableSubmission.TYPE_PRE and item['required']
@@ -801,10 +816,11 @@ class CapstoneDeliverablesApiTests(APITestCase):
             )
         endorse_team(self.team, 'Concept Proposal')
 
-        remove_submission(self.team, 'Concept Proposal', required_pre[0]['id'])
+        with self.assertRaises(PermissionError):
+            remove_submission(self.team, 'Concept Proposal', required_pre[0]['id'])
 
         progress = TeamStageProgress.objects.get(team=self.team, defense_stage=self.stage)
-        self.assertEqual(progress.status, TeamStageProgress.STATUS_LOCKED)
+        self.assertEqual(progress.status, TeamStageProgress.STATUS_READY)
 
     def test_suggested_file_name_uses_archive_file_template(self):
         d = StageDeliverable.objects.get(defense_stage=self.stage, deliverable_id='D4.1')
@@ -1073,7 +1089,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
             self.assertEqual(response.status_code, 400)
             self.assertIn('Naming convention violation', response.data['detail'])
 
-    def test_replacement_deletes_old_file_and_avoids_suffixing(self):
+    def test_replacement_uses_a_new_file_key_without_storage_suffix(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
         pdf1 = SimpleUploadedFile('doc.pdf', b'content1', content_type='application/pdf')
         pdf2 = SimpleUploadedFile('doc.pdf', b'content2', content_type='application/pdf')
@@ -1100,8 +1116,9 @@ class CapstoneDeliverablesApiTests(APITestCase):
         )
         file_path_2 = sub2.file.name
         
-        # Verify that the new file took the exact same path instead of suffixing with _1
-        self.assertEqual(file_path_1, file_path_2)
+        # Each replacement gets a unique key so an archive URL cannot serve a cached old PDF.
+        self.assertNotEqual(file_path_1, file_path_2)
+        self.assertFalse(file_path_2.endswith('_1.pdf'))
         from django.core.files.storage import default_storage
         self.assertTrue(default_storage.exists(file_path_2))
 
@@ -1353,6 +1370,113 @@ class CapstoneDeliverablesApiTests(APITestCase):
         post_sub.refresh_from_db()
         self.assertEqual(post_sub.status, DeliverableSubmission.STATUS_ACCEPTED)
         self.assertEqual(post_sub.reviewed_by, self.adviser)
+
+    def test_published_post_file_requires_admin_reopen_and_fresh_review(self):
+        from repository.archive.services import capstone_visible_queryset
+
+        self.stage.deliverables.create(
+            deliverable_id='FINAL', label='Final Paper', deliverable_type='post', required=True,
+        )
+        DefenseSchedule.objects.create(
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            semester=self.semester,
+            team=self.team,
+            defense_stage=self.stage,
+            scheduled_date='2026-05-20',
+            start_time='09:00',
+            slot_duration=60,
+            room='Room 301',
+            status=DefenseSchedule.STATUS_DONE,
+        )
+        payload = self.upload_payload(deliverable_id='FINAL', file_name='Final.pdf')
+        self.client.force_authenticate(user=self.student)
+        self.assertEqual(self.client.post('/api/repository/deliverables/upload/', payload).status_code, 200)
+        review = {**payload, 'status': 'accepted'}
+        self.assertEqual(
+            self.client.post('/api/repository/deliverables/review/', review).status_code, 403,
+        )
+
+        self.client.force_authenticate(user=self.adviser)
+        self.assertEqual(
+            self.client.post('/api/repository/deliverables/review/', {
+                **review, 'status': 'rejected',
+            }).status_code,
+            400,
+        )
+        self.assertEqual(
+            self.client.post('/api/repository/deliverables/review/', review).status_code, 200,
+        )
+        submission = DeliverableSubmission.objects.get(team=self.team, deliverable_id='FINAL')
+        self.assertTrue(capstone_visible_queryset().filter(pk=submission.pk).exists())
+        self.assertEqual(
+            self.client.post('/api/repository/deliverables/review/', {
+                **review, 'status': 'rejected', 'feedback': 'Wrong file',
+            }).status_code,
+            403,
+        )
+
+        self.client.force_authenticate(user=self.student)
+        self.assertEqual(self.client.post('/api/repository/deliverables/upload/', payload).status_code, 400)
+        self.assertEqual(self.client.post('/api/repository/deliverables/remove/', payload).status_code, 400)
+
+        self.client.force_authenticate(user=self.admin)
+        entry_id = f'capstone-{submission.pk}'
+        audit_url = '/api/repository/audit/request-resubmission/'
+        self.assertEqual(self.client.post(audit_url, {
+            'entry_id': entry_id, 'status': 'Approved', 'feedback': 'Keep approved',
+        }).status_code, 400)
+        self.assertEqual(self.client.post('/api/repository/audit/replace-file/', {
+            'entry_id': entry_id,
+            'file': SimpleUploadedFile('replacement.pdf', b'%PDF-1.4\n', content_type='application/pdf'),
+        }, format='multipart').status_code, 400)
+        self.assertEqual(self.client.post(audit_url, {
+            'entry_id': entry_id, 'status': 'Needs Revision',
+        }).status_code, 400)
+        self.assertEqual(self.client.post(audit_url, {
+            'entry_id': entry_id, 'status': 'Needs Revision', 'feedback': 'The uploaded paper is incomplete.',
+        }).status_code, 200)
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, DeliverableSubmission.STATUS_REJECTED)
+        self.assertFalse(capstone_visible_queryset().filter(pk=submission.pk).exists())
+
+        self.client.force_authenticate(user=self.student)
+        self.assertEqual(self.client.post('/api/repository/deliverables/upload/', {
+            **payload, 'file_name': 'Final_revised.pdf',
+        }).status_code, 200)
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, DeliverableSubmission.STATUS_PENDING)
+
+        self.client.force_authenticate(user=self.adviser)
+        self.assertEqual(
+            self.client.post('/api/repository/deliverables/review/', review).status_code, 200,
+        )
+        self.assertTrue(capstone_visible_queryset().filter(pk=submission.pk).exists())
+
+    def test_pre_defense_review_and_files_lock_after_endorsement(self):
+        required_pre = [
+            item for item in SUGGESTED_DELIVERABLE_TEMPLATES['Concept Proposal']
+            if item['type'] == DeliverableSubmission.TYPE_PRE and item['required']
+        ]
+        for definition in required_pre:
+            DeliverableSubmission.objects.create(
+                team=self.team, stage_label='Concept Proposal',
+                deliverable_id=definition['id'], label=definition['label'],
+                deliverable_type='pre', required=True,
+                file_name=f"{definition['id']}.pdf", uploaded_by=self.student,
+                status=DeliverableSubmission.STATUS_ACCEPTED,
+            )
+        endorse_team(self.team, 'Concept Proposal')
+        first_id = required_pre[0]['id']
+        self.client.force_authenticate(user=self.adviser)
+        review = {
+            'team_id': self.team.id, 'stage_label': 'Concept Proposal',
+            'deliverable_id': first_id, 'status': 'rejected', 'feedback': 'Revise this file',
+        }
+        self.assertEqual(self.client.post('/api/repository/deliverables/review/', review).status_code, 403)
+        self.client.force_authenticate(user=self.student)
+        self.assertEqual(self.client.post('/api/repository/deliverables/upload/', self.upload_payload(
+            deliverable_id=first_id,
+        )).status_code, 400)
 
     def test_endorsed_stage_with_approved_team_status_keeps_post_deliverables_locked_until_defense_done(self):
         from django.utils import timezone

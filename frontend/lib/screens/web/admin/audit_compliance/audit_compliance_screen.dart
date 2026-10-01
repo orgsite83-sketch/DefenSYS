@@ -17,6 +17,7 @@ import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import '../../../../widgets/export/export.dart';
+import '../../../../widgets/table/defensys_segmented_control.dart';
 import '../widgets/defensys_admin_shell.dart';
 import '../admin_shell.dart';
 
@@ -3570,126 +3571,23 @@ class _ExecutiveTabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = DefensysTokens.isDark(context);
-    return Container(
-      height: 40,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-        border: Border.all(color: DefensysTokens.borderOf(context)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _TabPill(
-            label: 'Audit Trail Register',
-            badgeLabel: 'Live Logs',
-            icon: Icons.shield_outlined,
-            isSelected: selectedIndex == 0,
-            onTap: () => onTabSelected(0),
-          ),
-          const SizedBox(width: 4),
-          _TabPill(
-            label: 'Report Export Center',
-            badgeLabel: 'PDF Center',
-            icon: Icons.summarize_outlined,
-            isSelected: selectedIndex == 1,
-            onTap: () => onTabSelected(1),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TabPill extends StatelessWidget {
-  final String label;
-  final String badgeLabel;
-  final IconData icon;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _TabPill({
-    required this.label,
-    required this.badgeLabel,
-    required this.icon,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = DefensysTokens.isDark(context);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? (isDark ? DefensysTokens.mistSurface : Colors.white)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-            boxShadow: isSelected
-                ? [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.05),
-                      blurRadius: 4,
-                      offset: const Offset(0, 1),
-                    )
-                  ]
-                : [],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 15,
-                color: isSelected
-                    ? DefensysTokens.maroonOf(context)
-                    : (isDark ? DefensysTokens.textSecondaryDark : DefensysTokens.steelGrey),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontFamily: DefensysTokens.fontFamily,
-                  color: isSelected
-                      ? DefensysTokens.maroonOf(context)
-                      : (isDark ? DefensysTokens.textPrimaryDark : DefensysTokens.textDark),
-                  fontSize: 12.5,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? DefensysTokens.maroonOf(context).withValues(alpha: 0.15)
-                      : (isDark ? DefensysTokens.mistInputFill : const Color(0xFFE2E8F0)),
-                  borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                ),
-                child: Text(
-                  badgeLabel,
-                  style: TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                    color: isSelected
-                        ? DefensysTokens.maroonOf(context)
-                        : (isDark ? DefensysTokens.textSecondaryDark : DefensysTokens.steelGrey),
-                  ),
-                ),
-              ),
-            ],
-          ),
+    return DefensysSegmentedControl<int>(
+      value: selectedIndex,
+      items: const [
+        DefensysSegmentItem(
+          value: 0,
+          label: 'Audit Trail Register',
+          badgeLabel: 'Live Logs',
+          icon: Icons.shield_outlined,
         ),
-      ),
+        DefensysSegmentItem(
+          value: 1,
+          label: 'Report Export Center',
+          badgeLabel: 'PDF Center',
+          icon: Icons.summarize_outlined,
+        ),
+      ],
+      onChanged: onTabSelected,
     );
   }
 }

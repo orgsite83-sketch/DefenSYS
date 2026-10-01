@@ -10,6 +10,7 @@ import '../../../../theme/defensys_button_styles.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/defensys_skeleton.dart';
 import '../../../../widgets/feedback/empty_state.dart';
+import '../../../../widgets/table/defensys_segmented_control.dart';
 import '../../admin/user_management/bulk_import/student_batch_enrollment_hub_view.dart';
 import '../../admin/user_management/dialogs/add_student_dialog.dart';
 import '../../admin/user_management/dialogs/download_sample_csv_dialog.dart';
@@ -308,38 +309,23 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
           const SizedBox(height: 20),
 
           // Primary Tab Bar Switcher
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _line),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.03),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            padding: const EdgeInsets.all(6),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildTabButton(
-                  title: 'Students & Enrollment',
-                  count: studentCount,
-                  icon: Icons.school_rounded,
-                  tab: _PitUserManagementTab.students,
-                ),
-                const SizedBox(width: 4),
-                _buildTabButton(
-                  title: 'Section Instructors',
-                  count: activeInstructorsCount,
-                  icon: Icons.assignment_ind_rounded,
-                  tab: _PitUserManagementTab.instructors,
-                ),
-              ],
-            ),
+          DefensysSegmentedControl<_PitUserManagementTab>(
+            value: _currentTab,
+            items: [
+              DefensysSegmentItem(
+                value: _PitUserManagementTab.students,
+                label: 'Students & Enrollment',
+                badgeLabel: '$studentCount',
+                icon: Icons.school_rounded,
+              ),
+              DefensysSegmentItem(
+                value: _PitUserManagementTab.instructors,
+                label: 'Section Instructors',
+                badgeLabel: '$activeInstructorsCount',
+                icon: Icons.assignment_ind_rounded,
+              ),
+            ],
+            onChanged: (tab) => setState(() => _currentTab = tab),
           ),
           const SizedBox(height: 20),
 
@@ -349,70 +335,6 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
           else
             _buildInstructorsView(instructorState, cohortState),
         ],
-      ),
-    );
-  }
-
-  Widget _buildTabButton({
-    required String title,
-    required int count,
-    required IconData icon,
-    required _PitUserManagementTab tab,
-  }) {
-    final isSelected = _currentTab == tab;
-    return InkWell(
-      onTap: () {
-        if (_currentTab != tab) {
-          setState(() {
-            _currentTab = tab;
-          });
-        }
-      },
-      borderRadius: BorderRadius.circular(8),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? _maroon : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 16,
-              color: isSelected ? Colors.white : _muted,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected ? Colors.white : _ink,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? Colors.white.withValues(alpha: 0.22)
-                    : const Color(0xFFF3F4F6),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                '$count',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: isSelected ? Colors.white : _muted,
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

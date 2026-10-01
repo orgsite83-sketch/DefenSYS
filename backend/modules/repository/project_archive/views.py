@@ -118,7 +118,10 @@ class ProjectArchiveRequestResubmissionView(APIView):
         feedback = request.data.get('feedback', '')
         if not entry_id:
             raise ValidationError({'entry_id': 'Archive entry id is required.'})
-        request_archive_resubmission(request.user, entry_id, status, feedback=feedback)
+        try:
+            request_archive_resubmission(request.user, entry_id, status, feedback=feedback)
+        except DjangoValidationError as exc:
+            _raise_drf_validation_error(exc)
         return Response(repository_audit_payload(request))
 
 

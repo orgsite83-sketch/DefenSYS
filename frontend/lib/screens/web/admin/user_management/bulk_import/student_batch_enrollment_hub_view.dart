@@ -11,6 +11,7 @@ import 'package:defensys/services/academic/student_batch_draft_provider.dart';
 import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/user_management_provider.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
+import 'package:defensys/widgets/table/defensys_segmented_control.dart';
 import 'package:defensys/utils/csv_file_io.dart';
 import 'package:flutter/services.dart';
 
@@ -290,31 +291,24 @@ class _StudentBatchEnrollmentHubViewState
           ],
 
           // Top Mode Switcher (Segmented Control)
-          Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFFF1F5F9),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            padding: const EdgeInsets.all(4),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildModePill(
-                  mode: StudentHubMode.freshIntake,
-                  label: 'Fresh Student Intake (Import)',
-                  subtitle: 'New Cohorts & Class Lists',
-                  icon: Icons.file_upload_outlined,
-                ),
-                const SizedBox(width: 4),
-                _buildModePill(
-                  mode: StudentHubMode.semesterRollover,
-                  label: 'Semester Rollover & Promotion',
-                  subtitle: 'Transition Returning Cohorts',
-                  icon: Icons.rotate_right_rounded,
-                ),
-              ],
-            ),
+          DefensysSegmentedControl<StudentHubMode>(
+            value: _currentMode,
+            height: 68,
+            items: const [
+              DefensysSegmentItem(
+                value: StudentHubMode.freshIntake,
+                label: 'Fresh Student Intake (Import)',
+                subtitle: 'New Cohorts & Class Lists',
+                icon: Icons.file_upload_outlined,
+              ),
+              DefensysSegmentItem(
+                value: StudentHubMode.semesterRollover,
+                label: 'Semester Rollover & Promotion',
+                subtitle: 'Transition Returning Cohorts',
+                icon: Icons.rotate_right_rounded,
+              ),
+            ],
+            onChanged: _changeMode,
           ),
 
           const SizedBox(height: 24),
@@ -348,91 +342,16 @@ class _StudentBatchEnrollmentHubViewState
     );
   }
 
-  Widget _buildModePill({
-    required StudentHubMode mode,
-    required String label,
-    required String subtitle,
-    required IconData icon,
-  }) {
-    final isSelected = _currentMode == mode;
-    return InkWell(
-      onTap: () {
-        if (_currentMode == mode) return;
-        setState(() => _currentMode = mode);
-        if (mode == StudentHubMode.semesterRollover) {
-          if (_stagedRolloverFiles.isNotEmpty) {
-            _reprocessStagedRolloverDraft(_stagedRolloverFiles);
-          } else {
-            _loadInitialRolloverData();
-          }
-        }
-      },
-      borderRadius: BorderRadius.circular(8),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: isSelected
-              ? Border.all(color: const Color(0xFFE2E8F0))
-              : Border.all(color: Colors.transparent),
-          boxShadow: isSelected
-              ? const [
-                  BoxShadow(
-                    color: Color(0x0A000000),
-                    blurRadius: 6,
-                    offset: Offset(0, 1),
-                  ),
-                ]
-              : null,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? _maroon.withValues(alpha: 0.08)
-                    : Colors.transparent,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                size: 16,
-                color: isSelected ? _maroon : const Color(0xFF64748B),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                    color: isSelected ? _maroon : const Color(0xFF334155),
-                    letterSpacing: -0.1,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF64748B),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
+  void _changeMode(StudentHubMode mode) {
+    if (_currentMode == mode) return;
+    setState(() => _currentMode = mode);
+    if (mode == StudentHubMode.semesterRollover) {
+      if (_stagedRolloverFiles.isNotEmpty) {
+        _reprocessStagedRolloverDraft(_stagedRolloverFiles);
+      } else {
+        _loadInitialRolloverData();
+      }
+    }
   }
 
   // -------------------------------------------------------------

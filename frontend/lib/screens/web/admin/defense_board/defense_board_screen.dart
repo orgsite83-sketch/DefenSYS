@@ -23,6 +23,7 @@ import '../grade_center/grade_center_team_detail_screen.dart';
 import '../../../../services/grading/grade_center_provider.dart';
 import '../widgets/defensys_admin_shell.dart';
 import '../../../../widgets/feedback/empty_state.dart';
+import '../../../../widgets/table/defensys_segmented_control.dart';
 import '../../faculty/minutes_form_screen.dart';
 import '../../../../utils/import/schedule_import_draft.dart';
 import 'components/defense_schedule_bulk_import_view.dart';
@@ -441,128 +442,33 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     final totalPending = schedState.teams.length - totalReady;
 
     String readinessBadge;
-    Color badgeColor;
-    Color badgeTextColor;
-
     if (totalReady > 0) {
       readinessBadge = '$totalReady Ready';
-      badgeColor = _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.5) : const Color(0xFFDEF7EC);
-      badgeTextColor = _isDark ? const Color(0xFF6EE7B7) : const Color(0xFF03543F);
     } else if (totalCompleted > 0) {
       readinessBadge = 'Complete';
-      badgeColor = _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.5) : const Color(0xFFDEF7EC);
-      badgeTextColor = _isDark ? const Color(0xFF6EE7B7) : const Color(0xFF03543F);
     } else {
       readinessBadge = '$totalPending Pending';
-      badgeColor = _isDark ? const Color(0xFF78350F).withValues(alpha: 0.5) : const Color(0xFFFEF3C7);
-      badgeTextColor = _isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E);
     }
 
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _borderColor),
-      ),
-      child: Wrap(
-        spacing: 4,
-        runSpacing: 4,
-        children: [
-          _viewTabButton(
-            title: 'Defense Schedules',
-            icon: Icons.calendar_month_rounded,
-            countBadge: '$scheduleCount',
-            badgeColor: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
-            badgeTextColor: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF334155),
-            isSelected: currentView == DefenseOperationsView.schedules,
-            onTap: () => ref
-                .read(defenseBoardActiveViewProvider.notifier)
-                .setView(DefenseOperationsView.schedules),
-          ),
-          _viewTabButton(
-            title: 'Pre-Defense Readiness Queue',
-            icon: Icons.checklist_rtl_rounded,
-            countBadge: readinessBadge,
-            badgeColor: badgeColor,
-            badgeTextColor: badgeTextColor,
-            isSelected: currentView == DefenseOperationsView.readiness,
-            onTap: () => ref
-                .read(defenseBoardActiveViewProvider.notifier)
-                .setView(DefenseOperationsView.readiness),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _viewTabButton({
-    required String title,
-    required IconData icon,
-    required String countBadge,
-    required Color badgeColor,
-    required Color badgeTextColor,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    final activeTextColor = _isDark ? const Color(0xFFF87171) : AppColors.maroon;
-    final inactiveTextColor = _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B);
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(9),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-        decoration: BoxDecoration(
-          color: isSelected ? _surfaceColor : Colors.transparent,
-          borderRadius: BorderRadius.circular(9),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: _isDark ? 0.25 : 0.06),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ]
-              : null,
+    return DefensysSegmentedControl<DefenseOperationsView>(
+      value: currentView,
+      items: [
+        DefensysSegmentItem(
+          value: DefenseOperationsView.schedules,
+          label: 'Defense Schedules',
+          icon: Icons.calendar_month_rounded,
+          badgeLabel: '$scheduleCount',
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 17,
-              color: isSelected ? activeTextColor : inactiveTextColor,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 13.5,
-                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected ? activeTextColor : inactiveTextColor,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              decoration: BoxDecoration(
-                color: isSelected ? badgeColor : (_isDark ? DefensysTokens.mistSurface : const Color(0xFFE2E8F0)),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                countBadge,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: isSelected ? badgeTextColor : inactiveTextColor,
-                ),
-              ),
-            ),
-          ],
+        DefensysSegmentItem(
+          value: DefenseOperationsView.readiness,
+          label: 'Pre-Defense Readiness Queue',
+          icon: Icons.checklist_rtl_rounded,
+          badgeLabel: readinessBadge,
         ),
-      ),
+      ],
+      onChanged: (view) => ref
+          .read(defenseBoardActiveViewProvider.notifier)
+          .setView(view),
     );
   }
 
@@ -1397,98 +1303,24 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   }
 
   Widget _buildScopeTabs(DefenseBoardState state) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildScopeTabItem(
-            state: state,
-            label: 'All Defenses',
-            scopeValue: '',
-            icon: Icons.grid_view_rounded,
+    return DefensysSegmentedControl<String>(
+      value: state.scope,
+      items: const [
+        DefensysSegmentItem(
+          value: '', label: 'All Defenses', icon: Icons.grid_view_rounded),
+        DefensysSegmentItem(
+          value: 'capstone', label: 'Capstone', icon: Icons.school_rounded),
+        DefensysSegmentItem(
+          value: 'pit', label: 'PIT', icon: Icons.alt_route_rounded),
+      ],
+      onChanged: (scope) => ref.read(defenseBoardProvider.notifier).fetchBoard(
+            stage: '',
+            status: state.status,
+            scope: scope,
+            adviser: '',
+            section: '',
+            search: _searchController.text.trim(),
           ),
-          _buildScopeTabItem(
-            state: state,
-            label: 'Capstone',
-            scopeValue: 'capstone',
-            icon: Icons.school_rounded,
-          ),
-          _buildScopeTabItem(
-            state: state,
-            label: 'PIT',
-            scopeValue: 'pit',
-            icon: Icons.alt_route_rounded,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildScopeTabItem({
-    required DefenseBoardState state,
-    required String label,
-    required String scopeValue,
-    required IconData icon,
-  }) {
-    final isSelected = state.scope == scopeValue;
-    final activeTextColor = _isDark ? const Color(0xFFF87171) : AppColors.maroon;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          ref.read(defenseBoardProvider.notifier).fetchBoard(
-                stage: '',
-                status: state.status,
-                scope: scopeValue,
-                adviser: '',
-                section: '',
-                search: _searchController.text.trim(),
-              );
-        },
-        borderRadius: BorderRadius.circular(9),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: isSelected ? (_isDark ? DefensysTokens.mistSurface : Colors.white) : Colors.transparent,
-            borderRadius: BorderRadius.circular(9),
-            boxShadow: isSelected
-                ? [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: _isDark ? 0.25 : 0.06),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ]
-              : null,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 15,
-                color: isSelected ? activeTextColor : _textSecondaryColor,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                  color: isSelected ? activeTextColor : _textSecondaryColor,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
