@@ -2,8 +2,207 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:defensys/utils/defense_schedule_import_parser.dart';
+import 'package:excel/excel.dart';
 
 void main() {
+  group('schedule header safety', () {
+    for (final alias in [
+      'Chair',
+      'Panel Chair',
+      'Chair Panel',
+      'Chairperson',
+      'Panel Chairperson',
+      'CHAIR-PANEL',
+      ' Chair\nPanel ',
+    ]) {
+      test('recognizes "$alias" without treating it as a panel member', () {
+        final parsed = parseScheduleImportMatrix([
+          ['Time', 'Team Name', alias, 'Panel Member 1'],
+          [
+            '08:00-08:30',
+            'Team SkyLedger',
+            'Maricel Suarez',
+            'Jonathan Beltran',
+          ],
+        ]);
+        expect(parsed.rows.single.chair, 'Maricel Suarez');
+        expect(parsed.rows.single.panelMembers, ['Jonathan Beltran']);
+        expect(parsed.rows.single.parseIssues, isEmpty);
+      });
+    }
+
+    test('detects headers using the same aliases as column extraction', () {
+      final parsed = parseScheduleImportMatrix([
+        ['Team', 'Chair Panel'],
+        ['Team SkyLedger', 'Maricel Suarez'],
+      ]);
+      expect(parsed.rows.single.chair, 'Maricel Suarez');
+    });
+
+    test(
+      'suggests typos without mapping unknown columns or losing diagnostics in drafts',
+      () {
+        final parsed = parseScheduleImportMatrix([
+          ['Time', 'Team Name', 'Chiar Panel', 'Panel Member 1'],
+          [
+            '08:00-08:30',
+            'Team SkyLedger',
+            'Maricel Suarez',
+            'Jonathan Beltran',
+          ],
+          ['08:30-09:00', 'Team BioPulse', '', 'Jonathan Beltran'],
+        ]);
+        for (final row in parsed.rows) {
+          expect(row.chair, isEmpty);
+          expect(row.parseIssues.single, contains('Chiar Panel'));
+          expect(row.parseIssues.single, contains('Did you mean "Chair"?'));
+          expect(row.copyWith().parseIssues, row.parseIssues);
+        }
+        final restored = ParsedScheduleImport.fromJson(parsed.toJson());
+        expect(restored.rows.first.parseIssues, parsed.rows.first.parseIssues);
+        final legacy = Map<String, dynamic>.from(parsed.rows.first.toJson())
+          ..remove('parse_issues');
+        expect(ParsedScheduleImportRow.fromJson(legacy).parseIssues, isEmpty);
+      },
+    );
+
+    test(
+      'rejects conflicting aliases instead of taking the first chair column',
+      () {
+        final parsed = parseScheduleImportMatrix([
+          ['Time', 'Team Name', 'Chair', 'Chair Panel', 'Panel Member 1'],
+          [
+            '08:00-08:30',
+            'Team SkyLedger',
+            'Maricel Suarez',
+            'Eduardo Padilla',
+            'Jonathan Beltran',
+          ],
+        ]);
+        expect(parsed.rows.single.chair, isEmpty);
+        expect(
+          parsed.rows.single.parseIssues.single,
+          contains('multiple "Chair" columns (3, 4)'),
+        );
+      },
+    );
+
+    test('resets header issues between repeated tables', () {
+      final parsed = parseScheduleImportMatrix([
+        ['Time', 'Team Name', 'Chiar Panel'],
+        ['08:00-08:30', 'Team SkyLedger', 'Maricel Suarez'],
+        [],
+        ['Time', 'Team Name', 'Chair Panel'],
+        ['08:30-09:00', 'Team BioPulse', 'Eduardo Padilla'],
+      ]);
+      expect(parsed.rows.first.parseIssues, isNotEmpty);
+      expect(parsed.rows.last.parseIssues, isEmpty);
+      expect(parsed.rows.last.chair, 'Eduardo Padilla');
+    });
+
+    test(
+      'flags unnamed data while allowing row numbering and empty spacer columns',
+      () {
+        final parsed = parseScheduleImportMatrix([
+          ['#', 'Time', 'Team Name', 'Chair', '', ''],
+          [
+            '1',
+            '08:00-08:30',
+            'Team SkyLedger',
+            'Maricel Suarez',
+            '',
+            'Eduardo Padilla',
+          ],
+        ]);
+        expect(
+          parsed.rows.single.parseIssues.single,
+          contains('Unnamed column 6'),
+        );
+      },
+    );
+
+    test(
+      'recognizes Chair Panel in XLSX with merged cells and multiple days',
+      () {
+        final workbook = Excel.createExcel();
+        final sheet = workbook['Sheet1'];
+        final matrix = [
+          ['Concept Proposal'],
+          ['Oct 20 2026'],
+          ['Room 301'],
+          [
+            'Time',
+            'Team Name',
+            'Adviser',
+            'Chair Panel',
+            'Panel Member 1',
+            'Documenter',
+          ],
+          [
+            '08:00-08:30',
+            'Team SkyLedger',
+            'Ricardo Fontanilla',
+            'Maricel Suarez',
+            'Jonathan Beltran',
+            'Cecilia Magbanua',
+          ],
+          [
+            '08:30-09:00',
+            'Team BioPulse',
+            '',
+            'Maricel Suarez',
+            'Jonathan Beltran',
+            '',
+          ],
+          [],
+          ['Concept Proposal'],
+          ['Oct 21 2026'],
+          ['Room 301'],
+          [
+            'Time',
+            'Team Name',
+            'Adviser',
+            'Chair Panel',
+            'Panel Member 1',
+            'Documenter',
+          ],
+          [
+            '13:00-13:30',
+            'Team MedRecord',
+            'Analiza Corpuz',
+            'Eduardo Padilla',
+            'Jonathan Beltran',
+            'Cecilia Magbanua',
+          ],
+        ];
+        for (final row in matrix) {
+          sheet.appendRow(row.map((value) => TextCellValue(value)).toList());
+        }
+        sheet.merge(
+          CellIndex.indexByString('C5'),
+          CellIndex.indexByString('C6'),
+        );
+        sheet.merge(
+          CellIndex.indexByString('F5'),
+          CellIndex.indexByString('F6'),
+        );
+        final parsed = parseScheduleImportFile(
+          bytes: Uint8List.fromList(workbook.encode()!),
+          filename: 'chair_panel.xlsx',
+        );
+        expect(parsed.rows, hasLength(3));
+        expect(parsed.rows.map((row) => row.chair), [
+          'Maricel Suarez',
+          'Maricel Suarez',
+          'Eduardo Padilla',
+        ]);
+        expect(parsed.rows[1].adviser, 'Ricardo Fontanilla');
+        expect(parsed.rows[1].documenter, 'Cecilia Magbanua');
+        expect(parsed.rows.last.date, 'Oct 21 2026');
+        expect(parsed.rows.every((row) => row.parseIssues.isEmpty), isTrue);
+      },
+    );
+  });
   group('parseScheduleImportFile', () {
     test('parses official client format with top 3 rows and multi-row members', () {
       const csv = '''

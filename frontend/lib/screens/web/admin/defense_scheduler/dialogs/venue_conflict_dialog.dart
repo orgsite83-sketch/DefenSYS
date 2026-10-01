@@ -810,7 +810,7 @@ class ScheduleImportDialog {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Restored from saved draft ($rowCount staged ${rowCount == 1 ? 'row' : 'rows'}${timeStr.isNotEmpty ? ' · Saved at $timeStr' : ''})',
+                  'Restored from saved draft ($rowCount staged ${rowCount == 1 ? 'row' : 'rows'}${timeStr.isNotEmpty ? ' Â· Saved at $timeStr' : ''})',
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -1583,7 +1583,7 @@ class ScheduleImportDialog {
             const SizedBox(width: 5),
             Flexible(
               child: Text(
-                'Typo resolved: "${match.sourceText}" ➔ "${match.label}" (${(match.similarity * 100).toInt()}% match)',
+                'Typo resolved: "${match.sourceText}" âž” "${match.label}" (${(match.similarity * 100).toInt()}% match)',
                 style: const TextStyle(
                   color: Color(0xFFB45309),
                   fontSize: 11,
@@ -2342,23 +2342,25 @@ class ScheduleImportDialog {
     }
 
     if (row.slotIssues.isNotEmpty) {
+      final hasFileIssue = row.source.parseIssues.isNotEmpty ||
+          row.source.chair.trim().isEmpty;
+      final needsFacultyReview = !hasFileIssue && row.slotIssues.any((s) =>
+          s.toLowerCase().contains('panel') ||
+          s.toLowerCase().contains('documenter') ||
+          s.toLowerCase().contains('faculty'));
       issueWidgets.add(
         _issueCategoryPill(
-          prefix: 'Slot',
+          prefix: hasFileIssue ? 'File' : 'Slot',
           message: row.slotIssues.join('; '),
           color: const Color(0xFF991B1B),
           bg: const Color(0xFFFEF2F2),
           border: const Color(0xFFFECACA),
-          tooltip: row.slotIssues.any((s) =>
-                  s.toLowerCase().contains('panel') ||
-                  s.toLowerCase().contains('documenter') ||
-                  s.toLowerCase().contains('faculty'))
+          tooltip: hasFileIssue
+              ? 'Correct the spreadsheet and upload it again'
+              : needsFacultyReview
               ? 'Click to open User Management to check faculty accounts'
               : null,
-          onTap: row.slotIssues.any((s) =>
-                  s.toLowerCase().contains('panel') ||
-                  s.toLowerCase().contains('documenter') ||
-                  s.toLowerCase().contains('faculty'))
+          onTap: needsFacultyReview
               ? () {
                   Navigator.pop(context);
                   context.go(AdminRoutes.users);

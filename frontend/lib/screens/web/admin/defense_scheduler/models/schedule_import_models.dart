@@ -622,7 +622,7 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
   return parsed.rows.map((source) {
     final stageIssues = <String>[];
     final teamIssues = <String>[];
-    final slotIssues = <String>[];
+    final slotIssues = <String>[...source.parseIssues];
     final warnings = <String>[];
     final rowDate = normalizeImportDate(source.date).isNotEmpty
         ? normalizeImportDate(source.date)
@@ -638,6 +638,10 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     final chairMatch = matchPanelist(source.chair, state);
     if (source.chair.trim().isNotEmpty) {
       panelistMatches.add(chairMatch);
+    } else {
+      slotIssues.add(
+        'Chair is missing. Check the Chair / Panel Chair / Chair Panel header and cell.',
+      );
     }
     for (final name in source.panelMembers) {
       panelistMatches.add(matchPanelist(name, state));
@@ -845,11 +849,6 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
       slotIssues.add('At least one chair or panel member is required.');
     }
 
-    int? effectiveChairId = chairMatch.id;
-    if (effectiveChairId == null && panelistIds.isNotEmpty) {
-      effectiveChairId = panelistIds.first;
-    }
-
     final allIssues = <String>[...stageIssues, ...teamIssues, ...slotIssues];
 
     return ScheduleImportPreviewRow(
@@ -857,7 +856,7 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
       scope: scope,
       teamId: teamMatch.id,
       panelistIds: panelistIds,
-      chairPanelistId: effectiveChairId,
+      chairPanelistId: chairMatch.id,
       documenterId: documenterId,
       stageId: stageId,
       eventName: eventName,

@@ -167,6 +167,22 @@ void main() {
                     'stage_status': 'passed',
                   },
                 },
+                {
+                  'id': 3,
+                  'name': 'Team Three',
+                  'section': 'BSIT-4A',
+                  'adviser_name': 'Adviser Two',
+                  'defense_context': {
+                    'current_stage': 'Project Proposal',
+                    'stage_status': 'scheduled',
+                  },
+                },
+                {
+                  'id': 4,
+                  'name': 'Team Four',
+                  'section': 'BSIT-4A',
+                  'defense_context': {'current_stage': 'Project Proposal'},
+                },
               ],
             ),
           ),
@@ -177,16 +193,34 @@ void main() {
       ],
     );
 
-    expect(find.text('teams shown'), findsOneWidget);
-    expect(find.text('1 ready to schedule'), findsOneWidget);
-    expect(find.text('1 stage passed'), findsOneWidget);
+    for (final (id, label, count) in [
+      ('teams', 'Teams', '4'),
+      ('needs-adviser', 'Needs adviser', '1'),
+      ('ready', 'Ready to schedule', '1'),
+      ('scheduled', 'Scheduled', '1'),
+    ]) {
+      final card = find.byKey(Key('student-teams-summary-$id'));
+      expect(card, findsOneWidget);
+      expect(
+        find.descendant(of: card, matching: find.text(label)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: card, matching: find.text(count)),
+        findsOneWidget,
+      );
+    }
+    expect(
+      find.text('1 team has no current-stage update yet.'),
+      findsOneWidget,
+    );
     expect(find.text('Pending result'), findsNothing);
     await tester.tap(find.text('BSIT-4A'));
     await tester.pumpAndSettle();
     expect(find.text('STAGE PROGRESS'), findsOneWidget);
-    expect(find.text('Ready to schedule'), findsOneWidget);
+    expect(find.text('Ready to schedule'), findsNWidgets(2));
     expect(find.text('Stage passed'), findsOneWidget);
-    expect(find.text('View'), findsNWidgets(2));
+    expect(find.text('View'), findsNWidgets(4));
   });
 
   testWidgets('capstone admin shows closed dialog when window is closed', (

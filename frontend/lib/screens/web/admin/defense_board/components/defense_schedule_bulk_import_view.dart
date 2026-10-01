@@ -876,7 +876,7 @@ class _DefenseScheduleBulkImportViewState
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Target Term: $activeSemLabel • Standard Defense Timetable Format',
+                        'Target Term: $activeSemLabel â€¢ Standard Defense Timetable Format',
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
@@ -1144,7 +1144,7 @@ class _DefenseScheduleBulkImportViewState
                       const SizedBox(height: 2),
                       Text(
                         hasFile
-                            ? '$_fileName • $totalRows slot(s) staged • $readyCount ready'
+                            ? '$_fileName â€¢ $totalRows slot(s) staged â€¢ $readyCount ready'
                             : 'Supports official Microsoft Excel (.xlsx) and CSV (.csv) timetables',
                         style: const TextStyle(
                           fontSize: 12,
@@ -1203,7 +1203,7 @@ class _DefenseScheduleBulkImportViewState
                     const SizedBox(height: 4),
                     Text(
                       hasFile
-                          ? '$readyCount ready to schedule · ${issueCount > 0 ? '$issueCount needing review' : 'all valid'}'
+                          ? '$readyCount ready to schedule Â· ${issueCount > 0 ? '$issueCount needing review' : 'all valid'}'
                           : 'Multi-panelist, documenter, and custom rooms auto-matched',
                       textAlign: TextAlign.center,
                       style: TextStyle(
@@ -1275,7 +1275,7 @@ class _DefenseScheduleBulkImportViewState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Restored from saved draft ($rowCount staged ${rowCount == 1 ? 'row' : 'rows'}${timeStr.isNotEmpty ? ' · Saved at $timeStr' : ''})',
+                  'Restored from saved draft ($rowCount staged ${rowCount == 1 ? 'row' : 'rows'}${timeStr.isNotEmpty ? ' Â· Saved at $timeStr' : ''})',
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -2887,23 +2887,25 @@ class _DefenseScheduleBulkImportViewState
     }
 
     if (row.slotIssues.isNotEmpty) {
+      final hasFileIssue = row.source.parseIssues.isNotEmpty ||
+          row.source.chair.trim().isEmpty;
+      final needsFacultyReview = !hasFileIssue && row.slotIssues.any((s) =>
+          s.toLowerCase().contains('panel') ||
+          s.toLowerCase().contains('documenter') ||
+          s.toLowerCase().contains('faculty'));
       issueWidgets.add(
         _issueCategoryPill(
-          prefix: 'Slot',
+          prefix: hasFileIssue ? 'File' : 'Slot',
           message: row.slotIssues.join('; '),
           color: const Color(0xFF991B1B),
           bg: const Color(0xFFFEF2F2),
           border: const Color(0xFFFECACA),
-          tooltip: row.slotIssues.any((s) =>
-                  s.toLowerCase().contains('panel') ||
-                  s.toLowerCase().contains('documenter') ||
-                  s.toLowerCase().contains('faculty'))
+          tooltip: hasFileIssue
+              ? 'Correct the spreadsheet and upload it again'
+              : needsFacultyReview
               ? 'Click to open User Management to check faculty accounts'
               : null,
-          onTap: row.slotIssues.any((s) =>
-                  s.toLowerCase().contains('panel') ||
-                  s.toLowerCase().contains('documenter') ||
-                  s.toLowerCase().contains('faculty'))
+          onTap: needsFacultyReview
               ? () {
                   context.go(AdminRoutes.users);
                 }
@@ -3236,7 +3238,7 @@ class _DefenseScheduleBulkImportViewState
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Target Term: $activeSemLabel • Visual guide for defense timetables & panel assignments',
+                              'Target Term: $activeSemLabel â€¢ Visual guide for defense timetables & panel assignments',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: _muted,
@@ -4383,7 +4385,7 @@ class _CommitteeSessionCardState extends State<_CommitteeSessionCard> {
                 ),
                 Expanded(
                   child: Text(
-                    group.distinctAdvisers.join('  •  '),
+                    group.distinctAdvisers.join('  â€¢  '),
                     style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -4440,7 +4442,7 @@ class _CommitteeSessionGroup {
     if (start.isEmpty || end.isEmpty || rows.length == 1) {
       return rows.first.timeLabel;
     }
-    return '$start – $end';
+    return '$start â€“ $end';
   }
 
   List<String> get distinctAdvisers {

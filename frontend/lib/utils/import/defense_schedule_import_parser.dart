@@ -2,6 +2,71 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:excel/excel.dart';
+import 'package:defensys/utils/string_matching_utils.dart';
+
+// Use the same schema for header detection and column extraction. Only known
+// aliases are mapped automatically; approximate matches are suggestions.
+const _headerAliases = <String, List<String>>{
+  'Time': ['time', 'timeslot', 'schedule', 'defensetime'],
+  'Team Name': ['teamname', 'team'],
+  'Capstone Project': ['capstoneproject', 'project', 'projecttitle'],
+  'Adviser': ['adviser', 'advisor'],
+  'Team Members': ['teammembers', 'members', 'studentmembers'],
+  'Chair': [
+    'chair',
+    'panelchair',
+    'chairpanel',
+    'chairperson',
+    'chairman',
+    'panelchairperson',
+    'chairpersonpanel',
+    'panelchairman',
+    'chairofpanel',
+  ],
+  'Panel Member 1': ['panelmember1', 'panel1', 'member1', 'panelist1'],
+  'Panel Member 2': ['panelmember2', 'panel2', 'member2', 'panelist2'],
+  'Panel Member 3': ['panelmember3', 'panel3', 'member3', 'panelist3'],
+  'Documenter': ['documenter', 'secretary', 'recorder'],
+  'Room': ['room', 'venue', 'roomvenue'],
+  'Date': ['date', 'defensedate', 'scheduleddate'],
+  'Stage': ['stage', 'defensestage', 'event', 'pitevent'],
+  'Semester': ['semester', 'term'],
+};
+
+String? _headerRole(String header) {
+  final normalized = _normalizeHeader(header);
+  for (final entry in _headerAliases.entries) {
+    if (entry.value.contains(normalized)) return entry.key;
+  }
+  return null;
+}
+
+bool _isSequenceHeader(String header) =>
+    header.trim() == '#' ||
+    [
+      'no',
+      'number',
+      'sno',
+      'seq',
+      'sequence',
+    ].contains(_normalizeHeader(header));
+
+String _headerSuggestion(String header) {
+  final normalized = _normalizeHeader(header);
+  if (normalized.isEmpty) return '';
+  final scores = <String, double>{};
+  for (final entry in _headerAliases.entries) {
+    scores[entry.key] = entry.value
+        .map((alias) => stringSimilarity(normalized, alias))
+        .reduce((a, b) => a > b ? a : b);
+  }
+  final ranked = scores.entries.toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+  if (ranked.first.value < 0.75 || ranked.first.value - ranked[1].value < 0.1) {
+    return '';
+  }
+  return ' Did you mean "${ranked.first.key}"?';
+}
 
 class ParsedScheduleImport {
   const ParsedScheduleImport({
@@ -81,6 +146,7 @@ class ParsedScheduleImportRow {
     required this.startTime,
     required this.endTime,
     required this.slotDuration,
+    this.parseIssues = const [],
   });
 
   final int sheetRow;
@@ -98,6 +164,7 @@ class ParsedScheduleImportRow {
   final String startTime;
   final String endTime;
   final int? slotDuration;
+  final List<String> parseIssues;
 
   Map<String, dynamic> toJson() => {
     'sheet_row': sheetRow,
@@ -115,6 +182,7 @@ class ParsedScheduleImportRow {
     'start_time': startTime,
     'end_time': endTime,
     'slot_duration': slotDuration,
+    'parse_issues': parseIssues,
   };
 
   factory ParsedScheduleImportRow.fromJson(Map<String, dynamic> json) {
@@ -126,14 +194,12 @@ class ParsedScheduleImportRow {
       teamName: json['team_name']?.toString() ?? '',
       projectTitle: json['project_title']?.toString() ?? '',
       adviser: json['adviser']?.toString() ?? '',
-      members: (json['members'] as List?)
-              ?.map((e) => e.toString())
-              .toList() ??
+      members:
+          (json['members'] as List?)?.map((e) => e.toString()).toList() ??
           const [],
       chair: json['chair']?.toString() ?? '',
-      panelMembers: (json['panel_members'] as List?)
-              ?.map((e) => e.toString())
-              .toList() ??
+      panelMembers:
+          (json['panel_members'] as List?)?.map((e) => e.toString()).toList() ??
           const [],
       documenter: json['documenter']?.toString() ?? '',
       room: json['room']?.toString() ?? '',
@@ -144,6 +210,9 @@ class ParsedScheduleImportRow {
       slotDuration: json['slot_duration'] is int
           ? json['slot_duration'] as int
           : int.tryParse(json['slot_duration']?.toString() ?? ''),
+      parseIssues:
+          (json['parse_issues'] as List?)?.map((e) => e.toString()).toList() ??
+          const [],
     );
   }
 
@@ -163,6 +232,7 @@ class ParsedScheduleImportRow {
     String? startTime,
     String? endTime,
     int? slotDuration,
+    List<String>? parseIssues,
   }) {
     return ParsedScheduleImportRow(
       sheetRow: sheetRow ?? this.sheetRow,
@@ -180,6 +250,7 @@ class ParsedScheduleImportRow {
       startTime: startTime ?? this.startTime,
       endTime: endTime ?? this.endTime,
       slotDuration: slotDuration ?? this.slotDuration,
+      parseIssues: parseIssues ?? this.parseIssues,
     );
   }
 }
@@ -268,32 +339,67 @@ ParsedScheduleImport parseScheduleImportMatrix(
   var dateCol = -1;
   var stageCol = -1;
   var semesterCol = -1;
+  var activeHeaders = <String>[];
+  var recognizedColumns = <int>{};
+  var headerIssues = <String>[];
+  var headerRow = 0;
 
-  void applyHeader(List<String> row) {
-    final headers = row.map(_normalizeHeader).toList();
-    int column(List<String> aliases) {
-      for (var i = 0; i < headers.length; i++) {
-        if (aliases.contains(headers[i])) return i;
+  void applyHeader(List<String> row, int sheetRow) {
+    activeHeaders = row;
+    headerRow = sheetRow;
+    recognizedColumns = <int>{};
+    headerIssues = <String>[];
+    final roles = row.map(_headerRole).toList();
+    int column(String role) {
+      final matches = <int>[];
+      for (var i = 0; i < roles.length; i++) {
+        if (roles[i] == role) {
+          matches.add(i);
+          recognizedColumns.add(i);
+        }
       }
-      return -1;
+      if (matches.length > 1) {
+        headerIssues.add(
+          'Header row $sheetRow has multiple "$role" columns '
+          '(${matches.map((i) => i + 1).join(', ')}). Keep one column for this role.',
+        );
+        return -1;
+      }
+      return matches.isEmpty ? -1 : matches.single;
     }
 
-    timeCol = column(['time', 'timeslot', 'schedule', 'defensetime']);
-    teamCol = column(['teamname', 'team']);
-    projectCol = column(['capstoneproject', 'project', 'projecttitle']);
-    adviserCol = column(['adviser', 'advisor']);
-    memberCol = column(['teammembers', 'members', 'studentmembers']);
-    chairCol = column(['chair', 'panelchair', 'chairperson']);
+    timeCol = column('Time');
+    // Keep rows visible for review even if the team mapping is ambiguous.
+    teamCol = column('Team Name');
+    if (teamCol < 0) teamCol = roles.indexOf('Team Name');
+    projectCol = column('Capstone Project');
+    adviserCol = column('Adviser');
+    memberCol = column('Team Members');
+    chairCol = column('Chair');
     panelCols = [
-      column(['panelmember1', 'panel1', 'member1']),
-      column(['panelmember2', 'panel2', 'member2']),
-      column(['panelmember3', 'panel3', 'member3']),
+      column('Panel Member 1'),
+      column('Panel Member 2'),
+      column('Panel Member 3'),
     ].where((index) => index >= 0).toList();
-    documenterCol = column(['documenter', 'secretary', 'recorder']);
-    roomCol = column(['room', 'venue', 'roomvenue']);
-    dateCol = column(['date', 'defensedate', 'scheduleddate']);
-    stageCol = column(['stage', 'defensestage', 'event', 'pitevent']);
-    semesterCol = column(['semester', 'term']);
+    documenterCol = column('Documenter');
+    roomCol = column('Room');
+    dateCol = column('Date');
+    stageCol = column('Stage');
+    semesterCol = column('Semester');
+    for (var i = 0; i < row.length; i++) {
+      final header = row[i].trim();
+      if (header.isEmpty ||
+          recognizedColumns.contains(i) ||
+          _isSequenceHeader(header)) {
+        continue;
+      }
+      // Block the whole table, including blank cells under merged staff
+      // assignments, so an unknown role cannot disappear from later rows.
+      headerIssues.add(
+        'Column "$header" (header row $sheetRow) is not recognized.'
+        '${_headerSuggestion(header)} Rename the header or remove this column, then upload again.',
+      );
+    }
     headerFound = true;
     fillDown.clear();
   }
@@ -307,7 +413,7 @@ ParsedScheduleImport parseScheduleImportMatrix(
 
     // 1. Repeated or initial column header row
     if (_isHeaderRow(rawRow)) {
-      applyHeader(rawRow);
+      applyHeader(rawRow, rowIndex + 1);
       continue;
     }
 
@@ -338,16 +444,25 @@ ParsedScheduleImport parseScheduleImportMatrix(
     }
 
     // 3. Header already found; check if this row is a Section / Metadata divider row
-    final rawTime = (timeCol >= 0 && timeCol < rawRow.length) ? rawRow[timeCol].trim() : '';
-    final rawTeam = (teamCol >= 0 && teamCol < rawRow.length) ? rawRow[teamCol].trim() : '';
-    final rawMember = (memberCol >= 0 && memberCol < rawRow.length) ? rawRow[memberCol].trim() : '';
+    final rawTime = (timeCol >= 0 && timeCol < rawRow.length)
+        ? rawRow[timeCol].trim()
+        : '';
+    final rawTeam = (teamCol >= 0 && teamCol < rawRow.length)
+        ? rawRow[teamCol].trim()
+        : '';
+    final rawMember = (memberCol >= 0 && memberCol < rawRow.length)
+        ? rawRow[memberCol].trim()
+        : '';
     final parsedTime = _parseTimeRange(rawTime);
     final hasValidTime = parsedTime.start.isNotEmpty;
 
     // Check for repeated header text in cells (e.g. literal "Team Name" or "Time")
     final normTeam = _normalizeHeader(rawTeam);
     final normTime = _normalizeHeader(rawTime);
-    if (normTeam == 'teamname' || normTeam == 'team' || normTime == 'time' || normTime == 'timeslot') {
+    if (normTeam == 'teamname' ||
+        normTeam == 'team' ||
+        normTime == 'time' ||
+        normTime == 'timeslot') {
       fillDown.clear();
       continue;
     }
@@ -391,12 +506,31 @@ ParsedScheduleImport parseScheduleImportMatrix(
       return fill ? (fillDown[index] ?? '') : '';
     }
 
+    final parseIssues = <String>[...headerIssues];
+    for (var i = 0; i < rawRow.length; i++) {
+      final header = i < activeHeaders.length ? activeHeaders[i].trim() : '';
+      if (recognizedColumns.contains(i) ||
+          header.isNotEmpty ||
+          rawRow[i].trim().isEmpty) {
+        continue;
+      }
+      parseIssues.add(
+        'Unnamed column ${i + 1} (header row $headerRow) contains data but is not recognized. '
+        'Add a header or remove this column, then upload again.',
+      );
+    }
+
     // Check if this is a member continuation row for the current team
     if (rawTeam.isEmpty && rawMember.isNotEmpty) {
       if (grouped.isNotEmpty) {
         final lastGroup = grouped.values.last;
         if (!lastGroup.members.contains(rawMember)) {
           lastGroup.members.add(rawMember);
+        }
+        for (final issue in parseIssues) {
+          if (!lastGroup.parseIssues.contains(issue)) {
+            lastGroup.parseIssues.add(issue);
+          }
         }
       }
       continue;
@@ -450,8 +584,12 @@ ParsedScheduleImport parseScheduleImportMatrix(
         room: effectiveRoom,
         date: effectiveDate,
         stage: effectiveStage,
+        parseIssues: parseIssues,
       ),
     );
+    for (final issue in parseIssues) {
+      if (!group.parseIssues.contains(issue)) group.parseIssues.add(issue);
+    }
 
     final member = read(memberCol, fill: false);
     if (member.isNotEmpty && !group.members.contains(member)) {
@@ -479,12 +617,14 @@ ParsedScheduleImport parseScheduleImportMatrix(
           startTime: parsedTime.start,
           endTime: parsedTime.end,
           slotDuration: parsedTime.duration,
+          parseIssues: group.parseIssues,
         );
       })
       .toList(growable: false);
 
   final rawStage = (metadata['stage'] ?? currentStage).toLowerCase();
-  final isRedefense = rawStage.contains('redef') ||
+  final isRedefense =
+      rawStage.contains('redef') ||
       rawStage.contains('redefense') ||
       rawStage.contains('re-defense');
 
@@ -555,13 +695,13 @@ String _durationToTime(Duration duration) {
 }
 
 bool _isHeaderRow(List<String> row) {
-  final normalized = row.map(_normalizeHeader).toSet();
-  final hasTeam = normalized.contains('teamname') || normalized.contains('team');
-  final hasSchedule = normalized.contains('time') ||
-      normalized.contains('chair') ||
-      normalized.contains('panelmember1') ||
-      normalized.contains('documenter') ||
-      normalized.contains('timeslot');
+  final roles = row.map(_headerRole).toSet();
+  final hasTeam = roles.contains('Team Name');
+  final hasSchedule =
+      roles.contains('Time') ||
+      roles.contains('Chair') ||
+      roles.contains('Panel Member 1') ||
+      roles.contains('Documenter');
   return hasTeam && hasSchedule;
 }
 
@@ -672,17 +812,17 @@ Map<String, String> _readMetadataRow(
         : cell;
 
     final dayDateMatch = RegExp(
-      r'(?:DAY\s*\d+\s*[-–]\s*)?([A-Za-z]+\s+\d{1,2}(?:,?\s+\d{4})?)',
+      r'(?:DAY\s*\d+\s*[-â€“]\s*)?([A-Za-z]+\s+\d{1,2}(?:,?\s+\d{4})?)',
       caseSensitive: false,
     ).firstMatch(combinedWithNext);
     if (dayDateMatch != null && dayDateMatch.group(1) != null) {
       var extractedDate = dayDateMatch.group(1)!.trim();
-      extractedDate = extractedDate.replaceAll(RegExp(r'^DAY\s*\d+\s*[-–]\s*', caseSensitive: false), '').trim();
+      extractedDate = extractedDate.replaceAll(RegExp(r'^DAY\s*\d+\s*[-â€“]\s*', caseSensitive: false), '').trim();
       if (_isDateString(extractedDate)) {
         result['date'] ??= extractedDate;
       }
     } else if (result['date'] == null && _isDateString(cell)) {
-      result['date'] = cell.replaceAll(RegExp(r'^DAY\s*\d+\s*[-–]\s*', caseSensitive: false), '').trim();
+      result['date'] = cell.replaceAll(RegExp(r'^DAY\s*\d+\s*[-â€“]\s*', caseSensitive: false), '').trim();
     } else if (result['room'] == null && _isRoomString(cell)) {
       result['room'] = cell;
     } else if (result['stage'] == null) {
@@ -698,7 +838,7 @@ Map<String, String> _readMetadataRow(
   if (nonEmpty.length == 1) {
     final single = nonEmpty.first;
     final dayDateMatch = RegExp(
-      r'(?:DAY\s*\d+\s*[-–]\s*)?([A-Za-z]+\s+\d{1,2},?\s+\d{4})',
+      r'(?:DAY\s*\d+\s*[-â€“]\s*)?([A-Za-z]+\s+\d{1,2},?\s+\d{4})',
       caseSensitive: false,
     ).firstMatch(single);
     if (dayDateMatch != null && dayDateMatch.group(1) != null) {
@@ -738,7 +878,7 @@ _TimeRange _parseTimeRange(String raw) {
   if (text.isEmpty) {
     return const _TimeRange(start: '', end: '', duration: null);
   }
-  final parts = text.split(RegExp(r'\s*(?:-|–|—|to)\s*', caseSensitive: false));
+  final parts = text.split(RegExp(r'\s*(?:-|â€“|â€”|to)\s*', caseSensitive: false));
   if (parts.isEmpty) {
     return const _TimeRange(start: '', end: '', duration: null);
   }
@@ -884,6 +1024,7 @@ class _ImportGroup {
     required this.room,
     required this.date,
     required this.stage,
+    required this.parseIssues,
   });
 
   final int sheetRow;
@@ -897,6 +1038,7 @@ class _ImportGroup {
   final String room;
   final String date;
   final String stage;
+  final List<String> parseIssues;
   final List<String> members = [];
 }
 

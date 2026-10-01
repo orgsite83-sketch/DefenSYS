@@ -435,7 +435,7 @@ void main() {
       expect(payload['panelist_ids'], equals([101, 102]));
     });
 
-    test('defaults chairPanelistId to first panelist when explicit chair column is empty', () {
+    test('blocks missing chairs instead of assigning the first panelist', () {
       final parsed = ParsedScheduleImport(
         stage: stageLabel,
         date: '2026-06-18',
@@ -478,10 +478,98 @@ void main() {
       );
 
       expect(rows, hasLength(1));
-      // First panelist in roster becomes the default presiding chair
-      expect(rows[0].chairPanelistId, equals(102));
-      expect(rows[0].toPayload()['chair_panelist_id'], equals(102));
+      expect(rows[0].ready, isFalse);
+      expect(rows[0].slotIssues, contains(contains('Chair is missing')));
+      expect(rows[0].chairPanelistId, isNull);
+      expect(rows[0].toPayload().containsKey('chair_panelist_id'), isFalse);
+    });
+
+    for (final chairHeader in ['Chair Panel', 'Chiar Panel', 'Chair']) {
+      test('reviews header "$chairHeader" without silently replacing the chair', () {
+        final parsed = parseScheduleImportMatrix([
+          ['Time', 'Team Name', chairHeader, 'Panel Member 1'],
+          ['09:00-09:30', 'Team Alpha', 'Ricardo Fontanilla', 'Jonathan Beltran'],
+        ]);
+        final restored = ParsedScheduleImport.fromJson(parsed.toJson());
+        final rows = buildScheduleImportPreviewRows(
+          restored,
+          testState,
+          scope: 'capstone',
+          stageId: stageId,
+          eventName: '',
+          date: '2026-06-18',
+          room: 'Room 301',
+          fallbackDuration: 30,
+          panelRubricId: 1,
+          adviserRubricId: 2,
+          peerRubricId: 3,
+          panelWeight: 50,
+          peerWeight: 20,
+        );
+        final row = rows.single;
+        if (chairHeader == 'Chiar Panel') {
+          expect(row.ready, isFalse);
+          expect(row.slotIssues, contains(contains('Chiar Panel')));
+          expect(row.chairPanelistId, isNull);
+        } else {
+          expect(row.ready, isTrue);
+          expect(row.chairPanelistId, 103);
+          expect(row.toPayload()['chair_panelist_id'], 103);
+          expect(row.panelistIds, [103, 101]);
+        }
+      });
+    }
+
+    test('blocks unknown optional columns even when the chair is valid', () {
+      final parsed = parseScheduleImportMatrix([
+        ['Time', 'Team Name', 'Chair Panel', 'Panel Member 1', 'Documeter'],
+        ['09:00-09:30', 'Team Alpha', 'Ricardo Fontanilla', 'Jonathan Beltran', 'Cecilia Magbanua'],
+      ]);
+      final row = buildScheduleImportPreviewRows(
+        ParsedScheduleImport.fromJson(parsed.toJson()),
+        testState,
+        scope: 'capstone',
+        stageId: stageId,
+        eventName: '',
+        date: '2026-06-18',
+        room: 'Room 301',
+        fallbackDuration: 30,
+        panelRubricId: 1,
+        adviserRubricId: 2,
+        peerRubricId: 3,
+        panelWeight: 50,
+        peerWeight: 20,
+      ).single;
+      expect(row.chairPanelistId, 103);
+      expect(row.ready, isFalse);
+      expect(row.slotIssues.single, contains('Documeter'));
+      expect(row.slotIssues.single, contains('Did you mean "Documenter"?'));
+    });
+
+    test('does not replace an unresolved named chair with a valid panel member', () {
+      final parsed = parseScheduleImportMatrix([
+        ['Time', 'Team Name', 'Chair', 'Panel Member 1'],
+        ['09:00-09:30', 'Team Alpha', 'Unknown Chair', 'Jonathan Beltran'],
+      ]);
+      final row = buildScheduleImportPreviewRows(
+        parsed,
+        testState,
+        scope: 'capstone',
+        stageId: stageId,
+        eventName: '',
+        date: '2026-06-18',
+        room: 'Room 301',
+        fallbackDuration: 30,
+        panelRubricId: 1,
+        adviserRubricId: 2,
+        peerRubricId: 3,
+        panelWeight: 50,
+        peerWeight: 20,
+      ).single;
+      expect(row.ready, isFalse);
+      expect(row.panelistIds, [101]);
+      expect(row.chairPanelistId, isNull);
+      expect(row.slotIssues, contains(contains('Unknown Chair')));
     });
   });
 }
-
