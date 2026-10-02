@@ -835,8 +835,16 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   }
 
   Future<void> _viewDefenseMaterial(Map<String, dynamic> item) async {
-    final fileUrl = item['file_url']?.toString();
-    final fileName = item['file_name']?.toString() ?? 'Document';
+    final sub = item['submission'] is Map ? item['submission'] as Map : null;
+    final fileUrl = (item['file_url']?.toString().isNotEmpty == true)
+        ? item['file_url']?.toString()
+        : sub?['file_url']?.toString();
+    final String fileName = (item['file_name']?.toString().isNotEmpty == true && item['file_name'] != 'File')
+        ? item['file_name']!.toString()
+        : (sub?['file_name']?.toString() ??
+            item['name']?.toString() ??
+            item['label']?.toString() ??
+            'Document');
     if (fileUrl == null || fileUrl.isEmpty) {
       showErrorToast(context, 'No file URL available for this material');
       return;
@@ -977,8 +985,29 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           ] else ...[
             const SizedBox(height: 10),
             ...materials.map((mat) {
-              final docName = mat['name']?.toString() ?? 'Defense Material';
-              final fileName = mat['file_name']?.toString() ?? 'File';
+              final sub = mat['submission'] is Map ? mat['submission'] as Map : null;
+              final docName = (mat['label']?.toString().isNotEmpty == true
+                      ? mat['label']?.toString()
+                      : mat['name']?.toString()) ??
+                  'Defense Material';
+              final rawFileName = (mat['file_name']?.toString().isNotEmpty == true && mat['file_name'] != 'File'
+                      ? mat['file_name']?.toString()
+                      : sub?['file_name']?.toString()) ??
+                  '';
+              final fileName = rawFileName.isNotEmpty
+                  ? rawFileName
+                  : (mat['suggested_file_name']?.toString().isNotEmpty == true
+                      ? mat['suggested_file_name']!.toString()
+                      : 'File');
+              final ext = fileName.split('.').last.toLowerCase();
+              final isPdf = ext == 'pdf';
+              final isDoc = ext == 'doc' || ext == 'docx';
+              final iconData = isPdf
+                  ? Icons.picture_as_pdf
+                  : (isDoc ? Icons.description_outlined : Icons.insert_drive_file_outlined);
+              final iconColor = isPdf
+                  ? const Color(0xFFDC2626)
+                  : (isDoc ? const Color(0xFF2563EB) : const Color(0xFF64748B));
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.symmetric(
@@ -992,9 +1021,9 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.picture_as_pdf,
-                      color: Color(0xFFDC2626),
+                    Icon(
+                      iconData,
+                      color: iconColor,
                       size: 24,
                     ),
                     const SizedBox(width: 10),

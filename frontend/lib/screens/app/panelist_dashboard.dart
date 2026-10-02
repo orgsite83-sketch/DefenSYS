@@ -169,7 +169,25 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
           final rawDefenseMaterials = team['defense_materials'] as List? ?? [];
           final defenseMaterials = rawDefenseMaterials
               .whereType<Map>()
-              .map((d) => Map<String, dynamic>.from(d))
+              .map((d) {
+                final map = Map<String, dynamic>.from(d);
+                final sub = map['submission'] is Map ? map['submission'] as Map : null;
+                final fileUrl = (map['file_url']?.toString().isNotEmpty == true)
+                    ? map['file_url']?.toString()
+                    : sub?['file_url']?.toString();
+                final fileName = (map['file_name']?.toString().isNotEmpty == true && map['file_name'] != 'File')
+                    ? map['file_name']?.toString()
+                    : (sub?['file_name']?.toString() ?? map['suggested_file_name']?.toString() ?? 'File');
+                final name = (map['name']?.toString().isNotEmpty == true && map['name'] != 'Defense Material')
+                    ? map['name']?.toString()
+                    : (map['label']?.toString() ?? 'Defense Material');
+
+                map['file_url'] = fileUrl;
+                map['file_name'] = fileName;
+                map['name'] = name;
+                map['label'] = name;
+                return map;
+              })
               .toList();
 
           final assignment = TeamData(

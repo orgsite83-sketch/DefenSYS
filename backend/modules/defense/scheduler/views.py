@@ -879,10 +879,26 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
 
     from repository.deliverables.services import stage_payload
     stage_info = stage_payload(team, schedule.stage_label)
-    defense_materials = [
+    raw_defense_materials = [
         item for item in stage_info.get('pre', [])
         if item.get('is_defense_material', False) and item.get('uploaded')
     ]
+    defense_materials = []
+    for item in raw_defense_materials:
+        sub = item.get('submission') or {}
+        file_url = sub.get('file_url') or item.get('file_url') or ''
+        file_name = sub.get('file_name') or item.get('file_name') or ''
+        file_size = sub.get('file_size') or item.get('file_size') or ''
+        name = item.get('label') or item.get('name') or 'Defense Material'
+        mat_entry = dict(item)
+        mat_entry.update({
+            'name': name,
+            'label': name,
+            'file_name': file_name,
+            'file_url': file_url,
+            'file_size': file_size,
+        })
+        defense_materials.append(mat_entry)
 
     leader_name = ''
     if getattr(team, 'leader', None):

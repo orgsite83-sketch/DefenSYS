@@ -177,4 +177,37 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Team SkyLedger'), findsOneWidget);
   });
+
+  testWidgets('Defense materials display deliverable name and file details with view action', (tester) async {
+    final team = TeamData(
+      name: 'Team SkyLedger', project: 'Alumni Career Tracker', defenseDate: 'Concept Proposal',
+      teamId: '10', scheduleId: '20', scope: 'capstone', isCapstone: true,
+      stageName: 'Concept Proposal', scheduledDate: TeamData.manilaToday,
+      startTime: '23:30', room: 'Room 301',
+      members: const ['Alice', 'Bob'],
+      memberDetails: const [TeamMember(id: '1', name: 'Alice'), TeamMember(id: '2', name: 'Bob')],
+      criteria: [], isPosted: false, isChair: true, serverCanIssueVerdict: false,
+      evaluationContext: 'context-a',
+      defenseMaterials: [
+        {
+          'id': 'concept_paper',
+          'label': 'Concept Paper',
+          'file_name': 'SkyLedger_Concept_Paper.pdf',
+          'file_url': '/media/deliverables/2026/10/concept_paper.pdf',
+        },
+      ],
+      panelRubric: {
+        'id': 1, 'name': 'Proposal rubric', 'target_type': 'team',
+        'criteria': [
+          {'id': 1, 'name': 'Clarity', 'max_score': 10, 'target_type': 'team'},
+        ],
+      },
+    );
+    await showSheet(tester, team);
+    expect(find.text('Defense Materials for Evaluation'), findsOneWidget);
+    expect(find.text('1 file'), findsOneWidget);
+    expect(find.text('Concept Paper'), findsOneWidget);
+    expect(find.text('SkyLedger_Concept_Paper.pdf'), findsOneWidget);
+    expect(find.text('View'), findsOneWidget);
+  });
 }
