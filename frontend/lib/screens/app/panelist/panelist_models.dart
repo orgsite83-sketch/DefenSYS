@@ -4,7 +4,11 @@ class TeamMember {
   final String id;
   final String name;
   final bool isLeader;
-  const TeamMember({required this.id, required this.name, this.isLeader = false});
+  const TeamMember({
+    required this.id,
+    required this.name,
+    this.isLeader = false,
+  });
 }
 
 class TeamData {
@@ -31,12 +35,19 @@ class TeamData {
   final String level;
 
   bool get isLockedByDate {
-    if (scheduledDate == null) return false;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    return today.isBefore(scheduledDate!);
+    if (scheduledDate == null) return true;
+    return manilaToday.isBefore(scheduledDate!);
   }
+
   final DateTime? scheduledDate;
+  final bool? serverGradingAvailable;
+  final String gradingUnavailableReason;
+  final String evaluationContext;
+  final bool? serverCanIssueVerdict;
+  final String scheduleStatus;
+  List<Map<String, dynamic>> draftSubmissions;
+  String? draftSavedAt;
+  bool hasUnsavedChanges = false;
   bool isPosted;
   final List<Map<String, dynamic>> submittedSubmissions;
   final List<Map<String, dynamic>> defenseMaterials;
@@ -76,7 +87,14 @@ class TeamData {
     this.peerWeight = 20,
     this.adviserWeight = 0,
     this.panelRubric,
-    this.scheduledDate,
+    DateTime? scheduledDate,
+    this.serverGradingAvailable,
+    this.gradingUnavailableReason = '',
+    this.evaluationContext = '',
+    this.serverCanIssueVerdict,
+    this.scheduleStatus = 'scheduled',
+    this.draftSubmissions = const [],
+    this.draftSavedAt,
     this.isChair = false,
     this.verdict,
     this.verdictRemarks,
@@ -84,7 +102,39 @@ class TeamData {
     this.revisionDeadline,
     this.attemptCount = 1,
     this.gradeId,
-  });
+  }) : scheduledDate =
+           scheduledDate ??
+           DateTime.tryParse(
+             RegExp(r'\d{4}-\d{2}-\d{2}').firstMatch(defenseDate)?.group(0) ??
+                 '',
+           );
+
+  static DateTime get manilaToday {
+    final now = DateTime.now().toUtc().add(const Duration(hours: 8));
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  bool get isToday => scheduledDate == manilaToday;
+  bool get gradingAvailable =>
+      !isPosted &&
+      !isLockedByDate &&
+      scheduleStatus == 'scheduled' &&
+      (serverGradingAvailable ?? true);
+  bool get canIssueVerdict =>
+      !isLockedByDate &&
+      scheduleStatus == 'scheduled' &&
+      (serverCanIssueVerdict ?? isPosted);
+  bool get hasDraft => draftSubmissions.any(
+    (s) =>
+        (s['criteria_scores'] as List? ?? []).isNotEmpty ||
+        (s['remarks']?.toString().trim() ?? '').isNotEmpty,
+  );
+  String get evaluationStatus {
+    if (isPosted) return 'Submitted';
+    if (isLockedByDate && scheduledDate != null) return 'Upcoming';
+    if (!gradingAvailable) return 'Unavailable';
+    return hasDraft ? 'Draft' : 'Ready to evaluate';
+  }
 
   bool get hasVerdict => verdict != null && verdict!.isNotEmpty;
   bool get isApproved => verdict == 'approved';
@@ -116,9 +166,11 @@ class TeamData {
       ? instructorName
       : (adviserName.isNotEmpty ? adviserName : 'No instructor assigned');
 
-  String get displaySupervisor => isCapstone ? displayAdviser : displayInstructor;
+  String get displaySupervisor =>
+      isCapstone ? displayAdviser : displayInstructor;
 
-  String get displayAdviser => adviserName.isNotEmpty ? adviserName : 'No adviser assigned';
+  String get displayAdviser =>
+      adviserName.isNotEmpty ? adviserName : 'No adviser assigned';
 
   String get displayLeader {
     if (leaderName.isNotEmpty) return leaderName;
@@ -173,8 +225,10 @@ class Criterion {
   final int? id;
   final String name;
   final double maxScore;
-  double score;
-  Criterion(this.name, this.maxScore, {this.id}) : score = maxScore * 0.8;
+  double? score;
+  Criterion(this.name, this.maxScore, {this.id, this.score});
+  bool get isScored =>
+      score != null && score!.isFinite && score! >= 0 && score! <= maxScore;
 }
 
 class Award {

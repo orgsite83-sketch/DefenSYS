@@ -27,7 +27,11 @@ from authentication_access_control.models import SystemAuditLog
 from authentication_access_control.scopes import visible_schedules_for
 from user_management.permissions import IsPanelist, CanManageModule
 
-from .models import DefenseSchedule, SchedulePanelist, PitEventGradingConfig
+from .models import DefenseSchedule, SchedulePanelist, PitEventGradingConfig, PanelistEvaluationDraft
+from .panelist_evaluation import (
+    draft_payload, evaluation_context, grading_unavailable_reason,
+    save_evaluation_draft, validate_evaluation_submissions,
+)
 from academic_period_management.models import Semester
 
 from .pit_config import check_pit_event_locked, get_pit_event_config, pit_event_config_payload, upsert_pit_event_config
@@ -506,13 +510,6 @@ class PanelistAssignmentsView(APIView):
         for sub in submitted_subs:
             sub_map.setdefault(sub.schedule_id, []).append(sub)
 
-        locked_schedule_ids = set(
-            TeamGrade.objects.filter(
-                schedule_id__in=[s.id for s in schedules],
-                status__in=TeamGrade.LOCKED_STATUSES,
-            ).values_list('schedule_id', flat=True)
-        )
-
         # Get set of schedule IDs where this panelist is designated as chair
         chair_schedule_ids = set(
             SchedulePanelist.objects.filter(
@@ -527,6 +524,11 @@ class PanelistAssignmentsView(APIView):
             .select_related('verdict_by')
         )
         grade_map = {tg.schedule_id: tg for tg in team_grades}
+        drafts = {
+            draft.schedule_id: draft for draft in PanelistEvaluationDraft.objects.filter(
+                schedule__in=schedules, panelist_id=panelist_id,
+            )
+        }
 
         teams_data = []
         rubrics_data = []
@@ -534,7 +536,7 @@ class PanelistAssignmentsView(APIView):
 
         for schedule in schedules:
             subs = sub_map.get(schedule.id, [])
-            is_posted = bool(subs) or (schedule.id in locked_schedule_ids)
+            is_posted = bool(subs)
 
             submissions_data = []
             for sub in subs:
@@ -560,6 +562,9 @@ class PanelistAssignmentsView(APIView):
                 submissions=submissions_data,
                 is_chair=is_chair,
                 team_grade=team_grade,
+            )
+            team_payload['draft'] = None if is_posted else draft_payload(
+                drafts.get(schedule.id), team_payload['evaluation_context'],
             )
             teams_data.append(team_payload)
 
@@ -714,14 +719,17 @@ class PanelistGradeSubmissionView(APIView):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
-            if schedule:
-                from django.utils import timezone
-                current_date = timezone.localtime(timezone.now()).date()
-                if schedule.scheduled_date > current_date:
-                    return Response(
-                        {'detail': f'Grading is locked until the scheduled date: {schedule.scheduled_date.strftime("%B %d, %Y")}.'},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
+            if schedule is None:
+                return Response({'detail': 'A defense schedule is required for grading.'}, status=400)
+            reason = grading_unavailable_reason(schedule)
+            if reason:
+                return Response({'detail': reason}, status=400)
+            if request.data.get('evaluation_context') and request.data['evaluation_context'] != evaluation_context(schedule, schedule.grade_records.first()):
+                return Response({'detail': 'This evaluation has changed. Refresh the assignment before submitting.'}, status=400)
+            submissions_payload = validate_evaluation_submissions(schedule, submissions_payload)
+
+            if schedule.panelist_grade_submissions.filter(panelist=panelist).exists():
+                return Response({'detail': 'Your grades have already been submitted and locked.'}, status=400)
 
             if not team.semester:
                 return Response(
@@ -813,12 +821,13 @@ class PanelistGradeSubmissionView(APIView):
                         student=student,
                     )
 
+            PanelistEvaluationDraft.objects.filter(schedule=schedule, panelist=panelist).delete()
             team_grade.refresh_from_db()
             return Response({
                 'success': True,
                 'message': 'Grades submitted successfully',
                 'team_grade_id': team_grade.id,
-                'panel_score': float(team_grade.panel_score) if team_grade.panel_score else None,
+                'panel_score': float(team_grade.panel_score) if team_grade.panel_score is not None else None,
             }, status=status.HTTP_201_CREATED)
 
         except ValidationError as e:
@@ -841,6 +850,7 @@ class PanelistGradeSubmissionView(APIView):
 
 def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_chair=False, team_grade=None):
     team = schedule.team
+    unavailable_reason = grading_unavailable_reason(schedule, team_grade)
     raw_weights = weights_for_schedule(schedule)
     grade_weights = _grade_weights_payload(schedule, raw_weights)
     panel_rubric = _panel_rubric_payload(schedule.rubric, grade_weights)
@@ -923,6 +933,16 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
         'panel_rubric': panel_rubric,
         'is_posted': is_posted,
         'is_submitted': is_posted,
+        'schedule_status': schedule.status,
+        'server_date': timezone.localdate().isoformat(),
+        'grading_available': not is_posted and not unavailable_reason,
+        'grading_unavailable_reason': unavailable_reason,
+        'evaluation_context': evaluation_context(schedule, team_grade),
+        'can_issue_verdict': (
+            is_chair and schedule.status == DefenseSchedule.STATUS_SCHEDULED
+            and schedule.scheduled_date <= timezone.localdate()
+            and team_grade is not None and team_grade.panel_score is not None
+        ),
         'submissions': submissions or [],
         'defense_materials': defense_materials,
         'is_chair': is_chair,
@@ -1015,10 +1035,8 @@ class GuestPanelistAssignmentsView(APIView):
                 guest_code_id=principal.guest_code_id,
             ).prefetch_related('criterion_scores')
         )
-        is_posted = bool(subs) or TeamGrade.objects.filter(
-            schedule=schedule,
-            status__in=TeamGrade.LOCKED_STATUSES,
-        ).exists()
+        is_posted = bool(subs)
+        team_grade = schedule.grade_records.select_related('verdict_by').first()
 
         submissions_data = []
         for sub in subs:
@@ -1039,6 +1057,13 @@ class GuestPanelistAssignmentsView(APIView):
             schedule,
             is_posted=is_posted,
             submissions=submissions_data,
+            team_grade=team_grade,
+        )
+        draft = PanelistEvaluationDraft.objects.filter(
+            schedule=schedule, guest_code_id=principal.guest_code_id,
+        ).first()
+        team_payload['draft'] = None if is_posted else draft_payload(
+            draft, team_payload['evaluation_context'],
         )
         rubric = team_payload.get('panel_rubric')
         return Response({
@@ -1124,13 +1149,15 @@ class GuestPanelistGradeSubmissionView(APIView):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
-            from django.utils import timezone
-            current_date = timezone.localtime(timezone.now()).date()
-            if schedule.scheduled_date > current_date:
-                return Response(
-                    {'detail': f'Grading is locked until the scheduled date: {schedule.scheduled_date.strftime("%B %d, %Y")}.'},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+            reason = grading_unavailable_reason(schedule)
+            if reason:
+                return Response({'detail': reason}, status=400)
+            if request.data.get('evaluation_context') and request.data['evaluation_context'] != evaluation_context(schedule, schedule.grade_records.first()):
+                return Response({'detail': 'This evaluation has changed. Refresh the assignment before submitting.'}, status=400)
+            submissions_payload = validate_evaluation_submissions(schedule, submissions_payload)
+
+            if schedule.panelist_grade_submissions.filter(guest_code_id=principal.guest_code_id).exists():
+                return Response({'detail': 'Your grades have already been submitted and locked.'}, status=400)
 
             if not team.semester:
                 return Response(
@@ -1217,12 +1244,13 @@ class GuestPanelistGradeSubmissionView(APIView):
                         student=student,
                     )
 
+            PanelistEvaluationDraft.objects.filter(schedule=schedule, guest_code_id=principal.guest_code_id).delete()
             team_grade.refresh_from_db()
             return Response({
                 'success': True,
                 'message': 'Grades submitted successfully',
                 'team_grade_id': team_grade.id,
-                'panel_score': float(team_grade.panel_score) if team_grade.panel_score else None,
+                'panel_score': float(team_grade.panel_score) if team_grade.panel_score is not None else None,
             }, status=status.HTTP_201_CREATED)
 
         except ValidationError as e:
@@ -1235,6 +1263,41 @@ class GuestPanelistGradeSubmissionView(APIView):
                 {'detail': f'Failed to submit grades: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class PanelistEvaluationDraftView(APIView):
+    permission_classes = [IsAuthenticated, IsPanelist]
+
+    def post(self, request):
+        try:
+            schedule_id = int(request.data.get('schedule_id'))
+        except (ValueError, TypeError):
+            return Response({'detail': 'A valid schedule_id is required.'}, status=400)
+        schedule = get_object_or_404(
+            schedule_queryset().filter(panel_assignments__panelist=request.user),
+            pk=schedule_id,
+        )
+        try:
+            draft = save_evaluation_draft(schedule, request.data, panelist=request.user)
+        except ValidationError as exc:
+            return Response({'detail': ' '.join(exc.messages)}, status=400)
+        return Response({'draft': draft})
+
+
+class GuestPanelistEvaluationDraftView(APIView):
+    authentication_classes = [GuestJWTAuthentication]
+    permission_classes = [IsGuestPanelist]
+
+    def post(self, request):
+        principal = request.user
+        if str(request.data.get('schedule_id')) != str(principal.defense_schedule_id):
+            return Response({'detail': 'You are not assigned to this defense.'}, status=403)
+        schedule = get_object_or_404(schedule_queryset(), pk=principal.defense_schedule_id)
+        try:
+            draft = save_evaluation_draft(schedule, request.data, guest=principal)
+        except ValidationError as exc:
+            return Response({'detail': ' '.join(exc.messages)}, status=400)
+        return Response({'draft': draft})
 
 
 class DefenseScheduleVerdictView(APIView):
@@ -1277,6 +1340,9 @@ class DefenseScheduleVerdictView(APIView):
         from grading.grades.serializers import TeamGradeSerializer
 
         team_grade = schedule.grade_records.first()
+        reason = grading_unavailable_reason(schedule)
+        if reason:
+            return Response({'detail': reason}, status=status.HTTP_400_BAD_REQUEST)
         if not team_grade:
             team_grade, _created, _changed = GradeContextService.get_or_create_for_schedule(schedule)
 

@@ -1748,8 +1748,11 @@ class _DefenseScheduleBulkImportViewState
             _parsed?.rows.map((r) => r.slotDuration).whereType<int>().firstOrNull ??
             60,
         selectedFileId: _selectedFileId,
-        gradingSummary:
-            'Panel: ${_panelRubricName ?? 'Not configured'} ($_panelWeight%)\nPeer: ${_peerRubricName ?? 'Not configured'} ($_peerWeight%)${_isPit ? '' : '\nAdviser: ${_adviserRubricName ?? 'Not configured'}'}',
+        gradingSummaries: [
+          'Panel: ${_panelRubricName ?? 'Not configured'} ($_panelWeight%)',
+          'Peer: ${_peerRubricName ?? 'Not configured'} ($_peerWeight%)',
+          if (!_isPit) 'Adviser: ${_adviserRubricName ?? 'Not configured'}',
+        ],
         onViewGrading: _viewGradingSetup,
         timingIssues: (rows) => _previewForRows(rows, state)
             .expand((row) => row.slotIssues)
@@ -3039,6 +3042,17 @@ class _DefenseScheduleBulkImportViewState
                                     ),
                                     children: [
                                       TextSpan(
+                                        text: 'Single- & Multi-Day Schedules: ',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          color: Color(0xFF1E293B),
+                                        ),
+                                      ),
+                                      TextSpan(
+                                        text:
+                                            'Use one Excel file for all defense days. Keep one day block for a single day, or copy a complete block below for more dates.\n\n',
+                                      ),
+                                      TextSpan(
                                         text:
                                             'Auto-Detection & Multi-Panelists: ',
                                         style: TextStyle(
@@ -3081,38 +3095,43 @@ class _DefenseScheduleBulkImportViewState
                     horizontal: 24,
                     vertical: 14,
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: () {
-                          Navigator.of(ctx).pop();
-                          _downloadSampleTemplate();
-                        },
-                        icon: const Icon(Icons.download_rounded, size: 15),
-                        label: const Text('Download Sample Template (.xlsx)'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _ink,
-                          side: const BorderSide(color: _line),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      spacing: 12,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.of(ctx).pop();
+                            _downloadSampleTemplate();
+                          },
+                          icon: const Icon(Icons.download_rounded, size: 15),
+                          label: const Text('Download Sample Template (.xlsx)'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _ink,
+                            side: const BorderSide(color: _line),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
                           ),
                         ),
-                      ),
-                      ElevatedButton(
-                        onPressed: () => Navigator.of(ctx).pop(),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _maroon,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 10,
+                        ElevatedButton(
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _maroon,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 10,
+                            ),
                           ),
+                          child: const Text('Close'),
                         ),
-                        child: const Text('Close'),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -3124,6 +3143,7 @@ class _DefenseScheduleBulkImportViewState
   }
 
   Widget _buildSampleScheduleSheetPreview({required bool isPit}) {
+    final days = defenseScheduleTemplateDays(isCapstone: !isPit);
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -3209,64 +3229,85 @@ class _DefenseScheduleBulkImportViewState
             ),
           ),
 
-          // Preamble Rows (Centered exactly matching Picture 1)
-          _buildCenteredSpreadsheetPreambleRow(
-            rowNum: '1',
-            text: isPit ? 'PIT Capstone Defense' : 'Concept Proposal',
-            isBold: true,
-          ),
-          const Divider(height: 1, color: Color(0xFFCBD5E1)),
-          _buildCenteredSpreadsheetPreambleRow(
-            rowNum: '2',
-            text: isPit ? '5/18/2026' : '6/18/2026',
-          ),
-          const Divider(height: 1, color: Color(0xFFCBD5E1)),
-          _buildCenteredSpreadsheetPreambleRow(
-            rowNum: '3',
-            text: isPit ? 'Smart Room' : 'Room 301',
-          ),
-          const Divider(height: 1, color: Color(0xFFCBD5E1)),
-
-          // Row 4: Column Headers
-          Container(
-            color: const Color(0xFFE2E8F0),
-            child: Row(
-              children: [
-                _buildGutterCell('4', isHeader: true),
-                _buildColumnHeaderCell('#', flex: 1),
-                _buildColumnHeaderCell('Time', flex: 3, isRequired: true),
-                _buildColumnHeaderCell('Team Name', flex: 3, isRequired: true),
-                _buildColumnHeaderCell('Adviser', flex: 4, isRequired: true),
-                _buildColumnHeaderCell(
-                  'Panel Chair',
-                  flex: 4,
-                  isRequired: true,
+          for (var index = 0; index < days.length; index++) ...[
+            if (index > 0)
+              Container(
+                height: 24,
+                decoration: const BoxDecoration(
+                  border: Border(
+                    top: BorderSide(color: Color(0xFFCBD5E1)),
+                    bottom: BorderSide(color: Color(0xFFCBD5E1)),
+                  ),
                 ),
-                _buildColumnHeaderCell(
-                  'Panel Member 1',
-                  flex: 4,
-                  isRequired: true,
-                ),
-                _buildColumnHeaderCell(
-                  'Panel Member 2',
-                  flex: 4,
-                  isRequired: true,
-                ),
-                _buildColumnHeaderCell(
-                  'Panel Member 3',
-                  flex: 4,
-                  isRequired: true,
-                ),
-                if (!isPit) _buildColumnHeaderCell('Documenter', flex: 4),
-              ],
+                alignment: Alignment.centerLeft,
+                child: _buildGutterCell('${index * 9}'),
+              ),
+            _buildScheduleTemplateDay(
+              isPit: isPit,
+              day: days[index],
+              firstRow: index * 9 + 1,
             ),
-          ),
-          const Divider(height: 1, color: Color(0xFFCBD5E1)),
-
-          // 4 Schedule Rows (Rows 5 to 8) - Adviser & Documenter merged across all 4 rows
-          _buildScheduleMerged4RowBlock(isPit: isPit),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _buildScheduleTemplateDay({
+    required bool isPit,
+    required DefenseScheduleTemplateDay day,
+    required int firstRow,
+  }) {
+    final preamble = [day.stage, day.date, day.room];
+    return Column(
+      key: ValueKey('schedule_blueprint_day_${day.date}'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var row = 0; row < preamble.length; row++) ...[
+          _buildCenteredSpreadsheetPreambleRow(
+            rowNum: '${firstRow + row}',
+            text: preamble[row],
+            isBold: row == 0,
+          ),
+          const Divider(height: 1, color: Color(0xFFCBD5E1)),
+        ],
+        Container(
+          color: const Color(0xFFE2E8F0),
+          child: Row(
+            children: [
+              _buildGutterCell('${firstRow + 3}', isHeader: true),
+              _buildColumnHeaderCell('#', flex: 1),
+              _buildColumnHeaderCell('Time', flex: 3, isRequired: true),
+              _buildColumnHeaderCell('Team Name', flex: 3, isRequired: true),
+              _buildColumnHeaderCell('Adviser', flex: 4, isRequired: true),
+              _buildColumnHeaderCell('Panel Chair', flex: 4, isRequired: true),
+              _buildColumnHeaderCell(
+                'Panel Member 1',
+                flex: 4,
+                isRequired: true,
+              ),
+              _buildColumnHeaderCell(
+                'Panel Member 2',
+                flex: 4,
+                isRequired: true,
+              ),
+              _buildColumnHeaderCell(
+                'Panel Member 3',
+                flex: 4,
+                isRequired: true,
+              ),
+              if (!isPit) _buildColumnHeaderCell('Documenter', flex: 4),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: Color(0xFFCBD5E1)),
+
+        _buildScheduleMerged4RowBlock(
+          isPit: isPit,
+          day: day,
+          firstSlotRow: firstRow + 4,
+        ),
+      ],
     );
   }
 
@@ -3301,397 +3342,115 @@ class _DefenseScheduleBulkImportViewState
     );
   }
 
-  Widget _buildScheduleMerged4RowBlock({required bool isPit}) {
-    const slotH = 34.0;
-    const blockH = slotH * 4 + 3.0; // 139.0
+  Widget _buildScheduleMerged4RowBlock({
+    required bool isPit,
+    required DefenseScheduleTemplateDay day,
+    required int firstSlotRow,
+  }) {
+    const slotHeight = 34.0;
+    final rowCount = day.teams.length;
+    final blockHeight = slotHeight * rowCount + rowCount - 1;
+
+    Widget column(
+      List<String> values, {
+      required int flex,
+      bool isBold = false,
+      Color color = const Color(0xFF475569),
+    }) => Expanded(
+      flex: flex,
+      child: Column(
+        children: [
+          for (var row = 0; row < rowCount; row++) ...[
+            _buildSubCell(values[row], isBold: isBold, color: color),
+            if (row < rowCount - 1)
+              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          ],
+        ],
+      ),
+    );
+
+    Widget merged(String value, {bool documenter = false}) => Expanded(
+      flex: 4,
+      child: Container(
+        margin: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: documenter
+              ? const Color(0xFFFEF3C7).withValues(alpha: 0.35)
+              : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: documenter
+                ? const Color(0xFFD97706)
+                : const Color(0xFF94A3B8),
+            width: 1.5,
+          ),
+        ),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.all(6),
+        child: Text(
+          value,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: documenter ? 10 : 10.5,
+            fontWeight: FontWeight.w700,
+            color: documenter
+                ? const Color(0xFFB45309)
+                : const Color(0xFF1E293B),
+          ),
+        ),
+      ),
+    );
 
     return SizedBox(
-      height: blockH,
+      height: blockHeight,
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Gutter column (row numbers 5 to 8)
           SizedBox(
             width: 26,
-            height: blockH,
             child: Column(
-              children: List.generate(4, (index) {
-                final rowNum = (index + 5).toString();
-                return SizedBox(
-                  height: index < 3 ? slotH + 1.0 : slotH,
-                  child: Column(
-                    children: [
-                      SizedBox(height: slotH, child: _buildGutterCell(rowNum)),
-                      if (index < 3)
-                        const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                    ],
+              children: [
+                for (var row = 0; row < rowCount; row++) ...[
+                  SizedBox(
+                    height: slotHeight,
+                    child: _buildGutterCell('${firstSlotRow + row}'),
                   ),
-                );
-              }),
+                  if (row < rowCount - 1)
+                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                ],
+              ],
             ),
           ),
-          // Column A: # (1, 2, 3, 4)
-          Expanded(
+          column(
+            List.generate(rowCount, (row) => '${row + 1}'),
             flex: 1,
-            child: SizedBox(
-              height: blockH,
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      '1',
-                      isBold: true,
-                      color: const Color(0xFF475569),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      '2',
-                      isBold: true,
-                      color: const Color(0xFF475569),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      '3',
-                      isBold: true,
-                      color: const Color(0xFF475569),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      '4',
-                      isBold: true,
-                      color: const Color(0xFF475569),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            isBold: true,
           ),
-          // Column B: Time
-          Expanded(
+          column(
+            List.generate(rowCount, day.timeForSlot),
             flex: 3,
-            child: SizedBox(
-              height: blockH,
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      '8:00 - 9:00',
-                      isBold: true,
-                      color: const Color(0xFF334155),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      '9:00 - 10:00',
-                      isBold: true,
-                      color: const Color(0xFF334155),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      '10:00 - 11:00',
-                      isBold: true,
-                      color: const Color(0xFF334155),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      '11:00 - 12:00',
-                      isBold: true,
-                      color: const Color(0xFF334155),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            isBold: true,
+            color: const Color(0xFF334155),
           ),
-          // Column C: Team Name
-          Expanded(
+          column(
+            day.teams,
             flex: 3,
-            child: SizedBox(
-              height: blockH,
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Team SkyLedger' : 'Team Apex',
-                      isBold: true,
-                      color: const Color(0xFF1E293B),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Team BioPulse' : 'Team Horizon',
-                      isBold: true,
-                      color: const Color(0xFF1E293B),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Team SafeCity' : 'Team Nexus',
-                      isBold: true,
-                      color: const Color(0xFF1E293B),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Team CodeLearners' : 'Team Pulse',
-                      isBold: true,
-                      color: const Color(0xFF1E293B),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            isBold: true,
+            color: const Color(0xFF1E293B),
           ),
-          // Column D: Adviser (1 Big Merged Cell spanning all 4 rows)
-          Expanded(
+          merged(day.adviser),
+          column(
+            List.generate(rowCount, (row) => day.panels[row ~/ 2][0]),
             flex: 4,
-            child: Container(
-              height: blockH,
-              margin: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: const Color(0xFF94A3B8), width: 1.5),
-              ),
-              alignment: Alignment.center,
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-              child: const Text(
-                'Prof. Alex Santos',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1E293B),
-                ),
-              ),
-            ),
+            isBold: true,
+            color: _maroon,
           ),
-          // Column E: Panel Chair
-          Expanded(
-            flex: 4,
-            child: SizedBox(
-              height: blockH,
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Suarez' : 'Dr. Alan Turing',
-                      isBold: true,
-                      color: _maroon,
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Suarez' : 'Dr. Alan Turing',
-                      isBold: true,
-                      color: _maroon,
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Tan' : 'Dr. Maria Santos',
-                      isBold: true,
-                      color: _maroon,
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Tan' : 'Dr. Maria Santos',
-                      isBold: true,
-                      color: _maroon,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Column F: Panel Member 1
-          Expanded(
-            flex: 4,
-            child: SizedBox(
-              height: blockH,
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Beltran' : 'Prof. Ada Lovelace',
-                      color: const Color(0xFF475569),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Beltran' : 'Prof. Ada Lovelace',
-                      color: const Color(0xFF475569),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Reyes' : 'Prof. Robert Taylor',
-                      color: const Color(0xFF475569),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Reyes' : 'Prof. Robert Taylor',
-                      color: const Color(0xFF475569),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Column G: Panel Member 2
-          Expanded(
-            flex: 4,
-            child: SizedBox(
-              height: blockH,
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Corpuz' : 'Dr. Grace Hopper',
-                      color: const Color(0xFF475569),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Corpuz' : 'Dr. Grace Hopper',
-                      color: const Color(0xFF475569),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Cruz' : 'Dr. Grace Miller',
-                      color: const Color(0xFF475569),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Cruz' : 'Dr. Grace Miller',
-                      color: const Color(0xFF475569),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Column H: Panel Member 3
-          Expanded(
-            flex: 4,
-            child: SizedBox(
-              height: blockH,
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Villanueva' : 'Prof. Claude Shannon',
-                      color: const Color(0xFF475569),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Villanueva' : 'Prof. Claude Shannon',
-                      color: const Color(0xFF475569),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Santos' : 'Engr. Alan Cruz',
-                      color: const Color(0xFF475569),
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  SizedBox(
-                    height: slotH,
-                    child: _buildSubCell(
-                      isPit ? 'Santos' : 'Engr. Alan Cruz',
-                      color: const Color(0xFF475569),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Column I: Documenter (1 Big Merged Cell spanning all 4 rows)
-          if (!isPit)
-            Expanded(
+          for (var member = 1; member <= 3; member++)
+            column(
+              List.generate(rowCount, (row) => day.panels[row ~/ 2][member]),
               flex: 4,
-              child: Container(
-                height: blockH,
-                margin: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFEF3C7).withValues(alpha: 0.35),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: const Color(0xFFD97706),
-                    width: 1.5,
-                  ),
-                ),
-                alignment: Alignment.center,
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-                child: const Text(
-                  'Engr. Mark Mendoza',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFFB45309),
-                  ),
-                ),
-              ),
             ),
+          if (!isPit) merged(day.documenter, documenter: true),
         ],
       ),
     );

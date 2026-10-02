@@ -574,9 +574,10 @@ class DefenseSchedulerApiTests(APITestCase):
             },
             format='json',
         )
-        self.assertEqual(response_a2.status_code, 201)
+        self.assertEqual(response_a2.status_code, 400)
+        self.assertEqual(response_a2.data.get('detail'), 'Your grades have already been submitted and locked.')
         grade.refresh_from_db()
-        self.assertEqual(grade.panel_score, Decimal('75.00'))
+        self.assertEqual(grade.panel_score, Decimal('70.00'))
 
     def test_panelist_submission_uses_rubric_criterion_snapshots(self):
         schedule = self.create_scheduled_defense()
@@ -679,11 +680,12 @@ class DefenseSchedulerApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data.get('detail'), 'Your grades have already been submitted and locked.')
         grade = TeamGrade.objects.get(team=self.team, schedule=schedule)
         self.assertEqual(PanelistGradeSubmission.objects.filter(team_grade=grade).count(), 2)
         self.assertEqual(PanelistCriterionScore.objects.filter(submission__team_grade=grade).count(), 4)
-        self.assertEqual(grade.panel_score, Decimal('75.00'))
+        self.assertEqual(grade.panel_score, Decimal('70.00'))
 
     def test_guest_panelist_submission_uses_same_criterion_validation(self):
         schedule = self.create_scheduled_defense()

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../about_screen.dart';
@@ -29,7 +30,11 @@ class PanelistDashboard extends ConsumerStatefulWidget {
   ConsumerState<PanelistDashboard> createState() => _PanelistDashboardState();
 }
 
-class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
+class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
+    with WidgetsBindingObserver {
+  Timer? _availabilityTimer;
+  DateTime _lastDay = TeamData.manilaToday;
+  bool _refreshingAssignments = false;
   int _selectedIndex = 0;
   int _selectedTeamIndex = 0;
   bool _loading = true;
@@ -47,7 +52,26 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _availabilityTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (_lastDay != TeamData.manilaToday) {
+        _lastDay = TeamData.manilaToday;
+        _loadData(showLoading: false);
+      }
+    });
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    _availabilityTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _loadData(showLoading: false);
   }
 
   Future<void> _loadResults() async {
@@ -94,9 +118,11 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
     }
   }
 
-  Future<void> _loadData() async {
+  Future<void> _loadData({bool showLoading = true}) async {
+    if (_refreshingAssignments || !mounted) return;
+    _refreshingAssignments = true;
     setState(() {
-      _loading = true;
+      if (showLoading) _loading = true;
       _assignmentsError = null;
     });
 
@@ -115,6 +141,10 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
 
         final teams = data['teams'] as List? ?? [];
 
+        final previousTeams = {for (final t in _teams) t.scheduleId: t};
+        final selectedSchedule = _teams.isNotEmpty
+            ? _teams[_selectedTeamIndex].scheduleId
+            : null;
         _teams = teams.map((team) {
           final weights =
               (team['grade_weights'] as Map?)?.cast<String, dynamic>() ?? {};
@@ -125,8 +155,12 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
           final isCapstone = scope == 'capstone';
           final rawDate = team['scheduled_date']?.toString() ?? '';
           final scheduledDate = DateTime.tryParse(rawDate);
-          final isPosted = team['is_posted'] == true || team['is_submitted'] == true;
-          final rawSubmissions = team['submissions'] as List? ?? team['submitted_scores'] as List? ?? [];
+          final isPosted =
+              team['is_posted'] == true || team['is_submitted'] == true;
+          final rawSubmissions =
+              team['submissions'] as List? ??
+              team['submitted_scores'] as List? ??
+              [];
           final submissions = rawSubmissions
               .whereType<Map>()
               .map((s) => Map<String, dynamic>.from(s))
@@ -138,7 +172,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
               .map((d) => Map<String, dynamic>.from(d))
               .toList();
 
-          return TeamData(
+          final assignment = TeamData(
             name: (team['name'] ?? 'Team').toString(),
             project: (team['project_title'] ?? 'No project').toString(),
             defenseDate:
@@ -160,13 +194,17 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                 .map((m) => (m['name'] ?? m['username'] ?? 'Member').toString())
                 .toList(),
             memberDetails: (team['members'] as List? ?? [])
-                .map((m) => TeamMember(
-                      id: (m['id'] ?? '').toString(),
-                      name: (m['name'] ?? m['username'] ?? 'Member').toString(),
-                      isLeader: m['is_leader'] == true ||
-                          (team['leader_id'] != null &&
-                              (m['id'] ?? '').toString() == team['leader_id'].toString()),
-                    ))
+                .map(
+                  (m) => TeamMember(
+                    id: (m['id'] ?? '').toString(),
+                    name: (m['name'] ?? m['username'] ?? 'Member').toString(),
+                    isLeader:
+                        m['is_leader'] == true ||
+                        (team['leader_id'] != null &&
+                            (m['id'] ?? '').toString() ==
+                                team['leader_id'].toString()),
+                  ),
+                )
                 .toList(),
             criteria: [],
             isPosted: isPosted,
@@ -179,6 +217,17 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                 ? Map<String, dynamic>.from(team['panel_rubric'] as Map)
                 : null,
             scheduledDate: scheduledDate,
+            serverGradingAvailable: team['grading_available'] as bool?,
+            gradingUnavailableReason:
+                team['grading_unavailable_reason']?.toString() ?? '',
+            evaluationContext: team['evaluation_context']?.toString() ?? '',
+            serverCanIssueVerdict: team['can_issue_verdict'] as bool?,
+            scheduleStatus: team['schedule_status']?.toString() ?? 'scheduled',
+            draftSubmissions: (team['draft']?['submissions'] as List? ?? [])
+                .whereType<Map>()
+                .map((s) => Map<String, dynamic>.from(s))
+                .toList(),
+            draftSavedAt: team['draft']?['saved_at']?.toString(),
             isChair: team['is_chair'] == true,
             verdict: team['verdict']?.toString(),
             verdictRemarks: team['verdict_remarks']?.toString(),
@@ -187,9 +236,22 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
             attemptCount: (team['attempt_count'] as num?)?.toInt() ?? 1,
             gradeId: (team['grade_id'] as num?)?.toInt(),
           );
+          final previous = previousTeams[assignment.scheduleId];
+          if (!assignment.isPosted &&
+              previous != null &&
+              previous.hasUnsavedChanges &&
+              previous.evaluationContext == assignment.evaluationContext) {
+            assignment.draftSubmissions = previous.draftSubmissions;
+            assignment.hasUnsavedChanges = true;
+          }
+          return assignment;
         }).toList();
 
         setState(() {
+          final selectedIndex = _teams.indexWhere(
+            (t) => t.scheduleId == selectedSchedule,
+          );
+          _selectedTeamIndex = selectedIndex >= 0 ? selectedIndex : 0;
           _loading = false;
           _assignmentsError = null;
         });
@@ -212,6 +274,8 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
           _assignmentsError = 'Error loading assignments: $e';
         });
       }
+    } finally {
+      _refreshingAssignments = false;
     }
   }
 
@@ -248,7 +312,8 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
           teams: _teams,
           selectedTeamIndex: _selectedTeamIndex,
           onTeamChanged: (i) => setState(() => _selectedTeamIndex = i),
-          onGradesSubmitted: _loadResults,
+          onGradesSubmitted: () => _loadData(showLoading: false),
+          onEvaluationChanged: () => setState(() {}),
           onRefresh: _loadData,
         ),
         OverallResultsTab(
@@ -340,7 +405,8 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
         );
       case 1:
-        final currentTeam = _teams.isNotEmpty && _selectedTeamIndex < _teams.length
+        final currentTeam =
+            _teams.isNotEmpty && _selectedTeamIndex < _teams.length
             ? _teams[_selectedTeamIndex]
             : null;
         return Column(
@@ -410,13 +476,17 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                   ),
                   ListTile(
                     leading: CircleAvatar(
-                      backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.15),
+                      backgroundColor: DefensysTokens.maroon.withValues(
+                        alpha: 0.15,
+                      ),
                       backgroundImage: avatarUrl != null
                           ? NetworkImage(avatarUrl)
                           : null,
                       child: avatarUrl == null
                           ? Text(
-                              displayName.isNotEmpty ? displayName[0].toUpperCase() : 'P',
+                              displayName.isNotEmpty
+                                  ? displayName[0].toUpperCase()
+                                  : 'P',
                               style: const TextStyle(
                                 color: DefensysTokens.maroon,
                                 fontWeight: FontWeight.bold,
@@ -435,7 +505,10 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                   ),
                   const Divider(),
                   ListTile(
-                    leading: const Icon(Icons.person_outline, color: DefensysTokens.maroon),
+                    leading: const Icon(
+                      Icons.person_outline,
+                      color: DefensysTokens.maroon,
+                    ),
                     title: const Text(
                       'Profile',
                       style: TextStyle(
@@ -447,7 +520,9 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                       Navigator.pop(sheetCtx);
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                        MaterialPageRoute(
+                          builder: (_) => const ProfileScreen(),
+                        ),
                       );
                     },
                   ),
@@ -469,7 +544,9 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                       Navigator.pop(sheetCtx);
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const PrivacyScreen()),
+                        MaterialPageRoute(
+                          builder: (_) => const PrivacyScreen(),
+                        ),
                       );
                     },
                   ),

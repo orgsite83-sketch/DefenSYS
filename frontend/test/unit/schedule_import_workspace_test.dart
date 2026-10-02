@@ -44,6 +44,39 @@ ScheduleImportSourceFile _file(String id, List<ParsedScheduleImportRow> rows) =>
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'morning and afternoon preview uses the first session duration and retains odd teams',
+    () {
+      final rows = _file('a', [
+        for (var i = 0; i < 5; i++) _row(i, '08:00', duration: i < 3 ? 90 : 30),
+      ]).parsed.rows;
+      final plans = morningAfternoonSessionPlans(rows, fallbackDuration: 60);
+      expect(plans.map((plan) => plan.count), [3, 2]);
+      expect(plans.first.duration, 90);
+      expect(plans.last.duration, 30);
+      expect(
+        plans.last.start,
+        '13:00',
+      ); // Morning finishes at 12:30, then a break.
+      final applied = applyScheduleImportSessionPlans(
+        rows,
+        rows.map((row) => row.importRowId).toList(),
+        plans,
+        sessionPrefix: 'preset',
+      );
+      expect(applied[2].endTime, '12:30');
+      expect(applied[3].startTime, plans.last.start);
+      expect(applied.last.endTime, '14:00');
+      expect(applied.map((row) => row.importRowId).toSet().length, 5);
+      expect(
+        morningAfternoonSessionPlans(
+          rows.take(1).toList(),
+          fallbackDuration: 60,
+        ),
+        isEmpty,
+      );
+    },
+  );
   test('typed session dates reject impossible calendar days', () {
     expect(scheduleImportDateIsValid('2026-02-31'), isFalse);
     expect(scheduleImportDateIsValid('2026-02-28'), isTrue);

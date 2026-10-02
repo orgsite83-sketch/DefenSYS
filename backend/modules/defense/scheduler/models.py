@@ -5,6 +5,41 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 
+class PanelistEvaluationDraft(models.Model):
+    """Private, incomplete evaluations; never included in grade calculations."""
+
+    schedule = models.ForeignKey(
+        'defense.DefenseSchedule', on_delete=models.CASCADE,
+        related_name='evaluation_drafts',
+    )
+    panelist = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        null=True, blank=True, related_name='defense_evaluation_drafts',
+    )
+    guest_code_id = models.CharField(max_length=64, null=True, blank=True)
+    context_signature = models.CharField(max_length=64)
+    submissions = models.JSONField(default=list)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = 'defense'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['schedule', 'panelist'], condition=models.Q(panelist__isnull=False),
+                name='unique_panelist_evaluation_draft',
+            ),
+            models.UniqueConstraint(
+                fields=['schedule', 'guest_code_id'], condition=models.Q(guest_code_id__isnull=False),
+                name='unique_guest_evaluation_draft',
+            ),
+            models.CheckConstraint(
+                condition=(models.Q(panelist__isnull=False, guest_code_id__isnull=True)
+                           | models.Q(panelist__isnull=True, guest_code_id__isnull=False)),
+                name='evaluation_draft_one_owner',
+            ),
+        ]
+
+
 class DefenseSchedule(models.Model):
     SCOPE_CAPSTONE = 'capstone'
     SCOPE_PIT = 'pit'

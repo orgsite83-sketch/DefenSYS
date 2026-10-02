@@ -440,6 +440,12 @@ class TeamGradeVerdictView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        if grade.schedule:
+            from defense.scheduler.panelist_evaluation import grading_unavailable_reason
+            reason = grading_unavailable_reason(grade.schedule)
+            if reason:
+                return Response({'detail': reason}, status=status.HTTP_400_BAD_REQUEST)
+
         verdict_remarks = (request.data.get('verdict_remarks') or '').strip()
         revision_deadline = request.data.get('revision_deadline')
         parsed_deadline = None

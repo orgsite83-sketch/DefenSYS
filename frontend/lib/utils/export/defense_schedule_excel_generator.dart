@@ -1,39 +1,29 @@
 import 'package:excel/excel.dart';
 
-/// Builds the editable timetable shown in the schedule import blueprint.
-List<int> generateDefenseScheduleExcelBytes({required bool isCapstone}) {
-  final workbook = Excel.createExcel();
-  const sheetName = 'Defense Schedule';
-  workbook.rename(workbook.getDefaultSheet()!, sheetName);
-  final sheet = workbook[sheetName];
-  // Leave columns A-C and rows 1-2 blank, matching the inset reference layout.
-  const firstColumn = 3;
-  const firstRow = 2;
-  final lastColumn = isCapstone ? 'L' : 'K';
-  final headers = [
-    '#',
-    'Time',
-    'Team Name',
-    'Adviser',
-    'Panel Chair',
-    'Panel Member 1',
-    'Panel Member 2',
-    'Panel Member 3',
-    if (isCapstone) 'Documenter',
-  ];
-  final preamble = isCapstone
-      ? ['Concept Proposal', '6/18/2026', 'Room 301']
-      : ['PIT Capstone Defense', '5/18/2026', 'Smart Room'];
-  final teams = isCapstone
-      ? ['Team Apex', 'Team Horizon', 'Team Nexus', 'Team Pulse']
-      : [
-          'Team SkyLedger',
-          'Team BioPulse',
-          'Team SafeCity',
-          'Team CodeLearners',
-        ];
+/// Shared sample data keeps the blueprint and downloaded workbook in sync.
+class DefenseScheduleTemplateDay {
+  const DefenseScheduleTemplateDay({
+    required this.stage,
+    required this.date,
+    required this.room,
+    required this.teams,
+    required this.adviser,
+    required this.panels,
+    this.documenter = '',
+  });
+
+  final String stage, date, room, adviser, documenter;
+  final List<String> teams;
+  final List<List<String>> panels;
+
+  String timeForSlot(int slot) => '${slot + 8}:00 - ${slot + 9}:00';
+}
+
+List<DefenseScheduleTemplateDay> defenseScheduleTemplateDays({
+  required bool isCapstone,
+}) {
   final panels = isCapstone
-      ? [
+      ? const [
           [
             'Dr. Alan Turing',
             'Prof. Ada Lovelace',
@@ -47,10 +37,70 @@ List<int> generateDefenseScheduleExcelBytes({required bool isCapstone}) {
             'Engr. Alan Cruz',
           ],
         ]
-      : [
+      : const [
           ['Suarez', 'Beltran', 'Corpuz', 'Villanueva'],
           ['Tan', 'Reyes', 'Cruz', 'Santos'],
         ];
+  final stage = isCapstone ? 'Concept Proposal' : 'PIT Capstone Defense';
+  final room = isCapstone ? 'Room 301' : 'Smart Room';
+  return [
+    DefenseScheduleTemplateDay(
+      stage: stage,
+      date: isCapstone ? '6/18/2026' : '5/18/2026',
+      room: room,
+      teams: isCapstone
+          ? const ['Team Apex', 'Team Horizon', 'Team Nexus', 'Team Pulse']
+          : const [
+              'Team SkyLedger',
+              'Team BioPulse',
+              'Team SafeCity',
+              'Team CodeLearners',
+            ],
+      adviser: 'Prof. Alex Santos',
+      panels: panels,
+      documenter: isCapstone ? 'Engr. Mark Mendoza' : '',
+    ),
+    DefenseScheduleTemplateDay(
+      stage: stage,
+      date: isCapstone ? '6/19/2026' : '5/19/2026',
+      room: room,
+      teams: isCapstone
+          ? const ['Team Orbit', 'Team Beacon', 'Team Summit', 'Team Harbor']
+          : const [
+              'Team CyberGuard',
+              'Team AgriSense',
+              'Team EduTrack',
+              'Team EcoRoute',
+            ],
+      adviser: 'Prof. Jamie Reyes',
+      panels: panels.reversed.toList(),
+      documenter: isCapstone ? 'Engr. Dana Cruz' : '',
+    ),
+  ];
+}
+
+/// Builds the editable timetable shown in the schedule import blueprint.
+List<int> generateDefenseScheduleExcelBytes({required bool isCapstone}) {
+  final workbook = Excel.createExcel();
+  const sheetName = 'Defense Schedule';
+  workbook.rename(workbook.getDefaultSheet()!, sheetName);
+  final sheet = workbook[sheetName];
+  // Leave columns A-C and rows 1-2 blank, matching the inset reference layout.
+  const firstColumn = 3;
+  const firstRow = 2;
+  final days = defenseScheduleTemplateDays(isCapstone: isCapstone);
+  final lastColumn = isCapstone ? 'L' : 'K';
+  final headers = [
+    '#',
+    'Time',
+    'Team Name',
+    'Adviser',
+    'Panel Chair',
+    'Panel Member 1',
+    'Panel Member 2',
+    'Panel Member 3',
+    if (isCapstone) 'Documenter',
+  ];
 
   final border = Border(
     borderStyle: BorderStyle.Thin,
@@ -89,10 +139,6 @@ List<int> generateDefenseScheduleExcelBytes({required bool isCapstone}) {
   for (var column = 0; column < headers.length; column++) {
     sheet.setColumnWidth(firstColumn + column, widths[column]);
   }
-  for (var row = 0; row < 8; row++) {
-    sheet.setRowHeight(firstRow + row, 15);
-  }
-
   void mergeLabel(String start, String end, String value) {
     final startCell = CellIndex.indexByString(start);
     sheet.merge(
@@ -104,43 +150,55 @@ List<int> generateDefenseScheduleExcelBytes({required bool isCapstone}) {
     sheet.setMergedCellStyle(startCell, centeredStyle);
   }
 
-  for (var row = 0; row < preamble.length; row++) {
-    final sheetRow = firstRow + row + 1;
-    mergeLabel('D$sheetRow', '$lastColumn$sheetRow', preamble[row]);
-  }
-  sheet.insertRowIterables(
-    headers.map(TextCellValue.new).toList(),
-    firstRow + 3,
-    startingColumn: firstColumn,
-  );
-  for (var slot = 0; slot < teams.length; slot++) {
+  var blockStart = firstRow;
+  for (final day in days) {
+    final preamble = [day.stage, day.date, day.room];
+    final blockLength = preamble.length + 1 + day.teams.length;
+    for (var row = 0; row < blockLength; row++) {
+      sheet.setRowHeight(blockStart + row, 15);
+    }
+    for (var row = 0; row < preamble.length; row++) {
+      final sheetRow = blockStart + row + 1;
+      mergeLabel('D$sheetRow', '$lastColumn$sheetRow', preamble[row]);
+    }
     sheet.insertRowIterables(
-      [
-        IntCellValue(slot + 1),
-        TextCellValue('${slot + 8}:00 - ${slot + 9}:00'),
-        TextCellValue(teams[slot]),
-        null, // The adviser is shared by the four slots below.
-        ...panels[slot ~/ 2].map(TextCellValue.new),
-        if (isCapstone) null,
-      ],
-      firstRow + 4 + slot,
+      headers.map(TextCellValue.new).toList(),
+      blockStart + 3,
       startingColumn: firstColumn,
     );
-  }
-  for (var row = 3; row < 8; row++) {
-    for (var column = 0; column < headers.length; column++) {
-      final cell = sheet.cell(
-        CellIndex.indexByColumnRow(
-          columnIndex: firstColumn + column,
-          rowIndex: firstRow + row,
-        ),
+    for (var slot = 0; slot < day.teams.length; slot++) {
+      sheet.insertRowIterables(
+        [
+          IntCellValue(slot + 1),
+          TextCellValue(day.timeForSlot(slot)),
+          TextCellValue(day.teams[slot]),
+          null, // Shared adviser cells are merged within this day only.
+          ...day.panels[slot ~/ 2].map(TextCellValue.new),
+          if (isCapstone) null,
+        ],
+        blockStart + 4 + slot,
+        startingColumn: firstColumn,
       );
-      cell.cellStyle = column == 0 && row > 3 ? numberStyle : cellStyle;
     }
-  }
-  mergeLabel('G7', 'G10', 'Prof. Alex Santos');
-  if (isCapstone) {
-    mergeLabel('L7', 'L10', 'Engr. Mark Mendoza');
+    for (var row = 3; row < blockLength; row++) {
+      for (var column = 0; column < headers.length; column++) {
+        final cell = sheet.cell(
+          CellIndex.indexByColumnRow(
+            columnIndex: firstColumn + column,
+            rowIndex: blockStart + row,
+          ),
+        );
+        cell.cellStyle = column == 0 && row > 3 ? numberStyle : cellStyle;
+      }
+    }
+    final firstSlotRow = blockStart + 5;
+    final lastSlotRow = blockStart + blockLength;
+    mergeLabel('G$firstSlotRow', 'G$lastSlotRow', day.adviser);
+    if (isCapstone) {
+      mergeLabel('L$firstSlotRow', 'L$lastSlotRow', day.documenter);
+    }
+    // One blank row separates complete day blocks on the same worksheet.
+    blockStart += blockLength + 1;
   }
 
   final bytes = workbook.encode();

@@ -160,6 +160,40 @@ class ScheduleImportSessionPlan {
   final String room;
 }
 
+/// The preset preview and applied plan share the same counts and timing.
+List<ScheduleImportSessionPlan> morningAfternoonSessionPlans(
+  List<ParsedScheduleImportRow> rows, {
+  required int fallbackDuration,
+}) {
+  if (rows.length < 2) return const [];
+  final morningCount = (rows.length + 1) ~/ 2;
+  final morning = rows.first;
+  final afternoon = rows[morningCount];
+  final morningDuration = morning.slotDuration ?? fallbackDuration;
+  final morningEnd = 480 + morningCount * morningDuration;
+  final afternoonStart = morningEnd <= 720
+      ? 780
+      : morningEnd <= 780
+      ? morningEnd + 30
+      : morningEnd;
+  return [
+    ScheduleImportSessionPlan(
+      count: morningCount,
+      start: '08:00',
+      duration: morningDuration,
+      date: morning.date,
+      room: morning.room,
+    ),
+    ScheduleImportSessionPlan(
+      count: rows.length - morningCount,
+      start: scheduleTimeFromMinutes(afternoonStart),
+      duration: afternoon.slotDuration ?? fallbackDuration,
+      date: afternoon.date,
+      room: afternoon.room,
+    ),
+  ];
+}
+
 /// Allocates existing rows exactly once; names, source rows and faculty remain.
 List<ParsedScheduleImportRow> applyScheduleImportSessionPlans(
   List<ParsedScheduleImportRow> rows,
@@ -249,13 +283,13 @@ List<ParsedScheduleImportRow> updateScheduleImportValues(
     final groupDate = (date != null && isFirstSelected)
         ? date
         : (firstRow.date.trim().isNotEmpty
-            ? firstRow.date.trim()
-            : fallbackDate);
+              ? firstRow.date.trim()
+              : fallbackDate);
     final groupRoom = (room != null && isFirstSelected)
         ? room
         : (firstRow.room.trim().isNotEmpty
-            ? firstRow.room.trim()
-            : fallbackRoom);
+              ? firstRow.room.trim()
+              : fallbackRoom);
     final roomDateKey = '$groupDate|$groupRoom'.toLowerCase();
 
     if (hasDurationChange && nextStart != null) {

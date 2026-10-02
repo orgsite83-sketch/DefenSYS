@@ -9,6 +9,7 @@ import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/defense_schedule_import_parser.dart';
 import 'package:defensys/utils/import/schedule_import_draft.dart';
+import 'package:defensys/utils/import/schedule_import_workspace.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -274,6 +275,79 @@ Future<void> _allDuration(
 
 void main() {
   testWidgets(
+    'session count previews regrouping, closes without saving, and applies once',
+    (tester) async {
+      await _pumpReview(tester, count: 16);
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pumpAndSettle();
+      final original = (await loadScheduleImportDraft(
+        scope: 'capstone',
+      ))!.parsed.toJson();
+      await _openSettings(tester);
+      await _tap(tester, find.byKey(const ValueKey('settings_sessions_tab')));
+      expect(find.text('16 teams · 30 minutes per team'), findsOneWidget);
+      expect(find.text('4 teams in each session'), findsOneWidget);
+      expect(find.text('Update sessions'), findsNothing);
+      expect(find.text('Auto-sequence'), findsNothing);
+      expect(find.text('Teams / slots'), findsNothing);
+      await _tap(tester, find.byKey(const ValueKey('session_count')));
+      await _tap(tester, find.text('3').last);
+      expect(find.text('6 + 5 + 5 teams across 3 sessions'), findsOneWidget);
+      expect(
+        (await loadScheduleImportDraft(scope: 'capstone'))!.parsed.toJson(),
+        original,
+      );
+      await _tap(tester, find.byTooltip('Close settings'));
+      expect(
+        (await loadScheduleImportDraft(scope: 'capstone'))!.parsed.toJson(),
+        original,
+      );
+      await _openSettings(tester);
+      await _tap(tester, find.byKey(const ValueKey('settings_sessions_tab')));
+      await _tap(tester, find.byKey(const ValueKey('session_count')));
+      await _tap(tester, find.text('3').last);
+      await _tap(tester, find.text('Apply session plan'));
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pumpAndSettle();
+      final draft = (await loadScheduleImportDraft(scope: 'capstone'))!;
+      expect(
+        scheduleImportSessionGroups(
+          draft.parsed.rows,
+        ).map((group) => group.length),
+        [6, 5, 5],
+      );
+      expect(
+        draft.parsed.rows.map((row) => row.importRowId).toSet().length,
+        16,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('a single team has one session and no two-session preset', (
+    tester,
+  ) async {
+    await _pumpReview(tester, count: 1);
+    await _openSettings(tester);
+    await _tap(tester, find.byKey(const ValueKey('settings_sessions_tab')));
+    expect(find.text('1 team in each session'), findsOneWidget);
+    expect(find.text('Quick setup'), findsNothing);
+    expect(find.text('Use these two sessions'), findsNothing);
+    expect(
+      tester
+          .widget<DropdownButton<int>>(
+            find.byKey(const ValueKey('session_count')),
+          )
+          .items,
+      hasLength(1),
+    );
+    expect(tester.takeException(), isNull);
+    await _tap(tester, find.byTooltip('Close settings'));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
     'multiple files combine and replacement preserves other source edits',
     (tester) async {
       final picker = _Picker();
@@ -405,8 +479,10 @@ void main() {
     (tester) async {
       await _pumpReview(tester, count: 16);
       await _openSettings(tester);
-      await _tap(tester, find.text('Sessions'));
-      await _tap(tester, find.text('Morning / afternoon'));
+      await _tap(tester, find.byKey(const ValueKey('settings_sessions_tab')));
+      await _tap(tester, find.text('Use these two sessions'));
+      await _tap(tester, find.byKey(const ValueKey('session_0_card')));
+      await _tap(tester, find.byKey(const ValueKey('session_1_card')));
       await tester.enterText(
         find.byKey(const ValueKey('session_0_teams')),
         '5',
@@ -501,8 +577,9 @@ void main() {
       await _tap(tester, find.text('Cancel'));
       await tester.pumpAndSettle();
       await _openSettings(tester);
-      await _tap(tester, find.text('Sessions'));
+      await _tap(tester, find.byKey(const ValueKey('settings_sessions_tab')));
       await tester.pumpAndSettle();
+      await _tap(tester, find.byKey(const ValueKey('session_1_card')));
       await tester.enterText(
         find.byKey(const ValueKey('session_1_date')),
         '2026-10-20',
@@ -512,7 +589,10 @@ void main() {
         '09:00',
       );
       await tester.pumpAndSettle();
-      expect(find.textContaining('Time overlap'), findsWidgets);
+      expect(
+        find.text('Session 2 starts before Session 1 ends.'),
+        findsOneWidget,
+      );
       expect(
         tester
             .widget<ShadButton>(
@@ -521,7 +601,7 @@ void main() {
             .onPressed,
         isNull,
       );
-      await _tap(tester, find.text('Cancel'));
+      await _tap(tester, find.byTooltip('Close settings'));
       await tester.pumpAndSettle();
       expect(find.text('Needs attention (0)'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -668,8 +748,9 @@ void main() {
       await tester.enterText(find.byType(TextField).first, 'Team 1');
       await tester.pumpAndSettle();
       await _openSettings(tester);
-      await _tap(tester, find.text('Sessions'));
+      await _tap(tester, find.byKey(const ValueKey('settings_sessions_tab')));
       await tester.pumpAndSettle();
+      await _tap(tester, find.byKey(const ValueKey('session_0_card')));
       await tester.enterText(
         find.byKey(const ValueKey('session_0_date')),
         '2026-10-22',
@@ -794,11 +875,14 @@ void main() {
       expect(tester.takeException(), isNull);
       await _openSettings(tester);
       expect(find.text('Set room / venue'), findsOneWidget);
-      await _tap(tester, find.text('Sessions'));
+      await _tap(tester, find.byKey(const ValueKey('settings_sessions_tab')));
       await tester.pumpAndSettle();
+      expect(find.text('How many sessions?'), findsOneWidget);
+      expect(find.text('Teams / slots'), findsNothing);
+      await _tap(tester, find.byKey(const ValueKey('session_0_card')));
       expect(find.text('Teams / slots'), findsOneWidget);
       expect(tester.takeException(), isNull);
-      await _tap(tester, find.text('Cancel'));
+      await _tap(tester, find.byTooltip('Close settings'));
       await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox.shrink());
     });
@@ -833,7 +917,7 @@ void main() {
   });
 
   testWidgets(
-    'settings pre-fills imported values and session overlap provides quick fix and auto-sequence',
+    'settings pre-fills imported values and session overlap offers a specific fix',
     (tester) async {
       await _pumpReview(tester, count: 16);
       await _openSettings(tester);
@@ -849,9 +933,11 @@ void main() {
       expect(roomField.controller?.text, 'Room 301');
 
       // Switch to sessions and create 2 sessions
-      await _tap(tester, find.text('Sessions'));
+      await _tap(tester, find.byKey(const ValueKey('settings_sessions_tab')));
       await tester.pumpAndSettle();
-      await _tap(tester, find.text('Morning / afternoon'));
+      await _tap(tester, find.text('Use these two sessions'));
+      await _tap(tester, find.byKey(const ValueKey('session_0_card')));
+      await _tap(tester, find.byKey(const ValueKey('session_1_card')));
       await tester.pumpAndSettle();
 
       // Create an intentional overlap in Room 301 on 2026-10-20
@@ -870,8 +956,11 @@ void main() {
       await tester.pumpAndSettle();
 
       // Verify quick fix banner and overlap indicators appear
-      expect(find.textContaining('overlap in Room 301'), findsOneWidget);
-      expect(find.textContaining('Quick fix:'), findsOneWidget);
+      expect(
+        find.text('Session 2 starts before Session 1 ends.'),
+        findsOneWidget,
+      );
+      expect(find.text('Start Session 2 at 12:00 PM'), findsOneWidget);
       expect(
         tester
             .widget<ShadButton>(
@@ -881,11 +970,15 @@ void main() {
         isNull,
       );
 
-      // Auto-sequence resolves the overlap cleanly
-      await _tap(tester, find.text('Auto-sequence'));
+      // The specific timing adjustment resolves the overlap
+      await _tap(tester, find.text('Start Session 2 at 12:00 PM'));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('overlap in Room 301'), findsNothing);
+      expect(
+        find.text('Session 2 starts before Session 1 ends.'),
+        findsNothing,
+      );
+      expect(find.text('No overlapping session times'), findsOneWidget);
       expect(
         tester
             .widget<ShadButton>(
@@ -895,7 +988,7 @@ void main() {
         isNotNull,
       );
 
-      await _tap(tester, find.text('Cancel'));
+      await _tap(tester, find.byTooltip('Close settings'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());

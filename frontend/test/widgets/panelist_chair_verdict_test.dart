@@ -180,6 +180,7 @@ void main() {
         name: 'Team Alpha',
         project: 'Automated Hydroponics',
         defenseDate: 'Concept Pitch - 2026-10-20 09:00',
+        scheduledDate: DateTime(2000, 1, 1),
         stageName: 'Concept Pitch',
         eventName: 'PIT Expo 2026',
         startTime: '09:00',
@@ -222,7 +223,7 @@ void main() {
       expect(find.text('My Panel Assignments'), findsOneWidget);
       expect(find.text('2 defense teams assigned to you'), findsOneWidget);
       expect(find.text('Needs Grading'), findsWidgets);
-      expect(find.text('Completed'), findsWidgets);
+      expect(find.text('Submitted'), findsWidgets);
 
       // Both teams initially visible
       expect(find.text('Team Alpha'), findsOneWidget);
@@ -236,7 +237,7 @@ void main() {
       expect(find.text('Team Beta'), findsNothing);
 
       // Filter by "Completed"
-      await tester.tap(find.text('Completed').first);
+      await tester.tap(find.text('Submitted').first);
       await tester.pumpAndSettle();
 
       expect(find.text('Team Alpha'), findsNothing);

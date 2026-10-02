@@ -12,6 +12,8 @@ from .views import (
     PanelistAssignmentsView,
     PanelistGradeSubmissionView,
     PanelistResultsView,
+    PanelistEvaluationDraftView,
+    GuestPanelistEvaluationDraftView,
     PitEventConfigLookupView,
 )
 
@@ -26,6 +28,8 @@ urlpatterns = [
     path('guest-assignments/', GuestPanelistAssignmentsView.as_view(), name='guest_panelist_assignments'),
     path('guest-panelist-results/', GuestPanelistResultsView.as_view(), name='guest_panelist_results'),
     path('submit-grades/', PanelistGradeSubmissionView.as_view(), name='panelist_grade_submission'),
+    path('grade-draft/', PanelistEvaluationDraftView.as_view(), name='panelist_evaluation_draft'),
+    path('guest-grade-draft/', GuestPanelistEvaluationDraftView.as_view(), name='guest_panelist_evaluation_draft'),
     path('guest-submit-grades/', GuestPanelistGradeSubmissionView.as_view(), name='guest_panelist_grade_submission'),
     path('<int:schedule_id>/', DefenseScheduleDetailView.as_view(), name='defense_schedule_detail'),
     path('<int:schedule_id>/verdict/', DefenseScheduleVerdictView.as_view(), name='defense_schedule_verdict'),
