@@ -1556,19 +1556,30 @@ class _DefenseScheduleBulkImportViewState
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          TextButton(
+                          TextButton.icon(
                             onPressed: _busy
                                 ? null
                                 : () =>
                                       setState(() => _selectedFileId = file.id),
                             style: TextButton.styleFrom(
                               alignment: Alignment.centerLeft,
+                              foregroundColor:
+                                  DefensysTokens.textPrimaryOf(context),
                               padding: EdgeInsets.zero,
                             ),
-                            child: Text(
+                            icon: Icon(
+                              Icons.description_outlined,
+                              size: 14,
+                              color: DefensysTokens.textSecondaryOf(context),
+                            ),
+                            label: Text(
                               file.name,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 12),
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: DefensysTokens.textPrimaryOf(context),
+                              ),
                             ),
                           ),
                           Text(
@@ -1721,9 +1732,21 @@ class _DefenseScheduleBulkImportViewState
         isPit: _isPit,
         stageId: _importStageId,
         eventName: _importEventName,
-        date: _dateController.text,
-        room: _roomController.text,
-        duration: int.tryParse(_durationController.text) ?? 60,
+        date: _dateController.text.isNotEmpty
+            ? _dateController.text
+            : _parsed?.rows
+                    .map((r) => r.date.trim())
+                    .firstWhere((d) => d.isNotEmpty, orElse: () => '') ??
+                '',
+        room: _roomController.text.isNotEmpty
+            ? _roomController.text
+            : _parsed?.rows
+                    .map((r) => r.room.trim())
+                    .firstWhere((r) => r.isNotEmpty, orElse: () => '') ??
+                '',
+        duration: int.tryParse(_durationController.text) ??
+            _parsed?.rows.map((r) => r.slotDuration).whereType<int>().firstOrNull ??
+            60,
         selectedFileId: _selectedFileId,
         gradingSummary:
             'Panel: ${_panelRubricName ?? 'Not configured'} ($_panelWeight%)\nPeer: ${_peerRubricName ?? 'Not configured'} ($_peerWeight%)${_isPit ? '' : '\nAdviser: ${_adviserRubricName ?? 'Not configured'}'}',
@@ -1792,15 +1815,17 @@ class _DefenseScheduleBulkImportViewState
                         : _targetLabel(state),
                     style: TextStyle(
                       fontSize: 22,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.3,
                       color: DefensysTokens.maroonOf(context),
                     ),
                   ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 4),
                   Text(
-                    '${rows.length} slots · ${groups.length} sessions',
+                    '${rows.length} slots · ${groups.length} ${groups.length == 1 ? 'session' : 'sessions'}',
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
                       color: DefensysTokens.textSecondaryOf(context),
                     ),
                   ),
@@ -1810,6 +1835,16 @@ class _DefenseScheduleBulkImportViewState
             const SizedBox(width: 12),
             OutlinedButton.icon(
               onPressed: _busy ? null : () => _openSettings(state),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: DefensysTokens.borderOf(context)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+              ),
               icon: const Icon(Icons.tune_outlined, size: 16),
               label: const Text('Settings'),
             ),
@@ -1817,26 +1852,68 @@ class _DefenseScheduleBulkImportViewState
         ),
         const SizedBox(height: 12),
         Wrap(
-          spacing: 24,
+          spacing: 10,
           runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Text(
-              durations.length > 1
-                  ? 'Mixed slot durations'
-                  : '${durations.firstOrNull ?? _durationController.text} min / slot',
-              style: const TextStyle(fontSize: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 9,
+                vertical: 4.5,
+              ),
+              decoration: BoxDecoration(
+                color: DefensysTokens.surfaceHigherOf(context),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: DefensysTokens.borderOf(context).withValues(alpha: 0.6),
+                ),
+              ),
+              child: Text(
+                durations.length > 1
+                    ? 'Mixed slot durations'
+                    : '${durations.firstOrNull ?? _durationController.text} min / slot',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: DefensysTokens.textPrimaryOf(context),
+                ),
+              ),
             ),
-            Text(
-              _rubricLoading
-                  ? 'Checking rubrics…'
-                  : configured
-                  ? 'Rubrics configured'
-                  : 'Rubrics incomplete',
-              style: TextStyle(
-                fontSize: 12,
-                color: configured
-                    ? DefensysTokens.successText
-                    : DefensysTokens.goldOf(context),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 9,
+                vertical: 4.5,
+              ),
+              decoration: BoxDecoration(
+                color: _rubricLoading
+                    ? DefensysTokens.surfaceHigherOf(context)
+                    : configured
+                    ? DefensysTokens.successBg
+                    : DefensysTokens.warningBg,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: _rubricLoading
+                      ? DefensysTokens.borderOf(context)
+                      : configured
+                      ? DefensysTokens.successBorder
+                      : DefensysTokens.warningBorder,
+                ),
+              ),
+              child: Text(
+                _rubricLoading
+                    ? 'Checking rubrics…'
+                    : configured
+                    ? 'Rubrics configured'
+                    : 'Rubrics incomplete',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: _rubricLoading
+                      ? DefensysTokens.textSecondaryOf(context)
+                      : configured
+                      ? DefensysTokens.successText
+                      : DefensysTokens.goldOf(context),
+                ),
               ),
             ),
           ],
@@ -1929,7 +2006,7 @@ class _DefenseScheduleBulkImportViewState
                         _scheduleDraftSave();
                       },
                 style: SegmentedButton.styleFrom(
-                  side: BorderSide.none,
+                  side: BorderSide(color: DefensysTokens.borderOf(context)),
                   backgroundColor: DefensysTokens.surfaceOf(context),
                   selectedBackgroundColor: DefensysTokens.surfaceHigherOf(
                     context,
@@ -1941,9 +2018,10 @@ class _DefenseScheduleBulkImportViewState
                   textStyle: const TextStyle(
                     fontFamily: DefensysTokens.fontFamilyInter,
                     fontSize: 12,
+                    fontWeight: FontWeight.w500,
                   ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(5),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                 ),
               ),
@@ -2000,11 +2078,19 @@ class _DefenseScheduleBulkImportViewState
         selectedRoom == null;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      padding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
       decoration: BoxDecoration(
         color: DefensysTokens.surfaceOf(context),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: DefensysTokens.borderOf(context)),
+        boxShadow: [
+          if (!DefensysTokens.isDark(context))
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2185,7 +2271,8 @@ class _DefenseScheduleBulkImportViewState
               final summary = Text(
                 '${rows.length} slots across ${groups.length} ${groups.length == 1 ? 'session' : 'sessions'}',
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
                   color: DefensysTokens.textSecondaryOf(context),
                 ),
               );
@@ -2197,6 +2284,13 @@ class _DefenseScheduleBulkImportViewState
                     onPressed: _busy
                         ? null
                         : () => setState(() => _collapsedSessions.clear()),
+                    style: TextButton.styleFrom(
+                      foregroundColor: DefensysTokens.textSecondaryOf(context),
+                      textStyle: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                     child: const Text('Expand all'),
                   ),
                   TextButton(
@@ -2207,6 +2301,13 @@ class _DefenseScheduleBulkImportViewState
                               groups.map((group) => group.identity),
                             ),
                           ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: DefensysTokens.textSecondaryOf(context),
+                      textStyle: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                     child: const Text('Collapse all'),
                   ),
                 ],
@@ -2298,8 +2399,8 @@ class _DefenseScheduleBulkImportViewState
       color: DefensysTokens.textPrimaryOf(context),
     );
     final secondary = TextStyle(
-      fontSize: 11,
-      height: 1.5,
+      fontSize: 11.5,
+      height: 1.4,
       color: DefensysTokens.textSecondaryOf(context),
     );
     return LayoutBuilder(
@@ -2308,15 +2409,17 @@ class _DefenseScheduleBulkImportViewState
         child: ConstrainedBox(
           constraints: BoxConstraints(minWidth: constraints.maxWidth),
           child: DataTable(
-            dataRowMinHeight: 58,
+            dataRowMinHeight: 54,
             dataRowMaxHeight: double.infinity,
-            headingRowHeight: 36,
+            headingRowHeight: 38,
             headingRowColor: WidgetStateProperty.all(
-              DefensysTokens.surfaceHigherOf(context),
+              DefensysTokens.surfaceHigherOf(context).withValues(alpha: 0.6),
             ),
-            headingTextStyle: secondary.copyWith(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
+            headingTextStyle: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.2,
+              color: DefensysTokens.textSecondaryOf(context),
             ),
             horizontalMargin: 16,
             columnSpacing: 28,
@@ -2324,7 +2427,6 @@ class _DefenseScheduleBulkImportViewState
             columns: [
               const DataColumn(label: Text('Time')),
               const DataColumn(label: Text('Team / source')),
-              const DataColumn(label: Text('Project')),
               const DataColumn(label: Text('Adviser')),
               if (group.committeeVaries)
                 const DataColumn(label: Text('Committee')),
@@ -2336,13 +2438,28 @@ class _DefenseScheduleBulkImportViewState
                   (row) => DataRow(
                     cells: [
                       DataCell(
-                        Text(
-                          scheduleReviewTimeRange(
-                            row.effectiveStartTime,
-                            row.effectiveEndTime,
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 3.5,
                           ),
-                          style: primary.copyWith(
-                            fontFeatures: const [FontFeature.tabularFigures()],
+                          decoration: BoxDecoration(
+                            color: DefensysTokens.surfaceHigherOf(context)
+                                .withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Text(
+                            scheduleReviewTimeRange(
+                              row.effectiveStartTime,
+                              row.effectiveEndTime,
+                            ),
+                            style: primary.copyWith(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -2356,7 +2473,7 @@ class _DefenseScheduleBulkImportViewState
                               Text(
                                 row.teamLabel,
                                 style: primary.copyWith(
-                                  fontWeight: FontWeight.w500,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                               const SizedBox(height: 3),
@@ -2367,11 +2484,26 @@ class _DefenseScheduleBulkImportViewState
                                   constraints: const BoxConstraints(
                                     maxWidth: 240,
                                   ),
-                                  child: Text(
-                                    '${row.source.sourceFileName} · Row ${row.source.sheetRow}',
-                                    style: secondary,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.table_chart_outlined,
+                                        size: 11,
+                                        color: DefensysTokens.textSecondaryOf(
+                                          context,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Flexible(
+                                        child: Text(
+                                          '${row.source.sourceFileName} · Row ${row.source.sheetRow}',
+                                          style: secondary,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -2380,18 +2512,9 @@ class _DefenseScheduleBulkImportViewState
                         ),
                       ),
                       DataCell(
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 300),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            child: Text(row.projectLabel, style: primary),
-                          ),
-                        ),
-                      ),
-                      DataCell(
                         Text(
                           row.adviserLabel.isEmpty ? '—' : row.adviserLabel,
-                          style: primary,
+                          style: row.adviserLabel.isEmpty ? secondary : primary,
                         ),
                       ),
                       if (group.committeeVaries)
@@ -2719,25 +2842,31 @@ class _DefenseScheduleBulkImportViewState
     required Color border,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(6),
         border: Border.all(color: border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (label != 'Ready') ...[
-            Icon(icon, size: 13, color: fg),
-            const SizedBox(width: 4),
-          ],
+          Container(
+            width: 6,
+            height: 6,
+            margin: const EdgeInsets.only(right: 6),
+            decoration: BoxDecoration(
+              color: fg,
+              shape: BoxShape.circle,
+            ),
+          ),
           Text(
             label,
             style: TextStyle(
               color: fg,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -0.1,
             ),
           ),
         ],

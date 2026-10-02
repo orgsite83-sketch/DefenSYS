@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/defense_schedule_import_parser.dart';
 import 'package:defensys/utils/import/schedule_import_timing.dart';
@@ -69,6 +70,8 @@ class _ScheduleImportSettingsDialogState
     extends State<ScheduleImportSettingsDialog> {
   final _form = GlobalKey<FormState>();
   late final TextEditingController _date, _room, _duration, _sessionCount;
+  late final String _initialDraftDate, _initialDraftRoom;
+  late final int _initialDraftDuration;
   late String _scope, _sessionScope;
   late int? _stageId;
   late String _eventName;
@@ -86,30 +89,34 @@ class _ScheduleImportSettingsDialogState
     _eventName = widget.eventName;
     _scope = widget.selectedFileId ?? 'missing';
     _sessionScope = widget.selectedFileId ?? 'all';
-    final first = widget.previewRows
-        .where(
-          (row) =>
-              widget.selectedFileId == null ||
-              row.source.sourceFileId == widget.selectedFileId,
-        )
+    final scopedRows = widget.previewRows.where(
+      (row) =>
+          widget.selectedFileId == null ||
+          row.source.sourceFileId == widget.selectedFileId,
+    );
+    final firstWithDate = scopedRows
+        .where((r) => r.date.trim().isNotEmpty)
         .firstOrNull;
-    _date = TextEditingController(
-      text: widget.selectedFileId == null
-          ? widget.date
-          : first?.date ?? widget.date,
-    );
-    _room = TextEditingController(
-      text: widget.selectedFileId == null
-          ? widget.room
-          : first?.room ?? widget.room,
-    );
-    _duration = TextEditingController(
-      text:
-          (widget.selectedFileId == null
-                  ? widget.duration
-                  : first?.duration ?? widget.duration)
-              .toString(),
-    );
+    final firstWithRoom = scopedRows
+        .where((r) => r.room.trim().isNotEmpty)
+        .firstOrNull;
+    final firstWithDuration = scopedRows
+        .where((r) => r.duration > 0)
+        .firstOrNull;
+
+    _initialDraftDate = widget.date.trim().isNotEmpty
+        ? widget.date.trim()
+        : firstWithDate?.date.trim() ?? '';
+    _initialDraftRoom = widget.room.trim().isNotEmpty
+        ? widget.room.trim()
+        : firstWithRoom?.room.trim() ?? '';
+    _initialDraftDuration = widget.duration > 0
+        ? widget.duration
+        : firstWithDuration?.duration ?? 60;
+
+    _date = TextEditingController(text: _initialDraftDate);
+    _room = TextEditingController(text: _initialDraftRoom);
+    _duration = TextEditingController(text: '$_initialDraftDuration');
     _sessionCount = TextEditingController();
     _initializeSessions();
   }
@@ -163,6 +170,100 @@ class _ScheduleImportSettingsDialogState
     _sessionCount.text = groups.length.toString();
   }
 
+  ({
+    int firstIdx,
+    int secondIdx,
+    String date,
+    String room,
+    int firstEnd,
+    int secondStart,
+  })? _findSessionOverlap() {
+    for (var i = 0; i < _sessions.length; i++) {
+      final s1 = _sessions[i];
+      final start1 = scheduleTimeMinutes(s1.start.text);
+      final count1 = int.tryParse(s1.count.text) ?? 0;
+      final dur1 = int.tryParse(s1.duration.text) ?? 0;
+      final date1 = s1.date.text.trim();
+      final room1 = s1.room.text.trim();
+      if (start1 == null || count1 <= 0 || dur1 <= 0) continue;
+      final end1 = start1 + count1 * dur1;
+
+      for (var j = i + 1; j < _sessions.length; j++) {
+        final s2 = _sessions[j];
+        final start2 = scheduleTimeMinutes(s2.start.text);
+        final count2 = int.tryParse(s2.count.text) ?? 0;
+        final dur2 = int.tryParse(s2.duration.text) ?? 0;
+        final date2 = s2.date.text.trim();
+        final room2 = s2.room.text.trim();
+        if (start2 == null || count2 <= 0 || dur2 <= 0) continue;
+        final end2 = start2 + count2 * dur2;
+
+        if (date1.isNotEmpty &&
+            room1.isNotEmpty &&
+            date1.toLowerCase() == date2.toLowerCase() &&
+            room1.toLowerCase() == room2.toLowerCase()) {
+          if (scheduleIntervalsOverlap(start1, end1, start2, end2)) {
+            return (
+              firstIdx: i,
+              secondIdx: j,
+              date: date1,
+              room: room1,
+              firstEnd: end1,
+              secondStart: start2,
+            );
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  String _suggestNextRoom(String currentRoom) {
+    final trimmed = currentRoom.trim();
+    if (trimmed.isEmpty) return 'Room 302';
+    final match = RegExp(r'(\d+)').firstMatch(trimmed);
+    if (match != null) {
+      final numStr = match.group(1)!;
+      final nextNum = (int.tryParse(numStr) ?? 0) + 1;
+      return trimmed.replaceRange(match.start, match.end, nextNum.toString());
+    }
+    return '$trimmed 2';
+  }
+
+  String _suggestNextDay(String currentDate) {
+    final trimmed = currentDate.trim();
+    DateTime? date;
+    if (scheduleImportDateIsValid(trimmed)) {
+      date = DateTime.tryParse(trimmed);
+    }
+    date ??= DateTime.now();
+    final next = date.add(const Duration(days: 1));
+    return formatScheduleDate(next);
+  }
+
+  void _autoSequenceSessions() {
+    final byRoomDate = <String, int>{};
+    for (var i = 0; i < _sessions.length; i++) {
+      final s = _sessions[i];
+      final count = int.tryParse(s.count.text) ?? 0;
+      final dur = int.tryParse(s.duration.text) ?? 60;
+      final date = s.date.text.trim();
+      final room = s.room.text.trim();
+      final key = '$date|$room'.toLowerCase();
+
+      var start = scheduleTimeMinutes(s.start.text);
+      if (start == null || start < 480) start = 480;
+
+      final lastEnd = byRoomDate[key];
+      if (lastEnd != null && start < lastEnd) {
+        start = lastEnd;
+        s.start.text = scheduleTimeFromMinutes(start);
+      }
+      byRoomDate[key] = start + count * dur;
+    }
+    setState(() => _error = null);
+  }
+
   void _redistribute(int count, {bool morningAfternoon = false}) {
     if (count < 1 || count > _selectedIds.length) {
       setState(() => _error = 'Use 1 to ${_selectedIds.length} sessions.');
@@ -177,13 +278,36 @@ class _ScheduleImportSettingsDialogState
           (index < _selectedIds.length % count ? 1 : 0);
       final first = byId[_selectedIds[offset]]!;
       offset += teams;
+
+      String startTime;
+      if (morningAfternoon) {
+        if (index == 0) {
+          startTime = '08:00';
+        } else {
+          final s0Teams =
+              _selectedIds.length ~/ count +
+              (_selectedIds.length % count > 0 ? 1 : 0);
+          final s0Dur =
+              !morningAfternoon && old.isNotEmpty
+                  ? int.tryParse(old[0].duration.text) ?? widget.duration
+                  : first.slotDuration ?? widget.duration;
+          final s0End = 480 + (s0Teams * s0Dur);
+          if (s0End <= 720) {
+            startTime = '13:00';
+          } else if (s0End <= 780) {
+            startTime = scheduleTimeFromMinutes(s0End + 30);
+          } else {
+            startTime = scheduleTimeFromMinutes(s0End);
+          }
+        }
+      } else {
+        startTime =
+            index < old.length ? old[index].start.text : first.startTime;
+      }
+
       return _SessionFields(
         count: teams,
-        start: morningAfternoon
-            ? (index == 0 ? '08:00' : '13:00')
-            : index < old.length
-            ? old[index].start.text
-            : first.startTime,
+        start: startTime,
         duration: !morningAfternoon && index < old.length
             ? int.tryParse(old[index].duration.text) ?? widget.duration
             : first.slotDuration ?? widget.duration,
@@ -494,6 +618,13 @@ class _ScheduleImportSettingsDialogState
               onChanged: (value) => setState(() {
                 if (value == true) {
                   _checked.add(name);
+                  if (controller.text.trim().isEmpty) {
+                    if (name == 'date') controller.text = _initialDraftDate;
+                    if (name == 'room') controller.text = _initialDraftRoom;
+                    if (name == 'duration') {
+                      controller.text = '$_initialDraftDuration';
+                    }
+                  }
                 } else {
                   _checked.remove(name);
                 }
@@ -631,7 +762,7 @@ class _ScheduleImportSettingsDialogState
       ),
       if (_checked.contains('duration'))
         _helper(
-          'Times recalculate within each session. Each session keeps its own start time.',
+          'Times recalculate within each session. Later sessions in the same room automatically follow consecutively.',
         ),
       const SizedBox(height: 18),
       Divider(color: DefensysTokens.borderOf(context)),
@@ -642,7 +773,8 @@ class _ScheduleImportSettingsDialogState
       ),
       Align(
         alignment: Alignment.centerLeft,
-        child: TextButton(
+        child: ShadButton.ghost(
+          size: ShadButtonSize.sm,
           onPressed: () {
             Navigator.pop(context);
             widget.onViewGrading();
@@ -653,13 +785,14 @@ class _ScheduleImportSettingsDialogState
       Divider(color: DefensysTokens.borderOf(context)),
       Align(
         alignment: Alignment.centerLeft,
-        child: TextButton.icon(
+        child: ShadButton.ghost(
+          size: ShadButtonSize.sm,
           onPressed: () => setState(() => _draftActions = !_draftActions),
-          icon: Icon(
+          leading: Icon(
             _draftActions ? Icons.expand_less : Icons.expand_more,
             size: 16,
           ),
-          label: const Text('Draft actions'),
+          child: const Text('Draft actions'),
         ),
       ),
       if (_draftActions)
@@ -672,11 +805,9 @@ class _ScheduleImportSettingsDialogState
               'Remove all ${widget.rows.length} staged slots from this draft.',
               style: const TextStyle(fontSize: 12),
             ),
-            OutlinedButton(
+            ShadButton.destructive(
+              size: ShadButtonSize.sm,
               onPressed: () => _save(clear: true),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: DefensysTokens.dangerText,
-              ),
               child: const Text('Clear draft'),
             ),
           ],
@@ -685,7 +816,9 @@ class _ScheduleImportSettingsDialogState
   );
 
   Widget _sessionPanel() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final error = _planError;
+    final overlap = _findSessionOverlap();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -712,8 +845,8 @@ class _ScheduleImportSettingsDialogState
         _helper('${_selectedIds.length} imported teams'),
         const SizedBox(height: 16),
         Wrap(
-          spacing: 16,
-          runSpacing: 12,
+          spacing: 12,
+          runSpacing: 10,
           crossAxisAlignment: WrapCrossAlignment.end,
           children: [
             SizedBox(
@@ -731,18 +864,30 @@ class _ScheduleImportSettingsDialogState
                 ),
               ),
             ),
-            OutlinedButton(
+            ShadButton.outline(
+              size: ShadButtonSize.sm,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               onPressed: () =>
                   _redistribute(int.tryParse(_sessionCount.text) ?? 0),
-              child: const Text('Update sessions'),
+              child: const Text('Update sessions', style: TextStyle(fontSize: 12)),
             ),
-            OutlinedButton(
+            ShadButton.outline(
+              size: ShadButtonSize.sm,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               onPressed: () => _redistribute(
                 math.min(2, _selectedIds.length),
                 morningAfternoon: true,
               ),
-              child: const Text('Morning / afternoon'),
+              child: const Text('Morning / afternoon', style: TextStyle(fontSize: 12)),
             ),
+            if (_sessions.length > 1)
+              ShadButton.outline(
+                size: ShadButtonSize.sm,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                leading: const Icon(Icons.auto_fix_high, size: 14),
+                onPressed: _autoSequenceSessions,
+                child: const Text('Auto-sequence', style: TextStyle(fontSize: 12)),
+              ),
           ],
         ),
         const SizedBox(height: 16),
@@ -753,6 +898,108 @@ class _ScheduleImportSettingsDialogState
             style: const TextStyle(fontSize: 12),
           ),
         ),
+        if (overlap != null) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF451A03) : DefensysTokens.warningBg,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isDark
+                    ? const Color(0xFF78350F)
+                    : DefensysTokens.warningBorder,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 18,
+                      color: isDark
+                          ? const Color(0xFFFDE68A)
+                          : DefensysTokens.warningText,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Session ${overlap.firstIdx + 1} and Session ${overlap.secondIdx + 1} overlap in ${overlap.room}.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isDark
+                              ? const Color(0xFFFDE68A)
+                              : DefensysTokens.warningText,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Session ${overlap.firstIdx + 1} finishes at ${scheduleReviewTime(scheduleTimeFromMinutes(overlap.firstEnd))}. Quick fix:',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    ActionChip(
+                      avatar: const Icon(Icons.schedule, size: 14),
+                      label: Text(
+                        'Start Session ${overlap.secondIdx + 1} at ${scheduleReviewTime(scheduleTimeFromMinutes(overlap.firstEnd))}',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _sessions[overlap.secondIdx].start.text =
+                              scheduleTimeFromMinutes(overlap.firstEnd);
+                          _error = null;
+                        });
+                      },
+                    ),
+                    ActionChip(
+                      avatar: const Icon(Icons.meeting_room_outlined, size: 14),
+                      label: Text(
+                        'Move to ${_suggestNextRoom(overlap.room)}',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _sessions[overlap.secondIdx].room.text =
+                              _suggestNextRoom(overlap.room);
+                          _error = null;
+                        });
+                      },
+                    ),
+                    ActionChip(
+                      avatar: const Icon(Icons.calendar_today_outlined, size: 14),
+                      label: Text(
+                        'Move to ${_suggestNextDay(overlap.date)}',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _sessions[overlap.secondIdx].date.text =
+                              _suggestNextDay(overlap.date);
+                          _sessions[overlap.secondIdx].start.text = '08:00';
+                          _error = null;
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 14),
         for (var index = 0; index < _sessions.length; index++)
           Padding(
@@ -768,26 +1015,76 @@ class _ScheduleImportSettingsDialogState
   }
 
   Widget _sessionCard(int index, _SessionFields session) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final start = scheduleTimeMinutes(session.start.text),
         count = int.tryParse(session.count.text) ?? 0,
         duration = int.tryParse(session.duration.text) ?? 0;
+    final totalMinutes = count * duration;
+    final hoursStr = totalMinutes > 0
+        ? ' (${(totalMinutes / 60).toStringAsFixed(totalMinutes % 60 == 0 ? 0 : 1)}h)'
+        : '';
     final range = start == null
         ? 'Set timing'
-        : '${scheduleReviewTime(scheduleTimeFromMinutes(start))} – ${scheduleReviewTime(scheduleTimeFromMinutes(start + count * duration))}';
+        : '${scheduleReviewTime(scheduleTimeFromMinutes(start))} – ${scheduleReviewTime(scheduleTimeFromMinutes(start + totalMinutes))}$hoursStr';
+
+    final overlappingWith = <int>[];
+    for (var k = 0; k < _sessions.length; k++) {
+      if (k == index) continue;
+      final other = _sessions[k];
+      final oStart = scheduleTimeMinutes(other.start.text);
+      final oCount = int.tryParse(other.count.text) ?? 0;
+      final oDur = int.tryParse(other.duration.text) ?? 0;
+      if (oStart == null || oCount <= 0 || oDur <= 0 || start == null || count <= 0 || duration <= 0) continue;
+      final oEnd = oStart + oCount * oDur;
+      final myEnd = start + totalMinutes;
+      if (other.date.text.trim().toLowerCase() == session.date.text.trim().toLowerCase() &&
+          other.room.text.trim().toLowerCase() == session.room.text.trim().toLowerCase()) {
+        if (scheduleIntervalsOverlap(start, myEnd, oStart, oEnd)) {
+          overlappingWith.add(k);
+        }
+      }
+    }
+
     return DecoratedBox(
       decoration: BoxDecoration(
-        border: Border.all(color: DefensysTokens.borderOf(context)),
+        border: Border.all(
+          color: overlappingWith.isNotEmpty
+              ? (isDark ? const Color(0xFF78350F) : DefensysTokens.warningBorder)
+              : DefensysTokens.borderOf(context),
+        ),
         borderRadius: BorderRadius.circular(7),
       ),
       child: ExpansionTile(
         key: ValueKey(session),
-        initiallyExpanded: _sessions.length <= 2 || index == 0,
+        initiallyExpanded: _sessions.length <= 2 || index == 0 || overlappingWith.isNotEmpty,
         shape: const Border(),
         collapsedShape: const Border(),
         tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-        title: Text(
-          'Session ${index + 1}',
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+        title: Row(
+          children: [
+            Text(
+              'Session ${index + 1}',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+            if (overlappingWith.isNotEmpty) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF451A03) : DefensysTokens.warningBg,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'Overlap',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: isDark ? const Color(0xFFFDE68A) : DefensysTokens.warningText,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
         subtitle: Text(
           '$count teams · $range',
@@ -796,76 +1093,187 @@ class _ScheduleImportSettingsDialogState
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final columns = constraints.maxWidth < 330
-                    ? 1
-                    : constraints.maxWidth < 520
-                    ? 2
-                    : 3;
-                final width =
-                    (constraints.maxWidth - (columns - 1) * 12) / columns;
-                return Wrap(
-                  spacing: 12,
-                  runSpacing: 14,
-                  children: [
-                    SizedBox(
-                      width: width,
-                      child: _field(
-                        'Teams / slots',
-                        _text(
-                          session.count,
-                          kind: 'count',
-                          key: ValueKey('session_${index}_teams'),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final columns = constraints.maxWidth < 330
+                        ? 1
+                        : constraints.maxWidth < 520
+                        ? 2
+                        : 3;
+                    final width =
+                        (constraints.maxWidth - (columns - 1) * 12) / columns;
+                    return Wrap(
+                      spacing: 12,
+                      runSpacing: 14,
+                      children: [
+                        SizedBox(
+                          width: width,
+                          child: _field(
+                            'Teams / slots',
+                            _text(
+                              session.count,
+                              kind: 'count',
+                              key: ValueKey('session_${index}_teams'),
+                            ),
+                          ),
                         ),
+                        SizedBox(
+                          width: width,
+                          child: _field(
+                            'Start time (HH:mm)',
+                            _text(
+                              session.start,
+                              kind: 'start',
+                              key: ValueKey('session_${index}_start'),
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: width,
+                          child: _field(
+                            'Minutes per slot',
+                            _text(
+                              session.duration,
+                              kind: 'duration',
+                              key: ValueKey('session_${index}_duration'),
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: width,
+                          child: _field(
+                            'Date',
+                            _text(
+                              session.date,
+                              kind: 'date',
+                              key: ValueKey('session_${index}_date'),
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: columns == 3 ? width * 2 + 12 : width,
+                          child: _field(
+                            'Room / venue',
+                            _text(
+                              session.room,
+                              key: ValueKey('session_${index}_room'),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                if (overlappingWith.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF451A03) : DefensysTokens.warningBg,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF78350F) : DefensysTokens.warningBorder,
                       ),
                     ),
-                    SizedBox(
-                      width: width,
-                      child: _field(
-                        'Start time (HH:mm)',
-                        _text(
-                          session.start,
-                          kind: 'start',
-                          key: ValueKey('session_${index}_start'),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.warning_amber_rounded,
+                              size: 16,
+                              color: isDark ? const Color(0xFFFDE68A) : DefensysTokens.warningText,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Time overlap with Session ${overlappingWith.map((k) => k + 1).join(', ')} in ${session.room.text}',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? const Color(0xFFFDE68A) : DefensysTokens.warningText,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: width,
-                      child: _field(
-                        'Minutes per slot',
-                        _text(
-                          session.duration,
-                          kind: 'duration',
-                          key: ValueKey('session_${index}_duration'),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            if (overlappingWith.any((k) => k < index)) ...[
+                              () {
+                                final prevIdx =
+                                    overlappingWith.where((k) => k < index).last;
+                                final prevS = _sessions[prevIdx];
+                                final pStart =
+                                    scheduleTimeMinutes(prevS.start.text) ?? 480;
+                                final pCount =
+                                    int.tryParse(prevS.count.text) ?? 0;
+                                final pDur =
+                                    int.tryParse(prevS.duration.text) ?? 60;
+                                final pEnd = pStart + pCount * pDur;
+                                return ActionChip(
+                                  avatar: const Icon(Icons.schedule, size: 13),
+                                  label: Text(
+                                    'Start at ${scheduleReviewTime(scheduleTimeFromMinutes(pEnd))}',
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      session.start.text =
+                                          scheduleTimeFromMinutes(pEnd);
+                                      _error = null;
+                                    });
+                                  },
+                                );
+                              }(),
+                            ],
+                            ActionChip(
+                              avatar:
+                                  const Icon(Icons.meeting_room_outlined, size: 13),
+                              label: Text(
+                                'Use ${_suggestNextRoom(session.room.text)}',
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  session.room.text =
+                                      _suggestNextRoom(session.room.text);
+                                  _error = null;
+                                });
+                              },
+                            ),
+                            ActionChip(
+                              avatar: const Icon(
+                                Icons.calendar_today_outlined,
+                                size: 13,
+                              ),
+                              label: Text(
+                                'Move to ${_suggestNextDay(session.date.text)}',
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  session.date.text =
+                                      _suggestNextDay(session.date.text);
+                                  session.start.text = '08:00';
+                                  _error = null;
+                                });
+                              },
+                            ),
+                          ],
                         ),
-                      ),
+                      ],
                     ),
-                    SizedBox(
-                      width: width,
-                      child: _field(
-                        'Date',
-                        _text(
-                          session.date,
-                          kind: 'date',
-                          key: ValueKey('session_${index}_date'),
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: columns == 3 ? width * 2 + 12 : width,
-                      child: _field(
-                        'Room / venue',
-                        _text(
-                          session.room,
-                          key: ValueKey('session_${index}_room'),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
+                  ),
+                ],
+              ],
             ),
           ),
         ],
@@ -885,121 +1293,133 @@ class _ScheduleImportSettingsDialogState
   );
 
   @override
-  Widget build(BuildContext context) => Dialog(
-    backgroundColor: DefensysTokens.surfaceOf(context),
-    surfaceTintColor: Colors.transparent,
-    insetPadding: const EdgeInsets.all(20),
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(10),
-      side: BorderSide(color: DefensysTokens.borderOf(context)),
-    ),
-    child: ConstrainedBox(
-      constraints: BoxConstraints(
-        maxWidth: 680,
-        maxHeight: math.max(200, MediaQuery.sizeOf(context).height - 48),
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isCompact = screenWidth < 500;
+    return ShadTheme(
+      data: ShadThemeData(
+        brightness: isDark ? Brightness.dark : Brightness.light,
+        colorScheme: isDark
+            ? const ShadZincColorScheme.dark()
+            : const ShadZincColorScheme.light(),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(22),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
+      child: Dialog(
+        backgroundColor: DefensysTokens.surfaceOf(context),
+        surfaceTintColor: Colors.transparent,
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: isCompact ? 8 : 20,
+          vertical: 16,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: DefensysTokens.borderOf(context)),
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 680,
+            maxHeight: math.max(200, MediaQuery.sizeOf(context).height - 48),
+          ),
+          child: Padding(
+            padding: EdgeInsets.all(isCompact ? 12 : 22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Text(
-                    '${widget.title} settings',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: DefensysTokens.textPrimaryOf(context),
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Close settings',
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close, size: 18),
-                ),
-              ],
-            ),
-            _helper(
-              '${widget.rows.length} staged slots · ${widget.files.length} ${widget.files.length == 1 ? 'file' : 'files'}',
-            ),
-            const SizedBox(height: 18),
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: DefensysTokens.surfaceHigherOf(context),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Row(
-                children: [
-                  for (var i = 0; i < 2; i++)
+                Row(
+                  children: [
                     Expanded(
-                      child: TextButton(
-                        style: TextButton.styleFrom(
-                          backgroundColor: _tab == i
-                              ? DefensysTokens.surfaceOf(context)
-                              : Colors.transparent,
-                          foregroundColor: _tab == i
-                              ? DefensysTokens.textPrimaryOf(context)
-                              : DefensysTokens.textSecondaryOf(context),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4),
-                          ),
+                      child: Text(
+                        '${widget.title} settings',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: DefensysTokens.textPrimaryOf(context),
                         ),
-                        onPressed: () => setState(() {
-                          _tab = i;
-                          _error = null;
-                        }),
-                        child: Text(i == 0 ? 'Stage' : 'Sessions'),
                       ),
                     ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            Flexible(
-              child: SingleChildScrollView(
-                child: Form(
-                  key: _form,
-                  child: _tab == 0 ? _stagePanel() : _sessionPanel(),
+                    IconButton(
+                      tooltip: 'Close settings',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close, size: 18),
+                    ),
+                  ],
                 ),
-              ),
-            ),
-            if (_error != null) _errorBanner(_error!),
-            const SizedBox(height: 18),
-            Wrap(
-              alignment: WrapAlignment.end,
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
+                _helper(
+                  '${widget.rows.length} staged slots · ${widget.files.length} ${widget.files.length == 1 ? 'file' : 'files'}',
                 ),
-                ElevatedButton(
-                  onPressed: _tab == 1 && _planError != null ? null : _save,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: DefensysTokens.maroonOf(context),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
+                const SizedBox(height: 18),
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: DefensysTokens.surfaceHigherOf(context),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    children: [
+                      for (var i = 0; i < 2; i++)
+                        Expanded(
+                          child: TextButton(
+                            style: TextButton.styleFrom(
+                              backgroundColor: _tab == i
+                                  ? DefensysTokens.surfaceOf(context)
+                                  : Colors.transparent,
+                              foregroundColor: _tab == i
+                                  ? DefensysTokens.textPrimaryOf(context)
+                                  : DefensysTokens.textSecondaryOf(context),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                            onPressed: () => setState(() {
+                              _tab = i;
+                              _error = null;
+                            }),
+                            child: Text(i == 0 ? 'Stage' : 'Sessions'),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Form(
+                      key: _form,
+                      child: _tab == 0 ? _stagePanel() : _sessionPanel(),
                     ),
                   ),
-                  child: Text(
-                    _tab == 0 ? 'Save settings' : 'Apply session plan',
-                  ),
+                ),
+                if (_error != null) _errorBanner(_error!),
+                const SizedBox(height: 18),
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ShadButton.outline(
+                      size: ShadButtonSize.sm,
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                    ShadButton(
+                      size: ShadButtonSize.sm,
+                      backgroundColor: DefensysTokens.maroonOf(context),
+                      foregroundColor: Colors.white,
+                      onPressed: _tab == 1 && _planError != null ? null : _save,
+                      child: Text(
+                        _tab == 0 ? 'Save settings' : 'Apply session plan',
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _SessionFields {

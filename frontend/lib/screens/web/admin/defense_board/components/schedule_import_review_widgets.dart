@@ -555,15 +555,22 @@ class ScheduleImportFilterBar extends StatelessWidget {
         ])
           ChoiceChip(
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(5),
+              borderRadius: BorderRadius.circular(8),
+              side: BorderSide(
+                color: issuesOnly == tab.$1
+                    ? DefensysTokens.borderOf(context)
+                    : Colors.transparent,
+              ),
             ),
             backgroundColor: DefensysTokens.surfaceOf(context),
             label: Text(tab.$2),
             showCheckmark: false,
             labelStyle: TextStyle(
               fontFamily: DefensysTokens.fontFamily,
-              color: DefensysTokens.textPrimaryOf(context),
-              fontSize: 12,
+              color: issuesOnly == tab.$1
+                  ? DefensysTokens.textPrimaryOf(context)
+                  : DefensysTokens.textSecondaryOf(context),
+              fontSize: 12.5,
               fontWeight: issuesOnly == tab.$1
                   ? FontWeight.w600
                   : FontWeight.w400,
@@ -574,6 +581,13 @@ class ScheduleImportFilterBar extends StatelessWidget {
           ),
         if (hasFilters)
           TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: DefensysTokens.maroonOf(context),
+              textStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             onPressed: enabled ? onClear : null,
             child: const Text('Clear filters'),
           ),
@@ -583,10 +597,21 @@ class ScheduleImportFilterBar extends StatelessWidget {
       controller: searchController,
       enabled: enabled,
       onChanged: onSearchChanged,
-      style: const TextStyle(fontSize: 13),
+      style: TextStyle(
+        fontSize: 13,
+        color: DefensysTokens.textPrimaryOf(context),
+      ),
       decoration: InputDecoration(
         hintText: 'Search teams, projects or faculty',
-        prefixIcon: const Icon(Icons.search_rounded, size: 19),
+        hintStyle: TextStyle(
+          fontSize: 13,
+          color: DefensysTokens.textSecondaryOf(context).withValues(alpha: 0.7),
+        ),
+        prefixIcon: Icon(
+          Icons.search_rounded,
+          size: 19,
+          color: DefensysTokens.textSecondaryOf(context),
+        ),
         suffixIcon: searchController.text.isEmpty
             ? null
             : IconButton(
@@ -597,10 +622,27 @@ class ScheduleImportFilterBar extends StatelessWidget {
                 },
                 icon: const Icon(Icons.close_rounded, size: 18),
               ),
+        filled: true,
+        fillColor: DefensysTokens.surfaceHigherOf(context).withValues(alpha: 0.5),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(
+            color: DefensysTokens.maroonOf(context),
+            width: 1.5,
+          ),
+        ),
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 12,
-          vertical: 13,
+          vertical: 11,
         ),
       ),
     );
@@ -671,11 +713,27 @@ class ScheduleImportFilterBar extends StatelessWidget {
     return SizedBox(
       width: 155,
       child: DropdownButtonFormField<String>(
-        // Refresh the FormField state when Clear filters resets its value.
         key: ValueKey('$label:$selected'),
         initialValue: values.contains(selected) ? selected : null,
         isExpanded: true,
-        decoration: InputDecoration(labelText: label, isDense: true),
+        decoration: InputDecoration(
+          labelText: label,
+          isDense: true,
+          filled: true,
+          fillColor: DefensysTokens.surfaceHigherOf(context).withValues(alpha: 0.5),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 10,
+          ),
+        ),
         items: [
           DropdownMenuItem(
             value: null,
@@ -752,19 +810,33 @@ class ScheduleImportSessionCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: DefensysTokens.surfaceOf(context),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: DefensysTokens.borderOf(context)),
+        boxShadow: [
+          if (!DefensysTokens.isDark(context))
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.02),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+        ],
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 16, 12),
+          Container(
+            color: expanded
+                ? (DefensysTokens.isDark(context)
+                    ? DefensysTokens.surfaceHigherOf(context).withValues(alpha: 0.5)
+                    : const Color(0xFFFBFBFD))
+                : Colors.transparent,
+            padding: const EdgeInsets.fromLTRB(12, 12, 16, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     IconButton(
                       tooltip: expanded
@@ -772,46 +844,94 @@ class ScheduleImportSessionCard extends StatelessWidget {
                           : 'Expand session $index',
                       onPressed: enabled ? onToggle : null,
                       icon: Icon(
-                        expanded ? Icons.expand_less : Icons.expand_more,
+                        expanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
                         size: 20,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                      style: IconButton.styleFrom(
+                        padding: const EdgeInsets.all(4),
+                        minimumSize: const Size(28, 28),
                       ),
                     ),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Wrap(
-                        spacing: 20,
-                        runSpacing: 4,
+                        spacing: 12,
+                        runSpacing: 6,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Text(
                             'Session $index  ${room.isEmpty || room == 'Unassigned' ? 'Room not assigned' : room} · ${date.isEmpty ? 'Date not set' : scheduleReviewDate(date)}',
                             style: TextStyle(
                               fontSize: 14,
-                              fontWeight: FontWeight.w500,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: -0.2,
                               color: primary,
                             ),
                           ),
-                          Text(
-                            timeSpan,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: secondary,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures(),
-                              ],
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2.5,
                             ),
-                          ),
-                          Text(
-                            '$totalCount teams',
-                            style: TextStyle(fontSize: 12, color: secondary),
-                          ),
-                          if (issueCount > 0)
-                            Text(
-                              '$issueCount need attention',
+                            decoration: BoxDecoration(
+                              color: DefensysTokens.surfaceHigherOf(context),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: DefensysTokens.borderOf(context)
+                                    .withValues(alpha: 0.7),
+                              ),
+                            ),
+                            child: Text(
+                              timeSpan,
                               style: TextStyle(
                                 fontSize: 12,
-                                color: DefensysTokens.goldOf(context),
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w500,
+                                color: secondary,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2.5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: DefensysTokens.surfaceHigherOf(context),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '$totalCount teams',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: secondary,
+                              ),
+                            ),
+                          ),
+                          if (issueCount > 0)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 2.5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: DefensysTokens.warningBg,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: DefensysTokens.warningBorder,
+                                ),
+                              ),
+                              child: Text(
+                                '$issueCount need attention',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: DefensysTokens.goldOf(context),
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                         ],
@@ -819,17 +939,33 @@ class ScheduleImportSessionCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     if (onDateChanged != null || onRoomChanged != null)
-                      TextButton.icon(
-                        style: TextButton.styleFrom(foregroundColor: secondary),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: secondary,
+                          side: BorderSide(
+                            color: DefensysTokens.borderOf(context),
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          minimumSize: const Size(0, 32),
+                        ),
                         onPressed: enabled ? () => _edit(context) : null,
-                        icon: const Icon(Icons.edit_outlined, size: 15),
-                        label: const Text('Edit session'),
+                        icon: const Icon(Icons.edit_outlined, size: 14),
+                        label: const Text(
+                          'Edit session',
+                          style: TextStyle(fontSize: 12),
+                        ),
                       ),
                   ],
                 ),
                 if (expanded)
                   Padding(
-                    padding: const EdgeInsets.only(left: 52, top: 2),
+                    padding: const EdgeInsets.only(left: 44, top: 6),
                     child: Wrap(
                       spacing: 20,
                       runSpacing: 4,
@@ -837,7 +973,11 @@ class ScheduleImportSessionCard extends StatelessWidget {
                         if (committeeVaries)
                           Text(
                             'Committee varies by team · See assignments below',
-                            style: TextStyle(color: secondary, fontSize: 12),
+                            style: TextStyle(
+                              color: secondary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         if (!committeeVaries)
                           Text(

@@ -212,6 +212,34 @@ void main() {
     ]);
   });
 
+  test(
+    'duration updates cascade later groups in same room and date to prevent collisions',
+    () {
+      final rows = _file('a', [
+        _row(0, '08:00'),
+        _row(1, '08:30'),
+        _row(2, '10:00'),
+        _row(3, '10:30'),
+      ]).parsed.rows;
+      final changed = updateScheduleImportValues(
+        rows,
+        rows.map((row) => row.importRowId).toSet(),
+        duration: 90,
+      );
+      // Group 0: 08:00 -> 09:30 (ends 11:00)
+      // Group 1 originally at 10:00 would collide (10:00 < 11:00)
+      // It cascades to 11:00!
+      expect(changed[0].startTime, '08:00');
+      expect(changed[0].endTime, '09:30');
+      expect(changed[1].startTime, '09:30');
+      expect(changed[1].endTime, '11:00');
+      expect(changed[2].startTime, '11:00');
+      expect(changed[2].endTime, '12:30');
+      expect(changed[3].startTime, '12:30');
+      expect(changed[3].endTime, '14:00');
+    },
+  );
+
   test('time ranges display adjacent intervals and both periods at noon', () {
     expect(scheduleReviewTimeRange('08:00', '08:30'), '8:00–8:30 AM');
     expect(scheduleReviewTimeRange('08:30', '09:00'), '8:30–9:00 AM');

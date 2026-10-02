@@ -12,6 +12,7 @@ import 'package:defensys/utils/import/schedule_import_draft.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -514,8 +515,8 @@ void main() {
       expect(find.textContaining('Time overlap'), findsWidgets);
       expect(
         tester
-            .widget<ElevatedButton>(
-              find.widgetWithText(ElevatedButton, 'Apply session plan'),
+            .widget<ShadButton>(
+              find.widgetWithText(ShadButton, 'Apply session plan'),
             )
             .onPressed,
         isNull,
@@ -830,4 +831,74 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  testWidgets(
+    'settings pre-fills imported values and session overlap provides quick fix and auto-sequence',
+    (tester) async {
+      await _pumpReview(tester, count: 16);
+      await _openSettings(tester);
+
+      // Verify date and room controllers have pre-filled grayed text
+      final dateField = tester.widget<TextFormField>(
+        find.byKey(const ValueKey('schedule_date')),
+      );
+      expect(dateField.controller?.text, '2026-10-20');
+      final roomField = tester.widget<TextFormField>(
+        find.byKey(const ValueKey('schedule_room')),
+      );
+      expect(roomField.controller?.text, 'Room 301');
+
+      // Switch to sessions and create 2 sessions
+      await _tap(tester, find.text('Sessions'));
+      await tester.pumpAndSettle();
+      await _tap(tester, find.text('Morning / afternoon'));
+      await tester.pumpAndSettle();
+
+      // Create an intentional overlap in Room 301 on 2026-10-20
+      await tester.enterText(
+        find.byKey(const ValueKey('session_1_room')),
+        'Room 301',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('session_1_date')),
+        '2026-10-20',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('session_1_start')),
+        '08:30',
+      );
+      await tester.pumpAndSettle();
+
+      // Verify quick fix banner and overlap indicators appear
+      expect(find.textContaining('overlap in Room 301'), findsOneWidget);
+      expect(find.textContaining('Quick fix:'), findsOneWidget);
+      expect(
+        tester
+            .widget<ShadButton>(
+              find.widgetWithText(ShadButton, 'Apply session plan'),
+            )
+            .onPressed,
+        isNull,
+      );
+
+      // Auto-sequence resolves the overlap cleanly
+      await _tap(tester, find.text('Auto-sequence'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('overlap in Room 301'), findsNothing);
+      expect(
+        tester
+            .widget<ShadButton>(
+              find.widgetWithText(ShadButton, 'Apply session plan'),
+            )
+            .onPressed,
+        isNotNull,
+      );
+
+      await _tap(tester, find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 }

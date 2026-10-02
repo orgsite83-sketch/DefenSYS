@@ -236,12 +236,35 @@ List<ParsedScheduleImportRow> updateScheduleImportValues(
     room: fallbackRoom,
     duration: fallbackDuration,
   );
+  final lastEndPerRoomDate = <String, int>{};
   for (var i = 0; i < groups.length; i++) {
     final group = groups[i];
     final hasDurationChange =
         duration != null &&
         group.any((row) => selectedIds.contains(row.importRowId));
     var nextStart = scheduleTimeMinutes(group.first.startTime);
+
+    final firstRow = group.first;
+    final isFirstSelected = selectedIds.contains(firstRow.importRowId);
+    final groupDate = (date != null && isFirstSelected)
+        ? date
+        : (firstRow.date.trim().isNotEmpty
+            ? firstRow.date.trim()
+            : fallbackDate);
+    final groupRoom = (room != null && isFirstSelected)
+        ? room
+        : (firstRow.room.trim().isNotEmpty
+            ? firstRow.room.trim()
+            : fallbackRoom);
+    final roomDateKey = '$groupDate|$groupRoom'.toLowerCase();
+
+    if (hasDurationChange && nextStart != null) {
+      final prevEnd = lastEndPerRoomDate[roomDateKey];
+      if (prevEnd != null && nextStart < prevEnd) {
+        nextStart = prevEnd;
+      }
+    }
+
     ParsedScheduleImportRow? previous;
     for (final row in group) {
       final selected = selectedIds.contains(row.importRowId);
@@ -278,6 +301,9 @@ List<ParsedScheduleImportRow> updateScheduleImportValues(
       }
       changed[row.importRowId] = updated;
       previous = row;
+    }
+    if (nextStart != null) {
+      lastEndPerRoomDate[roomDateKey] = nextStart;
     }
   }
   return [for (final row in rows) changed[row.importRowId] ?? row];
