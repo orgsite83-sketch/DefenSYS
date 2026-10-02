@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:defensys/screens/web/admin/defense_board/components/defense_schedule_bulk_import_view.dart';
 import 'package:defensys/screens/web/admin/defense_board/components/schedule_import_review_widgets.dart';
@@ -9,6 +10,7 @@ import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/defense_schedule_import_parser.dart';
 import 'package:defensys/utils/import/schedule_import_draft.dart';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,15 +18,63 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const _stage = 'Concept Proposal';
 
+class _Picker extends FilePicker {
+  final results = <FilePickerResult?>[];
+  final multiple = <bool>[];
+  @override
+  Future<FilePickerResult?> pickFiles({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Function(FilePickerStatus)? onFileLoading,
+    bool allowCompression = true,
+    int compressionQuality = 30,
+    bool allowMultiple = false,
+    bool withData = false,
+    bool withReadStream = false,
+    bool lockParentWindow = false,
+    bool readSequential = false,
+  }) async {
+    multiple.add(allowMultiple);
+    return results.removeAt(0);
+  }
+}
+
+PlatformFile _csv(String name, int team, String time, {String stage = _stage}) {
+  final bytes = Uint8List.fromList(
+    utf8.encode(
+      'Stage,Date,Room,Time,Team Name,Capstone Project,Adviser,Chair,Panel Member 1,Documenter\n'
+      '$stage,2026-10-20,Room 301,$time,Team $team,Project $team,Ricardo Fontanilla,Maricel Suarez,Jonathan Beltran,Cecilia Magbanua\n',
+    ),
+  );
+  return PlatformFile(name: name, size: bytes.length, bytes: bytes);
+}
+
 class _Scheduler extends DefenseSchedulerNotifier {
-  _Scheduler(this.fixture, {this.failedIndex});
+  _Scheduler(
+    this.fixture, {
+    this.failedIndex,
+    this.conflictSchedules,
+    this.validationFailure = false,
+  });
 
   final DefenseSchedulerState fixture;
   final int? failedIndex;
+  final List<Map<String, dynamic>>? conflictSchedules;
+  final bool validationFailure;
+  var conflictReads = 0;
   final imports = <List<Map<String, dynamic>>>[];
 
   @override
   DefenseSchedulerState build() => fixture;
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchImportConflictSchedules() async {
+    conflictReads++;
+    if (validationFailure) throw Exception('Network unavailable');
+    return [...(conflictSchedules ?? fixture.schedules)];
+  }
 
   @override
   Future<Map<String, dynamic>> importSchedules(
@@ -75,11 +125,13 @@ class _Stages extends DefenseStagesNotifier {
             '${8 + (i % 4) ~/ 2}:${i.isEven ? '00' : '30'} - ${8 + ((i % 4) + 1) ~/ 2}:${i.isEven ? '30' : '00'}',
         teamName: 'Team ${i + 1}',
         projectTitle: 'Project ${i + 1}',
-        adviser: 'Ricardo Fontanilla',
+        adviser: i < 8 ? 'Ricardo Fontanilla' : 'Andrea Santos',
         members: const [],
-        chair: 'Maricel Suarez',
-        panelMembers: const ['Jonathan Beltran'],
-        documenter: 'Cecilia Magbanua',
+        chair: i < 8 ? 'Maricel Suarez' : 'Renato Villanueva',
+        panelMembers: i < 8
+            ? const ['Jonathan Beltran']
+            : const ['Analiza Corpuz'],
+        documenter: i < 8 ? 'Cecilia Magbanua' : 'Maria Reyes',
         room: i < 8 ? 'Room 301' : 'Room 302',
         date: i % 8 < 4 ? '2026-10-20' : '2026-10-21',
         stage: _stage,
@@ -114,6 +166,10 @@ class _Stages extends DefenseStagesNotifier {
         {'id': 102, 'name': 'Jonathan Beltran', 'username': 'jbeltran'},
         {'id': 103, 'name': 'Ricardo Fontanilla', 'username': 'rfontanilla'},
         {'id': 104, 'name': 'Cecilia Magbanua', 'username': 'cmagbanua'},
+        {'id': 105, 'name': 'Renato Villanueva', 'username': 'rvillanueva'},
+        {'id': 106, 'name': 'Analiza Corpuz', 'username': 'acorpuz'},
+        {'id': 107, 'name': 'Maria Reyes', 'username': 'mreyes'},
+        {'id': 108, 'name': 'Andrea Santos', 'username': 'asantos'},
       ],
       teams: [
         for (var i = 0; i < count - (unknownLastTeam ? 1 : 0); i++)
@@ -137,9 +193,12 @@ Future<_Scheduler> _pumpReview(
   int count = 16,
   bool unknownLastTeam = false,
   int? failedIndex,
+  List<Map<String, dynamic>>? conflictSchedules,
+  bool validationFailure = false,
   Size size = const Size(1600, 1000),
   bool dark = false,
   VoidCallback? onBack,
+  bool seedDraft = true,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -148,11 +207,17 @@ Future<_Scheduler> _pumpReview(
   final fixture = _fixture(count: count, unknownLastTeam: unknownLastTeam);
   FlutterSecureStorage.setMockInitialValues({});
   SharedPreferences.setMockInitialValues({
-    'defense_schedule_import_draft_capstone': jsonEncode(
-      fixture.draft.toJson(),
-    ),
+    if (seedDraft)
+      'defense_schedule_import_draft_capstone': jsonEncode(
+        fixture.draft.toJson(),
+      ),
   });
-  final scheduler = _Scheduler(fixture.state, failedIndex: failedIndex);
+  final scheduler = _Scheduler(
+    fixture.state,
+    failedIndex: failedIndex,
+    conflictSchedules: conflictSchedules,
+    validationFailure: validationFailure,
+  );
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -175,18 +240,384 @@ Future<_Scheduler> _pumpReview(
   return scheduler;
 }
 
+Future<void> _tap(WidgetTester tester, Finder finder) async {
+  await tester.ensureVisible(finder);
+  await tester.pumpAndSettle();
+  await tester.tap(finder);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _openSettings(WidgetTester tester) async {
+  await _tap(tester, find.text('Settings'));
+  await tester.pumpAndSettle();
+}
+
+Future<void> _allDuration(
+  WidgetTester tester,
+  String value, {
+  bool save = true,
+}) async {
+  await _openSettings(tester);
+  await _tap(tester, find.byKey(const ValueKey('stage_schedule_scope')));
+  await tester.pumpAndSettle();
+  await _tap(tester, find.textContaining('All slots ·').last);
+  await tester.pumpAndSettle();
+  await _tap(tester, find.byKey(const ValueKey('set_duration')));
+  await tester.enterText(
+    find.byKey(const ValueKey('schedule_duration')),
+    value,
+  );
+  if (save) await _tap(tester, find.text('Save settings'));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   testWidgets(
-    'restored review keeps actions visible while scrolling and uses counted filters',
+    'multiple files combine and replacement preserves other source edits',
+    (tester) async {
+      final picker = _Picker();
+      FilePicker.platform = picker;
+      picker.results.add(
+        FilePickerResult([
+          _csv('morning.csv', 1, '8:00AM-8:30AM'),
+          _csv('afternoon.csv', 2, '1:00PM-1:30PM'),
+        ]),
+      );
+      await _pumpReview(tester, count: 6, seedDraft: false);
+      await _tap(tester, find.textContaining('Click to choose timetable'));
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pumpAndSettle();
+      var draft = (await loadScheduleImportDraft(scope: 'capstone'))!;
+      expect(draft.files.map((file) => file.name), [
+        'morning.csv',
+        'afternoon.csv',
+      ]);
+      expect(find.text('Import 2 slots'), findsOneWidget);
+      expect(picker.multiple, [true]);
+      await _openSettings(tester);
+      await _tap(tester, find.byKey(const ValueKey('stage_schedule_scope')));
+      await _tap(tester, find.text('afternoon.csv · 1 slots').last);
+      await _tap(tester, find.byKey(const ValueKey('set_room')));
+      await tester.enterText(
+        find.byKey(const ValueKey('schedule_room')),
+        'Afternoon hall',
+      );
+      await _tap(tester, find.text('Save settings'));
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pumpAndSettle();
+      draft = (await loadScheduleImportDraft(scope: 'capstone'))!;
+      final afternoon = draft.files.last.toJson();
+      expect(draft.files.last.parsed.rows.single.room, 'Afternoon hall');
+      expect(draft.files.first.parsed.rows.single.room, 'Room 301');
+      picker.results.add(
+        FilePickerResult([_csv('new-morning.csv', 3, '9:00AM-9:30AM')]),
+      );
+      await _tap(tester, find.text('Replace').first);
+      await _tap(tester, find.text('Choose replacement'));
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pumpAndSettle();
+      draft = (await loadScheduleImportDraft(scope: 'capstone'))!;
+      expect(draft.files.first.name, 'new-morning.csv');
+      expect(draft.files.first.parsed.rows.single.teamName, 'Team 3');
+      expect(draft.files.last.toJson(), afternoon);
+      expect(picker.multiple, [true, false]);
+      // Cancelling replacement leaves the full combined draft untouched.
+      final snapshot = draft.parsed.toJson();
+      picker.results.add(null);
+      await _tap(tester, find.text('Replace all'));
+      await _tap(tester, find.text('Choose replacement'));
+      expect(
+        (await loadScheduleImportDraft(scope: 'capstone'))!.parsed.toJson(),
+        snapshot,
+      );
+      picker.results.add(
+        FilePickerResult([_csv('replacement.csv', 4, '2:00PM-2:30PM')]),
+      );
+      await _tap(tester, find.text('Replace all'));
+      await _tap(tester, find.text('Choose replacement'));
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pumpAndSettle();
+      draft = (await loadScheduleImportDraft(scope: 'capstone'))!;
+      expect(draft.files.single.name, 'replacement.csv');
+      expect(draft.parsed.rows.single.teamName, 'Team 4');
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'adding a file preserves edits and duplicate teams block import',
+    (tester) async {
+      final picker = _Picker();
+      FilePicker.platform = picker;
+      await _pumpReview(tester, count: 2);
+      await _allDuration(tester, '45');
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pumpAndSettle();
+      final original = (await loadScheduleImportDraft(
+        scope: 'capstone',
+      ))!.parsed.rows.map((row) => row.toJson()).toList();
+      // Malformed batches preserve the draft and do not append valid siblings.
+      picker.results.add(
+        FilePickerResult([
+          _csv('valid.csv', 2, '1:00PM-1:30PM'),
+          PlatformFile(name: 'unreadable.csv', size: 10),
+        ]),
+      );
+      await _tap(tester, find.text('Add files'));
+      expect(
+        (await loadScheduleImportDraft(
+          scope: 'capstone',
+        ))!.parsed.rows.map((row) => row.toJson()).toList(),
+        original,
+      );
+      await tester.pump(const Duration(seconds: 7));
+      await tester.pumpAndSettle();
+      picker.results.add(
+        FilePickerResult([_csv('duplicate.csv', 1, '1:00PM-1:30PM')]),
+      );
+      await _tap(tester, find.text('Add files'));
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pumpAndSettle();
+      final draft = (await loadScheduleImportDraft(scope: 'capstone'))!;
+      expect(
+        draft.parsed.rows.take(2).map((row) => row.toJson()).toList(),
+        original,
+      );
+      expect(find.text('Needs attention (2)'), findsOneWidget);
+      expect(find.text('Import 1 slot'), findsOneWidget);
+      expect(find.textContaining('Duplicate team in this draft'), findsWidgets);
+      await _tap(tester, find.byTooltip('Remove duplicate.csv'));
+      await _tap(tester, find.text('Remove file'));
+      expect(
+        (await loadScheduleImportDraft(scope: 'capstone'))!.files.single.name,
+        'defense_schedule.xlsx',
+      );
+      expect(find.text('Import 2 slots'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'uneven morning and afternoon sessions preserve all imported teams',
+    (tester) async {
+      await _pumpReview(tester, count: 16);
+      await _openSettings(tester);
+      await _tap(tester, find.text('Sessions'));
+      await _tap(tester, find.text('Morning / afternoon'));
+      await tester.enterText(
+        find.byKey(const ValueKey('session_0_teams')),
+        '5',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('3 teams still need a session.'), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const ValueKey('session_1_teams')),
+        '11',
+      );
+      await tester.pumpAndSettle();
+      await _tap(tester, find.text('Apply session plan'));
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pumpAndSettle();
+      final draft = (await loadScheduleImportDraft(scope: 'capstone'))!;
+      expect(draft.parsed.rows[4].endTime, '10:30');
+      expect(draft.parsed.rows[5].startTime, '13:00');
+      expect(draft.parsed.rows.last.endTime, '18:30');
+      expect(draft.parsed.rows.map((row) => row.teamName).toSet().length, 16);
+      expect(find.byType(ScheduleImportSessionCard), findsNWidgets(2));
+      expect(
+        find.text('Committee varies by team · See assignments below'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'appointments added during review are checked before any import writes',
+    (tester) async {
+      final appointments = <Map<String, dynamic>>[];
+      final scheduler = await _pumpReview(
+        tester,
+        count: 1,
+        conflictSchedules: appointments,
+      );
+      appointments.add({
+        'status': 'scheduled',
+        'scheduled_date': '2026-10-20',
+        'start_time': '08:00:00',
+        'slot_duration': 30,
+        'room': 'Room 301',
+        'team_name': 'New Appointment',
+      });
+      await _tap(tester, find.text('Import 1 slot'));
+      await tester.pumpAndSettle();
+      expect(scheduler.imports, isEmpty);
+      expect(scheduler.conflictReads, 2);
+      expect(find.text('Import 0 slots'), findsOneWidget);
+      expect(
+        find.textContaining('The schedule changed during review.'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'centralized duration edits are scoped, cancellable, and persisted',
+    (tester) async {
+      await _pumpReview(tester, count: 4);
+      await _allDuration(tester, '60', save: false);
+      await _tap(tester, find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.text('8:30–9:00 AM'), findsOneWidget);
+      await _allDuration(tester, '60');
+      expect(find.text('9:00–10:00 AM'), findsOneWidget);
+      expect(find.text('11:00 AM–12:00 PM'), findsOneWidget);
+      expect(find.text('Needs attention (0)'), findsOneWidget);
+      expect(find.text('Issues / notices'), findsNothing);
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pumpAndSettle();
+      final draft = await loadScheduleImportDraft(scope: 'capstone');
+      expect(draft!.reflowStartTimes, isFalse);
+      expect(draft.parsed.rows[1].startTime, '09:00');
+      expect(draft.parsed.rows[1].slotDuration, 60);
+      expect(draft.files.single.parsed.rows[1].startTime, '09:00');
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'invalid duration and overlapping session plans cannot be applied',
+    (tester) async {
+      await _pumpReview(tester, count: 8);
+      await _allDuration(tester, '241');
+      expect(find.text('Enter 15 to 240 minutes'), findsOneWidget);
+      await _tap(tester, find.text('Cancel'));
+      await tester.pumpAndSettle();
+      await _openSettings(tester);
+      await _tap(tester, find.text('Sessions'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('session_1_date')),
+        '2026-10-20',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('session_1_start')),
+        '09:00',
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Time overlap'), findsWidgets);
+      expect(
+        tester
+            .widget<ElevatedButton>(
+              find.widgetWithText(ElevatedButton, 'Apply session plan'),
+            )
+            .onPressed,
+        isNull,
+      );
+      await _tap(tester, find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.text('Needs attention (0)'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets('failed imports retain adjusted times for a safe retry', (
+    tester,
+  ) async {
+    final scheduler = await _pumpReview(tester, count: 3, failedIndex: 1);
+    await _allDuration(tester, '60');
+    await _tap(tester, find.text('Import 3 slots'));
+    await tester.pumpAndSettle();
+    expect(scheduler.imports.single[1]['start_time'], '09:00');
+    final draft = await loadScheduleImportDraft(scope: 'capstone');
+    expect(draft!.parsed.rows.single.startTime, '09:00');
+    expect(draft.parsed.rows.single.endTime, '10:00');
+    expect(draft.reflowStartTimes, isFalse);
+    expect(find.text('9:00–10:00 AM'), findsOneWidget);
+    await _tap(tester, find.text('Import 1 slot'));
+    await tester.pumpAndSettle();
+    expect(scheduler.imports.last.single['start_time'], '09:00');
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('validation checks appointments hidden by board filters', (
+    tester,
+  ) async {
+    await _pumpReview(
+      tester,
+      count: 1,
+      conflictSchedules: [
+        {
+          'status': 'scheduled',
+          'scheduled_date': '2026-10-20',
+          'start_time': '08:00:00',
+          'slot_duration': 30,
+          'room': 'Room 301',
+          'team_id': 99,
+          'team_name': 'Published Team',
+        },
+      ],
+    );
+    expect(find.text('Import 0 slots'), findsOneWidget);
+    expect(find.textContaining('scheduled Published Team'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('failed availability checks disable import and offer retry', (
+    tester,
+  ) async {
+    final scheduler = await _pumpReview(
+      tester,
+      count: 1,
+      validationFailure: true,
+    );
+    expect(find.text('Schedule validation unavailable'), findsOneWidget);
+    final button = tester.widget<ElevatedButton>(
+      find
+          .ancestor(
+            of: find.text('Import 1 slot'),
+            matching: find.byWidgetPredicate(
+              (widget) => widget is ElevatedButton,
+            ),
+          )
+          .first,
+    );
+    expect(button.onPressed, isNull);
+    await _tap(tester, find.text('Retry validation'));
+    await tester.pumpAndSettle();
+    expect(scheduler.conflictReads, 2);
+    expect(scheduler.imports, isEmpty);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+    'specification and upload remain above the stage review on the same page',
     (tester) async {
       await _pumpReview(tester);
-      expect(find.text('Replace file'), findsOneWidget);
-      expect(find.text('View format guide'), findsOneWidget);
+      expect(find.text('Replace'), findsOneWidget);
+      expect(
+        find.text('Official Capstone Timetable Specification'),
+        findsOneWidget,
+      );
+      expect(find.text('Upload Defense Spreadsheet'), findsOneWidget);
       expect(find.text('All (16)'), findsOneWidget);
       expect(find.text('Needs attention (0)'), findsOneWidget);
       expect(find.text('All fields verified'), findsNothing);
       expect(find.text('Import 16 slots'), findsOneWidget);
-      expect(find.text('View Sheet Layout Blueprint'), findsNothing);
+      expect(find.text('View Sheet Layout Blueprint'), findsOneWidget);
+      expect(find.text('Settings'), findsOneWidget);
+      expect(find.text('Edit session'), findsNothing);
+      expect(find.text('Review & Resolve'), findsNothing);
       final importButton = find.text('Import 16 slots');
       final position = tester.getCenter(importButton);
       await tester.drag(
@@ -194,7 +625,7 @@ void main() {
         const Offset(0, -900),
       );
       await tester.pumpAndSettle();
-      expect(tester.getCenter(importButton), position);
+      expect(tester.getCenter(importButton).dy, lessThan(position.dy));
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },
@@ -205,18 +636,18 @@ void main() {
   ) async {
     await _pumpReview(tester, count: 3, unknownLastTeam: true);
     expect(find.text('Needs attention (1)'), findsOneWidget);
-    await tester.tap(find.text('Needs attention (1)'));
+    await _tap(tester, find.text('Needs attention (1)'));
     await tester.pumpAndSettle();
     expect(find.text('Team 3'), findsOneWidget);
     expect(find.text('Team 1'), findsNothing);
     expect(find.text('Import 2 slots'), findsOneWidget);
-    await tester.tap(find.text('Clear filters'));
+    await _tap(tester, find.text('Clear filters'));
     await tester.pumpAndSettle();
     expect(find.text('Team 1'), findsOneWidget);
     await tester.enterText(find.byType(TextField).first, 'no such team');
     await tester.pumpAndSettle();
     expect(find.text('No matching schedule slots'), findsOneWidget);
-    await tester.tap(find.byTooltip('Clear search'));
+    await _tap(tester, find.byTooltip('Clear search'));
     await tester.pumpAndSettle();
     expect(find.text('Team 1'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -227,26 +658,26 @@ void main() {
     'sessions collapse and date/room changes are persisted for every session row',
     (tester) async {
       await _pumpReview(tester, count: 3);
-      await tester.tap(find.text('Collapse all'));
+      await _tap(tester, find.text('Collapse all'));
       await tester.pumpAndSettle();
       expect(find.text('Team 1'), findsNothing);
-      await tester.tap(find.byTooltip('Expand session 1'));
+      await _tap(tester, find.byTooltip('Expand session 1'));
       await tester.pumpAndSettle();
       expect(find.text('Team 1'), findsOneWidget);
       await tester.enterText(find.byType(TextField).first, 'Team 1');
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Edit session'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(TextFormField, 'Session date'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('22').last);
-      await tester.tap(find.text('OK'));
+      await _openSettings(tester);
+      await _tap(tester, find.text('Sessions'));
       await tester.pumpAndSettle();
       await tester.enterText(
-        find.widgetWithText(TextFormField, 'Room / venue'),
+        find.byKey(const ValueKey('session_0_date')),
+        '2026-10-22',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('session_0_room')),
         'Auditorium',
       );
-      await tester.tap(find.text('Save changes'));
+      await _tap(tester, find.text('Apply session plan'));
       await tester.pumpAndSettle();
       await tester.pump(const Duration(milliseconds: 700));
       await tester.pumpAndSettle();
@@ -275,16 +706,16 @@ void main() {
         unknownLastTeam: true,
         onBack: () => returnedToBoard = true,
       );
-      await tester.tap(find.text('Import 2 slots'));
+      await _tap(tester, find.text('Import 2 slots'));
       await tester.pumpAndSettle();
       expect(find.text('Import 2 ready slots?'), findsOneWidget);
       expect(scheduler.imports, isEmpty);
-      await tester.tap(find.text('Cancel'));
+      await _tap(tester, find.text('Cancel'));
       await tester.pumpAndSettle();
       expect(scheduler.imports, isEmpty);
-      await tester.tap(find.text('Import 2 slots'));
+      await _tap(tester, find.text('Import 2 slots'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Import 2 slots').last);
+      await _tap(tester, find.text('Import 2 slots').last);
       await tester.pumpAndSettle();
       expect(scheduler.imports.single, hasLength(2));
       expect(returnedToBoard, isFalse);
@@ -304,7 +735,7 @@ void main() {
     tester,
   ) async {
     final scheduler = await _pumpReview(tester, count: 3, failedIndex: 1);
-    await tester.tap(find.text('Import 3 slots'));
+    await _tap(tester, find.text('Import 3 slots'));
     await tester.pumpAndSettle();
     expect(scheduler.imports.single, hasLength(3));
     final draft = await loadScheduleImportDraft(scope: 'capstone');
@@ -320,7 +751,7 @@ void main() {
   ) async {
     var returnedToBoard = false;
     await _pumpReview(tester, count: 3, onBack: () => returnedToBoard = true);
-    await tester.tap(find.text('Import 3 slots'));
+    await _tap(tester, find.text('Import 3 slots'));
     await tester.pumpAndSettle();
     expect(returnedToBoard, isTrue);
     expect(await loadScheduleImportDraft(scope: 'capstone'), isNull);
@@ -333,18 +764,18 @@ void main() {
     'date and room filters combine and reset without changing import counts',
     (tester) async {
       await _pumpReview(tester);
-      await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+      await _tap(tester, find.byType(DropdownButtonFormField<String>).first);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Oct 21, 2026').last);
+      await _tap(tester, find.text('Oct 21, 2026').last);
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(DropdownButtonFormField<String>).last);
+      await _tap(tester, find.byType(DropdownButtonFormField<String>).last);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Room 302').last);
+      await _tap(tester, find.text('Room 302').last);
       await tester.pumpAndSettle();
       expect(find.text('Team 13'), findsOneWidget);
       expect(find.text('Team 1'), findsNothing);
       expect(find.text('Import 16 slots'), findsOneWidget);
-      await tester.tap(find.text('Clear filters'));
+      await _tap(tester, find.text('Clear filters'));
       await tester.pumpAndSettle();
       expect(find.text('All dates'), findsOneWidget);
       expect(find.text('All rooms'), findsOneWidget);
@@ -354,27 +785,32 @@ void main() {
     },
   );
 
-  testWidgets('narrow review and editor fit without overflow', (tester) async {
-    await _pumpReview(tester, count: 3, size: const Size(600, 900));
-    expect(tester.takeException(), isNull);
-    await tester.ensureVisible(find.text('Edit session'));
-    await tester.tap(find.text('Edit session'));
-    await tester.pumpAndSettle();
-    expect(find.text('Room / venue'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+  for (final width in [600.0, 375.0, 320.0]) {
+    testWidgets('review and settings fit at width $width without overflow', (
+      tester,
+    ) async {
+      await _pumpReview(tester, count: 3, size: Size(width, 900));
+      expect(tester.takeException(), isNull);
+      await _openSettings(tester);
+      expect(find.text('Set room / venue'), findsOneWidget);
+      await _tap(tester, find.text('Sessions'));
+      await tester.pumpAndSettle();
+      expect(find.text('Teams / slots'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await _tap(tester, find.text('Cancel'));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
 
   testWidgets(
     'dark review uses theme surfaces and dismissing recovery keeps the draft',
     (tester) async {
       await _pumpReview(tester, count: 3, dark: true);
       expect(find.byType(ScheduleImportSessionCard), findsOneWidget);
-      await tester.tap(find.byTooltip('Dismiss draft notification'));
+      await _tap(tester, find.byTooltip('Dismiss draft notice'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Draft restored.'), findsNothing);
+      expect(find.textContaining('Saved draft restored.'), findsNothing);
       expect(await loadScheduleImportDraft(scope: 'capstone'), isNotNull);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
@@ -385,11 +821,11 @@ void main() {
     tester,
   ) async {
     await _pumpReview(tester, count: 3, unknownLastTeam: true, dark: true);
-    await tester.tap(find.text('Import 2 slots'));
+    await _tap(tester, find.text('Import 2 slots'));
     await tester.pumpAndSettle();
     final title = tester.widget<Text>(find.text('Import 2 ready slots?'));
     expect(title.style!.color, DefensysTokens.mistTextPrimary);
-    await tester.tap(find.text('Cancel'));
+    await _tap(tester, find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());

@@ -1,6 +1,7 @@
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/utils/defense_schedule_import_parser.dart';
 import 'package:defensys/utils/string_matching_utils.dart';
+import 'package:defensys/utils/import/schedule_import_timing.dart';
 
 int? asInt(dynamic value) {
   if (value is int) return value;
@@ -19,21 +20,35 @@ String formatScheduleDate(DateTime date) {
 DateTime? parseHumanDate(String text) {
   final cleaned = text.trim().toLowerCase().replaceAll(',', '');
   final months = {
-    'january': 1, 'jan': 1,
-    'february': 2, 'feb': 2,
-    'march': 3, 'mar': 3,
-    'april': 4, 'apr': 4,
+    'january': 1,
+    'jan': 1,
+    'february': 2,
+    'feb': 2,
+    'march': 3,
+    'mar': 3,
+    'april': 4,
+    'apr': 4,
     'may': 5,
-    'june': 6, 'jun': 6,
-    'july': 7, 'jul': 7,
-    'august': 8, 'aug': 8,
-    'september': 9, 'sep': 9, 'sept': 9,
-    'october': 10, 'oct': 10,
-    'november': 11, 'nov': 11,
-    'december': 12, 'dec': 12,
+    'june': 6,
+    'jun': 6,
+    'july': 7,
+    'jul': 7,
+    'august': 8,
+    'aug': 8,
+    'september': 9,
+    'sep': 9,
+    'sept': 9,
+    'october': 10,
+    'oct': 10,
+    'november': 11,
+    'nov': 11,
+    'december': 12,
+    'dec': 12,
   };
 
-  final match1 = RegExp(r'^([a-z]+)\s+(\d{1,2})\s+(\d{4})$').firstMatch(cleaned);
+  final match1 = RegExp(
+    r'^([a-z]+)\s+(\d{1,2})\s+(\d{4})$',
+  ).firstMatch(cleaned);
   if (match1 != null) {
     final monthStr = match1.group(1);
     final day = int.tryParse(match1.group(2) ?? '');
@@ -44,7 +59,9 @@ DateTime? parseHumanDate(String text) {
     }
   }
 
-  final match2 = RegExp(r'^(\d{1,2})\s+([a-z]+)\s+(\d{4})$').firstMatch(cleaned);
+  final match2 = RegExp(
+    r'^(\d{1,2})\s+([a-z]+)\s+(\d{4})$',
+  ).firstMatch(cleaned);
   if (match2 != null) {
     final day = int.tryParse(match2.group(1) ?? '');
     final monthStr = match2.group(2);
@@ -73,8 +90,9 @@ String normalizeImportDate(String? value) {
   }
 
   // 1. Check YYYY first: YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD
-  final yearFirstMatch =
-      RegExp(r'^(\d{4})[-/\.](\d{1,2})[-/\.](\d{1,2})$').firstMatch(text);
+  final yearFirstMatch = RegExp(
+    r'^(\d{4})[-/\.](\d{1,2})[-/\.](\d{1,2})$',
+  ).firstMatch(text);
   if (yearFirstMatch != null) {
     final year =
         int.tryParse(yearFirstMatch.group(1) ?? '') ?? DateTime.now().year;
@@ -86,8 +104,9 @@ String normalizeImportDate(String? value) {
   }
 
   // 2. Check YYYY last: M/D/YYYY, MM/DD/YYYY, D/M/YYYY, DD/MM/YYYY
-  final yearLastMatch =
-      RegExp(r'^(\d{1,2})[-/\.](\d{1,2})[-/\.](\d{2,4})$').firstMatch(text);
+  final yearLastMatch = RegExp(
+    r'^(\d{1,2})[-/\.](\d{1,2})[-/\.](\d{2,4})$',
+  ).firstMatch(text);
   if (yearLastMatch != null) {
     final part1 = int.tryParse(yearLastMatch.group(1) ?? '') ?? 1;
     final part2 = int.tryParse(yearLastMatch.group(2) ?? '') ?? 1;
@@ -147,16 +166,17 @@ List<Map<String, dynamic>> teamsForScope(
 String getTeamStageStatus(Map<String, dynamic> team, String stageLabel) {
   if (stageLabel.isEmpty) return 'pending';
 
-  final completedStages = (team['completed_stages'] as List<dynamic>?)
+  final completedStages =
+      (team['completed_stages'] as List<dynamic>?)
           ?.map((e) => e.toString().trim())
           .toSet() ??
       {};
-  final scheduledStages = (team['scheduled_stages'] as List<dynamic>?)
+  final scheduledStages =
+      (team['scheduled_stages'] as List<dynamic>?)
           ?.map((e) => e.toString().trim())
           .toSet() ??
       {};
-  final stageProgress =
-      (team['stage_progress'] as Map<String, dynamic>?) ?? {};
+  final stageProgress = (team['stage_progress'] as Map<String, dynamic>?) ?? {};
 
   final progVal =
       stageProgress[stageLabel]?.toString().toLowerCase().trim() ?? '';
@@ -210,17 +230,10 @@ enum ScheduleImportRowType {
 }
 
 String addMinutesToTimeString(String time, int minutesToAdd) {
-  final clean = time.trim();
-  if (clean.isEmpty || minutesToAdd <= 0) return clean;
-  final parts = clean.split(':');
-  if (parts.length < 2) return clean;
-  final hour = int.tryParse(parts[0]);
-  final minute = int.tryParse(parts[1]);
-  if (hour == null || minute == null) return clean;
-  final totalMinutes = hour * 60 + minute + minutesToAdd;
-  final endHour = (totalMinutes ~/ 60) % 24;
-  final endMinute = totalMinutes % 60;
-  return '${endHour.toString().padLeft(2, '0')}:${endMinute.toString().padLeft(2, '0')}';
+  final start = scheduleTimeMinutes(time, allowOverflow: true);
+  return start == null || minutesToAdd <= 0
+      ? time.trim()
+      : scheduleTimeFromMinutes(start + minutesToAdd);
 }
 
 class ScheduleImportPreviewRow {
@@ -240,6 +253,9 @@ class ScheduleImportPreviewRow {
     required this.date,
     required this.room,
     required this.duration,
+    this.scheduledStartTime,
+    this.adviserId,
+    this.adviserName,
     this.stageIssues = const <String>[],
     this.teamIssues = const <String>[],
     this.slotIssues = const <String>[],
@@ -263,6 +279,9 @@ class ScheduleImportPreviewRow {
   final String date;
   final String room;
   final int duration;
+  final String? scheduledStartTime;
+  final int? adviserId;
+  final String? adviserName;
   final List<String> stageIssues;
   final List<String> teamIssues;
   final List<String> slotIssues;
@@ -285,23 +304,39 @@ class ScheduleImportPreviewRow {
       rowType == ScheduleImportRowType.alreadyScheduled;
   bool get isNotEndorsed => rowType == ScheduleImportRowType.notEndorsed;
 
+  String get effectiveStartTime {
+    final value = scheduledStartTime ?? source.startTime;
+    final minutes = scheduleTimeMinutes(value, allowOverflow: true);
+    return minutes == null ? value : scheduleTimeFromMinutes(minutes);
+  }
+
+  bool get startTimeChanged =>
+      scheduleTimeMinutes(effectiveStartTime, allowOverflow: true) !=
+      scheduleTimeMinutes(source.startTime, allowOverflow: true);
+
+  Set<int> get attendanceIds => {
+    ...panelistIds,
+    if (documenterId != null) documenterId!,
+    if (adviserId != null) adviserId!,
+  };
+
   String get effectiveEndTime {
-    if (source.startTime.isEmpty) return source.endTime;
+    if (effectiveStartTime.isEmpty) return source.endTime;
     if (duration > 0) {
-      return addMinutesToTimeString(source.startTime, duration);
+      return addMinutesToTimeString(effectiveStartTime, duration);
     }
     return source.endTime;
   }
 
   String get timeLabel {
-    if (source.startTime.isEmpty) {
+    if (effectiveStartTime.isEmpty) {
       return source.time.isEmpty ? '-' : source.time;
     }
     final end = effectiveEndTime;
     if (end.isEmpty) {
-      return source.startTime;
+      return effectiveStartTime;
     }
-    return '${source.startTime} - $end';
+    return '$effectiveStartTime - $end';
   }
 
   String get teamLabel => source.teamName.isEmpty ? '-' : source.teamName;
@@ -312,6 +347,7 @@ class ScheduleImportPreviewRow {
       source.panelMembers.isEmpty ? '-' : source.panelMembers.join(', ');
   String get documenterLabel =>
       (!isPit && source.documenter.isNotEmpty) ? source.documenter : '-';
+  String get adviserLabel => adviserName ?? source.adviser;
 
   Map<String, dynamic> toPayload() {
     if (scope == 'pit') {
@@ -324,7 +360,7 @@ class ScheduleImportPreviewRow {
         'panel_weight': panelWeight,
         'peer_weight': peerWeight,
         'scheduled_date': date,
-        'start_time': source.startTime,
+        'start_time': effectiveStartTime,
         'slot_duration': duration,
         'room': room,
         'panelist_ids': panelistIds,
@@ -338,7 +374,7 @@ class ScheduleImportPreviewRow {
       'event_name': '',
       'rubric_id': panelRubricId,
       'scheduled_date': date,
-      'start_time': source.startTime,
+      'start_time': effectiveStartTime,
       'slot_duration': duration,
       'room': room,
       'panelist_ids': panelistIds,
@@ -390,7 +426,8 @@ ImportNameMatch matchTeam(
   }
 
   // 3. Compact / Whitespace-stripped match (e.g. "Nova Path" <-> "NovaPath", "Byte-Force" <-> "ByteForce")
-  String compact(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  String compact(String s) =>
+      s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
   final compactName = compact(rawTeamName);
   if (compactName.isNotEmpty) {
     final byCompact = teams.where((team) {
@@ -447,7 +484,11 @@ String cleanPersonName(String value) {
     s = s.replaceAll(_prefixRegExp, '').trim();
   }
   if (s.contains(',')) {
-    final parts = s.split(',').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+    final parts = s
+        .split(',')
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty)
+        .toList();
     if (parts.length == 2) {
       final last = parts[0].replaceAll(_prefixRegExp, '').trim();
       final first = parts[1].replaceAll(_prefixRegExp, '').trim();
@@ -493,7 +534,11 @@ ImportNameMatch matchPanelist(String rawName, DefenseSchedulerState state) {
     final last = parts.isEmpty ? '' : parts.last;
     final normLast = normalizeName(last);
     final cleanLast = normalizeName(cleanPersonName(last));
-    return normLast == name || normLast == cleanInput || (cleanLastInput.isNotEmpty && cleanLast == cleanLastInput && cleanInput.split(RegExp(r'\s+')).length == 1);
+    return normLast == name ||
+        normLast == cleanInput ||
+        (cleanLastInput.isNotEmpty &&
+            cleanLast == cleanLastInput &&
+            cleanInput.split(RegExp(r'\s+')).length == 1);
   }).toList();
   if (lastNameMatches.length == 1) {
     return ImportNameMatch(id: asInt(lastNameMatches.first['id']));
@@ -512,7 +557,9 @@ ImportNameMatch matchPanelist(String rawName, DefenseSchedulerState state) {
     final last = parts.isEmpty ? '' : parts.last;
     final simFull = stringSimilarity(rawName, display);
     final simLast = stringSimilarity(rawName, last);
-    final simClean = cleanInput.isNotEmpty ? stringSimilarity(cleanInput, normalizeName(cleanPersonName(display))) : 0.0;
+    final simClean = cleanInput.isNotEmpty
+        ? stringSimilarity(cleanInput, normalizeName(cleanPersonName(display)))
+        : 0.0;
     if (simFull >= 0.85 || simLast >= 0.85 || simClean >= 0.85) {
       fuzzyMatches.add(panelist);
     }
@@ -565,7 +612,11 @@ ImportNameMatch matchDocumenter(String rawName, DefenseSchedulerState state) {
     final last = parts.isEmpty ? '' : parts.last;
     final normLast = normalizeName(last);
     final cleanLast = normalizeName(cleanPersonName(last));
-    return normLast == name || normLast == cleanInput || (cleanLastInput.isNotEmpty && cleanLast == cleanLastInput && cleanInput.split(RegExp(r'\s+')).length == 1);
+    return normLast == name ||
+        normLast == cleanInput ||
+        (cleanLastInput.isNotEmpty &&
+            cleanLast == cleanLastInput &&
+            cleanInput.split(RegExp(r'\s+')).length == 1);
   }).toList();
   if (lastNameMatches.length == 1) {
     return ImportNameMatch(id: asInt(lastNameMatches.first['id']));
@@ -609,6 +660,7 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
   required String date,
   required String room,
   int? slotDuration,
+  bool reflowStartTimes = true,
   required int fallbackDuration,
   required int? panelRubricId,
   required int? adviserRubricId,
@@ -617,9 +669,37 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
   required int peerWeight,
 }) {
   final isPit = scope == 'pit';
-  final effectiveSlotDuration =
-      (slotDuration != null && slotDuration > 0) ? slotDuration : null;
-  return parsed.rows.map((source) {
+  final effectiveSlotDuration = slotDuration;
+  final starts = <int, String>{};
+  if (reflowStartTimes &&
+      slotDuration != null &&
+      slotDuration >= 15 &&
+      slotDuration <= 240) {
+    final timingInputs = <ScheduleTimingInput>[];
+    for (var i = 0; i < parsed.rows.length; i++) {
+      final source = parsed.rows[i];
+      final start = scheduleTimeMinutes(source.startTime);
+      if (start == null) continue;
+      final end = scheduleTimeMinutes(source.endTime, allowOverflow: true);
+      timingInputs.add(
+        ScheduleTimingInput(
+          index: i,
+          date: normalizeImportDate(
+            source.date.trim().isEmpty ? date : source.date,
+          ),
+          room: source.room.trim().isEmpty ? room : source.room,
+          start: start,
+          originalDuration: end != null && end > start
+              ? end - start
+              : source.slotDuration ?? fallbackDuration,
+        ),
+      );
+    }
+    starts.addAll(reflowScheduleStarts(timingInputs, slotDuration));
+  }
+  final rows = parsed.rows.asMap().entries.map((entry) {
+    final source = entry.value;
+    final startTime = starts[entry.key] ?? source.startTime;
     final stageIssues = <String>[];
     final teamIssues = <String>[];
     final slotIssues = <String>[...source.parseIssues];
@@ -633,6 +713,13 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     final duration =
         effectiveSlotDuration ?? (source.slotDuration ?? fallbackDuration);
     final teamMatch = matchTeam(source, state, scope: scope);
+    final matchedTeam = state.teams
+        .where((team) => asInt(team['id']) == teamMatch.id)
+        .firstOrNull;
+    // The imported schedule uses the team's assigned adviser, which may differ
+    // from an outdated spreadsheet. Validate that person's availability.
+    final storedAdviser = matchedTeam?['adviser_name']?.toString().trim() ?? '';
+    final adviserName = storedAdviser.isEmpty ? source.adviser : storedAdviser;
     final panelistMatches = <ImportNameMatch>[];
 
     final chairMatch = matchPanelist(source.chair, state);
@@ -667,7 +754,8 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
           labelGetter: (e) => e['event_name']?.toString() ?? '',
         );
         if (eventMatch.isMatched) {
-          if (eventMatch.label.trim().toLowerCase() != eventName.trim().toLowerCase()) {
+          if (eventMatch.label.trim().toLowerCase() !=
+              eventName.trim().toLowerCase()) {
             stageIssues.add(
               'Spreadsheet event "${source.stage}" matches "${eventMatch.label}", not active event "$eventName".',
             );
@@ -725,11 +813,16 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     if (rowRoom.isEmpty) {
       slotIssues.add('Room is missing.');
     }
-    if (source.startTime.isEmpty) {
+    final startMinutes = scheduleTimeMinutes(startTime, allowOverflow: true);
+    if (startMinutes == null) {
       slotIssues.add('Time could not be parsed.');
+    } else if (startMinutes >= 1440 || startMinutes + duration > 1440) {
+      slotIssues.add(
+        'Slot extends past midnight. Shorten the duration or move this session to another date.',
+      );
     }
-    if (duration < 15) {
-      slotIssues.add('Slot duration must be at least 15 minutes.');
+    if (duration < 15 || duration > 240) {
+      slotIssues.add('Slot duration must be between 15 and 240 minutes.');
     }
     var rowType = ScheduleImportRowType.invalid;
 
@@ -754,40 +847,53 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
         final stageLabel = stageObj['label']?.toString() ?? '';
         final stageLower = stageLabel.toLowerCase();
 
-        final completedStages = (team['completed_stages'] as List?)
+        final completedStages =
+            (team['completed_stages'] as List?)
                 ?.map((e) => e.toString().toLowerCase())
                 .toList() ??
             [];
-        final scheduledStages = (team['scheduled_stages'] as List?)
+        final scheduledStages =
+            (team['scheduled_stages'] as List?)
                 ?.map((e) => e.toString().toLowerCase())
                 .toList() ??
             [];
-        final redefenseStages = (team['redefense_stages'] as List?)
+        final redefenseStages =
+            (team['redefense_stages'] as List?)
                 ?.map((e) => e.toString().toLowerCase())
                 .toList() ??
             [];
-        final readyForStage =
-            (team['ready_for_stage']?.toString() ?? '').toLowerCase();
+        final readyForStage = (team['ready_for_stage']?.toString() ?? '')
+            .toLowerCase();
 
         final isCompleted = completedStages.contains(stageLower);
-        final isScheduled = scheduledStages.contains(stageLower) ||
-            state.schedules.any((s) =>
-                asInt(s['team_id'] ?? s['team']?['id']) == teamMatch.id &&
-                asInt(s['defense_stage_id'] ?? s['defense_stage']?['id']) == stageId &&
-                s['status'] == 'scheduled');
-        final isRedefense = redefenseStages.contains(stageLower) ||
+        final isScheduled =
+            scheduledStages.contains(stageLower) ||
+            state.schedules.any(
+              (s) =>
+                  asInt(s['team_id'] ?? s['team']?['id']) == teamMatch.id &&
+                  asInt(s['defense_stage_id'] ?? s['defense_stage']?['id']) ==
+                      stageId &&
+                  s['status'] == 'scheduled',
+            );
+        final isRedefense =
+            redefenseStages.contains(stageLower) ||
             (team['stage_progress'] is Map &&
                 team['stage_progress'][stageLabel] == 'for_redefense');
-        final isEndorsed = readyForStage == stageLower ||
+        final isEndorsed =
+            readyForStage == stageLower ||
             (team['stage_progress'] is Map &&
                 team['stage_progress'][stageLabel] == 'ready');
 
         if (isCompleted) {
           rowType = ScheduleImportRowType.alreadyPassed;
-          teamIssues.add('$teamName has already completed and passed "$stageLabel".');
+          teamIssues.add(
+            '$teamName has already completed and passed "$stageLabel".',
+          );
         } else if (isScheduled) {
           rowType = ScheduleImportRowType.alreadyScheduled;
-          teamIssues.add('$teamName already has an active scheduled slot for "$stageLabel".');
+          teamIssues.add(
+            '$teamName already has an active scheduled slot for "$stageLabel".',
+          );
         } else if (isRedefense) {
           rowType = ScheduleImportRowType.redefenseReady;
         } else if (isEndorsed) {
@@ -797,34 +903,42 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
           teamIssues.add('$teamName is not endorsed for "$stageLabel".');
         }
       } else {
-        final isCompleted = state.schedules.any((s) =>
-            asInt(s['team_id'] ?? s['team']?['id']) == teamMatch.id &&
-            (s['event_name']?.toString() ?? '').toLowerCase() ==
-                eventName.toLowerCase() &&
-            s['status'] == 'done');
-        final isScheduled = state.schedules.any((s) =>
-            asInt(s['team_id'] ?? s['team']?['id']) == teamMatch.id &&
-            (s['event_name']?.toString() ?? '').toLowerCase() ==
-                eventName.toLowerCase() &&
-            s['status'] == 'scheduled');
+        final isCompleted = state.schedules.any(
+          (s) =>
+              asInt(s['team_id'] ?? s['team']?['id']) == teamMatch.id &&
+              (s['event_name']?.toString() ?? '').toLowerCase() ==
+                  eventName.toLowerCase() &&
+              s['status'] == 'done',
+        );
+        final isScheduled = state.schedules.any(
+          (s) =>
+              asInt(s['team_id'] ?? s['team']?['id']) == teamMatch.id &&
+              (s['event_name']?.toString() ?? '').toLowerCase() ==
+                  eventName.toLowerCase() &&
+              s['status'] == 'scheduled',
+        );
 
         if (isCompleted) {
           rowType = ScheduleImportRowType.alreadyPassed;
           teamIssues.add('$teamName has already completed "$eventName".');
         } else if (isScheduled) {
           rowType = ScheduleImportRowType.alreadyScheduled;
-          teamIssues.add('$teamName already has an active scheduled slot for "$eventName".');
+          teamIssues.add(
+            '$teamName already has an active scheduled slot for "$eventName".',
+          );
         } else {
-          final readyFor =
-              (team['ready_for_stage']?.toString() ?? '').toLowerCase();
+          final readyFor = (team['ready_for_stage']?.toString() ?? '')
+              .toLowerCase();
           final pitConfig = state.pitEvents.firstWhere(
             (e) =>
                 (e['event_name']?.toString() ?? '').toLowerCase() ==
                 eventName.toLowerCase(),
             orElse: () => <String, dynamic>{},
           );
-          final hasPre = (pitConfig['deliverables'] as List?)
-                  ?.any((d) => d['deliverable_type'] == 'pre') ??
+          final hasPre =
+              (pitConfig['deliverables'] as List?)?.any(
+                (d) => d['deliverable_type'] == 'pre',
+              ) ??
               false;
 
           if (hasPre && readyFor != eventName.toLowerCase()) {
@@ -867,6 +981,12 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
       date: rowDate,
       room: rowRoom,
       duration: duration,
+      scheduledStartTime: startTime,
+      adviserName: adviserName,
+      adviserId: adviserName.trim().isEmpty
+          ? null
+          : asInt(matchedTeam?['adviser_id']) ??
+                matchPanelist(adviserName, state).id,
       stageIssues: stageIssues,
       teamIssues: teamIssues,
       slotIssues: slotIssues,
@@ -875,4 +995,160 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
       rowType: rowType,
     );
   }).toList();
+  final byTeam = <int, List<ScheduleImportPreviewRow>>{};
+  for (final row in rows) {
+    if (row.teamId != null) (byTeam[row.teamId!] ??= []).add(row);
+  }
+  for (final duplicates in byTeam.values.where((group) => group.length > 1)) {
+    for (final row in duplicates) {
+      final sources = duplicates
+          .where((other) => !identical(other, row))
+          .map(
+            (other) =>
+                '${other.source.sourceFileName.isEmpty ? 'Spreadsheet' : other.source.sourceFileName} row ${other.source.sheetRow}',
+          )
+          .join(', ');
+      final issue =
+          'Duplicate team in this draft: $sources. Keep one schedule for this team.';
+      row.teamIssues.add(issue);
+      row.issues.add(issue);
+    }
+  }
+  _validatePreviewTimeConflicts(rows, state);
+  return rows;
+}
+
+/// Only the newly built preview lists are amended. The parsed spreadsheet and
+/// scheduler state remain untouched while the user tries different durations.
+void _validatePreviewTimeConflicts(
+  List<ScheduleImportPreviewRow> rows,
+  DefenseSchedulerState state,
+) {
+  void addIssue(ScheduleImportPreviewRow row, String issue) {
+    if (!row.slotIssues.contains(issue)) {
+      row.slotIssues.add(issue);
+      row.issues.add(issue);
+    }
+  }
+
+  String resourceDescription(
+    ScheduleImportPreviewRow row,
+    String otherRoom,
+    Set<int> otherStaff,
+    int? otherTeam,
+  ) {
+    final resources = <String>[];
+    if (row.room.trim().isNotEmpty &&
+        normalizeName(row.room) == normalizeName(otherRoom)) {
+      resources.add('room already occupied');
+    }
+    final shared = row.attendanceIds.intersection(otherStaff);
+    if (shared.isNotEmpty) {
+      final pool = state.faculty.isEmpty ? state.panelists : state.faculty;
+      final names = shared
+          .map(
+            (id) =>
+                pool
+                    .where((person) => asInt(person['id']) == id)
+                    .map(
+                      (person) => person['name']?.toString() ?? 'Faculty #$id',
+                    )
+                    .firstOrNull ??
+                'Faculty #$id',
+          )
+          .join(', ');
+      resources.add('$names double-booked');
+    }
+    if (row.teamId != null && row.teamId == otherTeam) {
+      resources.add('team already occupied');
+    }
+    return resources.join('; ');
+  }
+
+  for (var i = 0; i < rows.length; i++) {
+    final row = rows[i];
+    final start = scheduleTimeMinutes(row.effectiveStartTime);
+    if (start == null ||
+        row.duration < 15 ||
+        row.duration > 240 ||
+        row.date.isEmpty) {
+      continue;
+    }
+    final end = start + row.duration;
+    for (var j = i + 1; j < rows.length; j++) {
+      final other = rows[j];
+      final otherStart = scheduleTimeMinutes(other.effectiveStartTime);
+      if (otherStart == null ||
+          other.date != row.date ||
+          other.duration < 15 ||
+          other.duration > 240 ||
+          !scheduleIntervalsOverlap(
+            start,
+            end,
+            otherStart,
+            otherStart + other.duration,
+          )) {
+        continue;
+      }
+      final resource = resourceDescription(
+        row,
+        other.room,
+        other.attendanceIds,
+        other.teamId,
+      );
+      if (resource.isEmpty) continue;
+      addIssue(
+        row,
+        'Time overlap with ${other.teamLabel} (${other.timeLabel}, ${other.room}): $resource.',
+      );
+      addIssue(
+        other,
+        'Time overlap with ${row.teamLabel} (${row.timeLabel}, ${row.room}): $resource.',
+      );
+    }
+    for (final existing in state.schedules) {
+      if (existing['status'] != 'scheduled' ||
+          normalizeImportDate(existing['scheduled_date']?.toString()) !=
+              row.date) {
+        continue;
+      }
+      final otherStart = scheduleTimeMinutes(
+        existing['start_time']?.toString() ?? '',
+      );
+      final otherDuration = asInt(existing['slot_duration']) ?? 60;
+      if (otherStart == null ||
+          !scheduleIntervalsOverlap(
+            start,
+            end,
+            otherStart,
+            otherStart + otherDuration,
+          )) {
+        continue;
+      }
+      final staff = <int>{
+        for (final person in (existing['panelists'] as List? ?? []))
+          if (person is Map && asInt(person['id']) != null)
+            asInt(person['id'])!,
+        if (asInt(existing['documenter']) != null)
+          asInt(existing['documenter'])!,
+        if (asInt(existing['adviser_id']) != null)
+          asInt(existing['adviser_id'])!,
+      };
+      final otherRoom = existing['room']?.toString() ?? '';
+      final resource = resourceDescription(
+        row,
+        otherRoom,
+        staff,
+        asInt(existing['team_id']),
+      );
+      if (resource.isEmpty) continue;
+      final label = existing['team_name']?.toString() ?? 'an existing defense';
+      final interval =
+          '${scheduleTimeFromMinutes(otherStart)} - ${scheduleTimeFromMinutes(otherStart + otherDuration)}';
+      addIssue(
+        row,
+        'Time overlap with scheduled $label ($interval, $otherRoom): $resource.',
+      );
+    }
+  }
 }

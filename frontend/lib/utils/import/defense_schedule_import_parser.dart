@@ -98,9 +98,11 @@ class ParsedScheduleImport {
     final rawRows = json['rows'] as List? ?? const [];
     return ParsedScheduleImport(
       rows: rawRows
-          .map((r) => ParsedScheduleImportRow.fromJson(
-                Map<String, dynamic>.from(r as Map),
-              ))
+          .map(
+            (r) => ParsedScheduleImportRow.fromJson(
+              Map<String, dynamic>.from(r as Map),
+            ),
+          )
           .toList(),
       stage: json['stage']?.toString(),
       date: json['date']?.toString(),
@@ -147,6 +149,10 @@ class ParsedScheduleImportRow {
     required this.endTime,
     required this.slotDuration,
     this.parseIssues = const [],
+    this.sourceFileId = '',
+    this.sourceFileName = '',
+    this.importRowId = '',
+    this.sessionId = '',
   });
 
   final int sheetRow;
@@ -165,6 +171,11 @@ class ParsedScheduleImportRow {
   final String endTime;
   final int? slotDuration;
   final List<String> parseIssues;
+  // Review identities survive edits, duplicate sheet row numbers and retries.
+  final String sourceFileId;
+  final String sourceFileName;
+  final String importRowId;
+  final String sessionId;
 
   Map<String, dynamic> toJson() => {
     'sheet_row': sheetRow,
@@ -183,6 +194,10 @@ class ParsedScheduleImportRow {
     'end_time': endTime,
     'slot_duration': slotDuration,
     'parse_issues': parseIssues,
+    'source_file_id': sourceFileId,
+    'source_file_name': sourceFileName,
+    'import_row_id': importRowId,
+    'session_id': sessionId,
   };
 
   factory ParsedScheduleImportRow.fromJson(Map<String, dynamic> json) {
@@ -213,6 +228,10 @@ class ParsedScheduleImportRow {
       parseIssues:
           (json['parse_issues'] as List?)?.map((e) => e.toString()).toList() ??
           const [],
+      sourceFileId: json['source_file_id']?.toString() ?? '',
+      sourceFileName: json['source_file_name']?.toString() ?? '',
+      importRowId: json['import_row_id']?.toString() ?? '',
+      sessionId: json['session_id']?.toString() ?? '',
     );
   }
 
@@ -233,6 +252,10 @@ class ParsedScheduleImportRow {
     String? endTime,
     int? slotDuration,
     List<String>? parseIssues,
+    String? sourceFileId,
+    String? sourceFileName,
+    String? importRowId,
+    String? sessionId,
   }) {
     return ParsedScheduleImportRow(
       sheetRow: sheetRow ?? this.sheetRow,
@@ -251,6 +274,10 @@ class ParsedScheduleImportRow {
       endTime: endTime ?? this.endTime,
       slotDuration: slotDuration ?? this.slotDuration,
       parseIssues: parseIssues ?? this.parseIssues,
+      sourceFileId: sourceFileId ?? this.sourceFileId,
+      sourceFileName: sourceFileName ?? this.sourceFileName,
+      importRowId: importRowId ?? this.importRowId,
+      sessionId: sessionId ?? this.sessionId,
     );
   }
 }
@@ -647,14 +674,25 @@ void _expandSheetSpannedItems(Sheet sheet) {
       final end = CellIndex.indexByString(parts[1]);
       final startVal = sheet.cell(start).value;
       if (startVal == null) continue;
-      final minR = start.rowIndex < end.rowIndex ? start.rowIndex : end.rowIndex;
-      final maxR = start.rowIndex > end.rowIndex ? start.rowIndex : end.rowIndex;
-      final minC = start.columnIndex < end.columnIndex ? start.columnIndex : end.columnIndex;
-      final maxC = start.columnIndex > end.columnIndex ? start.columnIndex : end.columnIndex;
+      final minR = start.rowIndex < end.rowIndex
+          ? start.rowIndex
+          : end.rowIndex;
+      final maxR = start.rowIndex > end.rowIndex
+          ? start.rowIndex
+          : end.rowIndex;
+      final minC = start.columnIndex < end.columnIndex
+          ? start.columnIndex
+          : end.columnIndex;
+      final maxC = start.columnIndex > end.columnIndex
+          ? start.columnIndex
+          : end.columnIndex;
       for (var r = minR; r <= maxR; r++) {
         for (var c = minC; c <= maxC; c++) {
           if (r == start.rowIndex && c == start.columnIndex) continue;
-          sheet.cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r)).value = startVal;
+          sheet
+                  .cell(CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r))
+                  .value =
+              startVal;
         }
       }
     }
@@ -712,8 +750,18 @@ bool _isDateString(String text) {
   if (RegExp(r'^\d{1,4}[-/]\d{1,2}[-/]\d{1,4}$').hasMatch(trimmed)) return true;
   final hasDigits = RegExp(r'\d').hasMatch(trimmed);
   final monthMatches = [
-    'jan', 'feb', 'mar', 'apr', 'may', 'jun',
-    'jul', 'aug', 'sep', 'oct', 'nov', 'dec'
+    'jan',
+    'feb',
+    'mar',
+    'apr',
+    'may',
+    'jun',
+    'jul',
+    'aug',
+    'sep',
+    'oct',
+    'nov',
+    'dec',
   ].any((m) => lower.contains(m));
   return hasDigits && monthMatches && !lower.contains('room');
 }
@@ -765,8 +813,10 @@ Map<String, String> _readMetadataRow(
   bool isPreamble = false,
 }) {
   final result = <String, String>{};
-  final semesterRegex =
-      RegExp(r'\b(1st|2nd|Summer)\s*(?:Semester|sem)?\b', caseSensitive: false);
+  final semesterRegex = RegExp(
+    r'\b(1st|2nd|Summer)\s*(?:Semester|sem)?\b',
+    caseSensitive: false,
+  );
 
   for (var i = 0; i < row.length; i++) {
     final cell = row[i].trim();
@@ -774,8 +824,9 @@ Map<String, String> _readMetadataRow(
     final normalized = _normalizeHeader(cell);
     final next = i + 1 < row.length ? row[i + 1].trim() : '';
     final inlineParts = cell.split(RegExp(r':\s*'));
-    final inlineValue =
-        inlineParts.length > 1 ? inlineParts.sublist(1).join(':').trim() : '';
+    final inlineValue = inlineParts.length > 1
+        ? inlineParts.sublist(1).join(':').trim()
+        : '';
     final value = inlineValue.isNotEmpty ? inlineValue : next;
 
     if (value.isNotEmpty) {
@@ -807,7 +858,8 @@ Map<String, String> _readMetadataRow(
       }
     }
 
-    final combinedWithNext = (i + 1 < row.length && RegExp(r'^\d{4}$').hasMatch(row[i + 1].trim()))
+    final combinedWithNext =
+        (i + 1 < row.length && RegExp(r'^\d{4}$').hasMatch(row[i + 1].trim()))
         ? '$cell, ${row[i + 1].trim()}'
         : cell;
 
@@ -817,12 +869,22 @@ Map<String, String> _readMetadataRow(
     ).firstMatch(combinedWithNext);
     if (dayDateMatch != null && dayDateMatch.group(1) != null) {
       var extractedDate = dayDateMatch.group(1)!.trim();
-      extractedDate = extractedDate.replaceAll(RegExp(r'^DAY\s*\d+\s*[-â€“]\s*', caseSensitive: false), '').trim();
+      extractedDate = extractedDate
+          .replaceAll(
+            RegExp(r'^DAY\s*\d+\s*[-â€“]\s*', caseSensitive: false),
+            '',
+          )
+          .trim();
       if (_isDateString(extractedDate)) {
         result['date'] ??= extractedDate;
       }
     } else if (result['date'] == null && _isDateString(cell)) {
-      result['date'] = cell.replaceAll(RegExp(r'^DAY\s*\d+\s*[-â€“]\s*', caseSensitive: false), '').trim();
+      result['date'] = cell
+          .replaceAll(
+            RegExp(r'^DAY\s*\d+\s*[-â€“]\s*', caseSensitive: false),
+            '',
+          )
+          .trim();
     } else if (result['room'] == null && _isRoomString(cell)) {
       result['room'] = cell;
     } else if (result['stage'] == null) {
@@ -833,8 +895,7 @@ Map<String, String> _readMetadataRow(
     }
   }
 
-  final nonEmpty =
-      row.map((c) => c.trim()).where((c) => c.isNotEmpty).toList();
+  final nonEmpty = row.map((c) => c.trim()).where((c) => c.isNotEmpty).toList();
   if (nonEmpty.length == 1) {
     final single = nonEmpty.first;
     final dayDateMatch = RegExp(
@@ -878,7 +939,9 @@ _TimeRange _parseTimeRange(String raw) {
   if (text.isEmpty) {
     return const _TimeRange(start: '', end: '', duration: null);
   }
-  final parts = text.split(RegExp(r'\s*(?:-|â€“|â€”|to)\s*', caseSensitive: false));
+  final parts = text.split(
+    RegExp(r'\s*(?:-|â€“|â€”|to)\s*', caseSensitive: false),
+  );
   if (parts.isEmpty) {
     return const _TimeRange(start: '', end: '', duration: null);
   }
@@ -888,7 +951,8 @@ _TimeRange _parseTimeRange(String raw) {
   // If end has AM/PM but start doesn't, inherit meridiem intelligently
   final upperStart = startStr.toUpperCase();
   final upperEnd = endStr.toUpperCase();
-  final hasStartMeridiem = upperStart.contains('AM') || upperStart.contains('PM');
+  final hasStartMeridiem =
+      upperStart.contains('AM') || upperStart.contains('PM');
   final hasEndMeridiem = upperEnd.contains('AM') || upperEnd.contains('PM');
 
   if (!hasStartMeridiem && hasEndMeridiem) {
@@ -926,8 +990,8 @@ String _parseTime(String raw) {
   final meridiem = text.endsWith('AM')
       ? 'AM'
       : text.endsWith('PM')
-          ? 'PM'
-          : '';
+      ? 'PM'
+      : '';
   if (meridiem.isNotEmpty) {
     text = text.substring(0, text.length - 2);
   }

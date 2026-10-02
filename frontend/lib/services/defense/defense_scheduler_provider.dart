@@ -144,6 +144,19 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     return const DefenseSchedulerState();
   }
 
+  /// Import validation needs every active appointment, including those hidden
+  /// by the board's search, scope or status filters. Do not change those filters.
+  Future<List<Map<String, dynamic>>> fetchImportConflictSchedules() async {
+    final response = await _client.get(
+      Uri.parse(baseUrl).replace(queryParameters: {'status': 'scheduled'}),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(_errorFromResponse(response));
+    }
+    final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+    return _readMapList(payload['schedules']);
+  }
+
   Future<void> fetchSchedules({
     String? search,
     String? scope,

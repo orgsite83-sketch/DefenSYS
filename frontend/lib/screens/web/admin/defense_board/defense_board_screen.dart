@@ -95,7 +95,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     final isPitLead = user?['is_pit_lead'] == true;
     if (!isAdmin && !isPitLead) return;
     final scope = isAdmin ? 'capstone' : 'pit';
-    final draft = await loadScheduleImportDraft(scope: scope);
+    final draft = await loadScheduleImportDraft(scope: scope, semesterId: asInt(ref.read(defenseSchedulerProvider).activeSemester?['id']));
     if (mounted) {
       setState(() {
         _savedImportDraft = (draft != null && draft.parsed.rows.isNotEmpty) ? draft : null;
@@ -527,7 +527,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               final user = ref.read(authProvider).user;
               final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
               final scope = isAdmin ? 'capstone' : 'pit';
-              await clearScheduleImportDraft(scope: scope);
+              await clearScheduleImportDraft(scope: scope, semesterId: asInt(ref.read(defenseSchedulerProvider).activeSemester?['id']));
               await _checkImportDraft();
               if (mounted) {
                 showInfoToast(context, 'Schedule import draft discarded.');

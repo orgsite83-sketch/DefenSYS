@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import 'package:defensys/theme/defensys_tokens.dart';
@@ -17,7 +18,212 @@ String scheduleReviewTime(String value) {
   return DateFormat('h:mm a').format(DateTime(2000, 1, 1, hour, minute));
 }
 
-/// Remains outside the review scroll view so actions are always reachable.
+String scheduleReviewTimeRange(String start, String end) {
+  final first = scheduleReviewTime(start), last = scheduleReviewTime(end);
+  final period = RegExp(r' (AM|PM)$').firstMatch(first)?.group(1);
+  if (end.isEmpty) return first;
+  return '${period != null && last.endsWith(' $period') ? first.replaceFirst(RegExp(r' (AM|PM)$'), '') : first}–$last';
+}
+
+typedef ScheduleTimingPreview = ({
+  int changed,
+  int issueCount,
+  List<String> sampleTimes,
+});
+
+Future<({int duration, bool reflow})?> showScheduleDurationEditor(
+  BuildContext context, {
+  required int duration,
+  required bool reflow,
+  required ScheduleTimingPreview Function(int, bool) preview,
+}) => showDialog<({int duration, bool reflow})>(
+  context: context,
+  builder: (_) => _ScheduleDurationDialog(
+    duration: duration,
+    reflow: reflow,
+    preview: preview,
+  ),
+);
+
+class _ScheduleDurationDialog extends StatefulWidget {
+  const _ScheduleDurationDialog({
+    required this.duration,
+    required this.reflow,
+    required this.preview,
+  });
+
+  final int duration;
+  final bool reflow;
+  final ScheduleTimingPreview Function(int, bool) preview;
+
+  @override
+  State<_ScheduleDurationDialog> createState() =>
+      _ScheduleDurationDialogState();
+}
+
+class _ScheduleDurationDialogState extends State<_ScheduleDurationDialog> {
+  final _form = GlobalKey<FormState>();
+  late final TextEditingController _duration;
+  late bool _reflow;
+
+  @override
+  void initState() {
+    super.initState();
+    _duration = TextEditingController(text: '${widget.duration}');
+    _reflow = widget.reflow;
+  }
+
+  @override
+  void dispose() {
+    _duration.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = int.tryParse(_duration.text);
+    final valid = duration != null && duration >= 15 && duration <= 240;
+    final preview = valid ? widget.preview(duration, _reflow) : null;
+    final secondary = DefensysTokens.textSecondaryOf(context);
+    return AlertDialog(
+      title: const Text('Change slot duration'),
+      content: SizedBox(
+        width: 440,
+        child: SingleChildScrollView(
+          child: Form(
+            key: _form,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Set the time allotted to each team.',
+                  style: TextStyle(color: secondary),
+                ),
+                const SizedBox(height: 20),
+                TextFormField(
+                  controller: _duration,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    labelText: 'Minutes per slot',
+                    suffixText: 'minutes',
+                    helperText: '15–240 minutes',
+                  ),
+                  onChanged: (_) => setState(() {}),
+                  validator: (_) {
+                    final value = int.tryParse(_duration.text);
+                    return value != null && value >= 15 && value <= 240
+                        ? null
+                        : 'Enter 15 to 240 minutes';
+                  },
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final minutes in [30, 45, 60, 90, 120])
+                      ChoiceChip(
+                        label: Text('$minutes min'),
+                        showCheckmark: false,
+                        labelStyle: TextStyle(
+                          fontFamily: DefensysTokens.fontFamily,
+                          fontSize: 13,
+                          color: DefensysTokens.textPrimaryOf(context),
+                        ),
+                        selectedColor: DefensysTokens.maroonOf(
+                          context,
+                        ).withValues(alpha: .15),
+                        selected: minutes == duration,
+                        onSelected: (_) =>
+                            setState(() => _duration.text = '$minutes'),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Shift later slots',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    _reflow
+                        ? 'Keep the first start and original breaks in each room/day. Later sessions move too.'
+                        : 'Keep spreadsheet start times. Overlapping slots will need attention.',
+                    style: TextStyle(fontSize: 12, color: secondary),
+                  ),
+                  value: _reflow,
+                  onChanged: (value) => setState(() => _reflow = value),
+                ),
+                if (preview != null) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: DefensysTokens.surfaceHigherOf(context),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Schedule preview',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        for (final time in preview.sampleTimes)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(
+                              time,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontFeatures: [FontFeature.tabularFigures()],
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${preview.changed} start times adjusted · ${preview.issueCount} slots need attention',
+                          style: TextStyle(fontSize: 12, color: secondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            if (_form.currentState!.validate()) {
+              Navigator.pop(context, (
+                duration: int.parse(_duration.text),
+                reflow: _reflow,
+              ));
+            }
+          },
+          child: const Text('Apply duration'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Summary and import actions for the entire draft, independent of filters.
 class ScheduleImportActionBar extends StatelessWidget {
   const ScheduleImportActionBar({
     super.key,
@@ -28,12 +234,18 @@ class ScheduleImportActionBar extends StatelessWidget {
     required this.onImport,
     required this.onDiscard,
     this.validating = false,
+    this.validationFailed = false,
+    this.showDraftOptions = true,
+    this.savedAt,
   });
 
   final int totalCount;
   final int readyCount;
   final bool busy;
   final bool validating;
+  final bool validationFailed;
+  final bool showDraftOptions;
+  final DateTime? savedAt;
   final VoidCallback onSave;
   final VoidCallback onImport;
   final VoidCallback onDiscard;
@@ -48,16 +260,35 @@ class ScheduleImportActionBar extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            '$readyCount of $totalCount slots ready to import',
+            validating
+                ? 'Checking schedule…'
+                : validationFailed
+                ? 'Schedule validation unavailable'
+                : '$readyCount of $totalCount slots ready to import',
             style: TextStyle(
               color: DefensysTokens.textPrimaryOf(context),
               fontSize: 14,
               fontWeight: FontWeight.w700,
             ),
           ),
+          if (savedAt != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Draft saved in this browser · ${TimeOfDay.fromDateTime(savedAt!).format(context)}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+            ),
           const SizedBox(height: 3),
           Text(
-            totalCount == 0
+            validating
+                ? 'Checking rubrics and existing appointments.'
+                : validationFailed
+                ? 'Retry validation to finish reviewing this schedule.'
+                : totalCount == 0
                 ? 'No slots found. Check the spreadsheet format and replace the file.'
                 : excluded > 0
                 ? '$excluded ${excluded == 1 ? 'slot needs' : 'slots need'} attention and will stay in your draft.'
@@ -78,22 +309,25 @@ class ScheduleImportActionBar extends StatelessWidget {
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        PopupMenuButton<String>(
-          tooltip: 'Draft options',
-          enabled: !busy,
-          onSelected: (_) => onDiscard(),
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'discard', child: Text('Discard draft')),
-          ],
-          icon: const Icon(Icons.more_horiz_rounded),
-        ),
+        if (showDraftOptions)
+          PopupMenuButton<String>(
+            tooltip: 'Draft options',
+            enabled: !busy,
+            onSelected: (_) => onDiscard(),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'discard', child: Text('Discard draft')),
+            ],
+            icon: const Icon(Icons.more_horiz_rounded),
+          ),
         OutlinedButton.icon(
           onPressed: busy ? null : onSave,
           icon: const Icon(Icons.save_outlined, size: 18),
           label: const Text('Save draft'),
         ),
         ElevatedButton.icon(
-          onPressed: busy || validating || readyCount == 0 ? null : onImport,
+          onPressed: busy || validating || validationFailed || readyCount == 0
+              ? null
+              : onImport,
           style: ElevatedButton.styleFrom(
             backgroundColor: DefensysTokens.maroon,
             foregroundColor: Colors.white,
@@ -112,7 +346,7 @@ class ScheduleImportActionBar extends StatelessWidget {
               : const Icon(Icons.check_rounded, size: 18),
           label: Text(
             validating && !busy
-                ? 'Checking rubrics...'
+                ? 'Checking schedule...'
                 : busy
                 ? 'Importing slots...'
                 : 'Import $readyCount ${readyCount == 1 ? 'slot' : 'slots'}',
@@ -132,7 +366,10 @@ class ScheduleImportActionBar extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          padding: EdgeInsets.symmetric(
+            horizontal: showDraftOptions ? 24 : 0,
+            vertical: 14,
+          ),
           child: LayoutBuilder(
             builder: (context, constraints) => constraints.maxWidth < 850
                 ? Column(
@@ -163,23 +400,26 @@ class ScheduleImportFileSummary extends StatelessWidget {
     required this.onReplace,
     required this.onViewGuide,
     this.savedAt,
+    this.restored = false,
+    this.onDismissRestored,
   });
 
   final String? fileName;
   final int slotCount;
   final bool busy;
   final DateTime? savedAt;
+  final bool restored;
+  final VoidCallback? onDismissRestored;
   final VoidCallback onReplace;
   final VoidCallback onViewGuide;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: DefensysTokens.surfaceOf(context),
+        color: DefensysTokens.surfaceHigherOf(context),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -208,6 +448,7 @@ class ScheduleImportFileSummary extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       '$slotCount ${slotCount == 1 ? 'slot' : 'slots'} staged'
+                      '${restored ? ' · Draft restored.' : ''}'
                       '${savedAt == null ? '' : ' · Saved at ${DateFormat.jm().format(savedAt!.toLocal())}'}',
                       style: TextStyle(
                         fontSize: 12,
@@ -217,6 +458,12 @@ class ScheduleImportFileSummary extends StatelessWidget {
                   ],
                 ),
               ),
+              if (restored)
+                IconButton(
+                  tooltip: 'Dismiss draft notification',
+                  onPressed: busy ? null : onDismissRestored,
+                  icon: const Icon(Icons.close_rounded, size: 16),
+                ),
             ],
           );
           final actions = Wrap(
@@ -297,113 +544,101 @@ class ScheduleImportFilterBar extends StatelessWidget {
         searchController.text.isNotEmpty ||
         selectedDate != null ||
         selectedRoom != null;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              ChoiceChip(
-                label: Text('All ($totalCount)'),
-                labelStyle: TextStyle(
-                  fontFamily: DefensysTokens.fontFamily,
-                  color: DefensysTokens.textPrimaryOf(context),
-                  fontSize: 13,
-                ),
-                selectedColor: DefensysTokens.maroonOf(
-                  context,
-                ).withValues(alpha: 0.12),
-                checkmarkColor: DefensysTokens.textPrimaryOf(context),
-                selected: !issuesOnly,
-                onSelected: enabled ? (_) => onIssuesOnlyChanged(false) : null,
-              ),
-              ChoiceChip(
-                label: Text('Needs attention ($issueCount)'),
-                labelStyle: TextStyle(
-                  fontFamily: DefensysTokens.fontFamily,
-                  color: DefensysTokens.textPrimaryOf(context),
-                  fontSize: 13,
-                ),
-                selectedColor: DefensysTokens.maroonOf(
-                  context,
-                ).withValues(alpha: 0.12),
-                checkmarkColor: DefensysTokens.textPrimaryOf(context),
-                selected: issuesOnly,
-                onSelected: enabled ? (_) => onIssuesOnlyChanged(true) : null,
-              ),
-              if (hasFilters)
-                TextButton(
-                  style: TextButton.styleFrom(
-                    foregroundColor: DefensysTokens.textSecondaryOf(context),
-                  ),
-                  onPressed: enabled ? onClear : null,
-                  child: const Text('Clear filters'),
-                ),
-            ],
+    final tabs = Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (final tab in [
+          (false, 'All ($totalCount)'),
+          (true, 'Needs attention ($issueCount)'),
+        ])
+          ChoiceChip(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(5),
+            ),
+            backgroundColor: DefensysTokens.surfaceOf(context),
+            label: Text(tab.$2),
+            showCheckmark: false,
+            labelStyle: TextStyle(
+              fontFamily: DefensysTokens.fontFamily,
+              color: DefensysTokens.textPrimaryOf(context),
+              fontSize: 12,
+              fontWeight: issuesOnly == tab.$1
+                  ? FontWeight.w600
+                  : FontWeight.w400,
+            ),
+            selectedColor: DefensysTokens.surfaceHigherOf(context),
+            selected: issuesOnly == tab.$1,
+            onSelected: enabled ? (_) => onIssuesOnlyChanged(tab.$1) : null,
           ),
-          const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final search = TextField(
-                controller: searchController,
-                enabled: enabled,
-                onChanged: onSearchChanged,
-                style: const TextStyle(fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: 'Search teams, projects, advisers or panelists',
-                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                  suffixIcon: searchController.text.isEmpty
-                      ? null
-                      : IconButton(
-                          tooltip: 'Clear search',
-                          onPressed: () {
-                            searchController.clear();
-                            onSearchChanged('');
-                          },
-                          icon: const Icon(Icons.close_rounded, size: 18),
-                        ),
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 16,
-                  ),
-                ),
-              );
-              final filters = [
-                if (dates.length > 1)
-                  _dropdown(
-                    context,
-                    'Date',
-                    dates,
-                    selectedDate,
-                    onDateChanged,
-                    format: scheduleReviewDate,
-                  ),
-                if (rooms.length > 1)
-                  _dropdown(
-                    context,
-                    'Room',
-                    rooms,
-                    selectedRoom,
-                    onRoomChanged,
-                  ),
-              ];
-              if (filters.isEmpty) return search;
-              if (constraints.maxWidth < 750) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    search,
-                    const SizedBox(height: 12),
-                    Wrap(spacing: 12, runSpacing: 12, children: filters),
-                  ],
-                );
-              }
-              return Row(
+        if (hasFilters)
+          TextButton(
+            onPressed: enabled ? onClear : null,
+            child: const Text('Clear filters'),
+          ),
+      ],
+    );
+    final search = TextField(
+      controller: searchController,
+      enabled: enabled,
+      onChanged: onSearchChanged,
+      style: const TextStyle(fontSize: 13),
+      decoration: InputDecoration(
+        hintText: 'Search teams, projects or faculty',
+        prefixIcon: const Icon(Icons.search_rounded, size: 19),
+        suffixIcon: searchController.text.isEmpty
+            ? null
+            : IconButton(
+                tooltip: 'Clear search',
+                onPressed: () {
+                  searchController.clear();
+                  onSearchChanged('');
+                },
+                icon: const Icon(Icons.close_rounded, size: 18),
+              ),
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: 13,
+        ),
+      ),
+    );
+    final filters = [
+      if (dates.length > 1)
+        _dropdown(
+          context,
+          'Date',
+          dates,
+          selectedDate,
+          onDateChanged,
+          format: scheduleReviewDate,
+        ),
+      if (rooms.length > 1)
+        _dropdown(context, 'Room', rooms, selectedRoom, onRoomChanged),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 1180) {
+          return Row(
+            children: [
+              tabs,
+              const SizedBox(width: 20),
+              Expanded(child: search),
+              for (final filter in filters) ...[
+                const SizedBox(width: 12),
+                filter,
+              ],
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            tabs,
+            const SizedBox(height: 12),
+            if (constraints.maxWidth >= 750)
+              Row(
                 children: [
                   Expanded(child: search),
                   for (final filter in filters) ...[
@@ -411,11 +646,17 @@ class ScheduleImportFilterBar extends StatelessWidget {
                     filter,
                   ],
                 ],
-              );
-            },
-          ),
-        ],
-      ),
+              )
+            else ...[
+              search,
+              if (filters.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Wrap(spacing: 12, runSpacing: 12, children: filters),
+              ],
+            ],
+          ],
+        );
+      },
     );
   }
 
@@ -428,7 +669,7 @@ class ScheduleImportFilterBar extends StatelessWidget {
     String Function(String)? format,
   }) {
     return SizedBox(
-      width: 180,
+      width: 155,
       child: DropdownButtonFormField<String>(
         // Refresh the FormField state when Clear filters resets its value.
         key: ValueKey('$label:$selected'),
@@ -470,9 +711,10 @@ class ScheduleImportSessionCard extends StatelessWidget {
     required this.expanded,
     required this.enabled,
     required this.onToggle,
-    required this.onDateChanged,
-    required this.onRoomChanged,
+    this.onDateChanged,
+    this.onRoomChanged,
     required this.table,
+    this.committeeVaries = false,
   });
 
   final int index;
@@ -487,9 +729,10 @@ class ScheduleImportSessionCard extends StatelessWidget {
   final bool expanded;
   final bool enabled;
   final VoidCallback onToggle;
-  final ValueChanged<String> onDateChanged;
-  final ValueChanged<String> onRoomChanged;
+  final ValueChanged<String>? onDateChanged;
+  final ValueChanged<String>? onRoomChanged;
   final Widget table;
+  final bool committeeVaries;
 
   Future<void> _edit(BuildContext context) async {
     final result = await showDialog<({String date, String room})>(
@@ -498,8 +741,8 @@ class ScheduleImportSessionCard extends StatelessWidget {
           _SessionDetailsDialog(date: date, room: room, slotCount: totalCount),
     );
     if (result == null || !context.mounted) return;
-    if (result.date != date) onDateChanged(result.date);
-    if (result.room != room) onRoomChanged(result.room);
+    if (result.date != date) onDateChanged?.call(result.date);
+    if (result.room != room) onRoomChanged?.call(result.room);
   }
 
   @override
@@ -509,7 +752,7 @@ class ScheduleImportSessionCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: DefensysTokens.surfaceOf(context),
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       clipBehavior: Clip.antiAlias,
@@ -517,7 +760,7 @@ class ScheduleImportSessionCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            padding: const EdgeInsets.fromLTRB(12, 10, 16, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -530,78 +773,90 @@ class ScheduleImportSessionCard extends StatelessWidget {
                       onPressed: enabled ? onToggle : null,
                       icon: Icon(
                         expanded ? Icons.expand_less : Icons.expand_more,
+                        size: 20,
                       ),
                     ),
                     const SizedBox(width: 4),
                     Expanded(
-                      child: Text(
-                        '${room.isEmpty || room == 'Unassigned' ? 'Room not assigned' : room} · ${date.isEmpty ? 'Date not set' : scheduleReviewDate(date)}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: primary,
-                        ),
+                      child: Wrap(
+                        spacing: 20,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            'Session $index  ${room.isEmpty || room == 'Unassigned' ? 'Room not assigned' : room} · ${date.isEmpty ? 'Date not set' : scheduleReviewDate(date)}',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: primary,
+                            ),
+                          ),
+                          Text(
+                            timeSpan,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: secondary,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            '$totalCount teams',
+                            style: TextStyle(fontSize: 12, color: secondary),
+                          ),
+                          if (issueCount > 0)
+                            Text(
+                              '$issueCount need attention',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: DefensysTokens.goldOf(context),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                     const SizedBox(width: 8),
-                    TextButton.icon(
-                      style: TextButton.styleFrom(foregroundColor: secondary),
-                      onPressed: enabled ? () => _edit(context) : null,
-                      icon: const Icon(Icons.edit_outlined, size: 16),
-                      label: const Text('Edit session'),
-                    ),
+                    if (onDateChanged != null || onRoomChanged != null)
+                      TextButton.icon(
+                        style: TextButton.styleFrom(foregroundColor: secondary),
+                        onPressed: enabled ? () => _edit(context) : null,
+                        icon: const Icon(Icons.edit_outlined, size: 15),
+                        label: const Text('Edit session'),
+                      ),
                   ],
                 ),
-                Padding(
-                  padding: const EdgeInsets.only(left: 48),
-                  child: Wrap(
-                    spacing: 16,
-                    runSpacing: 6,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(
-                        'Session $index · $timeSpan',
-                        style: TextStyle(color: secondary, fontSize: 13),
-                      ),
-                      Text(
-                        '$totalCount ${totalCount == 1 ? 'team' : 'teams'}',
-                        style: TextStyle(color: secondary, fontSize: 13),
-                      ),
-                      if (issueCount > 0)
-                        Text(
-                          '$issueCount ${issueCount == 1 ? 'slot needs' : 'slots need'} attention',
-                          style: TextStyle(
-                            color: DefensysTokens.goldOf(context),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
+                if (expanded)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 52, top: 2),
+                    child: Wrap(
+                      spacing: 20,
+                      runSpacing: 4,
+                      children: [
+                        if (committeeVaries)
+                          Text(
+                            'Committee varies by team · See assignments below',
+                            style: TextStyle(color: secondary, fontSize: 12),
                           ),
-                        ),
-                    ],
+                        if (!committeeVaries)
+                          Text(
+                            'Chair: ${chair.isEmpty ? 'Not assigned' : chair}',
+                            style: TextStyle(color: secondary, fontSize: 12),
+                          ),
+                        if (!committeeVaries)
+                          Text(
+                            'Panel: ${panelMembers.isEmpty ? 'Not assigned' : panelMembers.join(', ')}',
+                            style: TextStyle(color: secondary, fontSize: 12),
+                          ),
+                        if (documenter != null && !committeeVaries)
+                          Text(
+                            'Documenter: ${documenter!.isEmpty ? 'Not assigned' : documenter}',
+                            style: TextStyle(color: secondary, fontSize: 12),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(height: 10),
-                Padding(
-                  padding: const EdgeInsets.only(left: 48),
-                  child: Wrap(
-                    spacing: 20,
-                    runSpacing: 6,
-                    children: [
-                      Text(
-                        'Chair: ${chair.isEmpty || chair == '-' ? 'Not assigned' : chair}',
-                        style: TextStyle(color: secondary, fontSize: 13),
-                      ),
-                      Text(
-                        'Panel: ${panelMembers.isEmpty ? 'Not assigned' : panelMembers.join(', ')}',
-                        style: TextStyle(color: secondary, fontSize: 13),
-                      ),
-                      if (documenter != null)
-                        Text(
-                          'Documenter: ${documenter!.isEmpty || documenter == '-' ? 'Not assigned' : documenter}',
-                          style: TextStyle(color: secondary, fontSize: 13),
-                        ),
-                    ],
-                  ),
-                ),
               ],
             ),
           ),
