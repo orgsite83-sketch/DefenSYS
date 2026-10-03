@@ -11,11 +11,7 @@ import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 
 class SchedulerToolbar extends ConsumerWidget {
-  const SchedulerToolbar({
-    super.key,
-    required this.state,
-    this.onBack,
-  });
+  const SchedulerToolbar({super.key, required this.state, this.onBack});
 
   final DefenseSchedulerState state;
   final VoidCallback? onBack;
@@ -59,21 +55,23 @@ class SchedulerToolbar extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
+              Row(
                 children: [
                   Icon(
-                    Icons.auto_awesome_mosaic_rounded,
-                    color: AppColors.maroon,
+                    Icons.calendar_month_outlined,
+                    color: DefensysTokens.textPrimaryOf(context),
                     size: 24,
                   ),
-                  SizedBox(width: 8),
-                  Text(
-                    'Defense Scheduler',
-                    style: TextStyle(
-                      color: AppColors.maroon,
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
-                      height: 1.1,
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      'Defense Scheduler',
+                      style: TextStyle(
+                        color: DefensysTokens.textPrimaryOf(context),
+                        fontSize: 21,
+                        fontWeight: FontWeight.w600,
+                        height: 1.2,
+                      ),
                     ),
                   ),
                 ],
@@ -82,7 +80,9 @@ class SchedulerToolbar extends ConsumerWidget {
               Text(
                 semesterLabel,
                 style: TextStyle(
-                  color: isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
+                  color: isDark
+                      ? DefensysTokens.textSecondaryDark
+                      : AppColors.textSecondary,
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
                 ),
@@ -97,11 +97,18 @@ class SchedulerToolbar extends ConsumerWidget {
             onPressed: () => _handleBack(context, ref),
             style: OutlinedButton.styleFrom(
               elevation: 0,
-              foregroundColor: isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF334155),
-              side: BorderSide(color: isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1)),
-              backgroundColor: isDark ? DefensysTokens.mistInputFill : Colors.white,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
+              foregroundColor: isDark
+                  ? DefensysTokens.textPrimaryDark
+                  : const Color(0xFF334155),
+              side: BorderSide(
+                color: isDark
+                    ? DefensysTokens.mistBorder
+                    : const Color(0xFFCBD5E1),
+              ),
+              backgroundColor: isDark
+                  ? DefensysTokens.mistInputFill
+                  : Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
@@ -109,14 +116,20 @@ class SchedulerToolbar extends ConsumerWidget {
             icon: Icon(
               Icons.arrow_back_rounded,
               size: 16,
-              color: isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
+              color: isDark
+                  ? DefensysTokens.textSecondaryDark
+                  : const Color(0xFF64748B),
             ),
             label: Text(
-              'Back to Operations',
+              MediaQuery.sizeOf(context).width < 640
+                  ? 'Back'
+                  : 'Back to Operations',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
-                color: isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF334155),
+                color: isDark
+                    ? DefensysTokens.textPrimaryDark
+                    : const Color(0xFF334155),
               ),
             ),
           ),
@@ -127,166 +140,106 @@ class SchedulerToolbar extends ConsumerWidget {
 }
 
 class SchedulerStepProgress extends StatelessWidget {
-  const SchedulerStepProgress({
-    super.key,
-    required this.currentStep,
-  });
-
+  const SchedulerStepProgress({super.key, required this.currentStep});
   final int currentStep;
 
   @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? DefensysTokens.mistSurface : Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: isDark ? Border.all(color: DefensysTokens.mistBorder) : null,
-        boxShadow: [
-          BoxShadow(
-            color: isDark ? Colors.black.withValues(alpha: 0.25) : Colors.black.withValues(alpha: 0.05),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _stepProgressTile(
-              context: context,
-              number: 1,
-              title: 'Set Up Defense Schedule',
-              subtitle: 'Choose the shared inputs for this batch.',
-              isActive: currentStep == 1,
-              isDone: currentStep > 1,
-              isFirst: true,
-            ),
-          ),
-          Expanded(
-            child: _stepProgressTile(
-              context: context,
-              number: 2,
-              title: 'Review & Arrange Teams',
-              subtitle: 'Waiting for Step 1 plan generation.',
-              isActive: currentStep == 2,
-              isDone: currentStep > 2,
-            ),
-          ),
-          Expanded(
-            child: _stepProgressTile(
-              context: context,
-              number: 3,
-              title: 'Final Schedule Preview',
-              subtitle: 'Shown after the schedule plan is generated.',
-              isActive: currentStep == 3,
-              isDone: false,
-              isLast: true,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _stepProgressTile({
-    required BuildContext context,
-    required int number,
-    required String title,
-    required String subtitle,
-    required bool isActive,
-    required bool isDone,
-    bool isFirst = false,
-    bool isLast = false,
-  }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final Color accent = isActive
-        ? AppColors.maroon
-        : (isDone ? AppColors.success : const Color(0xFFD0D5DD));
-
-    final Color bg = isActive
-        ? (isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.25) : const Color(0xFFFDF2F2))
-        : (isDone
-            ? (isDark ? const Color(0xFF064E3B).withValues(alpha: 0.25) : const Color(0xFFF0FDF4))
-            : (isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC)));
-
-    return Container(
-      height: 84,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(isFirst ? 14 : 0),
-          bottomLeft: Radius.circular(isFirst ? 14 : 0),
-          topRight: Radius.circular(isLast ? 14 : 0),
-          bottomRight: Radius.circular(isLast ? 14 : 0),
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 640;
+      final labels = compact
+          ? ['Setup', 'Arrange', 'Preview']
+          : ['Schedule details', 'Arrange teams', 'Review & confirm'];
+      return Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 12 : 20,
+          vertical: 16,
         ),
-        border: Border(
-          bottom: BorderSide(
-            color: accent,
-            width: isActive || isDone ? 3 : 0.8,
-          ),
+        decoration: BoxDecoration(
+          color: DefensysTokens.surfaceOf(context),
+          borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+          border: Border.all(color: DefensysTokens.borderOf(context)),
         ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
-            alignment: Alignment.center,
-            child: Text(
-              '$number',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
+        child: Row(
+          children: [
+            for (int i = 1; i <= 3; i++) ...[
+              if (i > 1)
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 16),
+                  child: Icon(
+                    Icons.chevron_right_rounded,
+                    size: 16,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                ),
+              Expanded(
+                child: Semantics(
+                  label: '${labels[i - 1]}, step $i of 3',
+                  selected: currentStep == i,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 24,
+                        height: 24,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: currentStep == i
+                              ? DefensysTokens.textPrimaryOf(context)
+                              : null,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: currentStep == i
+                                ? DefensysTokens.textPrimaryOf(context)
+                                : DefensysTokens.borderOf(context),
+                          ),
+                        ),
+                        child: i < currentStep
+                            ? Icon(
+                                Icons.check_rounded,
+                                size: 14,
+                                color: DefensysTokens.textPrimaryOf(context),
+                              )
+                            : Text(
+                                '$i',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: currentStep == i
+                                      ? DefensysTokens.surfaceOf(context)
+                                      : DefensysTokens.textSecondaryOf(context),
+                                ),
+                              ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          labels[i - 1],
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: compact ? 12 : 13,
+                            fontWeight: currentStep == i
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                            color: currentStep == i
+                                ? DefensysTokens.textPrimaryOf(context)
+                                : DefensysTokens.textSecondaryOf(context),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: isActive || isDone
-                        ? (isDark ? DefensysTokens.textPrimaryDark : AppColors.textPrimary)
-                        : (isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+            ],
+          ],
+        ),
+      );
+    },
+  );
 }
 
 class SchedulerNoticeBanner extends StatelessWidget {
-  const SchedulerNoticeBanner({
-    super.key,
-    required this.message,
-  });
+  const SchedulerNoticeBanner({super.key, required this.message});
 
   final String message;
 

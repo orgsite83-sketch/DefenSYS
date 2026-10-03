@@ -26,6 +26,8 @@ from authentication_access_control.guest_authentication import (
 from authentication_access_control.models import SystemAuditLog
 from authentication_access_control.scopes import visible_schedules_for
 from user_management.permissions import IsPanelist, CanManageModule
+from user_management.models import GuestPanelistCode
+from user_management.external_evaluators import invitation_payload
 
 from .models import DefenseSchedule, SchedulePanelist, PitEventGradingConfig, PanelistEvaluationDraft
 from .panelist_evaluation import (
@@ -133,6 +135,7 @@ class DefenseScheduleListCreateView(APIView):
         return Response(
             {
                 'schedule': DefenseScheduleSerializer(schedule).data,
+                'created_invitations': [invitation_payload(i) for i in GuestPanelistCode.objects.filter(schedules=schedule)],
                 **list_payload(base_queryset=base, user=request.user),
             },
             status=status.HTTP_201_CREATED,
@@ -383,6 +386,7 @@ class DefenseScheduleConfirmPlanView(APIView):
             {
                 'schedules_created': DefenseScheduleSerializer(schedules, many=True).data,
                 'created_count': schedules.count(),
+                'created_invitations': [invitation_payload(i) for i in GuestPanelistCode.objects.filter(schedules__in=schedules).distinct()],
                 **list_payload(base_queryset=base, user=request.user),
             },
             status=status.HTTP_201_CREATED,
@@ -988,19 +992,16 @@ class GuestPanelistResultsView(APIView):
 
     def get(self, request):
         principal = request.user
-        panelist_key = guest_panelist_remark_key(principal.guest_name, principal.guest_code)
+        submissions = PanelistGradeSubmission.objects.filter(guest_code_id=str(principal.guest_code_id), schedule_id__in=principal.schedule_ids)
         grade_ids = (
-            GradeBreakdown.objects.filter(
-                evaluation_type=GradeBreakdown.EVAL_PANEL,
-                remarks__startswith=panelist_key,
-            )
+            submissions
             .values_list('team_grade_id', flat=True)
             .distinct()
         )
         team_grades = (
             TeamGrade.objects.filter(
                 id__in=grade_ids,
-                schedule_id=principal.defense_schedule_id,
+                schedule_id__in=principal.schedule_ids,
             )
             .select_related('team', 'team__leader', 'schedule')
             .prefetch_related(
@@ -1014,6 +1015,8 @@ class GuestPanelistResultsView(APIView):
 
         results = []
         for grade in team_grades:
+            snapshot = submissions.filter(team_grade=grade).first()
+            panelist_key = guest_panelist_remark_key(snapshot.guest_name, snapshot.guest_code)
             item = panelist_result_payload(grade, panelist_key)
             if item:
                 results.append(item)
@@ -1022,29 +1025,27 @@ class GuestPanelistResultsView(APIView):
 
 
 class GuestPanelistAssignmentsView(APIView):
-    """Assignments for a guest panelist JWT (single defense schedule)."""
+    """Only the confirmed defenses assigned to this invitation."""
 
     authentication_classes = [GuestJWTAuthentication]
     permission_classes = [IsGuestPanelist]
 
     def get(self, request):
         principal = request.user
-        schedule = (
+        schedules = (
             schedule_queryset()
             .filter(
-                pk=principal.defense_schedule_id,
+                pk__in=principal.schedule_ids,
                 status=DefenseSchedule.STATUS_SCHEDULED,
             )
             .select_related('rubric__semester', 'semester', 'defense_stage', 'team')
             .prefetch_related('team__memberships__student', 'rubric__criteria')
-            .first()
+            .order_by('scheduled_date', 'start_time', 'pk')
         )
-        if schedule is None:
-            return Response(
-                {'detail': 'Defense schedule is not available for grading.'},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        teams = [self.assignment_payload(schedule, principal) for schedule in schedules]
+        return Response({'teams': teams, 'rubrics': [t['panel_rubric'] for t in teams if t.get('panel_rubric')], 'schedules_count': len(teams)})
 
+    def assignment_payload(self, schedule, principal):
         subs = list(
             PanelistGradeSubmission.objects.filter(
                 schedule=schedule,
@@ -1081,12 +1082,7 @@ class GuestPanelistAssignmentsView(APIView):
         team_payload['draft'] = None if is_posted else draft_payload(
             draft, team_payload['evaluation_context'],
         )
-        rubric = team_payload.get('panel_rubric')
-        return Response({
-            'teams': [team_payload],
-            'rubrics': [rubric] if rubric else [],
-            'schedules_count': 1,
-        })
+        return team_payload
 
 
 class GuestPanelistGradeSubmissionView(APIView):
@@ -1127,34 +1123,24 @@ class GuestPanelistGradeSubmissionView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if str(team_id) != str(principal.team_id):
-            return Response(
-                {'detail': 'You are not assigned to grade this team.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
-        if schedule_id is not None and str(schedule_id) != str(principal.defense_schedule_id):
+        schedule_id = schedule_id or (principal.schedule_ids[0] if len(principal.schedule_ids) == 1 else None)
+        if str(schedule_id) not in {str(i) for i in principal.schedule_ids}:
             return Response(
                 {'detail': 'You are not assigned to grade this schedule.'},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
         try:
-            from student_teams.models import StudentTeam
+            team_id = int(team_id)
+        except (ValueError, TypeError):
+            return Response({'detail': 'team_id must be a valid ID.'}, status=400)
 
-            try:
-                team = StudentTeam.objects.get(id=team_id)
-            except StudentTeam.DoesNotExist:
-                return Response(
-                    {'detail': 'Team not found.'},
-                    status=status.HTTP_404_NOT_FOUND,
-                )
-
+        try:
             schedule = (
                 schedule_queryset()
                 .filter(
-                    pk=principal.defense_schedule_id,
-                    team=team,
+                    pk=schedule_id,
+                    team_id=team_id,
                     status=DefenseSchedule.STATUS_SCHEDULED,
                 )
                 .first()
@@ -1164,6 +1150,7 @@ class GuestPanelistGradeSubmissionView(APIView):
                     {'detail': 'You are not assigned to grade this team.'},
                     status=status.HTTP_403_FORBIDDEN,
                 )
+            team = schedule.team
 
             reason = grading_unavailable_reason(schedule)
             if reason:
@@ -1306,9 +1293,10 @@ class GuestPanelistEvaluationDraftView(APIView):
 
     def post(self, request):
         principal = request.user
-        if str(request.data.get('schedule_id')) != str(principal.defense_schedule_id):
+        schedule_id = request.data.get('schedule_id')
+        if str(schedule_id) not in {str(i) for i in principal.schedule_ids}:
             return Response({'detail': 'You are not assigned to this defense.'}, status=403)
-        schedule = get_object_or_404(schedule_queryset(), pk=principal.defense_schedule_id)
+        schedule = get_object_or_404(schedule_queryset(), pk=schedule_id, status=DefenseSchedule.STATUS_SCHEDULED)
         try:
             draft = save_evaluation_draft(schedule, request.data, guest=principal)
         except ValidationError as exc:

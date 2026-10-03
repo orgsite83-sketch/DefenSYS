@@ -1,7 +1,12 @@
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:go_router/go_router.dart';
+import '../../navigation/admin_route_paths.dart';
+import '../../navigation/workspace_access.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import '../about_screen.dart';
 import '../privacy_screen.dart';
 import '../terms_screen.dart';
@@ -167,28 +172,35 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
               .toList();
 
           final rawDefenseMaterials = team['defense_materials'] as List? ?? [];
-          final defenseMaterials = rawDefenseMaterials
-              .whereType<Map>()
-              .map((d) {
-                final map = Map<String, dynamic>.from(d);
-                final sub = map['submission'] is Map ? map['submission'] as Map : null;
-                final fileUrl = (map['file_url']?.toString().isNotEmpty == true)
-                    ? map['file_url']?.toString()
-                    : sub?['file_url']?.toString();
-                final fileName = (map['file_name']?.toString().isNotEmpty == true && map['file_name'] != 'File')
-                    ? map['file_name']?.toString()
-                    : (sub?['file_name']?.toString() ?? map['suggested_file_name']?.toString() ?? 'File');
-                final name = (map['name']?.toString().isNotEmpty == true && map['name'] != 'Defense Material')
-                    ? map['name']?.toString()
-                    : (map['label']?.toString() ?? 'Defense Material');
+          final defenseMaterials = rawDefenseMaterials.whereType<Map>().map((
+            d,
+          ) {
+            final map = Map<String, dynamic>.from(d);
+            final sub = map['submission'] is Map
+                ? map['submission'] as Map
+                : null;
+            final fileUrl = (map['file_url']?.toString().isNotEmpty == true)
+                ? map['file_url']?.toString()
+                : sub?['file_url']?.toString();
+            final fileName =
+                (map['file_name']?.toString().isNotEmpty == true &&
+                    map['file_name'] != 'File')
+                ? map['file_name']?.toString()
+                : (sub?['file_name']?.toString() ??
+                      map['suggested_file_name']?.toString() ??
+                      'File');
+            final name =
+                (map['name']?.toString().isNotEmpty == true &&
+                    map['name'] != 'Defense Material')
+                ? map['name']?.toString()
+                : (map['label']?.toString() ?? 'Defense Material');
 
-                map['file_url'] = fileUrl;
-                map['file_name'] = fileName;
-                map['name'] = name;
-                map['label'] = name;
-                return map;
-              })
-              .toList();
+            map['file_url'] = fileUrl;
+            map['file_name'] = fileName;
+            map['name'] = name;
+            map['label'] = name;
+            return map;
+          }).toList();
 
           final assignment = TeamData(
             name: (team['name'] ?? 'Team').toString(),
@@ -358,9 +370,15 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
             foregroundColor: Colors.white,
             title: _buildAppBarTitle(),
             actions: [
+              if (!_isGuest)
+                IconButton(
+                  icon: const Icon(Icons.settings_outlined),
+                  tooltip: 'Settings',
+                  onPressed: () => context.push(AppRoutes.settings),
+                ),
               IconButton(
                 icon: const Icon(Icons.account_circle_outlined),
-                tooltip: 'Profile',
+                tooltip: _isGuest ? 'Guest access & sign out' : 'Profile',
                 onPressed: () => _showProfileSheet(context),
               ),
             ],
@@ -380,7 +398,9 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
                         ),
                       ),
                       Expanded(
-                        child: DefensysSkeleton.list(count: 6, rowHeight: 64),
+                        child: SingleChildScrollView(
+                          child: DefensysSkeleton.list(count: 6, rowHeight: 64),
+                        ),
                       ),
                     ],
                   )
@@ -460,9 +480,20 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
     }
   }
 
+  String _guestAccessLabel(Map<String, dynamic>? user) {
+    final expiry = DateTime.tryParse(user?['expires_at']?.toString() ?? '');
+    return expiry == null
+        ? 'External evaluator'
+        : 'External evaluator · Access expires ${DateFormat('MMM d · h:mm a').format(expiry.toLocal())}';
+  }
+
   void _showProfileSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+      ),
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -478,123 +509,155 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
               : null;
 
           return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: DefensysTokens.maroon.withValues(
-                        alpha: 0.15,
-                      ),
-                      backgroundImage: avatarUrl != null
-                          ? NetworkImage(avatarUrl)
-                          : null,
-                      child: avatarUrl == null
-                          ? Text(
-                              displayName.isNotEmpty
-                                  ? displayName[0].toUpperCase()
-                                  : 'P',
-                              style: const TextStyle(
-                                color: DefensysTokens.maroon,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            )
-                          : null,
-                    ),
-                    title: Text(
-                      displayName,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Text(
-                      'Panelist · ID ${widget.userData?['id'] ?? '—'}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                  const Divider(),
-                  ListTile(
-                    leading: const Icon(
-                      Icons.person_outline,
-                      color: DefensysTokens.maroon,
-                    ),
-                    title: const Text(
-                      'Profile',
-                      style: TextStyle(
-                        color: DefensysTokens.maroon,
-                        fontWeight: FontWeight.w500,
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
-                    onTap: () {
-                      Navigator.pop(sheetCtx);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ProfileScreen(),
+                    ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: DefensysTokens.maroon.withValues(
+                          alpha: 0.15,
                         ),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.info_outline_rounded),
-                    title: const Text('About DefenSYS'),
-                    onTap: () {
-                      Navigator.pop(sheetCtx);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const AboutScreen()),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.privacy_tip_outlined),
-                    title: const Text('Privacy Policy'),
-                    onTap: () {
-                      Navigator.pop(sheetCtx);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const PrivacyScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.gavel_rounded),
-                    title: const Text('Terms & Conditions'),
-                    onTap: () {
-                      Navigator.pop(sheetCtx);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const TermsScreen()),
-                      );
-                    },
-                  ),
-                  const Divider(),
-                  ListTile(
-                    leading: const Icon(Icons.logout, color: Colors.red),
-                    title: const Text(
-                      'Logout',
-                      style: TextStyle(color: Colors.red),
+                        backgroundImage: avatarUrl != null
+                            ? NetworkImage(avatarUrl)
+                            : null,
+                        child: avatarUrl == null
+                            ? Text(
+                                displayName.isNotEmpty
+                                    ? displayName[0].toUpperCase()
+                                    : 'P',
+                                style: const TextStyle(
+                                  color: DefensysTokens.maroon,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                            : null,
+                      ),
+                      title: Text(
+                        displayName,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: Text(
+                        _isGuest
+                            ? _guestAccessLabel(user)
+                            : 'Panelist · ID ${widget.userData?['id'] ?? '—'}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
                     ),
-                    onTap: () async {
-                      final authNotifier = ref.read(authProvider.notifier);
-                      Navigator.pop(sheetCtx);
-                      if (await confirmLogout(context)) {
-                        await authNotifier.logout();
-                      }
-                    },
-                  ),
-                ],
+                    const Divider(),
+                    if (!_isGuest)
+                      ListTile(
+                        leading: const Icon(Icons.settings_outlined),
+                        title: const Text('Settings'),
+                        onTap: () {
+                          Navigator.pop(sheetCtx);
+                          context.push(AppRoutes.settings);
+                        },
+                      ),
+                    if (!_isGuest &&
+                        kIsWeb &&
+                        WorkspaceAccess.hasStaffWorkspace(
+                          user ?? widget.userData ?? {},
+                        ))
+                      ListTile(
+                        leading: const Icon(Icons.desktop_windows_outlined),
+                        title: const Text('Staff workspace'),
+                        subtitle: const Text('Open management tools'),
+                        onTap: () {
+                          Navigator.pop(sheetCtx);
+                          context.push(FacultyRoutes.dashboard);
+                        },
+                      ),
+                    if (!_isGuest)
+                      ListTile(
+                        leading: const Icon(
+                          Icons.person_outline,
+                          color: DefensysTokens.maroon,
+                        ),
+                        title: const Text(
+                          'Profile',
+                          style: TextStyle(
+                            color: DefensysTokens.maroon,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        onTap: () {
+                          Navigator.pop(sheetCtx);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ProfileScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    ListTile(
+                      leading: const Icon(Icons.info_outline_rounded),
+                      title: const Text('About DefenSYS'),
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AboutScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.privacy_tip_outlined),
+                      title: const Text('Privacy Policy'),
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const PrivacyScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.gavel_rounded),
+                      title: const Text('Terms & Conditions'),
+                      onTap: () {
+                        Navigator.pop(sheetCtx);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const TermsScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    const Divider(),
+                    ListTile(
+                      leading: const Icon(Icons.logout, color: Colors.red),
+                      title: const Text(
+                        'Logout',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                      onTap: () async {
+                        final authNotifier = ref.read(authProvider.notifier);
+                        Navigator.pop(sheetCtx);
+                        if (await confirmLogout(context)) {
+                          await authNotifier.logout();
+                        }
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
           );

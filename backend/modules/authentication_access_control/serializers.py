@@ -45,6 +45,7 @@ class UserSerializer(serializers.ModelSerializer):
     facultyRoles = serializers.SerializerMethodField()
     is_project_manager = serializers.SerializerMethodField()
     managed_section = serializers.SerializerMethodField()
+    has_staff_workspace = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -53,7 +54,24 @@ class UserSerializer(serializers.ModelSerializer):
             'team_id', 'is_panelist', 'is_pit_lead', 'pit_lead_year', 'is_adviser',
             'is_documenter', 'is_uploader', 'e_signature', 'avatar', 'facultyRoles',
             'is_project_manager', 'managed_section',
+            'has_staff_workspace',
         ]
+
+    def get_has_staff_workspace(self, obj):
+        """Navigation hint, including instructors whose role comes from assignments."""
+        if obj.role == 'admin':
+            return True
+        if obj.role != 'faculty':
+            return False
+        if obj.is_pit_lead or obj.is_adviser or obj.is_documenter or obj.is_uploader:
+            return True
+        from academic_period_management.services import active_semester
+        from user_management.models import SectionInstructorAssignment
+        assignments = SectionInstructorAssignment.objects.filter(faculty=obj, is_active=True)
+        semester = active_semester()
+        if semester:
+            assignments = assignments.filter(semester=semester)
+        return assignments.exists()
 
     def get_team_id(self, obj):
         membership = obj.team_memberships.first()

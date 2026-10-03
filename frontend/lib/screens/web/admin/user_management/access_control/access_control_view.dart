@@ -103,7 +103,8 @@ class _AccessControlViewState extends ConsumerState<AccessControlView> {
   Future<void> _onToggleAdmin(bool value) async {
     final name = (widget.user['name']?.toString().trim().isNotEmpty == true)
         ? widget.user['name']!.toString().trim()
-        : '${widget.user['first_name'] ?? ''} ${widget.user['last_name'] ?? ''}'.trim();
+        : '${widget.user['first_name'] ?? ''} ${widget.user['last_name'] ?? ''}'
+              .trim();
     final displayName = name.isNotEmpty ? name : 'this faculty member';
 
     if (value) {
@@ -284,10 +285,7 @@ class _AccessControlViewState extends ConsumerState<AccessControlView> {
                           label: const Text('Reset Password'),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.red,
-                            side: const BorderSide(
-                              color: Colors.red,
-                              width: 1,
-                            ),
+                            side: const BorderSide(color: Colors.red, width: 1),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
@@ -410,7 +408,7 @@ class _AccessControlViewState extends ConsumerState<AccessControlView> {
                                       icon: Icons.groups_2_outlined,
                                       title: 'Defense Panelist',
                                       subtitle:
-                                          'Eligible pool member for automated defense scheduler. (In timetable bulk import, all faculty can be assigned).',
+                                          'Eligible for the reusable defense panelist pool. Managed here or in Panelist eligibility under Faculty & Staff.',
                                       value: _isPanelist,
                                       enabled: !widget.state.isSaving,
                                       onChanged: (v) =>
@@ -489,12 +487,13 @@ class _AccessControlViewState extends ConsumerState<AccessControlView> {
                                                   ),
                                                   ...widget.pitLeadYearOptions
                                                       .map(
-                                                        (y) => DropdownMenuItem<
-                                                          String?
-                                                        >(
-                                                          value: y,
-                                                          child: Text(y),
-                                                        ),
+                                                        (y) =>
+                                                            DropdownMenuItem<
+                                                              String?
+                                                            >(
+                                                              value: y,
+                                                              child: Text(y),
+                                                            ),
                                                       ),
                                                 ],
                                                 onChanged: widget.state.isSaving
@@ -694,9 +693,7 @@ class _AccessControlViewState extends ConsumerState<AccessControlView> {
           if (_roleAssignmentsLoading)
             const SizedBox(
               height: 72,
-              child: Center(
-                child: CircularProgressIndicator(color: _maroon),
-              ),
+              child: Center(child: CircularProgressIndicator(color: _maroon)),
             )
           else if (_roleAssignments.isEmpty)
             SizedBox(
@@ -793,19 +790,10 @@ class _AccessControlViewState extends ConsumerState<AccessControlView> {
         border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
       ),
       children: [
-        _roleHistoryCell(
-          _roleHistoryLabel(row),
-          fontWeight: FontWeight.w700,
-        ),
-        _roleHistoryCell(
-          row['semester_name']?.toString() ?? '—',
-        ),
-        _roleHistoryCell(
-          row['year_level']?.toString() ?? '—',
-        ),
-        _roleHistoryCell(
-          _formatAssignmentTimestamp(row['created_at']),
-        ),
+        _roleHistoryCell(_roleHistoryLabel(row), fontWeight: FontWeight.w700),
+        _roleHistoryCell(row['semester_name']?.toString() ?? '—'),
+        _roleHistoryCell(row['year_level']?.toString() ?? '—'),
+        _roleHistoryCell(_formatAssignmentTimestamp(row['created_at'])),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
           child: Align(

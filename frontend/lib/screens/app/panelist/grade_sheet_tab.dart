@@ -127,6 +127,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       _formGeneration++;
       _selectedStudentIndex = 0;
 
+      _criteria = [];
       _studentCriteria.clear();
       for (var controller in _studentRemarksControllers.values) {
         controller.dispose();
@@ -304,11 +305,12 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     } on SessionExpiredException {
       // Session handling keeps the entered scores in memory.
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         showErrorToast(
           context,
           'Draft could not be saved. Your changes are still here.',
         );
+      }
     } finally {
       if (mounted) setState(() => _isSavingDraft = false);
     }
@@ -698,11 +700,12 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     } on SessionExpiredException {
       // Entered scores remain available if submission did not complete.
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         showErrorToast(
           context,
           'Grades could not be submitted. Your changes are still here.',
         );
+      }
     } finally {
       if (mounted) setState(() => _isSubmittingGrades = false);
     }

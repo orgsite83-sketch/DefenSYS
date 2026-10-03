@@ -13,6 +13,8 @@ import 'package:defensys/utils/import/faculty_role_parser.dart';
 import 'package:defensys/utils/import/student_bulk_import_csv.dart';
 import 'package:defensys/utils/import/user_bulk_import_draft.dart';
 import 'official_class_list_parser.dart';
+import 'faculty_import_format_guide.dart';
+import 'faculty_import_review_table.dart';
 
 /// Clean, zero-fillup Faculty & Staff Bulk Import view.
 /// Features a modern 2-column top section (Template Guide & File Staging)
@@ -353,7 +355,7 @@ class _BulkImportViewState extends State<BulkImportView> {
       widget.onDownloadSample!();
     } else {
       downloadTextFile(
-        filename: 'faculty_staff_template.csv',
+        filename: sampleFacultyCsvFilename,
         content: sampleFacultyCsvTemplate,
       );
     }
@@ -934,7 +936,7 @@ class _BulkImportViewState extends State<BulkImportView> {
         // 2-Column Top Section: Left is Format Guide, Right is File Staging & Upload
         LayoutBuilder(
           builder: (context, constraints) {
-            final isWide = constraints.maxWidth >= 900;
+            final isWide = constraints.maxWidth >= 1180;
             if (!isWide) {
               return Column(
                 children: [
@@ -948,9 +950,9 @@ class _BulkImportViewState extends State<BulkImportView> {
             return Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(flex: 5, child: _buildFormatGuideCard()),
+                Expanded(flex: 7, child: _buildFormatGuideCard()),
                 const SizedBox(width: 20),
-                Expanded(flex: 5, child: _buildUploadCard()),
+                Expanded(flex: 3, child: _buildUploadCard()),
               ],
             );
           },
@@ -980,242 +982,13 @@ class _BulkImportViewState extends State<BulkImportView> {
   }
 
   Widget _buildFormatGuideCard() {
-    return DefensysCard(
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 235),
-        padding: const EdgeInsets.all(22),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: _maroon.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.badge_outlined, color: _maroon, size: 20),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'CSV Format',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: _ink,
-                        ),
-                      ),
-                      SizedBox(height: 2),
-                      Text(
-                        'Official Faculty & Staff Template • Institutional Accounts',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: _muted,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-
-            // Sample Table Structure
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFCBD5E1)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.03),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Titlebar
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(9)),
-                      border: Border(bottom: BorderSide(color: Color(0xFFCBD5E1))),
-                    ),
-                    child: Wrap(
-                      alignment: WrapAlignment.spaceBetween,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(5),
-                            border: Border.all(color: const Color(0xFFCBD5E1)),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.insert_drive_file_outlined, size: 12, color: Color(0xFF16A34A)),
-                              SizedBox(width: 5),
-                              Text(
-                                'defensys_faculty_import_template.csv',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF1E293B),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        _buildMiniBadge('Faculty & Staff Template', const Color(0xFFEFF6FF), const Color(0xFF1D4ED8)),
-                      ],
-                    ),
-                  ),
-
-                  // Table Header (Row 1)
-                  Container(
-                    color: const Color(0xFFE2E8F0),
-                    child: Row(
-                      children: [
-                        _buildGutterCell('1', isHeader: true),
-                        Expanded(flex: 3, child: _buildHeaderCell('id_number')),
-                        Expanded(flex: 2, child: _buildHeaderCell('first_name')),
-                        Expanded(flex: 2, child: _buildHeaderCell('last_name')),
-                        Expanded(flex: 3, child: _buildHeaderCell('email')),
-                        Expanded(flex: 4, child: _buildHeaderCell('role')),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1, color: Color(0xFFCBD5E1)),
-
-                  // Sample Rows
-                  _buildSampleRow('2', 'FAC-0001', 'Ada', 'Lovelace', 'ada@ustp.edu.ph', 'faculty', false),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  _buildSampleRow('3', 'FAC-0002', 'Alan', 'Turing', 'a.turing@ustp.edu.ph', 'Panelist, Adviser', true),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  _buildSampleRow('4', 'FAC-0003', 'Grace', 'Hopper', 'g.hopper@ustp.edu.ph', 'PIT Lead 1st Year, Panelist', false),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  _buildSampleRow('5', 'FAC-0004', 'Dennis', 'Ritchie', 'd.ritchie@ustp.edu.ph', 'admin', true),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-
-            const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.auto_awesome_rounded, size: 14, color: _maroon),
-                SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'Best for onboarding faculty, advisers, and panelist accounts. Roles, PIT leads, and institutional emails are auto-detected. For multiple roles, separate them with commas or slashes (e.g., "Panelist, Adviser" or "PIT Lead 1st Year / Panelist").',
-                    style: TextStyle(fontSize: 11.5, color: _muted, fontWeight: FontWeight.w500, height: 1.3),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-
-            OutlinedButton.icon(
-              onPressed: _downloadTemplate,
-              icon: const Icon(Icons.download_rounded, size: 14),
-              label: const Text('Download Sample Template'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _ink,
-                side: const BorderSide(color: _line),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGutterCell(String rowNum, {bool isHeader = false}) {
-    return Container(
-      width: 26,
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: isHeader ? const Color(0xFFCBD5E1) : const Color(0xFFF8FAFC),
-        border: const Border(right: BorderSide(color: Color(0xFFCBD5E1))),
-      ),
-      child: Text(
-        rowNum,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: isHeader ? FontWeight.w900 : FontWeight.w600,
-          color: isHeader ? const Color(0xFF334155) : const Color(0xFF94A3B8),
-          fontFamily: 'monospace',
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeaderCell(String title) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 10.5,
-          fontWeight: FontWeight.w800,
-          color: Color(0xFF334155),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSampleRow(String rowNum, String id, String first, String last, String email, String role, bool isAlt) {
-    return Container(
-      color: isAlt ? const Color(0xFFF8FAFC) : Colors.white,
-      child: Row(
-        children: [
-          _buildGutterCell(rowNum),
-          Expanded(flex: 3, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5), child: Text(id, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: _ink)))),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5), child: Text(first, style: const TextStyle(fontSize: 10.5, color: _ink)))),
-          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5), child: Text(last, style: const TextStyle(fontSize: 10.5, color: _ink)))),
-          Expanded(flex: 3, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5), child: Text(email, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, color: _muted)))),
-          Expanded(flex: 4, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5), child: Text(role, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: _maroon)))),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMiniBadge(String label, Color bg, Color fg) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 9.5,
-          fontWeight: FontWeight.w700,
-          color: fg,
-        ),
-      ),
+    final templateRows = const LineSplitter()
+        .convert(sampleFacultyCsvTemplate)
+        .map(_splitCsvLine)
+        .toList();
+    return FacultyImportFormatGuide(
+      templateRows: templateRows,
+      onDownload: _downloadTemplate,
     );
   }
 
@@ -1553,126 +1326,9 @@ class _BulkImportViewState extends State<BulkImportView> {
               ),
             )
           else
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: pageRows.length,
-              separatorBuilder: (_, __) => const Divider(height: 1, color: _line),
-              itemBuilder: (context, index) {
-                final row = pageRows[index];
-                final id = row['id_number']?.toString() ?? '';
-                final first = row['first_name']?.toString() ?? '';
-                final last = row['last_name']?.toString() ?? '';
-                final email = row['email']?.toString() ?? '';
-                final rawRole = (row['raw_role'] ?? row['role'] ?? 'faculty').toString();
-                final parsedRoles = parseFacultyRoles(rawRole);
-                final isDup = _isExistingUser(id, email);
-
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  color: index.isEven ? Colors.white : const Color(0xFFF9FAFB),
-                  child: Row(
-                    children: [
-                      // Faculty ID & Name
-                      Expanded(
-                        flex: 3,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '$first $last'.trim().isEmpty ? 'Unnamed Faculty' : '$first $last',
-                              style: const TextStyle(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w700,
-                                color: _ink,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'ID: $id',
-                              style: const TextStyle(fontSize: 12, color: _muted),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      // Email
-                      Expanded(
-                        flex: 3,
-                        child: Text(
-                          email.isEmpty ? 'No institutional email' : email,
-                          style: const TextStyle(fontSize: 12.5, color: _ink),
-                        ),
-                      ),
-
-                      // Role Badges
-                      Expanded(
-                        flex: 3,
-                        child: Wrap(
-                          spacing: 4,
-                          runSpacing: 4,
-                          children: parsedRoles.badges.map((b) => Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                            decoration: BoxDecoration(
-                              color: b.bg,
-                              borderRadius: BorderRadius.circular(5),
-                            ),
-                            child: Text(
-                              b.label,
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w800,
-                                color: b.fg,
-                              ),
-                            ),
-                          )).toList(),
-                        ),
-                      ),
-
-                      // Status
-                      Expanded(
-                        flex: 2,
-                        child: Row(
-                          children: [
-                            if (isDup)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFEF3C7),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Text(
-                                  'Existing Account',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF92400E),
-                                  ),
-                                ),
-                              )
-                            else
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFDCFCE7),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Text(
-                                  'Ready to Import',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF166534),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
+            FacultyImportReviewTable(
+              rows: pageRows,
+              isExistingUser: _isExistingUser,
             ),
 
           // Pagination Controls

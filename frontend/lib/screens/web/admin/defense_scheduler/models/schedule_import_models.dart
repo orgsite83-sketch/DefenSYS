@@ -962,6 +962,22 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     if (panelistIds.isEmpty) {
       slotIssues.add('At least one chair or panel member is required.');
     }
+    for (final id in panelistIds) {
+      if (state.isEligiblePanelist(id)) continue;
+      final person = state.faculty
+          .where((p) => asInt(p['id']) == id)
+          .firstOrNull;
+      final name = person?['name']?.toString() ?? 'Faculty #$id';
+      if (state.requiresPanelistApproval) {
+        slotIssues.add(
+          '$name needs panelist eligibility. Request admin approval before importing this slot.',
+        );
+      } else if (state.canApprovePanelists) {
+        warnings.add(
+          '$name will receive reusable panelist eligibility when you confirm this import.',
+        );
+      }
+    }
 
     final allIssues = <String>[...stageIssues, ...teamIssues, ...slotIssues];
 

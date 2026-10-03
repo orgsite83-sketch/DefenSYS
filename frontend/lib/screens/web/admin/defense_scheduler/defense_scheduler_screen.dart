@@ -355,7 +355,9 @@ class _DefenseSchedulerScreenState
             ref.read(defenseSchedulerProvider.notifier).fetchSchedules(),
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: DefensysUi.contentPadding,
+          padding: MediaQuery.sizeOf(context).width < 640
+              ? const EdgeInsets.fromLTRB(16, 20, 16, 24)
+              : DefensysUi.contentPadding,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

@@ -3,6 +3,8 @@
 from rest_framework.permissions import BasePermission
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken
+from user_management.models import GuestPanelistCode
+from user_management.external_evaluators import invitation_is_available, invitation_schedule_ids
 
 
 class GuestPanelistPrincipal:
@@ -15,7 +17,7 @@ class GuestPanelistPrincipal:
     is_superuser = False
     is_staff = False
 
-    def __init__(self, token):
+    def __init__(self, token, invitation=None):
         self.token = token
         self.pk = token.get('guest_code_id')
         self.id = self.pk
@@ -24,6 +26,7 @@ class GuestPanelistPrincipal:
         self.guest_name = token.get('guest_name', 'Guest')
         self.defense_schedule_id = token.get('defense_schedule_id')
         self.team_id = token.get('team_id')
+        self.schedule_ids = invitation_schedule_ids(invitation) if invitation else [self.defense_schedule_id]
         self.username = f'guest:{self.guest_code}'
         self.role = 'guest_panelist'
 
@@ -68,7 +71,12 @@ class GuestJWTAuthentication(JWTAuthentication):
             return None
         if not validated_token.get('guest_panelist'):
             return None
-        return GuestPanelistPrincipal(validated_token), validated_token
+        invitation = GuestPanelistCode.objects.select_related('evaluator').filter(
+            pk=validated_token.get('guest_code_id'), code=validated_token.get('guest_code'),
+        ).first()
+        if invitation is None or not invitation_is_available(invitation) or invitation.access_version != validated_token.get('access_version', 1):
+            raise InvalidToken('This invitation has expired or been revoked. Contact your defense coordinator.')
+        return GuestPanelistPrincipal(validated_token, invitation), validated_token
 
 
 class IsGuestPanelist(BasePermission):

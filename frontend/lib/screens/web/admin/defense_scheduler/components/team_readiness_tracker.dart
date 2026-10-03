@@ -53,15 +53,8 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
     return Container(
       decoration: BoxDecoration(
         color: _isDark ? DefensysTokens.mistSurface : Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
-        boxShadow: [
-          BoxShadow(
-            color: _isDark ? Colors.black.withValues(alpha: 0.25) : Colors.black.withValues(alpha: 0.05),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       padding: const EdgeInsets.all(24),
       child: child,

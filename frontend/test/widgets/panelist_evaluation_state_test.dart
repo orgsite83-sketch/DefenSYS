@@ -139,6 +139,34 @@ void main() {
     expect(submitButton(tester).onPressed, isNull);
   });
 
+  testWidgets('Switching from a team rubric to an individual rubric starts with only the new criteria', (tester) async {
+    final team = _team();
+    final individual = _team(target: 'individual');
+    final teams = [team, individual];
+    await pumpDefensysWidget(tester, GradeSheetTab(
+      teams: teams, selectedTeamIndex: 0, onTeamChanged: (_) {},
+    ));
+    await tester.ensureVisible(score('Clarity'));
+    await tester.enterText(score('Clarity'), '0');
+    await tester.pumpAndSettle();
+    expect(find.text('1 of 1 scores entered'), findsOneWidget);
+
+    await pumpDefensysWidget(tester, GradeSheetTab(
+      teams: teams, selectedTeamIndex: 1, onTeamChanged: (_) {},
+    ));
+    expect(find.text('0 of 2 scores entered'), findsOneWidget);
+    expect(score('Clarity'), findsOneWidget);
+    expect(tester.widget<TextFormField>(score('Clarity')).initialValue, '');
+    expect(submitButton(tester).onPressed, isNull);
+
+    await pumpDefensysWidget(tester, GradeSheetTab(
+      teams: teams, selectedTeamIndex: 0, onTeamChanged: (_) {},
+    ));
+    expect(find.text('1 of 1 scores entered'), findsOneWidget);
+    expect(tester.widget<TextFormField>(score('Clarity')).initialValue, '0.0');
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Save Draft sends entered scores to backend and confirms only successful persistence', (tester) async {
     final client = _HttpClient();
     registerFallbackValue(Uri.parse('https://example.test'));

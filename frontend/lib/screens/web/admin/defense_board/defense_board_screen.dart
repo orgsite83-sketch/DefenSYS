@@ -3142,16 +3142,14 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   }
 
   String _panelistNames(Map<String, dynamic> schedule) {
-    final panelists = schedule['panelists'];
-    if (panelists is! List || panelists.isEmpty) {
-      return 'No panel assigned';
-    }
-
-    return panelists
+    final panelists = schedule['panelists'] as List? ?? [];
+    final names = panelists
         .whereType<Map>()
         .map((panelist) => panelist['name']?.toString() ?? '')
         .where((name) => name.isNotEmpty)
-        .join(', ');
+        .toList();
+    names.addAll((schedule['external_evaluators'] as List? ?? []).whereType<Map>().map((e) => '${e['name']} (External)'));
+    return names.isEmpty ? 'No panel assigned' : names.join(', ');
   }
 
   String _shortTime(dynamic value) {
@@ -3444,4 +3442,3 @@ class _SessionGroup {
     required this.schedules,
   });
 }
-

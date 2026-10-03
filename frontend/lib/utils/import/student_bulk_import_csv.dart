@@ -178,6 +178,8 @@ const Map<String, String> sampleStudentCsvByYear = {
       '4022,Isabella,Alcantara,4022@ustp.edu.ph,student\n',
 };
 
+const sampleFacultyCsvFilename = 'defensys_faculty_import_template.csv';
+
 const sampleFacultyCsvTemplate =
     '$studentBulkImportHeader\n'
     'FAC-0001,Ada,Lovelace,ada@ustp.edu.ph,faculty\n'

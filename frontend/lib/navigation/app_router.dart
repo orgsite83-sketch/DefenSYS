@@ -1,11 +1,14 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../screens/app/panelist_dashboard.dart';
 import '../screens/app/student_dashboard.dart';
+import '../screens/app/app_settings_screen.dart';
+import '../screens/app/web_workspace_only_screen.dart';
 import '../screens/login_screen.dart';
+import '../screens/guest/guest_evaluation_entry.dart';
 import '../screens/password_reset_confirm_screen.dart';
 import '../screens/app/student/profile_edit_screen.dart';
 import '../screens/terms_agreement_screen.dart';
@@ -15,6 +18,7 @@ import '../services/app_navigator.dart';
 import '../services/auth_provider.dart';
 import 'admin_route_paths.dart';
 import 'route_pages.dart';
+import 'workspace_access.dart';
 
 class RouterRefreshNotifier extends ChangeNotifier {
   RouterRefreshNotifier(this._ref) {
@@ -31,6 +35,9 @@ final routerRefreshProvider = Provider<RouterRefreshNotifier>((ref) {
 });
 
 final appRouterProvider = Provider<GoRouter>((ref) {
+  if (kIsWeb) {
+    GoRouter.optionURLReflectsImperativeAPIs = true;
+  }
   final refresh = ref.watch(routerRefreshProvider);
 
   String? redirect(BuildContext context, GoRouterState state) {
@@ -40,36 +47,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     final location = state.uri.path;
     final onLogin = location == AppRoutes.login;
     final isPasswordReset = location.startsWith('/password-reset/confirm');
+    final onGuestEntry = location == AppRoutes.guestEntry;
     if (auth.token == null || auth.user == null) {
+      if (location.startsWith('/guest/')) {
+        return onGuestEntry ? null : AppRoutes.guestEntry;
+      }
       return (onLogin || isPasswordReset) ? null : AppRoutes.login;
     }
 
-    final user = auth.user!;
-    final role = user['role']?.toString();
-
-    if (onLogin) {
-      return _defaultHomeForUser(user);
+    if (auth.requiresTerms &&
+        auth.user!['role'] != 'guest_panelist' &&
+        location != AppRoutes.terms &&
+        !onGuestEntry) {
+      return AppRoutes.terms;
     }
-
-    if (kIsWeb) {
-      if (role == 'admin') {
-        if (!location.startsWith('/admin')) {
-          return AdminRoutes.overview;
-        }
-      } else if (role == 'faculty') {
-        if (!location.startsWith('/faculty')) {
-          return FacultyRoutes.dashboard;
-        }
-      } else {
-        return AppRoutes.login;
-      }
-    } else {
-      if (location.startsWith('/admin') || location.startsWith('/faculty')) {
-        return _defaultHomeForUser(user);
-      }
-    }
-
-    return null;
+    return WorkspaceAccess.redirect(auth.user!, location);
   }
 
   final router = GoRouter(
@@ -79,6 +71,29 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     initialLocation: AppRoutes.login,
     routes: [
       GoRoute(
+        path: AppRoutes.guestEntry,
+        builder: (context, state) => GuestEvaluationEntry(
+          initialCode: state.uri.queryParameters['code'],
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.guestDefenses,
+        builder: (_, __) => Consumer(
+          builder: (context, ref, child) {
+            final auth = ref.watch(authProvider);
+            if (auth.isRestoring) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+            if (auth.user?['role'] != 'guest_panelist' || auth.token == null) {
+              return const SizedBox.shrink();
+            }
+            return PanelistDashboard(userData: auth.user);
+          },
+        ),
+      ),
+      GoRoute(
         path: '/',
         redirect: (context, state) {
           final auth = ref.read(authProvider);
@@ -86,7 +101,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           if (auth.token == null || auth.user == null) {
             return AppRoutes.login;
           }
-          return _defaultHomeForUser(auth.user!);
+          return homeRouteForUser(auth.user!);
         },
       ),
       GoRoute(
@@ -126,16 +141,50 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.student,
         builder: (context, state) {
-          final user = ref.read(authProvider).user;
-          return StudentDashboard(userData: user);
+          return Consumer(
+            builder: (context, ref, child) {
+              final auth = ref.watch(authProvider);
+              if (auth.isRestoring) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (auth.user?['role'] != 'student' || auth.token == null) {
+                return const SizedBox.shrink();
+              }
+              return StudentDashboard(userData: auth.user);
+            },
+          );
         },
       ),
       GoRoute(
         path: AppRoutes.panelist,
         builder: (context, state) {
-          final user = ref.read(authProvider).user;
-          return PanelistDashboard(userData: user);
+          return Consumer(
+            builder: (context, ref, child) {
+              final auth = ref.watch(authProvider);
+              if (auth.isRestoring) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (auth.user == null ||
+                  auth.token == null ||
+                  !WorkspaceAccess.canEvaluate(auth.user!)) {
+                return const SizedBox.shrink();
+              }
+              return PanelistDashboard(userData: auth.user);
+            },
+          );
         },
+      ),
+      GoRoute(
+        path: AppRoutes.settings,
+        builder: (_, __) => const AppSettingsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.webWorkspaceOnly,
+        builder: (_, __) => const WebWorkspaceOnlyScreen(),
       ),
       ShellRoute(
         builder: (context, state, child) {
@@ -163,7 +212,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           final currentNow = ref.read(activeAdminSectionProvider);
           if (routeSection != currentNow) {
-            ref.read(activeAdminSectionProvider.notifier).setSection(routeSection);
+            ref
+                .read(activeAdminSectionProvider.notifier)
+                .setSection(routeSection);
           }
         });
       }
@@ -173,34 +224,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   return router;
 });
 
-String _defaultHomeForUser(Map<String, dynamic> user) {
-  final role = user['role']?.toString();
-  if (kIsWeb) {
-    if (role == 'admin') return AdminRoutes.overview;
-    if (role == 'faculty') return FacultyRoutes.dashboard;
-    return AppRoutes.login;
-  }
-  if (user['is_panelist'] == true || role == 'guest_panelist') {
-    return AppRoutes.panelist;
-  }
-  if (role == 'faculty') return AppRoutes.panelist;
-  return AppRoutes.student;
-}
-
-String homeRouteForRoleLabel(String role) => _mobileRouteForRoleLabel(role);
-
-String _mobileRouteForRoleLabel(String role) {
-  switch (role) {
-    case 'Admin':
-      return kIsWeb ? AdminRoutes.overview : AppRoutes.student;
-    case 'Faculty':
-      return kIsWeb ? FacultyRoutes.dashboard : AppRoutes.panelist;
-    case 'Panelist':
-      return AppRoutes.panelist;
-    default:
-      return AppRoutes.student;
-  }
-}
+String homeRouteForUser(Map<String, dynamic> user) =>
+    WorkspaceAccess.home(user);
 
 /// Mobile/web post-auth navigation via go_router.
 Future<void> navigateToHomeAfterAuthWithRouter(
@@ -210,7 +235,7 @@ Future<void> navigateToHomeAfterAuthWithRouter(
 }) async {
   // Terms gate handled by caller; this only routes to home.
   if (!context.mounted) return;
-  context.go(_mobileRouteForRoleLabel(role));
+  context.go(homeRouteForUser(userData));
 }
 
 String? _redirectAdminParentOnly(GoRouterState state) {
@@ -237,20 +262,25 @@ List<RouteBase> _adminRoutes() {
       routes: [
         GoRoute(
           path: 'overview',
-          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+          pageBuilder: (_, __) =>
+              const NoTransitionPage(child: SizedBox.shrink()),
         ),
         GoRoute(
           path: 'profile',
-          pageBuilder: (_, __) => const NoTransitionPage(child: ProfileScreen()),
+          pageBuilder: (_, __) =>
+              const NoTransitionPage(child: ProfileScreen()),
         ),
         GoRoute(
           path: 'academic-periods',
-          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+          pageBuilder: (_, __) =>
+              const NoTransitionPage(child: SizedBox.shrink()),
           routes: [
             GoRoute(
               path: ':semesterId',
               builder: (_, state) {
-                final id = int.tryParse(state.pathParameters['semesterId'] ?? '');
+                final id = int.tryParse(
+                  state.pathParameters['semesterId'] ?? '',
+                );
                 return AdminSemesterDetailRoute(semesterId: id);
               },
             ),
@@ -258,11 +288,13 @@ List<RouteBase> _adminRoutes() {
         ),
         GoRoute(
           path: 'users',
-          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+          pageBuilder: (_, __) =>
+              const NoTransitionPage(child: SizedBox.shrink()),
         ),
         GoRoute(
           path: 'student-teams',
-          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+          pageBuilder: (_, __) =>
+              const NoTransitionPage(child: SizedBox.shrink()),
           routes: [
             GoRoute(
               path: ':teamId',
@@ -275,11 +307,13 @@ List<RouteBase> _adminRoutes() {
         ),
         GoRoute(
           path: 'student-records',
-          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+          pageBuilder: (_, __) =>
+              const NoTransitionPage(child: SizedBox.shrink()),
         ),
         GoRoute(
           path: 'grade-center',
-          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+          pageBuilder: (_, __) =>
+              const NoTransitionPage(child: SizedBox.shrink()),
           routes: [
             GoRoute(
               path: 'grades/:gradeId',
@@ -299,7 +333,8 @@ List<RouteBase> _adminRoutes() {
         ),
         GoRoute(
           path: 'rubrics',
-          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+          pageBuilder: (_, __) =>
+              const NoTransitionPage(child: SizedBox.shrink()),
           routes: [
             GoRoute(
               path: ':rubricId/edit',
@@ -312,44 +347,56 @@ List<RouteBase> _adminRoutes() {
         ),
         GoRoute(
           path: 'project-archive',
-          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+          pageBuilder: (_, __) =>
+              const NoTransitionPage(child: SizedBox.shrink()),
         ),
         GoRoute(
           path: 'repository-audit',
-          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+          pageBuilder: (_, __) =>
+              const NoTransitionPage(child: SizedBox.shrink()),
         ),
         GoRoute(
           path: 'curriculum-analytics',
-          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+          pageBuilder: (_, __) =>
+              const NoTransitionPage(child: SizedBox.shrink()),
         ),
         GoRoute(
           path: 'audit-compliance',
-          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+          pageBuilder: (_, __) =>
+              const NoTransitionPage(child: SizedBox.shrink()),
         ),
         GoRoute(
           path: 'defense-scheduler',
-          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+          pageBuilder: (_, __) =>
+              const NoTransitionPage(child: SizedBox.shrink()),
         ),
         GoRoute(
           path: 'defense-board',
-          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+          pageBuilder: (_, __) =>
+              const NoTransitionPage(child: SizedBox.shrink()),
           routes: [
             GoRoute(
               path: 'import',
-              pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+              pageBuilder: (_, __) =>
+                  const NoTransitionPage(child: SizedBox.shrink()),
             ),
           ],
         ),
         GoRoute(
           path: 'defense-stages',
-          pageBuilder: (_, __) => const NoTransitionPage(child: SizedBox.shrink()),
+          pageBuilder: (_, __) =>
+              const NoTransitionPage(child: SizedBox.shrink()),
           routes: [
             GoRoute(
               path: ':stageId/edit',
               builder: (_, state) {
                 final id = int.parse(state.pathParameters['stageId']!);
-                final tab = int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0;
-                return AdminDefenseStageEditorRoute(stageId: id, initialTab: tab);
+                final tab =
+                    int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0;
+                return AdminDefenseStageEditorRoute(
+                  stageId: id,
+                  initialTab: tab,
+                );
               },
             ),
           ],
@@ -374,7 +421,9 @@ List<RouteBase> _facultyRoutes() {
               path: ':sectionName',
               builder: (_, state) {
                 final sectionName = state.pathParameters['sectionName']!;
-                return PitLeadCohortSectionDetailRoute(sectionName: sectionName);
+                return PitLeadCohortSectionDetailRoute(
+                  sectionName: sectionName,
+                );
               },
             ),
           ],
@@ -460,7 +509,10 @@ List<RouteBase> _facultyRoutes() {
           builder: (_, __) => const SizedBox.shrink(),
         ),
         GoRoute(path: 'uploader', builder: (_, __) => const SizedBox.shrink()),
-        GoRoute(path: 'pit-events', builder: (_, __) => const SizedBox.shrink()),
+        GoRoute(
+          path: 'pit-events',
+          builder: (_, __) => const SizedBox.shrink(),
+        ),
       ],
     ),
   ];

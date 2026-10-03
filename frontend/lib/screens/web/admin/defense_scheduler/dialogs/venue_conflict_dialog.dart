@@ -15,6 +15,7 @@ import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:go_router/go_router.dart';
 import 'package:defensys/navigation/admin_route_paths.dart';
 import '../models/schedule_import_models.dart';
+import 'panelist_pool_dialog.dart';
 
 class ScheduleImportDialog {
   static Future<void> show(
@@ -696,6 +697,15 @@ class ScheduleImportDialog {
                   ),
                 ),
                 actions: [
+                  TextButton.icon(
+                    onPressed: importBusy ? null : () async {
+                      await PanelistPoolDialog.show(dialogContext);
+                      state = ref.read(defenseSchedulerProvider);
+                      if (dialogContext.mounted) setDialogState(() {});
+                    },
+                    icon: const Icon(Icons.how_to_reg_outlined),
+                    label: const Text('Panelist pool'),
+                  ),
                   if (draftRestored && parsed != null && parsed!.rows.isNotEmpty)
                     TextButton.icon(
                       onPressed: importBusy ? null : () => discardDraft(setDialogState),

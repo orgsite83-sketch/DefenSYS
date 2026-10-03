@@ -18,6 +18,8 @@ from student_teams.services import get_ready_teams, is_stage_ready, mark_stage_s
 from .models import DefenseSchedule, SchedulePanelist, PitEventDeliverable
 from .pit_config import get_pit_event_config, pit_event_config_payload, upsert_pit_event_config
 from .services import VALID_TRANSITIONS, transition_schedule_status
+from user_management.external_evaluators import create_invitations, resolve_evaluators, evaluator_payload
+from user_management.models import ExternalEvaluator
 
 
 User = get_user_model()
@@ -113,7 +115,7 @@ class PanelistOptionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'name', 'email']
+        fields = ['id', 'username', 'name', 'email', 'is_panelist']
 
     def get_name(self, obj):
         return display_name(obj)
@@ -267,6 +269,7 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
     rubric_name = serializers.CharField(source='rubric.name', read_only=True, allow_null=True)
     panelists = SchedulePanelistSerializer(source='panel_assignments', many=True, read_only=True)
     panelist_ids = serializers.SerializerMethodField()
+    external_evaluators = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
     documenter = serializers.IntegerField(source='documenter.id', read_only=True, allow_null=True)
     documenter_name = serializers.SerializerMethodField()
@@ -309,6 +312,7 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
             'grade_status',
             'panelists',
             'panelist_ids',
+            'external_evaluators',
             'created_by_name',
             'documenter',
             'documenter_name',
@@ -420,6 +424,10 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
     def get_panelist_ids(self, obj):
         return [assignment.panelist_id for assignment in obj.panel_assignments.all()]
 
+    def get_external_evaluators(self, obj):
+        return [{'id': i.evaluator_id, 'name': i.guest_name, 'is_active': i.is_active}
+                for i in obj.guest_invitations.all()]
+
     def get_pit_event_config_id(self, obj):
         if obj.scope != DefenseSchedule.SCOPE_PIT:
             return None
@@ -475,6 +483,8 @@ class ScheduleBaseSerializer(serializers.Serializer):
     slot_duration = serializers.IntegerField(min_value=15, max_value=240, default=60)
     room = serializers.CharField(max_length=120)
     panelist_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
+    external_evaluator_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, default=list, max_length=30)
+    guest_access_expires_at = serializers.DateTimeField(required=False)
     chair_panelist_id = serializers.IntegerField(required=False, allow_null=True)
     archive_file_template = serializers.CharField(required=False, allow_blank=True, max_length=255)
     documenter_id = serializers.IntegerField(required=False, allow_null=True)
@@ -491,6 +501,11 @@ class ScheduleBaseSerializer(serializers.Serializer):
         self._validate_scheduler_scope_open(attrs)
         attrs['defense_stage'] = self._resolve_defense_stage(attrs)
         attrs['panelists'] = self._resolve_panelists(attrs['panelist_ids'])
+        attrs['external_evaluators'] = resolve_evaluators(attrs.get('external_evaluator_ids', []), user)
+        if attrs.get('guest_access_expires_at'):
+            from django.utils import timezone
+            if attrs['guest_access_expires_at'] <= timezone.now():
+                raise serializers.ValidationError({'guest_access_expires_at': 'Choose a future access expiry.'})
         if attrs.get('chair_panelist_id') and attrs.get('panelist_ids'):
             if attrs['chair_panelist_id'] not in attrs['panelist_ids']:
                 raise serializers.ValidationError({'chair_panelist_id': 'Chair panelist must be one of the assigned panelists.'})
@@ -677,6 +692,8 @@ class ScheduleBaseSerializer(serializers.Serializer):
         if len(panelists) != len(unique_ids):
             raise serializers.ValidationError({'panelist_ids': 'All panelists must be active faculty members.'})
         panelists.sort(key=lambda item: unique_ids.index(item.id))
+        from user_management.panelist_eligibility import require_panelist_eligibility
+        require_panelist_eligibility(panelists, getattr(self.context.get('request'), 'user', None))
         return panelists
 
     def _resolve_documenter(self, attrs):
@@ -695,13 +712,8 @@ class ScheduleBaseSerializer(serializers.Serializer):
         return doc
 
     def _ensure_panelist_roles(self, panelists, changed_by=None):
-        for panelist in panelists:
-            if panelist and getattr(panelist, 'role', None) in ['faculty', 'admin'] and not getattr(panelist, 'is_panelist', False):
-                from user_management.role_assignments import record_role_changes, snapshot_role_flags
-                before_flags = snapshot_role_flags(panelist)
-                panelist.is_panelist = True
-                panelist.save(update_fields=['is_panelist'])
-                record_role_changes(panelist, before_flags, changed_by=changed_by)
+        from user_management.panelist_eligibility import ensure_panelist_eligibility
+        ensure_panelist_eligibility(panelists, changed_by)
 
     def _ensure_documenter_role(self, documenter, changed_by=None):
         if documenter and getattr(documenter, 'role', None) in ['faculty', 'admin'] and not getattr(documenter, 'is_documenter', False):
@@ -763,6 +775,14 @@ class ScheduleBaseSerializer(serializers.Serializer):
                 })
 
     def _validate_panelist_overlap(self, attrs, slot_intervals, error_field='panelist_ids'):
+        external_ids = [e.pk for e in attrs.get('external_evaluators', [])]
+        external_schedules = DefenseSchedule.objects.filter(
+            scheduled_date=attrs['scheduled_date'], status__in=ACTIVE_STATUSES,
+            guest_invitations__evaluator_id__in=external_ids, guest_invitations__is_active=True,
+        ).distinct()
+        for start, end in slot_intervals:
+            if any(self._schedule_overlaps(s, start, end) for s in external_schedules):
+                raise serializers.ValidationError({'external_evaluator_ids': 'An external evaluator already has a defense during that time.'})
         panelist_ids = {panelist.id for panelist in attrs['panelists']}
         schedules = (
             DefenseSchedule.objects.filter(
@@ -822,6 +842,8 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        externals = validated_data.get('external_evaluators', [])
+        guest_expiry = validated_data.get('guest_access_expires_at')
         chair_panelist_id = validated_data.pop('chair_panelist_id', None)
         panelists = validated_data.pop('panelists')
         actor = getattr(self.context.get('request'), 'user', None)
@@ -834,12 +856,16 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
             created_by=actor,
         )
         self._sync_panelists(schedule, panelists, chair_panelist_id=chair_panelist_id)
+        create_invitations(externals, [schedule], actor, guest_expiry)
         self._sync_grade_row(schedule)
         if schedule.documenter:
             send_documenter_assignment_notification(schedule)
         return schedule
 
     def _pop_schedule_meta(self, validated_data):
+        validated_data.pop('external_evaluator_ids', None)
+        validated_data.pop('external_evaluators', None)
+        validated_data.pop('guest_access_expires_at', None)
         validated_data.pop('panelist_ids', None)
         validated_data.pop('chair_panelist_id', None)
         validated_data.pop('documenter_id', None)
@@ -1143,6 +1169,7 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
                 for order, panelist in enumerate(attrs['panelists'])
             ])
             schedules.append(schedule)
+        create_invitations(attrs.get('external_evaluators', []), schedules, actor, attrs.get('guest_access_expires_at'))
         from grading.grades.services import _sync_grade_for_schedule
 
         for schedule in schedules:
@@ -1351,6 +1378,13 @@ def minutes_to_time(minutes):
     return value.time().replace(second=0, microsecond=0)
 
 
+def _panelist_request_options(user):
+    if not user or not getattr(user, 'is_authenticated', False):
+        return []
+    from user_management.panelist_eligibility import visible_requests, request_payload
+    return [request_payload(item) for item in visible_requests(user)[:100]]
+
+
 def schedule_options_payload(user=None, semester=None, pit_lead_only=None):
     from authentication_access_control.scopes import is_admin_user, is_pit_lead_only, visible_teams_for
     from student_teams.term_scope import (
@@ -1447,6 +1481,9 @@ def schedule_options_payload(user=None, semester=None, pit_lead_only=None):
 
     return {
         'scheduler_mode': DefenseSchedule.SCOPE_PIT if pit_lead_only else DefenseSchedule.SCOPE_CAPSTONE,
+        'can_approve_panelists': admin_user,
+        'requires_panelist_approval': pit_lead_only,
+        'panelist_requests': _panelist_request_options(user),
         'pit_operating_mode': pit_operating_mode,
         'operating_message': operating_message,
         'can_schedule_pit': can_schedule_pit,
@@ -1457,6 +1494,7 @@ def schedule_options_payload(user=None, semester=None, pit_lead_only=None):
         'rubrics': RubricSerializer(rubrics, many=True).data,
         'peer_rubrics': RubricSerializer(peer_rubrics, many=True).data,
         'panelists': PanelistOptionSerializer(panelists, many=True).data,
+        'external_evaluators': [evaluator_payload(e) for e in ExternalEvaluator.objects.filter(status=ExternalEvaluator.APPROVED, is_active=True)],
         'documenters': PanelistOptionSerializer(documenters, many=True).data,
         'faculty': PanelistOptionSerializer(faculty, many=True).data,
         'teams': ScheduleTeamSerializer(teams, many=True).data,

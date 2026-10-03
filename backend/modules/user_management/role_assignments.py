@@ -70,6 +70,9 @@ def record_role_changes(user, before_flags, changed_by=None):
             ),
             changed_by=changed_by,
         )
+        if role_key == FacultyRoleAssignment.ROLE_PANELIST and is_active:
+            from .panelist_eligibility import resolve_approved_requests
+            resolve_approved_requests(user, changed_by)
 
 
 def _latest_role_assignment(user, role_key):

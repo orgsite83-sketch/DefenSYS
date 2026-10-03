@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../navigation/admin_route_paths.dart';
+import '../../../navigation/workspace_access.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../services/auth_provider.dart';
 import '../../../theme/defensys_tokens.dart';
@@ -423,6 +424,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             const SizedBox(width: 8),
           ],
           const Spacer(),
+          if (WorkspaceAccess.canEvaluate(ref.watch(authProvider).user ?? widget.userData ?? {}))
+            IconButton(icon: const Icon(Icons.rate_review_outlined), tooltip: 'Panelist evaluations',
+              onPressed: () => context.push(AppRoutes.panelist)),
           Consumer(
             builder: (context, ref, child) {
               final state = ref.watch(notificationsProvider);

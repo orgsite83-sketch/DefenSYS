@@ -6,11 +6,13 @@ from django.utils import timezone
 from rest_framework_simplejwt.tokens import AccessToken
 
 from user_management.models import GuestPanelistCode
+from user_management.external_evaluators import invitation_is_available, invitation_schedule_ids, primary_guest_schedule
 
 
 def get_guest_code_or_none(code: str):
     try:
         guest_code = GuestPanelistCode.objects.select_related(
+            'evaluator',
             'defense_schedule',
             'defense_schedule__team',
             'defense_schedule__defense_stage',
@@ -19,18 +21,21 @@ def get_guest_code_or_none(code: str):
     except GuestPanelistCode.DoesNotExist:
         return None
 
-    if guest_code.expires_at and guest_code.expires_at < timezone.now():
+    if not invitation_is_available(guest_code):
         return None
     return guest_code
 
 
 def create_guest_access_token(guest_code: GuestPanelistCode) -> str:
-    schedule = guest_code.defense_schedule
+    schedule = primary_guest_schedule(guest_code)
     team = schedule.team
     token = AccessToken()
     token.set_exp(lifetime=timedelta(hours=8))
+    if guest_code.expires_at:
+        token['exp'] = min(token['exp'], int(guest_code.expires_at.timestamp()))
     token['guest_panelist'] = True
     token['guest_code_id'] = guest_code.id
+    token['access_version'] = guest_code.access_version
     token['guest_code'] = guest_code.code
     token['defense_schedule_id'] = schedule.id
     token['team_id'] = team.id if team else None
@@ -39,7 +44,7 @@ def create_guest_access_token(guest_code: GuestPanelistCode) -> str:
 
 
 def guest_user_payload(guest_code: GuestPanelistCode) -> dict:
-    schedule = guest_code.defense_schedule
+    schedule = primary_guest_schedule(guest_code)
     team = schedule.team
     return {
         'id': guest_code.id,
@@ -53,4 +58,6 @@ def guest_user_payload(guest_code: GuestPanelistCode) -> dict:
         'team_id': team.id if team else None,
         'team_name': team.name if team else '',
         'is_guest_panelist': True,
+        'schedule_ids': invitation_schedule_ids(guest_code),
+        'expires_at': guest_code.expires_at.isoformat() if guest_code.expires_at else None,
     }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 
 /// Parsed faculty role information with base role and capability flags.
 class ParsedFacultyRoles {
@@ -22,76 +23,94 @@ class ParsedFacultyRoles {
     required this.rawInput,
   });
 
-  /// Generate list of badge descriptors for rendering in review tables.
+  /// Display assignments, falling back to the base role for unassigned accounts.
+  /// This only affects labels; [baseRole] and upload capability flags stay intact.
   List<FacultyRoleBadge> get badges {
     final list = <FacultyRoleBadge>[];
 
     if (baseRole == 'admin') {
-      list.add(const FacultyRoleBadge(
-        label: 'ADMIN',
-        bg: Color(0xFFFEF3C7),
-        fg: Color(0xFF92400E),
-      ));
+      list.add(
+        const FacultyRoleBadge(
+          label: 'Admin',
+          bg: DefensysTokens.dangerBg,
+          fg: DefensysTokens.maroon,
+        ),
+      );
       return list;
     }
 
     if (baseRole == 'student') {
-      list.add(const FacultyRoleBadge(
-        label: 'STUDENT',
-        bg: Color(0xFFFEF2F2),
-        fg: Color(0xFFDC2626),
-      ));
+      list.add(
+        const FacultyRoleBadge(
+          label: 'Student',
+          bg: DefensysTokens.dangerBg,
+          fg: DefensysTokens.dangerText,
+        ),
+      );
       return list;
     }
 
-    // Always show FACULTY base badge
-    list.add(const FacultyRoleBadge(
-      label: 'FACULTY',
-      bg: Color(0xFFEFF6FF),
-      fg: Color(0xFF1D4ED8),
-    ));
-
     if (isPitLead) {
       final yearStr = pitLeadYear != null && pitLeadYear!.isNotEmpty
-          ? ': $pitLeadYear'
+          ? ' · $pitLeadYear'
           : '';
-      list.add(FacultyRoleBadge(
-        label: 'PIT LEAD$yearStr'.toUpperCase(),
-        bg: const Color(0xFFFEF9C3),
-        fg: const Color(0xFF854D0E),
-      ));
+      list.add(
+        FacultyRoleBadge(
+          label: 'PIT Lead$yearStr',
+          bg: DefensysTokens.warningBg,
+          fg: DefensysTokens.warningText,
+        ),
+      );
     }
 
     if (isPanelist) {
-      list.add(const FacultyRoleBadge(
-        label: 'PANELIST',
-        bg: Color(0xFFFAF5FF),
-        fg: Color(0xFF7E22CE),
-      ));
+      list.add(
+        const FacultyRoleBadge(
+          label: 'Panelist',
+          bg: DefensysTokens.infoBg,
+          fg: DefensysTokens.infoText,
+        ),
+      );
     }
 
     if (isAdviser) {
-      list.add(const FacultyRoleBadge(
-        label: 'ADVISER',
-        bg: Color(0xFFDCFCE7),
-        fg: Color(0xFF15803D),
-      ));
+      list.add(
+        const FacultyRoleBadge(
+          label: 'Adviser',
+          bg: DefensysTokens.successBg,
+          fg: DefensysTokens.successText,
+        ),
+      );
     }
 
     if (isDocumenter) {
-      list.add(const FacultyRoleBadge(
-        label: 'DOCUMENTER',
-        bg: Color(0xFFF1F5F9),
-        fg: Color(0xFF475569),
-      ));
+      list.add(
+        const FacultyRoleBadge(
+          label: 'Documenter',
+          bg: DefensysTokens.neutralBg,
+          fg: DefensysTokens.textSecondary,
+        ),
+      );
     }
 
     if (isUploader) {
-      list.add(const FacultyRoleBadge(
-        label: 'UPLOADER',
-        bg: Color(0xFFE0F2FE),
-        fg: Color(0xFF0369A1),
-      ));
+      list.add(
+        const FacultyRoleBadge(
+          label: 'Uploader',
+          bg: DefensysTokens.revisionBg,
+          fg: DefensysTokens.revisionText,
+        ),
+      );
+    }
+
+    if (list.isEmpty) {
+      list.add(
+        const FacultyRoleBadge(
+          label: 'Faculty',
+          bg: DefensysTokens.neutralBg,
+          fg: DefensysTokens.textSecondary,
+        ),
+      );
     }
 
     return list;
@@ -127,28 +146,19 @@ class FacultyRoleBadge {
 ParsedFacultyRoles parseFacultyRoles(String? rawRole) {
   final input = (rawRole ?? '').trim();
   if (input.isEmpty) {
-    return ParsedFacultyRoles(
-      baseRole: 'faculty',
-      rawInput: input,
-    );
+    return ParsedFacultyRoles(baseRole: 'faculty', rawInput: input);
   }
 
   final lower = input.toLowerCase();
 
   // If role is explicitly admin
   if (lower.contains('admin')) {
-    return ParsedFacultyRoles(
-      baseRole: 'admin',
-      rawInput: input,
-    );
+    return ParsedFacultyRoles(baseRole: 'admin', rawInput: input);
   }
 
   // If role is explicitly student
   if (lower == 'student' || lower.contains('student')) {
-    return ParsedFacultyRoles(
-      baseRole: 'student',
-      rawInput: input,
-    );
+    return ParsedFacultyRoles(baseRole: 'student', rawInput: input);
   }
 
   // Split tokens across comma, slash, semicolon, pipe, ampersand, plus, or newline
@@ -212,16 +222,32 @@ ParsedFacultyRoles parseFacultyRoles(String? rawRole) {
 
 String? _extractYearLevel(String text) {
   final clean = text.toLowerCase();
-  if (clean.contains('1st') || clean.contains('first') || clean.contains('year 1') || clean.contains('yr 1') || clean.contains(' 1')) {
+  if (clean.contains('1st') ||
+      clean.contains('first') ||
+      clean.contains('year 1') ||
+      clean.contains('yr 1') ||
+      clean.contains(' 1')) {
     return '1st Year';
   }
-  if (clean.contains('2nd') || clean.contains('second') || clean.contains('year 2') || clean.contains('yr 2') || clean.contains(' 2')) {
+  if (clean.contains('2nd') ||
+      clean.contains('second') ||
+      clean.contains('year 2') ||
+      clean.contains('yr 2') ||
+      clean.contains(' 2')) {
     return '2nd Year';
   }
-  if (clean.contains('3rd') || clean.contains('third') || clean.contains('year 3') || clean.contains('yr 3') || clean.contains(' 3')) {
+  if (clean.contains('3rd') ||
+      clean.contains('third') ||
+      clean.contains('year 3') ||
+      clean.contains('yr 3') ||
+      clean.contains(' 3')) {
     return '3rd Year';
   }
-  if (clean.contains('4th') || clean.contains('fourth') || clean.contains('year 4') || clean.contains('yr 4') || clean.contains(' 4')) {
+  if (clean.contains('4th') ||
+      clean.contains('fourth') ||
+      clean.contains('year 4') ||
+      clean.contains('yr 4') ||
+      clean.contains(' 4')) {
     return '4th Year';
   }
   return null;

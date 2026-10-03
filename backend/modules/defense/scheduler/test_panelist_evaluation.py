@@ -198,3 +198,17 @@ class PanelistEvaluationTests(APITestCase):
         }, format='json')
         self.assertNotEqual(response.status_code, 201)
         self.assertFalse(PanelistGradeSubmission.objects.exists())
+
+    def test_officially_closed_stage_blocks_drafts_and_grading_availability(self):
+        schedule = self.schedule()
+        GradeContextService.get_or_create_for_schedule(schedule)
+        config = fixtures.StageGradingConfig.objects.get(
+            defense_stage=self.stage, semester=self.semester,
+        )
+        config.is_officially_complete = True
+        config.save(update_fields=['is_officially_complete'])
+        response = self.client.get('/api/defense/schedules/panelist-assignments/')
+        self.assertFalse(response.data['teams'][0]['grading_available'])
+        self.assertIn('officially complete', response.data['teams'][0]['grading_unavailable_reason'])
+        self.assertEqual(self.save_draft(schedule).status_code, 400)
+        self.assertFalse(PanelistEvaluationDraft.objects.exists())

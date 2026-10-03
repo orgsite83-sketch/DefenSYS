@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'scheduler_people_picker.dart';
 
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import '../models/schedule_import_models.dart';
+import '../dialogs/panelist_pool_dialog.dart';
+import '../../user_management/external_evaluators/external_evaluator_views.dart';
+import 'package:defensys/services/admin/external_evaluator_provider.dart';
 
 class ScheduleRunContainer extends ConsumerStatefulWidget {
   final DefenseSchedulerState state;
@@ -27,7 +32,8 @@ class ScheduleRunContainer extends ConsumerStatefulWidget {
   final TextEditingController pitTemplateController;
   final List<Map<String, dynamic>> planSlots;
   final bool showFinalPreview;
-  final bool Function(DefenseSchedulerState state, String scope) canScheduleScope;
+  final bool Function(DefenseSchedulerState state, String scope)
+  canScheduleScope;
   final String Function(DefenseSchedulerState state) scheduleNoticeMessage;
   final ValueChanged<String> onScopeChanged;
   final ValueChanged<int?> onStageChanged;
@@ -88,12 +94,17 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   bool _isGenerating = false;
   bool _isConfirming = false;
   int? _selectedChairId;
+  Set<int> _externalIds = {};
+  DateTime? _guestExpiry;
 
   int? get _effectiveChairId {
-    if (_selectedChairId != null && widget.selectedPanelistIds.contains(_selectedChairId)) {
+    if (_selectedChairId != null &&
+        widget.selectedPanelistIds.contains(_selectedChairId)) {
       return _selectedChairId;
     }
-    return widget.selectedPanelistIds.isNotEmpty ? widget.selectedPanelistIds.first : null;
+    return widget.selectedPanelistIds.isNotEmpty
+        ? widget.selectedPanelistIds.first
+        : null;
   }
 
   bool _canScheduleCurrentScope() {
@@ -112,19 +123,6 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       }
       return true;
     }).toList();
-  }
-
-  String _selectedDocumenterName(DefenseSchedulerState state) {
-    if (widget.documenterId == null) return 'None (Optional)';
-    for (final doc in state.documenters) {
-      if (asInt(doc['id']) == widget.documenterId) {
-        return doc['name']?.toString() ??
-            doc['full_name']?.toString() ??
-            doc['username']?.toString() ??
-            'Assigned';
-      }
-    }
-    return 'Assigned';
   }
 
   int _getReadyTeamsCount(DefenseSchedulerState state) {
@@ -159,13 +157,17 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
 
   List<Map<String, dynamic>> _capstoneRubricsForEval(String evaluationType) {
     return _rubricsForScopeAndStage(widget.state, 'capstone', widget.stageId)
-        .where((rubric) => rubric['evaluation_type']?.toString() == evaluationType)
+        .where(
+          (rubric) => rubric['evaluation_type']?.toString() == evaluationType,
+        )
         .toList();
   }
 
   int? _validCapstoneRubricId(int? rubricId, String evaluationType) {
     final rubrics = _capstoneRubricsForEval(evaluationType);
-    return rubrics.any((rubric) => asInt(rubric['id']) == rubricId) ? rubricId : null;
+    return rubrics.any((rubric) => asInt(rubric['id']) == rubricId)
+        ? rubricId
+        : null;
   }
 
   int? _validRubricId() {
@@ -289,13 +291,19 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     final payload = <String, dynamic>{
       'scope': widget.scope,
       'defense_stage_id': widget.scope == 'capstone' ? widget.stageId : null,
-      'event_name': widget.scope == 'pit' ? widget.eventController.text.trim() : '',
+      'event_name': widget.scope == 'pit'
+          ? widget.eventController.text.trim()
+          : '',
       'rubric_id': _validRubricId(),
       'scheduled_date': date,
       'start_time': time,
-      'slot_duration': int.tryParse(widget.durationController.text.trim()) ?? 60,
+      'slot_duration':
+          int.tryParse(widget.durationController.text.trim()) ?? 60,
       'room': room,
       'panelist_ids': widget.selectedPanelistIds.toList(),
+      'external_evaluator_ids': _externalIds.toList(),
+      if (_guestExpiry != null)
+        'guest_access_expires_at': _guestExpiry!.toUtc().toIso8601String(),
       if (effectiveChair != null) 'chair_panelist_id': effectiveChair,
       if (widget.scope == 'capstone' && widget.documenterId != null)
         'documenter_id': widget.documenterId,
@@ -336,7 +344,10 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       _recalculatePlanSlots(generated);
       widget.onPlanSlotsChanged(generated);
       widget.onShowFinalPreviewChanged(false);
-      showSuccessToast(context, 'Generated ${generated.length} schedule slots.');
+      showSuccessToast(
+        context,
+        'Generated ${generated.length} schedule slots.',
+      );
     } finally {
       if (mounted) setState(() => _isGenerating = false);
     }
@@ -360,14 +371,20 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       widget.onPlanSlotsChanged([]);
       widget.onShowFinalPreviewChanged(false);
       showSuccessToast(context, 'Schedule plan successfully saved.');
+      await GuestInvitationDialog.show(
+        context,
+        ref.read(defenseSchedulerProvider).createdInvitations,
+      );
     } finally {
       if (mounted) setState(() => _isConfirming = false);
     }
   }
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
-  Color get _textPrimary => _isDark ? DefensysTokens.mistTextPrimary : AppColors.textPrimary;
-  Color get _textSecondary => _isDark ? DefensysTokens.mistTextSecondary : AppColors.textSecondary;
+  Color get _textPrimary =>
+      _isDark ? DefensysTokens.mistTextPrimary : AppColors.textPrimary;
+  Color get _textSecondary =>
+      _isDark ? DefensysTokens.mistTextSecondary : AppColors.textSecondary;
 
   Widget _schedulerCard({
     required Widget child,
@@ -377,19 +394,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       padding: padding,
       decoration: BoxDecoration(
         color: _isDark ? DefensysTokens.mistSurface : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFEAECF0),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: _isDark
-                ? Colors.black.withValues(alpha: 0.25)
-                : const Color(0x08101828),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: child,
     );
@@ -402,9 +408,11 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         Text(
           label,
           style: TextStyle(
-            color: _isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF344054),
+            color: _isDark
+                ? DefensysTokens.mistTextSecondary
+                : const Color(0xFF344054),
             fontSize: 13,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w500,
           ),
         ),
         const SizedBox(height: 6),
@@ -427,24 +435,24 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         fontSize: 14,
       ),
       filled: true,
-      fillColor: _isDark ? DefensysTokens.mistInputFill : Colors.white,
+      fillColor: DefensysTokens.surfaceOf(context),
       suffixIcon: suffixIcon,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
         borderSide: BorderSide(
           color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFD0D5DD),
         ),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
         borderSide: BorderSide(
           color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFD0D5DD),
         ),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        borderSide: BorderSide(color: _textPrimary, width: 1.5),
       ),
     );
   }
@@ -459,7 +467,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       } else if (fg == const Color(0xFF027A48)) {
         effectiveBg = const Color(0xFF064E3B).withValues(alpha: 0.35);
         effectiveFg = const Color(0xFF6EE7B7);
-      } else if (fg == const Color(0xFF92400E) || fg == const Color(0xFFB45309)) {
+      } else if (fg == const Color(0xFF92400E) ||
+          fg == const Color(0xFFB45309)) {
         effectiveBg = const Color(0xFF78350F).withValues(alpha: 0.35);
         effectiveFg = const Color(0xFFFCD34D);
       } else if (fg == const Color(0xFFB42318) ||
@@ -480,7 +489,11 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       ),
       child: Text(
         text,
-        style: TextStyle(color: effectiveFg, fontSize: 11, fontWeight: FontWeight.w700),
+        style: TextStyle(
+          color: effectiveFg,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -538,7 +551,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             suffixIcon: Icon(
               Icons.calendar_today_outlined,
               size: 18,
-              color: _isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085),
+              color: _isDark
+                  ? DefensysTokens.mistTextSecondary
+                  : const Color(0xFF667085),
             ),
           ),
         ),
@@ -606,7 +621,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             suffixIcon: Icon(
               Icons.access_time_outlined,
               size: 18,
-              color: _isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085),
+              color: _isDark
+                  ? DefensysTokens.mistTextSecondary
+                  : const Color(0xFF667085),
             ),
           ),
         ),
@@ -652,14 +669,18 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             Icon(
               Icons.info_outline,
               size: 16,
-              color: _isDark ? const Color(0xFFF87171) : const Color(0xFFD92D20),
+              color: _isDark
+                  ? const Color(0xFFF87171)
+                  : const Color(0xFFD92D20),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 'This stage is marked officially complete. Scheduling new defenses for this stage is disabled.',
                 style: TextStyle(
-                  color: _isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB42318),
+                  color: _isDark
+                      ? const Color(0xFFFCA5A5)
+                      : const Color(0xFFB42318),
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -688,14 +709,18 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             Icon(
               Icons.warning_amber_rounded,
               size: 16,
-              color: _isDark ? const Color(0xFFFBBF24) : const Color(0xFFDC6803),
+              color: _isDark
+                  ? const Color(0xFFFBBF24)
+                  : const Color(0xFFDC6803),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 'No teams are currently ready for ${targetStage['label'] ?? 'this stage'}. Teams must have pre-defense deliverables approved by their instructor.',
                 style: TextStyle(
-                  color: _isDark ? const Color(0xFFFCD34D) : const Color(0xFFB54708),
+                  color: _isDark
+                      ? const Color(0xFFFCD34D)
+                      : const Color(0xFFB54708),
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -709,55 +734,31 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     return const SizedBox.shrink();
   }
 
-  Widget _summaryInfoCard(String label, String value, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+  Widget _setupHeading(String title, String description, {Widget? trailing}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  color: _textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            if (trailing != null) trailing,
+          ],
         ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: _isDark
-                  ? DefensysTokens.mistSurface
-                  : const Color(0xFFEEF2F6),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, size: 18, color: AppColors.maroon),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: _textSecondary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: TextStyle(
-                    color: _textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        const SizedBox(height: 4),
+        Text(
+          description,
+          style: TextStyle(color: _textSecondary, fontSize: 12, height: 1.5),
+        ),
+      ],
     );
   }
 
@@ -766,735 +767,393 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     final stageId = stages.any((stage) => asInt(stage['id']) == widget.stageId)
         ? widget.stageId
         : null;
+    final selectedPanelists = state.selectablePanelists
+        .where(
+          (person) => widget.selectedPanelistIds.contains(asInt(person['id'])),
+        )
+        .toList();
+    final availableDocumenters = state.documenters
+        .where(
+          (person) => !widget.selectedPanelistIds.contains(asInt(person['id'])),
+        )
+        .toList();
+    final busy = _isGenerating || _isConfirming;
+    final readyCount = _getReadyTeamsCount(state);
 
-    final selectedPanelists = state.panelists.where((panelist) {
-      final id = asInt(panelist['id']);
-      return id != null && widget.selectedPanelistIds.contains(id);
-    }).toList();
+    void changePanelists(Set<int> ids) {
+      if (ids.contains(widget.documenterId)) {
+        widget.onDocumenterChanged?.call(null);
+      }
+      if (!ids.contains(_selectedChairId)) {
+        setState(() => _selectedChairId = null);
+      }
+      widget.onPanelistsChanged(ids);
+    }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final narrow = constraints.maxWidth < 1120;
-
-        final left = _schedulerCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Row(
-                      children: [
-                        const CircleAvatar(
-                          radius: 12,
-                          backgroundColor: AppColors.maroon,
-                          child: Text(
-                            '1',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Flexible(
-                          child: Text(
-                            'Step 1: Set Up Defense Schedule',
-                            style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w900,
-                              color: _textPrimary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _isDark
-                          ? const Color(0xFF7F1D1D).withValues(alpha: 0.3)
-                          : const Color(0xFFFEECEC),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      'Required First',
-                      style: TextStyle(
-                        color: _isDark
-                            ? const Color(0xFFFCA5A5)
-                            : const Color(0xFFEF4444),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
+    final details = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _setupHeading(
+          'Schedule details',
+          'Set the shared timing and venue for this batch.',
+        ),
+        const SizedBox(height: 20),
+        if (widget.scope == 'capstone') ...[
+          _labeledField(
+            'Stage *',
+            LayoutBuilder(
+              builder: (context, constraints) => ShadSelect<int>(
+                key: ValueKey('stage-$stageId'),
+                initialValue: stageId,
+                enabled: !busy,
+                minWidth: constraints.maxWidth,
+                maxWidth: constraints.maxWidth,
+                placeholder: const Text('Select a defense stage'),
+                options: [
+                  for (final stage in stages)
+                    if (asInt(stage['id']) != null)
+                      ShadOption<int>(
+                        value: asInt(stage['id'])!,
+                        child: Text(stage['label']?.toString() ?? ''),
                       ),
-                    ),
-                  ),
                 ],
-              ),
-              const SizedBox(height: 10),
-              Divider(
-                height: 1,
-                color: _isDark ? DefensysTokens.mistBorder : null,
-              ),
-              const SizedBox(height: 20),
-              Text(
-                widget.scope == 'pit'
-                    ? 'Choose the PIT event, date, room, start time, and slot duration for this batch. Then generate the plan to prepare consecutive slots.'
-                    : 'Choose the shared stage, date, room, start time, and slot duration for this batch. Then generate the plan to prepare consecutive slots.',
-                style: TextStyle(
-                  color: _textSecondary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
+                selectedOptionBuilder: (_, id) => Text(
+                  stages
+                          .firstWhere(
+                            (stage) => asInt(stage['id']) == id,
+                          )['label']
+                          ?.toString() ??
+                      '',
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-              const SizedBox(height: 20),
-              if (widget.scope == 'capstone') ...[
-                _labeledField(
-                  'Stage *',
-                  DropdownButtonFormField<int?>(
-                    value: stageId,
-                    dropdownColor:
-                        _isDark ? DefensysTokens.mistSurface : Colors.white,
-                    style: TextStyle(color: _textPrimary, fontSize: 14),
-                    decoration: _schedulerInputDecoration(),
-                    items: stages
-                        .map(
-                          (stage) => DropdownMenuItem<int?>(
-                            value: asInt(stage['id']),
-                            child: Text(
-                              stage['label']?.toString() ?? '',
-                              style: TextStyle(color: _textPrimary),
-                            ),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) async {
-                      widget.onScopeChanged('capstone');
-                      widget.onStageChanged(value);
-                      widget.onRubricChanged(null);
-                      widget.onAdviserRubricChanged(null);
-                      widget.onCapstonePeerRubricChanged(null);
-                      widget.onPlanSlotsChanged([]);
-                      widget.onShowFinalPreviewChanged(false);
-                      await widget.onPrefillCapstoneStageRubrics();
-                    },
-                  ),
-                ),
-                _buildStageWarnings(state),
-              ] else if (widget.scope == 'pit') ...[
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: _isDark
-                        ? DefensysTokens.mistInputFill
-                        : const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: _isDark
-                          ? DefensysTokens.mistBorder
-                          : const Color(0xFFE4E7EC),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'PIT event setup (this batch)',
-                        style: TextStyle(
-                          color: _textPrimary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      _labeledField(
-                        'Event name *',
-                        DropdownButtonFormField<String>(
-                          value: state.pitEvents.any((e) =>
-                                  e['event_name'] == widget.eventController.text)
-                              ? widget.eventController.text
-                              : null,
-                          dropdownColor: _isDark
-                              ? DefensysTokens.mistSurface
-                              : Colors.white,
-                          style: TextStyle(color: _textPrimary, fontSize: 14),
-                          decoration: _schedulerInputDecoration(
-                            hintText: 'Select PIT event',
-                          ),
-                          items: state.pitEvents.map((e) {
-                            final name = e['event_name']?.toString() ?? '';
-                            return DropdownMenuItem<String>(
-                              value: name,
-                              child: Text(
-                                name,
-                                style: TextStyle(color: _textPrimary),
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (val) {
-                            if (val != null) {
-                              widget.eventController.text = val;
-                              widget.onPrefillPitEventConfig();
-                              setState(() {});
-                            }
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: _labeledField(
-                      'Date *',
-                      _scheduleDateField(controller: widget.dateController),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: _labeledField(
-                      'Start time *',
-                      _scheduleTimeField(controller: widget.timeController),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: _labeledField(
-                      'Slot Duration (mins) *',
-                      TextFormField(
-                        controller: widget.durationController,
-                        keyboardType: TextInputType.number,
-                        decoration: _schedulerInputDecoration(),
-                        onChanged: (_) {
-                          if (widget.planSlots.isNotEmpty) {
-                            final copy = List<Map<String, dynamic>>.from(widget.planSlots);
-                            _recalculatePlanSlots(copy);
-                            widget.onPlanSlotsChanged(copy);
-                          }
-                        },
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: _labeledField(
-                      'Room / Venue *',
-                      TextFormField(
-                        controller: widget.roomController,
-                        decoration: _schedulerInputDecoration(
-                          hintText: 'e.g. Lab 3',
-                        ),
-                        onChanged: (_) {
-                          if (widget.planSlots.isNotEmpty) {
-                            final copy = List<Map<String, dynamic>>.from(widget.planSlots);
-                            for (final s in copy) {
-                              s['room'] = widget.roomController.text.trim();
-                            }
-                            widget.onPlanSlotsChanged(copy);
-                          }
-                        },
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton.icon(
-                  onPressed: _isGenerating ? null : _generatePlan,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.maroon,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    elevation: 0,
-                  ),
-                  icon: _isGenerating
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : const Icon(Icons.auto_awesome, size: 20),
-                  label: Text(
-                    _isGenerating ? 'Generating Plan...' : 'Generate Schedule Plan',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-
-        final right = Column(
-          children: [
-            _schedulerCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Available Panelists (*)',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                                color: _textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Select panelists to assign to generated slots.',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: _textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      _softBadge(
-                        '${widget.selectedPanelistIds.length} selected',
-                        const Color(0xFFF2F4F7),
-                        const Color(0xFF344054),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      TextButton(
-                        onPressed: () {
-                          final allIds = state.panelists
-                              .map((p) => asInt(p['id']))
-                              .whereType<int>()
-                              .toSet();
-                          widget.onPanelistsChanged(allIds);
-                        },
-                        style: TextButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: const Text(
-                          'Select All',
-                          style: TextStyle(
-                            color: AppColors.maroon,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => widget.onPanelistsChanged({}),
-                        style: TextButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: Text(
-                          'Clear All',
-                          style: TextStyle(
-                            color: _isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Container(
-                    constraints: const BoxConstraints(maxHeight: 280),
-                    child: SingleChildScrollView(
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: state.panelists.map((panelist) {
-                          final id = asInt(panelist['id']);
-                          final name = panelist['name']?.toString() ??
-                              panelist['full_name']?.toString() ??
-                              panelist['username']?.toString() ??
-                              'Panelist';
-                          final selected = id != null &&
-                              widget.selectedPanelistIds.contains(id);
-
-                          return FilterChip(
-                            label: Text(
-                              name,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight:
-                                    selected ? FontWeight.w700 : FontWeight.w500,
-                                color: selected
-                                    ? AppColors.maroon
-                                    : (_isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF344054)),
-                              ),
-                            ),
-                            selected: selected,
-                            onSelected: id == null
-                                ? null
-                                : (val) {
-                                    final copy = Set<int>.from(
-                                      widget.selectedPanelistIds,
-                                    );
-                                    if (val) {
-                                      copy.add(id);
-                                      if (widget.documenterId == id) {
-                                        widget.onDocumenterChanged?.call(null);
-                                      }
-                                    } else {
-                                      copy.remove(id);
-                                    }
-                                    widget.onPanelistsChanged(copy);
-                                  },
-                            backgroundColor: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
-                            selectedColor: _isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.3) : const Color(0xFFFEECEC),
-                            checkmarkColor: AppColors.maroon,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              side: BorderSide(
-                                color: selected
-                                    ? AppColors.maroon
-                                    : (_isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-                  if (widget.selectedPanelistIds.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Divider(height: 1, color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFF1F5F9)),
-                    const SizedBox(height: 14),
-                    Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: [
-                        Text(
-                          '👑 Presiding Panel Chair',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: _isDark ? const Color(0xFFFCD34D) : const Color(0xFF92400E),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _isDark ? const Color(0xFF78350F).withValues(alpha: 0.35) : const Color(0xFFFEF3C7),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'Verdict Authority',
-                            style: TextStyle(
-                              color: _isDark ? const Color(0xFFFCD34D) : const Color(0xFFB45309),
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Choose which panelist presides and issues the official stage verdict.',
-                      style: TextStyle(fontSize: 12, color: _textSecondary),
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: selectedPanelists.map((panelist) {
-                        final id = asInt(panelist['id']);
-                        final name = panelist['name']?.toString() ??
-                            panelist['full_name']?.toString() ??
-                            panelist['username']?.toString() ??
-                            'Panelist';
-                        final isChair = (id == _effectiveChairId);
-
-                        return ChoiceChip(
-                          label: Text(
-                            isChair ? '👑 $name (Chair)' : name,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: isChair ? FontWeight.w800 : FontWeight.w500,
-                              color: isChair
-                                  ? (_isDark ? const Color(0xFFFCD34D) : const Color(0xFF92400E))
-                                  : (_isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF344054)),
-                            ),
-                          ),
-                          selected: isChair,
-                          onSelected: (selected) {
-                            if (selected && id != null) {
-                              setState(() => _selectedChairId = id);
-                            }
-                          },
-                          backgroundColor: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
-                          selectedColor: _isDark ? const Color(0xFF78350F).withValues(alpha: 0.35) : const Color(0xFFFEF3C7),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            side: BorderSide(
-                              color: isChair ? const Color(0xFFF59E0B) : (_isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
-                              width: isChair ? 1.5 : 1.0,
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ],
+                onChanged: (value) async {
+                  widget.onScopeChanged('capstone');
+                  widget.onStageChanged(value);
+                  widget.onRubricChanged(null);
+                  widget.onAdviserRubricChanged(null);
+                  widget.onCapstonePeerRubricChanged(null);
+                  widget.onPlanSlotsChanged([]);
+                  widget.onShowFinalPreviewChanged(false);
+                  await widget.onPrefillCapstoneStageRubrics();
+                },
               ),
             ),
-            if (widget.scope == 'capstone') ...[
-              const SizedBox(height: 16),
-              _schedulerCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Available Documenters (Optional)',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w800,
-                                  color: _textPrimary,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Select a documenter to record minutes for this batch.',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: _textSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (widget.documenterId != null)
-                          _softBadge(
-                            '1 selected',
-                            const Color(0xFFFEF3C7),
-                            const Color(0xFF92400E),
-                          )
-                        else
-                          _softBadge(
-                            'None',
-                            const Color(0xFFF2F4F7),
-                            const Color(0xFF667085),
-                          ),
-                      ],
+          ),
+          _buildStageWarnings(state),
+        ] else ...[
+          _labeledField(
+            'Event name *',
+            LayoutBuilder(
+              builder: (context, constraints) => ShadSelect<String>(
+                key: ValueKey('event-${widget.eventController.text}'),
+                initialValue:
+                    state.pitEvents.any(
+                      (event) =>
+                          event['event_name'] == widget.eventController.text,
+                    )
+                    ? widget.eventController.text
+                    : null,
+                enabled: !busy,
+                minWidth: constraints.maxWidth,
+                maxWidth: constraints.maxWidth,
+                placeholder: const Text('Select PIT event'),
+                options: [
+                  for (final event in state.pitEvents)
+                    ShadOption<String>(
+                      value: event['event_name']?.toString() ?? '',
+                      child: Text(event['event_name']?.toString() ?? ''),
                     ),
-                    if (widget.documenterId != null) ...[
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: () =>
-                              widget.onDocumenterChanged?.call(null),
-                          style: TextButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          child: Text(
-                            'Clear Documenter',
-                            style: TextStyle(
-                              color: _isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 10),
-                    if (state.documenters.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Text(
-                          'No documenters available.',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: _textSecondary,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      )
-                    else
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: state.documenters.map((doc) {
-                          final id = asInt(doc['id']);
-                          final name = doc['name']?.toString() ??
-                              doc['full_name']?.toString() ??
-                              doc['username']?.toString() ??
-                              'Documenter';
-                          final isPanelist = id != null &&
-                              widget.selectedPanelistIds.contains(id);
-                          final selected =
-                              id != null && widget.documenterId == id;
-
-                          return FilterChip(
-                            avatar: Icon(
-                              selected
-                                  ? Icons.assignment_turned_in_rounded
-                                  : Icons.edit_note_rounded,
-                              size: 16,
-                              color: selected
-                                  ? AppColors.maroon
-                                  : (isPanelist
-                                      ? const Color(0xFF94A3B8)
-                                      : (_isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF64748B))),
-                            ),
-                            label: Text(
-                              isPanelist ? '$name (Panelist)' : name,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: selected
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                                color: selected
-                                    ? AppColors.maroon
-                                    : (isPanelist
-                                        ? const Color(0xFF94A3B8)
-                                        : (_isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF344054))),
-                                decoration: isPanelist
-                                    ? TextDecoration.lineThrough
-                                    : null,
-                              ),
-                            ),
-                            selected: selected,
-                            onSelected: (id == null || isPanelist)
-                                ? null
-                                : (val) {
-                                    widget.onDocumenterChanged
-                                        ?.call(val ? id : null);
-                                  },
-                            backgroundColor: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
-                            selectedColor: _isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.3) : const Color(0xFFFEECEC),
-                            checkmarkColor: AppColors.maroon,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              side: BorderSide(
-                                color: selected
-                                    ? AppColors.maroon
-                                    : (_isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                  ],
-                ),
+                ],
+                selectedOptionBuilder: (_, value) =>
+                    Text(value, overflow: TextOverflow.ellipsis),
+                onChanged: (value) {
+                  if (value == null) return;
+                  widget.eventController.text = value;
+                  widget.onPrefillPitEventConfig();
+                  setState(() {});
+                },
               ),
-            ],
-            const SizedBox(height: 16),
-            _schedulerCard(
-              child: Column(
+            ),
+          ),
+        ],
+        const SizedBox(height: 20),
+        _setupFieldPair(
+          _labeledField(
+            'Date *',
+            _scheduleDateField(controller: widget.dateController),
+          ),
+          _labeledField(
+            'Start time *',
+            _scheduleTimeField(controller: widget.timeController),
+          ),
+        ),
+        const SizedBox(height: 20),
+        _setupFieldPair(
+          _labeledField(
+            'Slot duration (minutes) *',
+            ShadInput(
+              controller: widget.durationController,
+              enabled: !busy,
+              keyboardType: TextInputType.number,
+            ),
+          ),
+          _labeledField(
+            'Room / venue *',
+            ShadInput(
+              controller: widget.roomController,
+              enabled: !busy,
+              placeholder: const Text('e.g. Lab 3'),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    final people = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _setupHeading(
+          'Faculty panelists *',
+          state.canApprovePanelists
+              ? 'New faculty are approved when you confirm the schedule.'
+              : 'Choose eligible faculty or request approval in the pool.',
+          trailing: const PanelistPoolButton(compact: true),
+        ),
+        const SizedBox(height: 12),
+        SchedulerPeoplePicker(
+          key: const ValueKey('faculty-panelist-picker'),
+          people: state.selectablePanelists,
+          selected: widget.selectedPanelistIds,
+          onChanged: changePanelists,
+          placeholder: 'Choose faculty panelists',
+          enabled: !busy,
+          emptyMessage:
+              'No eligible faculty. Manage the pool to request approval.',
+          detailBuilder: (person) {
+            final id = asInt(person['id']);
+            return state.canApprovePanelists &&
+                    id != null &&
+                    !state.isEligiblePanelist(id)
+                ? 'Approval included on confirmation'
+                : 'Eligible panelist';
+          },
+        ),
+        if (state.selectablePanelists.isEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            'No eligible faculty. Manage the pool to request approval.',
+            style: TextStyle(color: _textSecondary, fontSize: 12),
+          ),
+        ],
+        if (selectedPanelists.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          _labeledField(
+            'Presiding panel chair',
+            LayoutBuilder(
+              builder: (context, constraints) => ShadSelect<int>(
+                key: const ValueKey('presiding-panel-chair'),
+                initialValue: _effectiveChairId,
+                enabled: !busy,
+                minWidth: constraints.maxWidth,
+                maxWidth: constraints.maxWidth,
+                maxHeight: 240,
+                options: [
+                  for (final person in selectedPanelists)
+                    ShadOption<int>(
+                      value: asInt(person['id'])!,
+                      child: Text(schedulerPersonName(person)),
+                    ),
+                ],
+                selectedOptionBuilder: (_, id) => Text(
+                  schedulerPersonName(
+                    selectedPanelists.firstWhere(
+                      (person) => asInt(person['id']) == id,
+                    ),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onChanged: (id) => setState(() => _selectedChairId = id),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Issues the official stage verdict.',
+            style: TextStyle(color: _textSecondary, fontSize: 12),
+          ),
+        ],
+        ExternalEvaluatorSelector(
+          compact: true,
+          selected: _externalIds,
+          onChanged: (ids) => setState(() => _externalIds = ids),
+          expiry: _guestExpiry,
+          onExpiryChanged: (expiry) => setState(() => _guestExpiry = expiry),
+          enabled: !busy,
+        ),
+        if (widget.scope == 'capstone') ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Divider(height: 1, color: DefensysTokens.borderOf(context)),
+          ),
+          _setupHeading(
+            'Documenter',
+            'Optional. Records the minutes for this batch.',
+          ),
+          const SizedBox(height: 12),
+          SchedulerPeoplePicker(
+            key: const ValueKey('documenter-picker'),
+            people: availableDocumenters,
+            selected: {if (widget.documenterId != null) widget.documenterId!},
+            onChanged: (ids) =>
+                widget.onDocumenterChanged?.call(ids.firstOrNull),
+            placeholder: 'Choose a documenter',
+            multiple: false,
+            enabled: !busy && widget.onDocumenterChanged != null,
+            emptyMessage:
+                'No available documenters. Panelists cannot record minutes.',
+          ),
+          if (availableDocumenters.isEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              'No available documenters. A panelist cannot also record minutes.',
+              style: TextStyle(color: _textSecondary, fontSize: 12),
+            ),
+          ],
+        ],
+      ],
+    );
+
+    return _schedulerCard(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              if (constraints.maxWidth < 880) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    details,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Divider(
+                        height: 1,
+                        color: DefensysTokens.borderOf(context),
+                      ),
+                    ),
+                    people,
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 32),
+                      child: details,
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Container(
+                      padding: const EdgeInsets.only(left: 32),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          left: BorderSide(
+                            color: DefensysTokens.borderOf(context),
+                          ),
+                        ),
+                      ),
+                      child: people,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Divider(height: 1, color: DefensysTokens.borderOf(context)),
+          ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final summary = Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Schedule Overview',
+                    '$readyCount ${readyCount == 1 ? 'team' : 'teams'} ready to schedule',
                     style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
                       color: _textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 14),
-                  _summaryInfoCard(
-                    'Target Scope',
-                    widget.scope.toUpperCase(),
-                    Icons.layers_outlined,
-                  ),
-                  const SizedBox(height: 10),
-                  _summaryInfoCard(
-                    'Selected Panelists',
-                    '${selectedPanelists.length} assigned',
-                    Icons.people_outline,
-                  ),
-                  if (widget.scope == 'capstone') ...[
-                    const SizedBox(height: 10),
-                    _summaryInfoCard(
-                      'Documenter',
-                      _selectedDocumenterName(state),
-                      Icons.edit_note_rounded,
-                    ),
-                  ],
-                  const SizedBox(height: 10),
-                  _summaryInfoCard(
-                    'Ready Teams',
-                    '${_getReadyTeamsCount(state)} teams ready',
-                    Icons.check_circle_outline,
+                  const SizedBox(height: 4),
+                  Text(
+                    '${widget.scope == 'pit' ? 'PIT' : 'Capstone'} batch / '
+                    '${selectedPanelists.length} faculty / ${_externalIds.length} external',
+                    style: TextStyle(color: _textSecondary, fontSize: 12),
                   ),
                 ],
-              ),
-            ),
-          ],
-        );
-
-        if (narrow) {
-          return Column(
-            children: [
-              left,
-              const SizedBox(height: 20),
-              right,
-            ],
-          );
-        }
-
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(flex: 3, child: left),
-            const SizedBox(width: 20),
-            Expanded(flex: 2, child: right),
-          ],
-        );
-      },
+              );
+              final action = ShadButton(
+                onPressed: busy ? null : _generatePlan,
+                leading: _isGenerating
+                    ? SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: _isDark
+                              ? DefensysTokens.textPrimary
+                              : DefensysTokens.surface,
+                        ),
+                      )
+                    : null,
+                trailing: _isGenerating
+                    ? null
+                    : const Icon(LucideIcons.arrowRight, size: 16),
+                child: Text(
+                  _isGenerating ? 'Generating plan...' : 'Generate plan',
+                ),
+              );
+              if (constraints.maxWidth < 520) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [summary, const SizedBox(height: 16), action],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: summary),
+                  const SizedBox(width: 16),
+                  action,
+                ],
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
+
+  Widget _setupFieldPair(Widget first, Widget second) => LayoutBuilder(
+    builder: (_, constraints) => constraints.maxWidth < 360
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [first, const SizedBox(height: 20), second],
+          )
+        : Row(
+            children: [
+              Expanded(child: first),
+              const SizedBox(width: 16),
+              Expanded(child: second),
+            ],
+          ),
+  );
 
   Widget _planTableHeader(List<String> headers) {
     return Container(
@@ -1504,7 +1163,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
         border: Border(
           bottom: BorderSide(
-            color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+            color: _isDark
+                ? DefensysTokens.mistBorder
+                : const Color(0xFFE2E8F0),
           ),
         ),
       ),
@@ -1618,7 +1279,11 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.delete_outline, size: 18, color: Color(0xFFF04438)),
+            icon: const Icon(
+              Icons.delete_outline,
+              size: 18,
+              color: Color(0xFFF04438),
+            ),
             onPressed: onDelete,
             tooltip: 'Remove slot',
           ),
@@ -1719,14 +1384,18 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
 
   String _panelNamesFromSelection(DefenseSchedulerState state) {
     final effectiveChair = _effectiveChairId;
-    final names = state.panelists
+    final names = state.selectablePanelists
         .where((p) {
           final id = asInt(p['id']);
           return id != null && widget.selectedPanelistIds.contains(id);
         })
         .map((p) {
           final id = asInt(p['id']);
-          final name = p['name']?.toString() ?? p['full_name']?.toString() ?? p['username']?.toString() ?? '';
+          final name =
+              p['name']?.toString() ??
+              p['full_name']?.toString() ??
+              p['username']?.toString() ??
+              '';
           if (id == effectiveChair) {
             return '👑 $name (Chair)';
           }
@@ -1734,6 +1403,13 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         })
         .where((n) => n.isNotEmpty)
         .toList();
+    names.addAll(
+      ref
+          .read(externalEvaluatorProvider)
+          .approved
+          .where((e) => _externalIds.contains(e['id']))
+          .map((e) => '${e['name']} (External)'),
+    );
     if (names.isEmpty) return 'No panelists assigned';
     return names.join(', ');
   }
@@ -1818,7 +1494,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                 key: ValueKey(slot['team_id'] ?? index),
                 index: index,
                 team: slot['team_name']?.toString() ?? 'Team',
-                stage: slot['stage_label']?.toString() ??
+                stage:
+                    slot['stage_label']?.toString() ??
                     slot['event_name']?.toString() ??
                     'Stage',
                 date: slot['scheduled_date']?.toString() ?? '',
@@ -1826,7 +1503,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                 room: slot['room']?.toString() ?? '',
                 panel: _panelNamesFromSelection(state),
                 onDelete: () {
-                  final copy = List<Map<String, dynamic>>.from(widget.planSlots);
+                  final copy = List<Map<String, dynamic>>.from(
+                    widget.planSlots,
+                  );
                   copy.removeAt(index);
                   _recalculatePlanSlots(copy);
                   widget.onPlanSlotsChanged(copy);
@@ -1844,12 +1523,21 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                   widget.onShowFinalPreviewChanged(false);
                 },
                 style: OutlinedButton.styleFrom(
-                  backgroundColor: _isDark ? DefensysTokens.mistInputFill : Colors.white,
-                  foregroundColor: _isDark ? DefensysTokens.mistTextPrimary : AppColors.textPrimary,
+                  backgroundColor: _isDark
+                      ? DefensysTokens.mistInputFill
+                      : Colors.white,
+                  foregroundColor: _isDark
+                      ? DefensysTokens.mistTextPrimary
+                      : AppColors.textPrimary,
                   side: BorderSide(
-                    color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1),
+                    color: _isDark
+                        ? DefensysTokens.mistBorder
+                        : const Color(0xFFCBD5E1),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 14,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -1866,7 +1554,10 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.maroon,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 14,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -1955,7 +1646,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
               return _finalPreviewRow(
                 index: index,
                 team: slot['team_name']?.toString() ?? 'Team',
-                stage: slot['stage_label']?.toString() ??
+                stage:
+                    slot['stage_label']?.toString() ??
                     slot['event_name']?.toString() ??
                     'Stage',
                 date: slot['scheduled_date']?.toString() ?? '',
@@ -1972,12 +1664,21 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
               OutlinedButton.icon(
                 onPressed: () => widget.onShowFinalPreviewChanged(false),
                 style: OutlinedButton.styleFrom(
-                  backgroundColor: _isDark ? DefensysTokens.mistInputFill : Colors.white,
-                  foregroundColor: _isDark ? DefensysTokens.mistTextPrimary : AppColors.textPrimary,
+                  backgroundColor: _isDark
+                      ? DefensysTokens.mistInputFill
+                      : Colors.white,
+                  foregroundColor: _isDark
+                      ? DefensysTokens.mistTextPrimary
+                      : AppColors.textPrimary,
                   side: BorderSide(
-                    color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1),
+                    color: _isDark
+                        ? DefensysTokens.mistBorder
+                        : const Color(0xFFCBD5E1),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 14,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -1994,7 +1695,10 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.maroon,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 14,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
@@ -2006,13 +1710,20 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                         height: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
                         ),
                       )
                     : const Icon(Icons.check_circle_outline, size: 18),
                 label: Text(
-                  _isConfirming ? 'Saving Schedule...' : 'Publish & Save Schedule',
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                  _isConfirming
+                      ? 'Saving Schedule...'
+                      : 'Publish & Save Schedule',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ],
@@ -2028,7 +1739,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         ? 1
         : (widget.showFinalPreview ? 3 : 2);
 
-    if (currentStep == 1) return _buildStepOne(widget.state);
+    if (currentStep == 1) {
+      return SchedulerShadcnScope(child: _buildStepOne(widget.state));
+    }
     if (currentStep == 2) return _buildStepTwo(widget.state);
     return _buildStepThree(widget.state);
   }

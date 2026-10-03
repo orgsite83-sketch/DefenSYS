@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import '../../navigation/admin_route_paths.dart';
 import '../about_screen.dart';
 import '../privacy_screen.dart';
 import '../terms_screen.dart';
@@ -280,6 +282,8 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
           ],
         ),
         actions: [
+          IconButton(icon: const Icon(Icons.settings_outlined), tooltip: 'Settings',
+            onPressed: () => context.push(AppRoutes.settings)),
           Consumer(
             builder: (context, ref, child) {
               final state = ref.watch(notificationsProvider);
@@ -605,6 +609,10 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                   ),
 
                   _drawerSectionHeader('SYSTEM & POLICIES'),
+                  _drawerItem(icon: Icons.settings_outlined, title: 'Settings', onTap: () {
+                    Navigator.pop(context);
+                    context.push(AppRoutes.settings);
+                  }),
                   _drawerItem(
                     icon: Icons.info_outline_rounded,
                     title: 'About DefenSYS',

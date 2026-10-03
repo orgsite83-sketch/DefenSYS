@@ -7,6 +7,8 @@ import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import '../models/schedule_import_models.dart';
+import 'panelist_pool_dialog.dart';
+import '../../user_management/external_evaluators/external_evaluator_views.dart';
 
 class ManualSlotEditorDialog {
   static Future<void> show(
@@ -63,6 +65,8 @@ class ManualSlotEditorDialog {
     final duration = TextEditingController(text: initialDuration);
     final room = TextEditingController(text: initialRoom);
     final panelIds = <int>{...initialSelectedPanelistIds};
+    Set<int> externalIds = {};
+    DateTime? guestExpiry;
     int? chairId = panelIds.isNotEmpty ? panelIds.first : null;
     int? documenterId = initialDocumenterId;
 
@@ -341,13 +345,13 @@ class ManualSlotEditorDialog {
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
-                        children: state.panelists.map((panelist) {
+                        children: state.selectablePanelists.map((panelist) {
                           final id = asInt(panelist['id']);
                           final selected = id != null && panelIds.contains(id);
 
                           return FilterChip(
                             selected: selected,
-                            label: Text(panelist['name']?.toString() ?? ''),
+                            label: Text('${panelist['name'] ?? ''}${state.canApprovePanelists && id != null && !state.isEligiblePanelist(id) ? ' ? approve on save' : ''}'),
                             onSelected: id == null
                                 ? null
                                 : (value) {
@@ -373,6 +377,7 @@ class ManualSlotEditorDialog {
                           );
                         }).toList(),
                       ),
+                      ExternalEvaluatorSelector(selected: externalIds, onChanged: (ids) => setDialogState(() => externalIds = ids), expiry: guestExpiry, onExpiryChanged: (expiry) => setDialogState(() => guestExpiry = expiry)),
                       if (panelIds.isNotEmpty) ...[
                         const SizedBox(height: 14),
                         const Align(
@@ -391,7 +396,7 @@ class ManualSlotEditorDialog {
                           spacing: 8,
                           runSpacing: 8,
                           children: panelIds.map((id) {
-                            final panelist = state.panelists.firstWhere(
+                            final panelist = state.selectablePanelists.firstWhere(
                               (p) => asInt(p['id']) == id,
                               orElse: () => {'id': id, 'name': 'Panelist #$id'},
                             );
@@ -538,6 +543,15 @@ class ManualSlotEditorDialog {
                 ),
               ),
               actions: [
+                TextButton.icon(
+                  onPressed: () async {
+                    await PanelistPoolDialog.show(dialogContext);
+                    state = ref.read(defenseSchedulerProvider);
+                    if (dialogContext.mounted) setDialogState(() {});
+                  },
+                  icon: const Icon(Icons.how_to_reg_outlined),
+                  label: const Text('Panelist pool'),
+                ),
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext, false),
                   child: const Text('Cancel'),
@@ -609,6 +623,8 @@ class ManualSlotEditorDialog {
       'slot_duration': int.tryParse(durationText) ?? 60,
       'room': roomText,
       'panelist_ids': panelIds.toList(),
+      'external_evaluator_ids': externalIds.toList(),
+      if (guestExpiry != null) 'guest_access_expires_at': guestExpiry!.toUtc().toIso8601String(),
       if (effectiveChairId != null) 'chair_panelist_id': effectiveChairId,
       if (scope == 'capstone') 'documenter_id': documenterId,
     };
@@ -618,8 +634,9 @@ class ManualSlotEditorDialog {
       schedulePayload['peer_weight'] = int.tryParse(peerWeightText) ?? 20;
       schedulePayload['archive_file_template'] = vaultFileTemplate.text.trim();
     }
-    await ref
+    final ok = await ref
         .read(defenseSchedulerProvider.notifier)
         .createSchedule(schedulePayload);
+    if (ok && context.mounted) await GuestInvitationDialog.show(context, ref.read(defenseSchedulerProvider).createdInvitations);
   }
 }

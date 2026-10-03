@@ -13,6 +13,9 @@ import 'auth_storage_keys.dart';
 import '../session/session_providers.dart';
 import '../session/session_expired.dart';
 import '../session/session_storage.dart';
+import '../session/guest_session.dart';
+import 'jwt_utils.dart';
+import 'terms_acceptance.dart';
 
 final authProvider = NotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new);
 
@@ -24,6 +27,7 @@ class AuthState {
   final String? token;
   final String? sessionExpiredMessage;
   final bool sessionRestored;
+  final bool requiresTerms;
 
   const AuthState({
     this.isLoading = false,
@@ -33,6 +37,7 @@ class AuthState {
     this.token,
     this.sessionExpiredMessage,
     this.sessionRestored = false,
+    this.requiresTerms = false,
   });
 
   AuthState copyWith({
@@ -43,6 +48,7 @@ class AuthState {
     String? token,
     String? sessionExpiredMessage,
     bool? sessionRestored,
+    bool? requiresTerms,
     bool clearUser = false,
     bool clearToken = false,
     bool clearSessionMessage = false,
@@ -57,6 +63,7 @@ class AuthState {
           ? null
           : (sessionExpiredMessage ?? this.sessionExpiredMessage),
       sessionRestored: sessionRestored ?? this.sessionRestored,
+      requiresTerms: requiresTerms ?? this.requiresTerms,
     );
   }
 }
@@ -76,6 +83,23 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 
   Future<void> _bootstrap() async {
+    final guestJson = readGuestSession();
+    if (guestJson != null) {
+      try {
+        final guest = jsonDecode(guestJson) as Map;
+        final token = guest['access'] as String;
+        final user = Map<String, dynamic>.from(guest['user'] as Map);
+        if (user['role'] == 'guest_panelist' && !shouldRefreshAccess(token, withinSeconds: 0)) {
+          state = AuthState(token: token, user: user, isRestoring: false, sessionRestored: true);
+          return;
+        }
+      } catch (_) { /* Return to code entry when stored access is invalid. */ }
+      clearGuestSession();
+    }
+    if (isGuestPortalLocation() || isGuestPortalSession()) {
+      state = const AuthState(isRestoring: false);
+      return;
+    }
     await SessionStorage.clearLegacyPrefs();
     final storage = await SessionStorage.createForRestore();
     if (storage == null) {
@@ -84,22 +108,16 @@ class AuthNotifier extends Notifier<AuthState> {
     }
     _sessionStorage = storage;
     final ok = await refreshTokens(silent: true);
+    final requiresTerms = ok && !await TermsAcceptance.hasAcceptedCurrentTerms();
     state = state.copyWith(
       isRestoring: false,
       sessionRestored: ok && state.user != null && state.token != null,
+      requiresTerms: requiresTerms,
     );
   }
 
-  /// Guest panelist: access token in memory only (no refresh / persistence).
+  /// Guest access is isolated in this browser tab and has no refresh token.
   Future<bool> loginGuest(String code) async {
-    if (kIsWeb) {
-      state = state.copyWith(
-        isLoading: false,
-        error: 'Guest panelist access is available on the mobile app only.',
-      );
-      return false;
-    }
-
     state = state.copyWith(isLoading: true, error: null, clearSessionMessage: true);
 
     try {
@@ -113,7 +131,9 @@ class AuthNotifier extends Notifier<AuthState> {
         state = state.copyWith(
           isLoading: false,
           error: response.statusCode == 401
-              ? 'Invalid or expired guest code.'
+              ? 'This invitation is invalid, expired or revoked. Contact your defense coordinator.'
+              : response.statusCode == 429
+              ? 'Too many attempts. Please wait a minute before trying again.'
               : 'Guest login failed (HTTP ${response.statusCode}).',
         );
         return false;
@@ -134,7 +154,9 @@ class AuthNotifier extends Notifier<AuthState> {
 
       final user = Map<String, dynamic>.from(userRaw);
       user['role'] = 'guest_panelist';
-      await _clearLocalAuth();
+      _sessionStorage = null;
+      invalidateSessionProviders(ref);
+      writeGuestSession(jsonEncode({'access': access, 'user': user}));
 
       state = state.copyWith(
         isLoading: false,
@@ -142,6 +164,7 @@ class AuthNotifier extends Notifier<AuthState> {
         token: access,
         user: user,
         sessionRestored: true,
+        requiresTerms: false,
       );
       return true;
     } catch (e) {
@@ -197,16 +220,20 @@ class AuthNotifier extends Notifier<AuthState> {
 
       final user = Map<String, dynamic>.from(userRaw);
       await SessionStorage.persistRememberMeChoice(rememberMe);
+      clearGuestSession();
+      exitGuestPortalMode();
       _sessionStorage = await SessionStorage.create(rememberMe: rememberMe);
       await _sessionStorage!.clearOtherWebStores();
       await _sessionStorage!.writeRefresh(refresh);
       await _sessionStorage!.writeUserJson(jsonEncode(user));
+      final requiresTerms = !await TermsAcceptance.hasAcceptedCurrentTerms();
 
       state = state.copyWith(
         isLoading: false,
         token: access,
         user: user,
         sessionRestored: true,
+        requiresTerms: requiresTerms,
       );
       return true;
     } catch (e) {
@@ -224,7 +251,13 @@ class AuthNotifier extends Notifier<AuthState> {
     }
   }
 
+  Future<void> acceptCurrentTerms() async {
+    await TermsAcceptance.recordAcceptance();
+    state = state.copyWith(requiresTerms: false);
+  }
+
   Future<bool> refreshTokens({bool silent = false}) async {
+    if (isGuestPanelist) return false;
     final storage = _sessionStorage ?? await SessionStorage.createForRestore();
     if (storage == null) return false;
     _sessionStorage = storage;
@@ -325,7 +358,9 @@ class AuthNotifier extends Notifier<AuthState> {
     SessionExpiredReason reason = SessionExpiredReason.refreshFailed,
   }) async {
     if (_isLoggingOut) return;
-    final message = sessionExpiredMessageFor(reason);
+    final message = isGuestPanelist
+        ? 'Your evaluator access has expired or been revoked. Contact your defense coordinator for a new invitation.'
+        : sessionExpiredMessageFor(reason);
     await _clearLocalAuth();
     invalidateSessionProviders(ref);
     state = AuthState(
@@ -369,6 +404,7 @@ class AuthNotifier extends Notifier<AuthState> {
   }
 
   Future<void> _clearLocalAuth() async {
+    clearGuestSession();
     await _sessionStorage?.clearAuth();
     _sessionStorage = null;
     final prefs = await SharedPreferences.getInstance();

@@ -28,7 +28,8 @@ class PitLeadDashboardContent extends StatefulWidget {
   });
 
   @override
-  State<PitLeadDashboardContent> createState() => _PitLeadDashboardContentState();
+  State<PitLeadDashboardContent> createState() =>
+      _PitLeadDashboardContentState();
 }
 
 class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
@@ -49,86 +50,113 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
         {};
     final stats = _statsFrom(overview['stats']);
 
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DefensysPageHeader(
-              icon: Icons.workspace_premium_rounded,
-              title: 'Welcome, ${widget.facultyName}!',
-              subtitle: 'PIT Lead workspace · $pitYear',
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: _metricCard(
-                    value: _statValue(stats, 'students_in_cohort'),
-                    label: 'Students in Cohort',
-                    icon: Icons.groups_rounded,
-                    iconColor: const Color(0xFF7C3AED),
-                    iconBackground: const Color(0xFFEDE3FF),
-                    onTap: widget.onOpenCohort,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _metricCard(
-                    value: _statValue(stats, 'pit_teams'),
-                    label: 'Active PIT Teams',
-                    icon: Icons.groups_3_rounded,
-                    iconColor: const Color(0xFF047857),
-                    iconBackground: const Color(0xFFCFFAE7),
-                    onTap: widget.onOpenStudentTeams,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _metricCard(
-                    value: _statValue(stats, 'scheduled_events'),
-                    label: 'Scheduled PIT Events',
-                    icon: Icons.event_available_rounded,
-                    iconColor: const Color(0xFF92400E),
-                    iconBackground: const Color(0xFFFFEDB8),
-                    onTap: widget.onOpenScheduler,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _metricCard(
-                    value: _statValue(stats, 'pending_grades'),
-                    label: 'Pending Grades',
-                    icon: Icons.fact_check_outlined,
-                    iconColor: const Color(0xFF2563EB),
-                    iconBackground: const Color(0xFFDCEBFF),
-                    onTap: widget.onOpenGradeCenter,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stacked = constraints.maxWidth < 1200;
+        final padding = constraints.maxWidth < 600 ? 16.0 : 24.0;
+        final metricColumns = constraints.maxWidth < 600
+            ? 1
+            : constraints.maxWidth < 1200
+            ? 2
+            : 4;
+        final metricWidth =
+            (constraints.maxWidth - padding * 2 - 16 * (metricColumns - 1)) /
+            metricColumns;
+        return SingleChildScrollView(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(padding, 20, padding, 36),
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(child: _quickActionsCard()),
-                const SizedBox(width: 20),
-                Expanded(child: _upcomingDefensesCard(overview)),
+                DefensysPageHeader(
+                  icon: Icons.workspace_premium_rounded,
+                  title: 'Welcome, ${widget.facultyName}!',
+                  subtitle: 'PIT Lead workspace · $pitYear',
+                ),
+                const SizedBox(height: 20),
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 16,
+                  children: [
+                    SizedBox(
+                      width: metricWidth,
+                      child: _metricCard(
+                        value: _statValue(stats, 'students_in_cohort'),
+                        label: 'Students in Cohort',
+                        icon: Icons.groups_rounded,
+                        iconColor: const Color(0xFF7C3AED),
+                        iconBackground: const Color(0xFFEDE3FF),
+                        onTap: widget.onOpenCohort,
+                      ),
+                    ),
+                    SizedBox(
+                      width: metricWidth,
+                      child: _metricCard(
+                        value: _statValue(stats, 'pit_teams'),
+                        label: 'Active PIT Teams',
+                        icon: Icons.groups_3_rounded,
+                        iconColor: const Color(0xFF047857),
+                        iconBackground: const Color(0xFFCFFAE7),
+                        onTap: widget.onOpenStudentTeams,
+                      ),
+                    ),
+                    SizedBox(
+                      width: metricWidth,
+                      child: _metricCard(
+                        value: _statValue(stats, 'scheduled_events'),
+                        label: 'Scheduled PIT Events',
+                        icon: Icons.event_available_rounded,
+                        iconColor: const Color(0xFF92400E),
+                        iconBackground: const Color(0xFFFFEDB8),
+                        onTap: widget.onOpenScheduler,
+                      ),
+                    ),
+                    SizedBox(
+                      width: metricWidth,
+                      child: _metricCard(
+                        value: _statValue(stats, 'pending_grades'),
+                        label: 'Pending Grades',
+                        icon: Icons.fact_check_outlined,
+                        iconColor: const Color(0xFF2563EB),
+                        iconBackground: const Color(0xFFDCEBFF),
+                        onTap: widget.onOpenGradeCenter,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                if (stacked) ...[
+                  _quickActionsCard(compact: true),
+                  const SizedBox(height: 20),
+                  _upcomingDefensesCard(overview, compact: true),
+                  const SizedBox(height: 20),
+                  _teamPipelineCard(overview, pitYear, compact: true),
+                  const SizedBox(height: 20),
+                  _actionAndAuditCard(overview),
+                ] else ...[
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: _quickActionsCard()),
+                      const SizedBox(width: 20),
+                      Expanded(child: _upcomingDefensesCard(overview)),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: _teamPipelineCard(overview, pitYear)),
+                      const SizedBox(width: 20),
+                      Expanded(child: _actionAndAuditCard(overview)),
+                    ],
+                  ),
+                ],
               ],
             ),
-            const SizedBox(height: 20),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: _teamPipelineCard(overview, pitYear)),
-                const SizedBox(width: 20),
-                Expanded(child: _actionAndAuditCard(overview)),
-              ],
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -201,13 +229,14 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
     );
   }
 
-  Widget _quickActionsCard() {
+  Widget _quickActionsCard({bool compact = false}) {
     return _dashboardCard(
-      height: _cardHeight,
+      height: compact ? null : _cardHeight,
       title: 'Quick Actions',
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
             _quickAction(
@@ -249,22 +278,23 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
     );
   }
 
-  Widget _upcomingDefensesCard(Map<String, dynamic> overview) {
+  Widget _upcomingDefensesCard(
+    Map<String, dynamic> overview, {
+    bool compact = false,
+  }) {
     final upcomingList = _upcomingDefensesFrom(overview);
     final count = upcomingList.length;
 
     return _dashboardCard(
-      height: _cardHeight,
+      height: compact ? null : _cardHeight,
       title: 'Upcoming PIT Events',
       actionLabel: count > 0 ? 'View Calendar' : null,
       onActionTap: widget.onOpenScheduler,
       child: count == 0
           ? Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24,
-                vertical: 16,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Container(
@@ -301,8 +331,10 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    alignment: WrapAlignment.center,
                     children: [
                       FilledButton.icon(
                         onPressed: widget.onOpenScheduler,
@@ -350,10 +382,9 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
               ),
             )
           : ListView.separated(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 18,
-                vertical: 12,
-              ),
+              shrinkWrap: compact,
+              physics: compact ? const NeverScrollableScrollPhysics() : null,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
               itemCount: count,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
@@ -466,7 +497,9 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                     ),
                   ],
                   const SizedBox(height: 5),
-                  Row(
+                  Wrap(
+                    spacing: 3,
+                    runSpacing: 4,
                     children: [
                       if (timeStr.isNotEmpty) ...[
                         const Icon(
@@ -499,7 +532,7 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                           fontWeight: FontWeight.w500,
                         ),
                       ),
-                      const Spacer(),
+                      const SizedBox(width: 6),
                       const Icon(
                         Icons.group_outlined,
                         size: 13,
@@ -525,7 +558,11 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
     );
   }
 
-  Widget _teamPipelineCard(Map<String, dynamic> overview, String pitYear) {
+  Widget _teamPipelineCard(
+    Map<String, dynamic> overview,
+    String pitYear, {
+    bool compact = false,
+  }) {
     final pipeline = _pipelineFrom(overview['team_pipeline']);
     final stats = _statsFrom(overview['stats']);
 
@@ -539,11 +576,10 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
         pipeline['teams_with_instructor'] as int? ??
         pipeline['teams_with_adviser'] as int? ??
         0;
-    final stages =
-        (pipeline['stage_distribution'] as List?)?.cast<Map>() ?? [];
+    final stages = (pipeline['stage_distribution'] as List?)?.cast<Map>() ?? [];
 
     return _dashboardCard(
-      height: _cardHeight,
+      height: compact ? null : _cardHeight,
       title: 'PIT Pipeline & Readiness',
       actionLabel: 'Manage Teams',
       onActionTap: widget.onOpenStudentTeams,
@@ -557,52 +593,59 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
               padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             )
           : Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 14,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Top 3 Key Metrics
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _miniMetricTile(
-                          label: 'Total Teams',
-                          value: '$totalTeams',
-                          color: const Color(0xFF047857),
-                          bgColor: const Color(0xFFECFDF5),
-                          borderColor: const Color(0xFFA7F3D0),
-                          icon: Icons.groups_rounded,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _miniMetricTile(
-                          label: 'Stage Ready',
-                          value: '$readyForDefense',
-                          color: const Color(0xFF2563EB),
-                          bgColor: const Color(0xFFEFF6FF),
-                          borderColor: const Color(0xFFBFDBFE),
-                          icon: Icons.verified_rounded,
-                          onTap: widget.onOpenScheduler,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _miniMetricTile(
-                          label: 'With Instructor',
-                          value: totalTeams > 0
-                              ? '${((withInstructor / totalTeams) * 100).round()}%'
-                              : '0%',
-                          color: const Color(0xFF15803D),
-                          bgColor: const Color(0xFFF0FDF4),
-                          borderColor: const Color(0xFFBBF7D0),
-                          icon: Icons.co_present_rounded,
-                        ),
-                      ),
-                    ],
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final columns = constraints.maxWidth < 450 ? 1 : 3;
+                      final width =
+                          (constraints.maxWidth - 10 * (columns - 1)) / columns;
+                      return Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          SizedBox(
+                            width: width,
+                            child: _miniMetricTile(
+                              label: 'Total Teams',
+                              value: '$totalTeams',
+                              color: const Color(0xFF047857),
+                              bgColor: const Color(0xFFECFDF5),
+                              borderColor: const Color(0xFFA7F3D0),
+                              icon: Icons.groups_rounded,
+                            ),
+                          ),
+                          SizedBox(
+                            width: width,
+                            child: _miniMetricTile(
+                              label: 'Stage Ready',
+                              value: '$readyForDefense',
+                              color: const Color(0xFF2563EB),
+                              bgColor: const Color(0xFFEFF6FF),
+                              borderColor: const Color(0xFFBFDBFE),
+                              icon: Icons.verified_rounded,
+                              onTap: widget.onOpenScheduler,
+                            ),
+                          ),
+                          SizedBox(
+                            width: width,
+                            child: _miniMetricTile(
+                              label: 'With Instructor',
+                              value: totalTeams > 0
+                                  ? '${((withInstructor / totalTeams) * 100).round()}%'
+                                  : '0%',
+                              color: const Color(0xFF15803D),
+                              bgColor: const Color(0xFFF0FDF4),
+                              borderColor: const Color(0xFFBBF7D0),
+                              icon: Icons.co_present_rounded,
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
                   const SizedBox(height: 14),
 
@@ -829,14 +872,16 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
         children: [
           // Connected Tabs Header Bar
           Container(
-            height: 48,
+            constraints: const BoxConstraints(minHeight: 48),
             decoration: const BoxDecoration(
               border: Border(
                 bottom: BorderSide(color: Color(0xFFE2E8F0), width: 1.0),
               ),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
+            child: Wrap(
+              spacing: 14,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 _tabButton(
                   title: 'Action Items',
@@ -845,14 +890,12 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                   isSelected: _bottomRightTabIndex == 0,
                   onTap: () => setState(() => _bottomRightTabIndex = 0),
                 ),
-                const SizedBox(width: 14),
                 _tabButton(
                   title: 'Activity Logs',
                   icon: Icons.history_rounded,
                   isSelected: _bottomRightTabIndex == 1,
                   onTap: () => setState(() => _bottomRightTabIndex = 1),
                 ),
-                const Spacer(),
                 InkWell(
                   onTap: widget.onOpenAuditCompliance,
                   borderRadius: BorderRadius.circular(6),
@@ -938,8 +981,10 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
             if (badgeCount != null && badgeCount > 0) ...[
               const SizedBox(width: 6),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6.5, vertical: 1.5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 6.5,
+                  vertical: 1.5,
+                ),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? const Color(0xFFDC2626)
@@ -1053,10 +1098,7 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                         const Text(
                           'All PIT teams assigned and presentation pipeline is up to date.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            color: _muted,
-                          ),
+                          style: TextStyle(fontSize: 11.5, color: _muted),
                         ),
                       ],
                     ),
@@ -1168,110 +1210,120 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                               ),
                             ],
                           ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  color: iconBg,
-                                  borderRadius: BorderRadius.circular(8),
+                          child: LayoutBuilder(
+                            builder: (context, constraints) => Flex(
+                              direction: constraints.maxWidth < 500
+                                  ? Axis.vertical
+                                  : Axis.horizontal,
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    color: iconBg,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    actionIcon,
+                                    color: iconColor,
+                                    size: 19,
+                                  ),
                                 ),
-                                child: Icon(
-                                  actionIcon,
-                                  color: iconColor,
-                                  size: 19,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 5,
-                                            vertical: 1,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: badgeBg,
-                                            borderRadius:
-                                                BorderRadius.circular(4),
-                                            border:
-                                                Border.all(color: badgeBorder),
-                                          ),
-                                          child: Text(
-                                            categoryLabel,
-                                            style: TextStyle(
-                                              fontSize: 9,
-                                              fontWeight: FontWeight.w800,
-                                              letterSpacing: 0.4,
-                                              color: badgeTextColor,
+                                const SizedBox(width: 12),
+                                Flexible(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 5,
+                                              vertical: 1,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: badgeBg,
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                              border: Border.all(
+                                                color: badgeBorder,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              categoryLabel,
+                                              style: TextStyle(
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.w800,
+                                                letterSpacing: 0.4,
+                                                color: badgeTextColor,
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            title,
-                                            style: const TextStyle(
-                                              fontSize: 12.5,
-                                              fontWeight: FontWeight.w800,
-                                              color: _ink,
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              title,
+                                              style: const TextStyle(
+                                                fontSize: 12.5,
+                                                fontWeight: FontWeight.w800,
+                                                color: _ink,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
                                             ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      desc,
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        color: _muted,
-                                        fontWeight: FontWeight.w500,
+                                        ],
                                       ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        desc,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: _muted,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                FilledButton.icon(
+                                  onPressed: onActionTap,
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: _maroon,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 11,
+                                      vertical: 7,
                                     ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              FilledButton.icon(
-                                onPressed: onActionTap,
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: _maroon,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 11,
-                                    vertical: 7,
+                                    minimumSize: Size.zero,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(7),
+                                    ),
                                   ),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(7),
+                                  label: Text(
+                                    buttonLabel,
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
-                                ),
-                                label: Text(
-                                  buttonLabel,
-                                  style: const TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w700,
+                                  icon: const Icon(
+                                    Icons.arrow_forward_rounded,
+                                    size: 13,
+                                    color: Colors.white,
                                   ),
                                 ),
-                                icon: const Icon(
-                                  Icons.arrow_forward_rounded,
-                                  size: 13,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       );
@@ -1283,10 +1335,7 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
     );
   }
 
-  Widget _buildAuditLogsView(
-    List<Map<String, dynamic>> logs,
-    List alerts,
-  ) {
+  Widget _buildAuditLogsView(List<Map<String, dynamic>> logs, List alerts) {
     if (logs.isEmpty && alerts.isEmpty) {
       return const Center(
         child: Text(
@@ -1440,7 +1489,7 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
               ],
             ),
           ),
-          Expanded(child: child),
+          if (height == null) child else Expanded(child: child),
         ],
       ),
     );
@@ -1459,11 +1508,9 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: Container(
-        height: 56,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-        ),
+        constraints: const BoxConstraints(minHeight: 56),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(10)),
         child: Row(
           children: [
             Container(
@@ -1478,6 +1525,7 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
             const SizedBox(width: 12),
             Expanded(
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1599,7 +1647,9 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
     }
   }
 
-  List<Map<String, dynamic>> _upcomingDefensesFrom(Map<String, dynamic> overview) {
+  List<Map<String, dynamic>> _upcomingDefensesFrom(
+    Map<String, dynamic> overview,
+  ) {
     final raw = overview['upcoming_defenses_list'];
     if (raw is! List) return const [];
     return raw
@@ -1617,7 +1667,9 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
         .toList();
   }
 
-  List<Map<String, dynamic>> _recentActivityFrom(Map<String, dynamic> overview) {
+  List<Map<String, dynamic>> _recentActivityFrom(
+    Map<String, dynamic> overview,
+  ) {
     final raw = overview['recent_activity'];
     if (raw is! List) return const [];
     return raw

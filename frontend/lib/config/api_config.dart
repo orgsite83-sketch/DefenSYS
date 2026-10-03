@@ -24,25 +24,34 @@ class ApiConfig {
   /// Default Django dev server port (local / mobile).
   static const String basePort = '8000';
 
-  /// Overrides [baseIp] on any platform when non-empty. Example:
+  /// Overrides [baseIp] on native apps when non-empty. Web uses the page host.
+  /// Example for an installed app:
   /// `flutter run --dart-define=DEFENSYS_API_HOST=192.168.1.2`
-  static const String dartDefineApiHost =
-      String.fromEnvironment('DEFENSYS_API_HOST', defaultValue: '');
+  static const String dartDefineApiHost = String.fromEnvironment(
+    'DEFENSYS_API_HOST',
+    defaultValue: '',
+  );
 
   /// `http` or `https`. Empty = auto (https when the page is served over TLS).
-  static const String dartDefineApiScheme =
-      String.fromEnvironment('DEFENSYS_API_SCHEME', defaultValue: '');
+  static const String dartDefineApiScheme = String.fromEnvironment(
+    'DEFENSYS_API_SCHEME',
+    defaultValue: '',
+  );
 
   /// Port string. Default `8000` for dev. Set to empty for nginx on 80/443:
   /// `flutter build web --dart-define=DEFENSYS_API_PORT=`
-  static const String dartDefineApiPort =
-      String.fromEnvironment('DEFENSYS_API_PORT', defaultValue: '8000');
+  static const String dartDefineApiPort = String.fromEnvironment(
+    'DEFENSYS_API_PORT',
+    defaultValue: '8000',
+  );
 
   /// Android: `true` uses [androidEmulatorHost] (10.0.2.2) for the **emulator** reaching Django on your PC.
   /// Default `false` uses [fallbackLanIp] for **physical devices** on Wi‑Fi / wireless debugging.
   /// Emulator: `flutter run --dart-define=DEFENSYS_ANDROID_EMULATOR=true`
-  static const bool dartDefineAndroidEmulator =
-      bool.fromEnvironment('DEFENSYS_ANDROID_EMULATOR', defaultValue: false);
+  static const bool dartDefineAndroidEmulator = bool.fromEnvironment(
+    'DEFENSYS_ANDROID_EMULATOR',
+    defaultValue: false,
+  );
 
   /// Resolved API host.
   static String get baseIp {
@@ -80,15 +89,37 @@ class ApiConfig {
   }
 
   /// Port used in API URLs. Empty = omit `:port` (production nginx on 80/443).
+  static String defaultWebApiPortForHost(String host) {
+    final normalized = host.toLowerCase();
+    if (normalized == 'localhost' ||
+        normalized == '::1' ||
+        normalized == '[::1]') {
+      return basePort;
+    }
+    final parts = normalized.split('.').map(int.tryParse).toList();
+    if (parts.length == 4 &&
+        parts.every((part) => part != null && part >= 0 && part <= 255)) {
+      final first = parts[0]!;
+      final second = parts[1]!;
+      if (first == 127 ||
+          first == 10 ||
+          (first == 192 && second == 168) ||
+          (first == 172 && second >= 16 && second <= 31)) {
+        return basePort;
+      }
+    }
+    return '';
+  }
+
   static String get _resolvedPort {
     if (const bool.hasEnvironment('DEFENSYS_API_PORT')) {
       return const String.fromEnvironment('DEFENSYS_API_PORT');
     }
-    // Production web: page and API share the same host via nginx (no :8000).
+    // Local Wi-Fi demos use Django on :8000; deployed web uses same-origin nginx.
     if (kIsWeb) {
       final host = Uri.base.host.toLowerCase();
-      if (host != 'localhost' && host != '127.0.0.1' && host.isNotEmpty) {
-        return '';
+      if (host.isNotEmpty) {
+        return defaultWebApiPortForHost(host);
       }
     }
     return basePort;
@@ -153,7 +184,8 @@ class ApiConfig {
   static String get repositoryAuditUrl => projectArchiveUrl;
   static String get gradeCenterUrl => '$baseUrl/grading/grades';
   static String get repositoryUrl => '$baseUrl/repository/archive';
-  static String get repositoryReviewsUrl => '$baseUrl/repository/archive/reviews';
+  static String get repositoryReviewsUrl =>
+      '$baseUrl/repository/archive/reviews';
   static String get repositoryShelfUrl => '$baseUrl/repository/archive/shelf';
   static String get defenseStagesUrl => '$baseUrl/defense/stages';
   static String get defenseSchedulesUrl => '$baseUrl/defense/schedules';
@@ -166,12 +198,12 @@ class ApiConfig {
   static Uri webSocketGradingUri(String accessToken) {
     final wsScheme = _scheme == 'https' ? 'wss' : 'ws';
     final base = '$wsScheme://$baseIp$_portSuffix/ws/grading/';
-    return Uri.parse(base).replace(
-      queryParameters: {'token': accessToken},
-    );
+    return Uri.parse(base).replace(queryParameters: {'token': accessToken});
   }
+
   static String get academicPeriodsUrl => '$baseUrl/academic-periods';
-  static String get capstoneDeliverablesUrl => '$baseUrl/repository/deliverables';
+  static String get capstoneDeliverablesUrl =>
+      '$baseUrl/repository/deliverables';
   static String get curriculumAnalyticsUrl => '$baseUrl/curriculum-analytics';
   static String get notificationsUrl => '$baseUrl/notifications';
 

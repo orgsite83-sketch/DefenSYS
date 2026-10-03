@@ -17,6 +17,7 @@ import '../grading/rubrics_provider.dart';
 import '../academic/student_academic_records_provider.dart';
 import '../academic/student_teams_provider.dart';
 import '../admin/user_management_provider.dart';
+import '../admin/external_evaluator_provider.dart';
 import '../pit/weekly_progress_provider.dart';
 import '../pit/documenter_provider.dart';
 import '../app/unsaved_changes_provider.dart';
@@ -36,6 +37,7 @@ void invalidateSessionProviders(Ref ref) {
   ref.invalidate(studentAcademicRecordsProvider);
   ref.invalidate(studentTeamsProvider);
   ref.invalidate(userManagementProvider);
+  ref.invalidate(externalEvaluatorProvider);
   ref.invalidate(capstoneDeliverablesProvider);
   ref.invalidate(adviserGradingProvider);
   ref.invalidate(pitLeadCohortProvider);

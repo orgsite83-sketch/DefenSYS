@@ -2,16 +2,50 @@ import secrets
 
 from django.conf import settings
 from django.db import models
+from django.db.models.functions import Lower
+
+
+class ExternalEvaluator(models.Model):
+    PENDING = 'pending'
+    APPROVED = 'approved'
+    DECLINED = 'declined'
+
+    name = models.CharField(max_length=150)
+    email = models.EmailField(blank=True)
+    institution = models.CharField(max_length=150, blank=True)
+    status = models.CharField(max_length=16, default=PENDING, choices=[
+        (PENDING, 'Pending approval'), (APPROVED, 'Approved'), (DECLINED, 'Declined'),
+    ])
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='external_evaluators_created')
+    pit_year = models.CharField(max_length=50, blank=True)
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='external_evaluators_reviewed')
+    review_note = models.CharField(max_length=1000, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name', 'pk']
+        constraints = [models.UniqueConstraint(
+            Lower('email'), condition=~models.Q(email=''),
+            name='unique_external_evaluator_email',
+        )]
 
 
 class GuestPanelistCode(models.Model):
     code = models.CharField(max_length=16, unique=True, db_index=True, editable=False)
     guest_name = models.CharField(max_length=150)
     email = models.EmailField(blank=True)
+    evaluator = models.ForeignKey(ExternalEvaluator, null=True, blank=True, on_delete=models.PROTECT, related_name='invitations')
+    schedules = models.ManyToManyField('defense.DefenseSchedule', blank=True, related_name='guest_invitations')
+    access_version = models.PositiveIntegerField(default=1)
+    last_access_at = models.DateTimeField(null=True, blank=True)
     defense_schedule = models.ForeignKey(
         'defense.DefenseSchedule',
         related_name='guest_panelist_codes',
-        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
     )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -35,7 +69,7 @@ class GuestPanelistCode(models.Model):
     @classmethod
     def generate_unique_code(cls):
         while True:
-            code = f'DEF-{secrets.token_hex(3).upper()}'
+            code = f'DEF-{secrets.token_hex(6).upper()}'
             if not cls.objects.filter(code=code).exists():
                 return code
 
@@ -98,6 +132,52 @@ class FacultyRoleAssignment(models.Model):
 
     def __str__(self):
         return f'{self.user_id} {self.role_key} {self.action}'
+
+
+class PanelistEligibilityRequest(models.Model):
+    """A nomination for the reusable, admin-approved panelist pool."""
+
+    PENDING = 'pending'
+    APPROVED = 'approved'
+    DECLINED = 'declined'
+
+    faculty = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='panelist_eligibility_requests',
+    )
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='panelist_nominations',
+    )
+    pit_year = models.CharField(max_length=50)
+    reason = models.CharField(max_length=1000, blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=[(PENDING, 'Pending'), (APPROVED, 'Approved'), (DECLINED, 'Declined')],
+        default=PENDING,
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_panelist_nominations',
+    )
+    review_note = models.CharField(max_length=1000, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at', '-pk']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['faculty', 'requested_by'],
+                condition=models.Q(status='pending'),
+                name='unique_pending_panelist_nomination',
+            ),
+        ]
 
 
 class SectionInstructorAssignment(models.Model):

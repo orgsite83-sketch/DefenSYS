@@ -177,7 +177,7 @@ class CriticalIntegrityTests(APITestCase):
         self.definition.save()
         code.is_active = False
         code.save()
-        self.assertEqual(self.client.get(path).status_code, 404)
+        self.assertEqual(self.client.get(path).status_code, 401)
 
     def test_weekly_report_owner_and_adviser_can_read_but_other_student_cannot(self):
         from student_teams.weekly_progress.models import WeeklyProgressReport

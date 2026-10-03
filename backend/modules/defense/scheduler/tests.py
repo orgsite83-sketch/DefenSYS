@@ -689,13 +689,10 @@ class DefenseSchedulerApiTests(APITestCase):
 
     def test_guest_panelist_submission_uses_same_criterion_validation(self):
         schedule = self.create_scheduled_defense()
-        token = AccessToken()
-        token['guest_panelist'] = True
-        token['guest_code_id'] = 123
-        token['guest_code'] = 'DEF-123'
-        token['guest_name'] = 'Guest Panelist'
-        token['defense_schedule_id'] = schedule.id
-        token['team_id'] = self.team.id
+        from user_management.models import GuestPanelistCode
+        from authentication_access_control.guest_tokens import create_guest_access_token
+        invitation = GuestPanelistCode.objects.create(guest_name='Guest Panelist', defense_schedule=schedule, created_by=self.admin)
+        token = create_guest_access_token(invitation)
 
         self.client.force_authenticate(user=None)
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
@@ -710,7 +707,7 @@ class DefenseSchedulerApiTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 201)
-        submission = PanelistGradeSubmission.objects.get(guest_code_id='123')
+        submission = PanelistGradeSubmission.objects.get(guest_code_id=str(invitation.pk))
         self.assertEqual(submission.criterion_scores.count(), 2)
 
     def test_panelist_assignments_include_rubric_criterion_ids(self):
@@ -1968,13 +1965,10 @@ class PitEventGradingConfigTests(APITestCase):
             status=DefenseSchedule.STATUS_SCHEDULED,
             created_by=self.admin,
         )
-        token = AccessToken()
-        token['guest_panelist'] = True
-        token['guest_code_id'] = 123
-        token['guest_code'] = 'DEF-123'
-        token['guest_name'] = 'Guest Panelist'
-        token['defense_schedule_id'] = schedule.id
-        token['team_id'] = self.team.id
+        from user_management.models import GuestPanelistCode
+        from authentication_access_control.guest_tokens import create_guest_access_token
+        invitation = GuestPanelistCode.objects.create(guest_name='Guest Panelist', defense_schedule=schedule, created_by=self.admin)
+        token = create_guest_access_token(invitation)
 
         self.client.force_authenticate(user=None)
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')

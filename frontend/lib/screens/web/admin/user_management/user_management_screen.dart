@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 
 import 'package:defensys/screens/web/admin/admin_shell.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
@@ -15,20 +17,28 @@ import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/utils/import/student_bulk_import_csv.dart';
 import 'package:defensys/utils/import/user_bulk_import_draft.dart';
 import 'access_control/access_control_view.dart';
+import 'access_control/panelist_eligibility_view.dart';
 import 'bulk_import/bulk_import_view.dart';
 import 'bulk_import/official_class_list_parser.dart';
 import 'bulk_import/student_batch_enrollment_hub_view.dart';
 import 'components/faculty_staff_view.dart';
-import 'components/guest_codes_card.dart';
+import 'external_evaluators/external_evaluator_views.dart';
+import 'package:defensys/services/admin/external_evaluator_provider.dart';
 import 'components/students_enrollment_view.dart';
 import 'dialogs/add_student_dialog.dart';
 import 'dialogs/download_sample_csv_dialog.dart';
-import 'dialogs/guest_code_dialog.dart';
 import 'dialogs/user_create_edit_dialog.dart';
 import '../widgets/student_records_rollover_modal.dart';
 
 enum UserManagementTab { students, faculty, guests }
-enum _SubView { none, bulkImport, accessControl, studentBatchHub }
+
+enum _SubView {
+  none,
+  bulkImport,
+  accessControl,
+  panelistEligibility,
+  studentBatchHub,
+}
 
 /// Unified User & Student Management Screen Orchestrator.
 class UserManagementScreen extends ConsumerStatefulWidget {
@@ -65,7 +75,12 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     }
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final draft = await loadUserBulkImportDraft();
-      if (mounted && draft != null && draft.isOpen && draft.rowCount > 0 && _subView == _SubView.none && !widget.initialBulkImport) {
+      if (mounted &&
+          draft != null &&
+          draft.isOpen &&
+          draft.rowCount > 0 &&
+          _subView == _SubView.none &&
+          !widget.initialBulkImport) {
         if (draft.importType == 'faculty') {
           _openBulkImport('faculty');
         } else if (draft.importType == 'student') {
@@ -73,12 +88,15 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         }
       }
       ref.read(userManagementProvider.notifier).fetchUsers();
+      ref.read(externalEvaluatorProvider.notifier).fetch();
       ref.read(academicPeriodProvider.notifier).fetchPeriods();
       ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
     });
   }
 
-  void _openStudentBatchHub([StudentHubMode mode = StudentHubMode.freshIntake]) {
+  void _openStudentBatchHub([
+    StudentHubMode mode = StudentHubMode.freshIntake,
+  ]) {
     setState(() {
       _studentHubInitialMode = mode;
       _subView = _SubView.studentBatchHub;
@@ -120,14 +138,16 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           final userId = id is int ? id : int.parse(id.toString());
           final success = await notifier.deleteUser(userId);
           if (success && mounted) {
-            if (_accessControlUser != null && _accessControlUser!['id'] == userId) {
+            if (_accessControlUser != null &&
+                _accessControlUser!['id'] == userId) {
               setState(() {
                 _accessControlUser = null;
               });
             }
             showSuccessToast(context, 'User account deleted successfully.');
           } else if (mounted) {
-            final err = ref.read(userManagementProvider).error ??
+            final err =
+                ref.read(userManagementProvider).error ??
                 'Failed to delete user account.';
             showErrorToast(context, err);
           }
@@ -141,8 +161,14 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           id is int ? id : int.parse(id.toString()),
           payload,
         );
-        if (success && mounted && _accessControlUser != null && _accessControlUser!['id'] == id) {
-          final updatedUser = ref.read(userManagementProvider).users.firstWhere(
+        if (success &&
+            mounted &&
+            _accessControlUser != null &&
+            _accessControlUser!['id'] == id) {
+          final updatedUser = ref
+              .read(userManagementProvider)
+              .users
+              .firstWhere(
                 (u) => u['id'] == id,
                 orElse: () => _accessControlUser!,
               );
@@ -156,24 +182,10 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       if (mounted) {
         showSuccessToast(
           context,
-          user != null ? 'Faculty member updated successfully.' : 'Faculty member created successfully.',
+          user != null
+              ? 'Faculty member updated successfully.'
+              : 'Faculty member created successfully.',
         );
-      }
-    }
-  }
-
-  Future<void> _confirmRevokeGuestCode(int codeId) async {
-    final confirmed = await showConfirmDialog(
-      context,
-      title: 'Revoke Guest Code?',
-      message: 'This will deactivate access for this external guest panelist.',
-      confirmLabel: 'Revoke Code',
-      destructive: true,
-    );
-    if (confirmed == true && mounted) {
-      await ref.read(userManagementProvider.notifier).revokeGuestCode(codeId);
-      if (mounted) {
-        showSuccessToast(context, 'Guest code revoked.');
       }
     }
   }
@@ -188,32 +200,19 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     );
     if (confirmed == true && mounted) {
       final id = user['id'];
-      await ref.read(userManagementProvider.notifier).resetUserPassword(
-            id is int ? id : int.parse(id.toString()),
-          );
+      await ref
+          .read(userManagementProvider.notifier)
+          .resetUserPassword(id is int ? id : int.parse(id.toString()));
       if (mounted) {
         showSuccessToast(context, 'Password reset to default ID number.');
       }
     }
   }
 
-  Future<void> _showGuestCodeDialog() async {
-    final state = ref.read(userManagementProvider);
-    final payload = await GuestCodeGenerateDialog.show(
-      context,
-      schedules: state.defenseSchedules,
-    );
-    if (payload != null && mounted) {
-      final result = await ref.read(userManagementProvider.notifier).generateGuestCode(payload);
-      if (result != null && mounted) {
-        await GeneratedGuestCodeDialog.show(context, guestCode: result);
-      }
-    }
-  }
-
   Future<void> _showAddStudentDialog() async {
     final state = ref.read(studentAcademicRecordsProvider);
-    final activeSem = ref.read(academicPeriodProvider).activeSemester ?? state.activeSemester;
+    final activeSem =
+        ref.read(academicPeriodProvider).activeSemester ?? state.activeSemester;
     final payload = await AddStudentDialog.show(
       context,
       students: state.students,
@@ -248,14 +247,17 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       builder: (dialogCtx) => StatefulBuilder(
         builder: (context, setModalState) {
           final state = ref.watch(studentAcademicRecordsProvider);
-          final activeSem = ref.watch(academicPeriodProvider).activeSemester ?? state.activeSemester;
+          final activeSem =
+              ref.watch(academicPeriodProvider).activeSemester ??
+              state.activeSemester;
 
           final filtered = state.rolloverRows.where((row) {
             final q = rolloverSearchCtrl.text.trim().toLowerCase();
             if (q.isEmpty) return true;
             final rec = row['record'] as Map? ?? {};
             final name = rec['student_name']?.toString().toLowerCase() ?? '';
-            final user = rec['student_username']?.toString().toLowerCase() ?? '';
+            final user =
+                rec['student_username']?.toString().toLowerCase() ?? '';
             return name.contains(q) || user.contains(q);
           }).toList();
 
@@ -271,7 +273,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
           return StudentRecordsRolloverModal(
             useWarningChrome: false,
-            activeLabel: activeSem?['display_name'] ??
+            activeLabel:
+                activeSem?['display_name'] ??
                 '${activeSem?['school_year']} ${activeSem?['label']}',
             totalCount: state.rolloverRows.length,
             missingCount: 0,
@@ -344,12 +347,15 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             nonDropCount: nonDropCount,
             rolloverHasTarget: (row, act) => true,
             rolloverResult: (row, act) {
-              if (act == 'drop') return 'Excluded from new term (LOA / Dropped)';
+              if (act == 'drop')
+                return 'Excluded from new term (LOA / Dropped)';
               if (act == 'retain') return 'Retained in same year level';
               final pr = row['promote_result'] as Map? ?? {};
               return 'Enrolled in ${pr['year_level'] ?? 'Next Level'} (${pr['section'] ?? 'Class Section'})';
             },
-            asInt: (v) => v is int ? v : (v != null ? int.tryParse(v.toString()) ?? 0 : 0),
+            asInt: (v) => v is int
+                ? v
+                : (v != null ? int.tryParse(v.toString()) ?? 0 : 0),
             hasCsvUploaded: hasCsv,
             onUploadCsv: () async {
               final csv = await pickCsvTextFile();
@@ -357,7 +363,10 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               final parsed = parseOfficialClassListCsv(csv);
               if (parsed.students.isEmpty) {
                 if (mounted) {
-                  showErrorToast(context, 'No valid student rows found in CSV file.');
+                  showErrorToast(
+                    context,
+                    'No valid student rows found in CSV file.',
+                  );
                 }
                 return;
               }
@@ -409,44 +418,58 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     }
 
     if (_currentTab == UserManagementTab.faculty) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          OutlinedButton.icon(
-            onPressed: state.isSaving ? null : () => _openBulkImport('faculty'),
-            icon: const Icon(Icons.file_upload_outlined, size: 16),
-            label: const Text('Bulk Import Faculty'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: DefensysUi.primaryMaroon,
-              side: const BorderSide(color: DefensysUi.primaryMaroon),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+      return DefensysShadcnScope(
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          alignment: WrapAlignment.end,
+          children: [
+            ShadButton.outline(
+              onPressed: state.isSaving
+                  ? null
+                  : () =>
+                        setState(() => _subView = _SubView.panelistEligibility),
+              leading: const Icon(LucideIcons.shieldCheck, size: 16),
+              child: const Text('Panelist eligibility'),
+            ),
+            OutlinedButton.icon(
+              onPressed: state.isSaving
+                  ? null
+                  : () => _openBulkImport('faculty'),
+              icon: const Icon(Icons.file_upload_outlined, size: 16),
+              label: const Text('Bulk Import Faculty'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: DefensysUi.primaryMaroon,
+                side: const BorderSide(color: DefensysUi.primaryMaroon),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             ),
-          ),
-          const SizedBox(width: 12),
-          ElevatedButton.icon(
-            onPressed: state.isSaving ? null : () => _showUserDialog(),
-            icon: const Icon(Icons.person_add_alt_1_rounded, size: 16),
-            label: const Text('Add Single Faculty'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: DefensysUi.primaryMaroon,
-              foregroundColor: Colors.white,
+            ElevatedButton.icon(
+              onPressed: state.isSaving ? null : () => _showUserDialog(),
+              icon: const Icon(Icons.person_add_alt_1_rounded, size: 16),
+              label: const Text('Add Single Faculty'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: DefensysUi.primaryMaroon,
+                foregroundColor: Colors.white,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       );
     }
 
     if (_currentTab == UserManagementTab.guests) {
-      return ElevatedButton.icon(
-        onPressed: state.isSaving ? null : _showGuestCodeDialog,
-        icon: const Icon(Icons.key_rounded, size: 16),
-        label: const Text('Generate Guest Code'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: DefensysUi.warningText,
-          foregroundColor: Colors.white,
+      return DefensysShadcnScope(
+        child: ShadButton(
+          onPressed: () => ExternalEvaluatorCreateDialog.show(context),
+          leading: const Icon(LucideIcons.plus, size: 16),
+          child: const Text('Add External Evaluator'),
         ),
       );
     }
@@ -460,8 +483,12 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     final academicState = ref.watch(academicPeriodProvider);
     final studentState = ref.watch(studentAcademicRecordsProvider);
 
-    ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (previous, next) {
-      if ((next == DefensysAdminSection.userManagement || next == DefensysAdminSection.studentAcademicRecords) &&
+    ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (
+      previous,
+      next,
+    ) {
+      if ((next == DefensysAdminSection.userManagement ||
+              next == DefensysAdminSection.studentAcademicRecords) &&
           previous != next) {
         ref.read(userManagementProvider.notifier).fetchUsers();
         ref.read(academicPeriodProvider.notifier).fetchPeriods();
@@ -477,12 +504,14 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         onBack: _closeSubView,
         onDownloadSample: () => DownloadSampleCsvDialog.show(context),
         onConfirmFreshImport: (users, studentContext) async {
-          final success = await ref.read(userManagementProvider.notifier).bulkImport(
-                users,
-                studentContext: studentContext,
-              );
+          final success = await ref
+              .read(userManagementProvider.notifier)
+              .bulkImport(users, studentContext: studentContext);
           if (success && context.mounted) {
-            showSuccessToast(context, '${users.length} students imported successfully!');
+            showSuccessToast(
+              context,
+              '${users.length} students imported successfully!',
+            );
             ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
             _closeSubView();
           }
@@ -499,33 +528,44 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         onPickFile: () {},
         onDownloadSample: () async {
           await downloadTextFile(
-            filename: 'faculty_staff_template.csv',
+            filename: sampleFacultyCsvFilename,
             content: sampleFacultyCsvTemplate,
           );
           if (context.mounted) {
-            showSuccessToast(context, 'Faculty & staff sample template downloaded.');
+            showSuccessToast(
+              context,
+              'Faculty & staff sample template downloaded.',
+            );
           }
         },
         onConfirmUpload: (users, studentContext) async {
-          final success = await ref.read(userManagementProvider.notifier).bulkImport(
-                users,
-                studentContext: studentContext,
-              );
+          final success = await ref
+              .read(userManagementProvider.notifier)
+              .bulkImport(users, studentContext: studentContext);
           if (!context.mounted) return;
           if (success) {
             await clearUserBulkImportDraft();
             final isStudent = studentContext != null;
             final label = isStudent ? 'students' : 'faculty & staff';
-            showSuccessToast(context, '${users.length} $label imported successfully!');
+            showSuccessToast(
+              context,
+              '${users.length} $label imported successfully!',
+            );
             ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
             ref.read(userManagementProvider.notifier).fetchUsers();
             _closeSubView();
           } else {
-            final errorMsg = ref.read(userManagementProvider).error ?? 'Failed to import users.';
+            final errorMsg =
+                ref.read(userManagementProvider).error ??
+                'Failed to import users.';
             showErrorToast(context, errorMsg);
           }
         },
       );
+    }
+
+    if (_subView == _SubView.panelistEligibility) {
+      return PanelistEligibilityView(onBack: _closeSubView);
     }
 
     if (_subView == _SubView.accessControl && _accessControlUser != null) {
@@ -537,10 +577,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         onResetPassword: () => _confirmResetPassword(_accessControlUser!),
         onSaveRoles: (payload) async {
           final id = _accessControlUser!['id'];
-          final success = await ref.read(userManagementProvider.notifier).updateUser(
-                id is int ? id : int.parse(id.toString()),
-                payload,
-              );
+          final success = await ref
+              .read(userManagementProvider.notifier)
+              .updateUser(id is int ? id : int.parse(id.toString()), payload);
           if (success && context.mounted) {
             showSuccessToast(context, 'Role permissions saved.');
             _closeSubView();
@@ -556,7 +595,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       final r = u['role']?.toString().toLowerCase() ?? '';
       return r == 'faculty' || r == 'admin';
     }).length;
-    final guestCount = state.guestCodes.length;
+    final guestCount = ref.watch(externalEvaluatorProvider).evaluators.length;
 
     return SingleChildScrollView(
       padding: DefensysUi.contentPadding,
@@ -590,7 +629,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               ),
               DefensysSegmentItem(
                 value: UserManagementTab.guests,
-                label: 'Guest Access Codes',
+                label: 'External Evaluators',
                 badgeLabel: '$guestCount',
                 icon: Icons.vpn_key_rounded,
               ),
@@ -603,20 +642,17 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           // Active Tab Content
           switch (_currentTab) {
             UserManagementTab.students => StudentsEnrollmentView(
-                onOpenBulkImport: () => _openStudentBatchHub(StudentHubMode.freshIntake),
-              ),
+              onOpenBulkImport: () =>
+                  _openStudentBatchHub(StudentHubMode.freshIntake),
+            ),
             UserManagementTab.faculty => FacultyStaffView(
-                onOpenBulkImport: () => _openBulkImport('faculty'),
-                onOpenAccessControl: _openAccessControl,
-              ),
-            UserManagementTab.guests => GuestCodesCard(
-                state: state,
-                onRevokeGuestCode: _confirmRevokeGuestCode,
-              ),
+              onOpenBulkImport: () => _openBulkImport('faculty'),
+              onOpenAccessControl: _openAccessControl,
+            ),
+            UserManagementTab.guests => const ExternalEvaluatorDirectory(),
           },
         ],
       ),
     );
   }
-
 }

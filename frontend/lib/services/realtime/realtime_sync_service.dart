@@ -35,7 +35,7 @@ class RealtimeSyncNotifier extends Notifier<RealtimeConnectionState> {
 
   void connect({required String? role}) {
     _activeRole = role;
-    if (role == null) {
+    if (role == null || role == 'guest_panelist') {
       _disconnect();
       return;
     }

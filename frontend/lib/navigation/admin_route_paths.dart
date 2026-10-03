@@ -223,9 +223,13 @@ abstract final class FacultyRoutes {
 }
 
 abstract final class AppRoutes {
+  static const guestEntry = '/guest/evaluate';
+  static const guestDefenses = '/guest/defenses';
   static const login = '/login';
   static const student = '/student';
   static const panelist = '/panelist';
+  static const settings = '/settings';
+  static const webWorkspaceOnly = '/web-workspace';
   static const terms = '/terms';
   static const passwordResetConfirm = '/password-reset/confirm/:uid/:token';
 }

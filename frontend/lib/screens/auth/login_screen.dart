@@ -9,7 +9,6 @@ import '../../navigation/post_auth_navigation.dart';
 import '../../services/auth_provider.dart';
 import '../../services/session_storage.dart';
 import '../../theme/defensys_tokens.dart';
-import '../../theme/app_theme.dart';
 import '../../toasts/feedback_toast.dart';
 import '../../widgets/defensys_logo_mark.dart';
 import '../../widgets/feedback/login_skeleton.dart'
@@ -165,20 +164,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (!mounted) return;
       showErrorToast(
         context,
-        'Faculty tools (advising, PIT lead, Evaluation & Grades) are available on the web app. Use a browser on desktop.',
+        'Faculty management tools are available in the web app. Open DefenSYS in your browser.',
       );
-      return;
-    }
-
-    if (isWeb && baseRole == 'student') {
-      await ref.read(authProvider.notifier).logout();
-      if (!mounted) return;
-      showErrorToast(context, 'Students must use the mobile app.');
-      return;
-    }
-
-    if (isWeb) {
-      await navigateToHomeAfterAuth(context, role: role, userData: user);
       return;
     }
 
@@ -253,8 +240,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: _HeroCarousel(height: double.infinity),
-                ),
+                  child: _HeroCarousel(height: double.infinity)),
                 Positioned.fill(
                   child: IgnorePointer(
                     child: DecoratedBox(
@@ -276,7 +262,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   left: 48,
                   right: 48,
                   child: IgnorePointer(
-                    child: _brandLockup(isCompact: isCompact, isDarkTheme: true),
+                    child: _brandLockup(isCompact: isCompact, isDarkTheme: true,
+                    ),
                   ),
                 ),
                 Positioned(
@@ -304,8 +291,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         end: Alignment.bottomRight,
                         colors: [
                           Color(0xFFF8FAFC),
-                          Color(0xFFF1F5F9),
-                        ],
+                          Color(0xFFF1F5F9)],
                       ),
                     ),
                   ),
@@ -314,7 +300,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 Positioned.fill(
                   child: Center(
                     child: SingleChildScrollView(
-                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24,
+                      ),
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 440),
                         child: TweenAnimationBuilder<double>(
@@ -371,16 +358,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             Container(
               width: 1,
               height: 32,
-              color: const Color(0xFFCBD5E1),
-            ),
+              color: const Color(0xFFCBD5E1)),
             const SizedBox(width: 16),
             SizedBox(
               height: 42,
               width: 42,
               child: Image.asset(
                 'assets/logo-legacy.png',
-                fit: BoxFit.contain,
-              ),
+                fit: BoxFit.contain),
             ),
           ],
         ),
@@ -470,8 +455,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         '•',
         style: TextStyle(
           color: Color(0xFF94A3B8),
-          fontSize: 11,
-        ),
+          fontSize: 11),
       ),
     );
   }
@@ -620,8 +604,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: const Color(0xFFE2E8F0),
-          width: 1.0,
-        ),
+          width: 1.0),
         boxShadow: [
           BoxShadow(
             color: const Color(0xFF0F172A).withValues(alpha: 0.06),
@@ -687,8 +670,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             const SizedBox(height: 18),
             Container(
               height: 1,
-              color: const Color(0xFFF1F5F9),
-            ),
+              color: const Color(0xFFF1F5F9)),
             const SizedBox(height: 18),
             if (sessionBanner != null) ...[
               sessionBanner,
@@ -750,7 +732,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             setState(() => _rememberMe = value ?? false),
                         visualDensity: VisualDensity.compact,
                         activeColor: const Color(0xFF800020),
-                        side: const BorderSide(color: Color(0xFF94A3B8), width: 1.5),
+                        side: const BorderSide(color: Color(0xFF94A3B8), width: 1.5,
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(4),
                         ),
@@ -896,13 +879,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                         : _openGettingStarted,
                                     behavior: HitTestBehavior.opaque,
                                     child: Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 4),
+                                      padding: const EdgeInsets.symmetric(vertical: 4,
+                                      ),
                                       child: Container(
                                         width: 38,
                                         height: 4.5,
                                         decoration: BoxDecoration(
                                           color: const Color(0xFFCBD5E1),
-                                          borderRadius: BorderRadius.circular(3),
+                                          borderRadius: BorderRadius.circular(3,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -996,8 +981,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           children: [
             const DefensysLogoMark(
               size: 34,
-              customColor: Color(0xFF6B1527),
-            ),
+              customColor: Color(0xFF6B1527)),
             const SizedBox(width: 10),
             const Text(
               'DefenSYS',
@@ -1075,46 +1059,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        if (!kIsWeb)
-          SizedBox(
-            width: double.infinity,
-            height: 50,
-            child: OutlinedButton(
-              onPressed: _showGuestDialog,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF92400E),
-                side: const BorderSide(
-                  color: Color(0xFFF59E0B),
-                  width: 1.2,
-                ),
-                backgroundColor: const Color(0xFFFFFBEB),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-              ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.key_outlined, size: 18, color: Color(0xFF92400E)),
-                  SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      'Guest Panelist Access',
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF92400E),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
         const SizedBox(height: 20),
         Center(
           child: Text(
@@ -1136,17 +1080,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             _buildLightFooterLink('About Us', () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const AboutScreen()),
-            ), color: const Color(0xFF64748B)),
+            ), color: const Color(0xFF64748B),
+            ),
             _buildLightFooterDivider(color: const Color(0xFFCBD5E1)),
             _buildLightFooterLink('Privacy Policy', () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const PrivacyScreen()),
-            ), color: const Color(0xFF64748B)),
+            ), color: const Color(0xFF64748B),
+            ),
             _buildLightFooterDivider(color: const Color(0xFFCBD5E1)),
             _buildLightFooterLink('Terms', () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const TermsScreen()),
-            ), color: const Color(0xFF64748B)),
+            ), color: const Color(0xFF64748B),
+            ),
           ],
         ),
       ],
@@ -1163,8 +1110,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           children: [
             DefensysLogoMark(
               size: 26,
-              customColor: Color(0xFF6B1527),
-            ),
+              customColor: Color(0xFF6B1527)),
             SizedBox(width: 8),
             Text(
               'DefenSYS',
@@ -1239,22 +1185,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     color: Color(0xFF64748B),
                     size: 20,
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15,
+                  ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.0),
+                    borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.0,
+                    ),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFF6B1527), width: 1.5),
+                    borderSide: const BorderSide(color: Color(0xFF6B1527), width: 1.5,
+                    ),
                   ),
                   errorBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.0),
+                    borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.0,
+                    ),
                   ),
                   focusedErrorBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.5),
+                    borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.5,
+                    ),
                   ),
                 ),
                 validator: (v) => v == null || v.trim().isEmpty
@@ -1306,22 +1257,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     onPressed: () => setState(() => _obscure = !_obscure),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15,
+                  ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.0),
+                    borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.0,
+                    ),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFF6B1527), width: 1.5),
+                    borderSide: const BorderSide(color: Color(0xFF6B1527), width: 1.5,
+                    ),
                   ),
                   errorBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.0),
+                    borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.0,
+                    ),
                   ),
                   focusedErrorBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.5),
+                    borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.5,
+                    ),
                   ),
                 ),
                 validator: (v) => v == null || v.trim().isEmpty
@@ -1350,7 +1306,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         setState(() => _rememberMe = value ?? false),
                     visualDensity: VisualDensity.compact,
                     activeColor: DefensysTokens.maroon,
-                    side: const BorderSide(color: Color(0xFF64748B), width: 1.5),
+                    side: const BorderSide(color: Color(0xFF64748B), width: 1.5,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(4),
                     ),
@@ -1419,35 +1376,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        if (!kIsWeb)
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: OutlinedButton.icon(
-              onPressed: _showGuestDialog,
-              icon: const Icon(Icons.key_outlined, size: 18, color: Color(0xFF92400E)),
-              label: const Text(
-                'Guest Panelist Access',
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF92400E),
-                ),
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF92400E),
-                side: const BorderSide(
-                  color: Color(0xFFF59E0B),
-                  width: 1.2,
-                ),
-                backgroundColor: const Color(0xFFFFFBEB),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-          ),
         const SizedBox(height: 24),
         Center(
           child: Text(
@@ -1469,25 +1397,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             _buildLightFooterLink('About Us', () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => const AboutScreen(),
-              ),
-            ), color: const Color(0xFF64748B)),
+                builder: (_) => const AboutScreen()),
+            ), color: const Color(0xFF64748B),
+            ),
             _buildLightFooterDivider(color: const Color(0xFFCBD5E1)),
-            _buildLightFooterLink('Getting Started', _openGettingStarted, color: const Color(0xFF6B1527)),
+            _buildLightFooterLink('Getting Started', _openGettingStarted, color: const Color(0xFF6B1527),
+            ),
             _buildLightFooterDivider(color: const Color(0xFFCBD5E1)),
             _buildLightFooterLink('Privacy Policy', () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => const PrivacyScreen(),
-              ),
-            ), color: const Color(0xFF64748B)),
+                builder: (_) => const PrivacyScreen()),
+            ), color: const Color(0xFF64748B),
+            ),
             _buildLightFooterDivider(color: const Color(0xFFCBD5E1)),
             _buildLightFooterLink('Terms', () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => const TermsScreen(),
-              ),
-            ), color: const Color(0xFF64748B)),
+                builder: (_) => const TermsScreen()),
+            ), color: const Color(0xFF64748B),
+            ),
           ],
         ),
         const SizedBox(height: 20),
@@ -1495,7 +1424,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  Widget _buildLightFooterLink(String label, VoidCallback onTap, {Color? color}) {
+  Widget _buildLightFooterLink(String label, VoidCallback onTap, {Color? color,
+  }) {
     final textColor = color ?? const Color(0xFFFDE68A);
     return TextButton(
       onPressed: onTap,
@@ -1524,8 +1454,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         '•',
         style: TextStyle(
           color: color ?? Colors.white54,
-          fontSize: 12,
-        ),
+          fontSize: 12),
       ),
     );
   }
@@ -1537,168 +1466,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
-  void _showGuestDialog() {
-    if (kIsWeb) {
-      showErrorToast(
-        context,
-        'Guest panelist access is available on the mobile app only.',
-      );
-      return;
-    }
-
-    final codeCtrl = TextEditingController();
-    final guestFormKey = GlobalKey<FormState>();
-    bool isValidating = false;
-    String? dialogError;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          title: Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFEF3C7),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.vpn_key_rounded,
-                  color: Color(0xFF92400E),
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Text(
-                'Guest Access',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Enter the access code provided by the administrator.',
-                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 16),
-              Form(
-                key: guestFormKey,
-                child: TextFormField(
-                  controller: codeCtrl,
-                  textCapitalization: TextCapitalization.characters,
-                  onChanged: (_) {
-                    if (dialogError != null) {
-                      setDialogState(() => dialogError = null);
-                    }
-                  },
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 2,
-                    fontFamily: 'monospace',
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'DEF-XXXXXX',
-                    hintStyle: TextStyle(
-                      color: Colors.grey.shade300,
-                      letterSpacing: 2,
-                    ),
-                    prefixIcon: const Icon(Icons.lock_open_rounded, size: 20),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    errorText: dialogError,
-                  ),
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) {
-                      return 'Enter your access code';
-                    }
-                    return null;
-                  },
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: isValidating
-                  ? null
-                  : () async {
-                      if (!(guestFormKey.currentState?.validate() ?? false)) {
-                        return;
-                      }
-
-                      final code = codeCtrl.text.trim().toUpperCase();
-
-                      setDialogState(() => isValidating = true);
-                      final success = await ref
-                          .read(authProvider.notifier)
-                          .loginGuest(code);
-
-                      if (!ctx.mounted || !mounted) return;
-
-                      if (success) {
-                        final user = ref.read(authProvider).user!;
-                        Navigator.pop(ctx);
-                        await navigateToHomeAfterAuth(
-                          context,
-                          role: 'Panelist',
-                          userData: user,
-                        );
-                      } else {
-                        setDialogState(() {
-                          isValidating = false;
-                          dialogError =
-                              'Invalid or expired code. Please check and try again.';
-                        });
-                      }
-                    },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF92400E),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              child: isValidating
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text(
-                      'Verify & Enter',
-                      style: TextStyle(fontWeight: FontWeight.w700),
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
-}
 
 class _HeroCarousel extends StatefulWidget {
   const _HeroCarousel({
     super.key,
     required this.height,
-    this.isMobile = false,
-  });
+    this.isMobile = false});
 
   final double height;
   final bool isMobile;
@@ -1824,8 +1598,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
 class _LoginButton extends StatefulWidget {
   const _LoginButton({
     required this.onPressed,
-    required this.isLoading,
-  });
+    required this.isLoading});
 
   final VoidCallback? onPressed;
   final bool isLoading;
@@ -1862,12 +1635,10 @@ class _LoginButtonState extends State<_LoginButton> {
                 colors: isEnabled
                     ? [
                         const Color(0xFF6B1124),
-                        const Color(0xFF800020),
-                      ]
+                        const Color(0xFF800020)]
                     : [
                         Colors.grey.shade400,
-                        Colors.grey.shade500,
-                      ],
+                        Colors.grey.shade500],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -1878,6 +1649,7 @@ class _LoginButtonState extends State<_LoginButton> {
                         blurRadius: 14,
                         offset: const Offset(0, 4),
                       )
+                    ,
                     ]
                   : [
                       BoxShadow(
@@ -1885,6 +1657,7 @@ class _LoginButtonState extends State<_LoginButton> {
                         blurRadius: 6,
                         offset: const Offset(0, 2),
                       )
+                    ,
                     ],
             ),
             child: widget.isLoading
@@ -2052,7 +1825,8 @@ class _WebInputFieldState extends State<_WebInputField> {
               errorBorder: InputBorder.none,
               focusedErrorBorder: InputBorder.none,
               errorStyle: const TextStyle(height: 0.01, fontSize: 0),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13,
+              ),
             ),
           ),
         ),
@@ -2208,7 +1982,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
         });
       } else {
         final detail = data is Map ? data['detail'] : 'Failed to send verification code.';
-        setState(() => _errorMessage = detail?.toString() ?? 'An error occurred.');
+        setState(() => _errorMessage = detail?.toString() ?? 'An error occurred.',
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -2260,11 +2035,13 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
         });
       } else {
         final detail = data is Map ? data['detail'] : 'Invalid verification code.';
-        setState(() => _errorMessage = detail?.toString() ?? 'Invalid verification code.');
+        setState(() => _errorMessage = detail?.toString() ?? 'Invalid verification code.',
+        );
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _errorMessage = 'Connection error. Please check your network.');
+        setState(() => _errorMessage = 'Connection error. Please check your network.',
+        );
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -2312,7 +2089,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
         });
       } else {
         final detail = data is Map ? data['detail'] : 'Failed to reset password.';
-        setState(() => _errorMessage = detail?.toString() ?? 'Failed to reset password.');
+        setState(() => _errorMessage = detail?.toString() ?? 'Failed to reset password.',
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -2390,7 +2168,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                   color: DefensysTokens.maroon.withValues(alpha: 0.08),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.lock_reset_rounded, color: DefensysTokens.maroon, size: 24),
+                child: const Icon(Icons.lock_reset_rounded, color: DefensysTokens.maroon, size: 24,
+                ),
               ),
               const SizedBox(width: 14),
               const Expanded(
@@ -2420,7 +2199,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.close, size: 20, color: Color(0xFF64748B)),
+                icon: const Icon(Icons.close, size: 20, color: Color(0xFF64748B),
+                ),
                 onPressed: () => Navigator.pop(context, false),
               ),
             ],
@@ -2475,13 +2255,16 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
             decoration: InputDecoration(
               labelText: isSms ? 'ID or Mobile Number' : 'ID or Email Address',
               hintText: isSms ? 'e.g. 2023-10042 or 09171234567' : 'e.g. 2023-10042 or user@email.com',
-              prefixIcon: Icon(isSms ? Icons.phone_outlined : Icons.person_outline, size: 20),
+              prefixIcon: Icon(isSms ? Icons.phone_outlined : Icons.person_outline, size: 20,
+              ),
               filled: true,
               fillColor: const Color(0xFFF8FAFC),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+              ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: DefensysTokens.maroon, width: 2),
+                borderSide: const BorderSide(color: DefensysTokens.maroon, width: 2,
+                ),
               ),
             ),
             validator: (v) => v == null || v.trim().isEmpty
@@ -2495,7 +2278,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
             children: [
               TextButton(
                 onPressed: _isSubmitting ? null : () => Navigator.pop(context, false),
-                child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+                child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B)),
+                ),
               ),
               const SizedBox(width: 8),
               ElevatedButton(
@@ -2503,16 +2287,20 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: DefensysTokens.maroon,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 child: _isSubmitting
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white,
+                        ),
                       )
-                    : const Text('Send Code', style: TextStyle(fontWeight: FontWeight.w600)),
+                    : const Text('Send Code', style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
               ),
             ],
           ),
@@ -2645,7 +2433,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
             children: [
               TextSpan(
                 text: _maskedTarget,
-                style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A),
+                ),
               ),
               TextSpan(
                 text: isSms
@@ -2720,7 +2509,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                   foregroundColor: DefensysTokens.maroon,
                   padding: EdgeInsets.zero,
                 ),
-                child: const Text('Resend Code', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                child: const Text('Resend Code', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                ),
               ),
           ],
         ),
@@ -2731,15 +2521,18 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
             backgroundColor: DefensysTokens.maroon,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10),
+            ),
           ),
           child: _isSubmitting
               ? const SizedBox(
                   width: 18,
                   height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white,
+                  ),
                 )
-              : const Text('Verify Code', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+              : const Text('Verify Code', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                ),
         ),
       ],
     );
@@ -2777,7 +2570,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: DefensysTokens.maroon, width: 2),
+            borderSide: const BorderSide(color: DefensysTokens.maroon, width: 2,
+              ),
           ),
         ),
         onChanged: (val) {
@@ -2833,7 +2627,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                   color: const Color(0xFFECFDF5),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.shield_outlined, color: Color(0xFF059669), size: 24),
+                child: const Icon(Icons.shield_outlined, color: Color(0xFF059669), size: 24,
+                ),
               ),
               const SizedBox(width: 14),
               const Expanded(
@@ -2863,7 +2658,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.close, size: 20, color: Color(0xFF64748B)),
+                icon: const Icon(Icons.close, size: 20, color: Color(0xFF64748B),
+                ),
                 onPressed: () => Navigator.pop(context, false),
               ),
             ],
@@ -2907,10 +2703,12 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
               ),
               filled: true,
               fillColor: const Color(0xFFF8FAFC),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+              ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: DefensysTokens.maroon, width: 2),
+                borderSide: const BorderSide(color: DefensysTokens.maroon, width: 2,
+                ),
               ),
             ),
           ),
@@ -2943,10 +2741,12 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
               ),
               filled: true,
               fillColor: const Color(0xFFF8FAFC),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+              ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: DefensysTokens.maroon, width: 2),
+                borderSide: const BorderSide(color: DefensysTokens.maroon, width: 2,
+                ),
               ),
             ),
           ),
@@ -2957,15 +2757,18 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
               backgroundColor: DefensysTokens.maroon,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10),
+              ),
             ),
             child: _isSubmitting
                 ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white,
+                    ),
                   )
-                : const Text('Update Password', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                : const Text('Update Password', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                  ),
           ),
         ],
       ),
@@ -3022,9 +2825,11 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
             backgroundColor: DefensysTokens.maroon,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10),
+            ),
           ),
-          child: const Text('Back to Sign In', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+          child: const Text('Back to Sign In', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+          ),
         ),
       ],
     );
@@ -3045,7 +2850,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
           Expanded(
             child: Text(
               error,
-              style: const TextStyle(fontSize: 12, color: Color(0xFFB91C1C), fontWeight: FontWeight.w500),
+              style: const TextStyle(fontSize: 12, color: Color(0xFFB91C1C), fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
@@ -3088,16 +2894,19 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
         children: [
           Row(
             children: [
-              const Icon(Icons.shield_outlined, size: 15, color: Color(0xFF64748B)),
+              const Icon(Icons.shield_outlined, size: 15, color: Color(0xFF64748B),
+              ),
               const SizedBox(width: 6),
               const Text(
                 'Password Security',
-                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF1E293B)),
+                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF1E293B),
+                ),
               ),
               const Spacer(),
               Text(
                 strengthLabel,
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: strengthColor),
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: strengthColor,
+                ),
               ),
             ],
           ),

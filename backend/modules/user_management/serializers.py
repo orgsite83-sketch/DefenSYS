@@ -16,6 +16,8 @@ User = get_user_model()
 
 
 def schedule_label(schedule):
+    if schedule is None:
+        return 'No assigned defense'
     team_name = getattr(schedule.team, 'name', 'Team')
     stage_label = schedule.stage_label or schedule.get_scope_display()
     date = schedule.scheduled_date.isoformat() if schedule.scheduled_date else ''
@@ -534,6 +536,7 @@ class GuestPanelistCodeCreateSerializer(serializers.ModelSerializer):
         model = GuestPanelistCode
         fields = ['guest_name', 'email', 'defense_schedule', 'expires_at']
         extra_kwargs = {
+            'defense_schedule': {'required': True, 'allow_null': False},
             'email': {'required': False, 'allow_blank': True},
             'expires_at': {'required': False, 'allow_null': True},
         }

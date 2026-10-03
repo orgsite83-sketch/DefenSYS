@@ -20,6 +20,12 @@ def grading_unavailable_reason(schedule, grade=None):
         return 'A panel rubric must be configured before grading.'
     if grade and grade.status in TeamGrade.LOCKED_STATUSES:
         return 'Grades for this defense have been finalized.'
+    if grade:
+        from grading.grades.services import require_grade_editable
+        try:
+            require_grade_editable(grade)
+        except ValidationError as exc:
+            return ' '.join(exc.messages)
     return ''
 
 

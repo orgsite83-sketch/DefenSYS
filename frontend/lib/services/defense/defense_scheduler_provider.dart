@@ -6,6 +6,7 @@ import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
 import '../app/dashboard_provider.dart';
 import 'defense_board_provider.dart';
+import '../admin/user_management_provider.dart';
 
 final defenseSchedulerProvider =
     NotifierProvider<DefenseSchedulerNotifier, DefenseSchedulerState>(
@@ -23,6 +24,10 @@ class DefenseSchedulerState {
   final List<Map<String, dynamic>> panelists;
   final List<Map<String, dynamic>> documenters;
   final List<Map<String, dynamic>> faculty;
+  final List<Map<String, dynamic>> panelistRequests;
+  final List<Map<String, dynamic>> createdInvitations;
+  final bool canApprovePanelists;
+  final bool requiresPanelistApproval;
   final List<Map<String, dynamic>> generatedSlots;
   final List<String> statuses;
   final Map<String, dynamic> counts;
@@ -51,6 +56,10 @@ class DefenseSchedulerState {
     this.panelists = const [],
     this.documenters = const [],
     this.faculty = const [],
+    this.panelistRequests = const [],
+    this.createdInvitations = const [],
+    this.canApprovePanelists = false,
+    this.requiresPanelistApproval = false,
     this.generatedSlots = const [],
     this.statuses = const [],
     this.counts = const {},
@@ -80,6 +89,10 @@ class DefenseSchedulerState {
     List<Map<String, dynamic>>? panelists,
     List<Map<String, dynamic>>? documenters,
     List<Map<String, dynamic>>? faculty,
+    List<Map<String, dynamic>>? panelistRequests,
+    List<Map<String, dynamic>>? createdInvitations,
+    bool? canApprovePanelists,
+    bool? requiresPanelistApproval,
     List<Map<String, dynamic>>? generatedSlots,
     List<String>? statuses,
     Map<String, dynamic>? counts,
@@ -112,6 +125,11 @@ class DefenseSchedulerState {
       panelists: panelists ?? this.panelists,
       documenters: documenters ?? this.documenters,
       faculty: faculty ?? this.faculty,
+      panelistRequests: panelistRequests ?? this.panelistRequests,
+      createdInvitations: createdInvitations ?? this.createdInvitations,
+      canApprovePanelists: canApprovePanelists ?? this.canApprovePanelists,
+      requiresPanelistApproval:
+          requiresPanelistApproval ?? this.requiresPanelistApproval,
       generatedSlots: generatedSlots ?? this.generatedSlots,
       statuses: statuses ?? this.statuses,
       counts: counts ?? this.counts,
@@ -134,6 +152,13 @@ class DefenseSchedulerState {
       message: clearMessage ? null : message ?? this.message,
     );
   }
+
+  List<Map<String, dynamic>> get selectablePanelists =>
+      canApprovePanelists && faculty.isNotEmpty ? faculty : panelists;
+
+  bool isEligiblePanelist(int id) =>
+      panelists.any((p) => p['id'] == id) ||
+      faculty.any((p) => p['id'] == id && p['is_panelist'] == true);
 }
 
 class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
@@ -232,6 +257,10 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
           rubrics: _readMapList(data['rubrics']),
           peerRubrics: _readMapList(data['peer_rubrics']),
           panelists: _readMapList(data['panelists']),
+          faculty: _readMapList(data['faculty']),
+          panelistRequests: _readMapList(data['panelist_requests']),
+          canApprovePanelists: data['can_approve_panelists'] == true,
+          requiresPanelistApproval: data['requires_panelist_approval'] == true,
           pitEvents: _readMapList(data['pit_events']),
           activeSemester: data['active_semester'] is Map
               ? Map<String, dynamic>.from(data['active_semester'])
@@ -312,6 +341,10 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
 
       if (response.statusCode == 201) {
         await fetchSchedules(successMessage: 'Schedule saved.');
+        final data = Map<String, dynamic>.from(jsonDecode(response.body));
+        state = state.copyWith(
+          createdInvitations: _readMapList(data['created_invitations']),
+        );
         await _refreshDependentProviders();
         return true;
       }
@@ -435,7 +468,9 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchPitEventConfigs({int? semesterId}) async {
+  Future<List<Map<String, dynamic>>> fetchPitEventConfigs({
+    int? semesterId,
+  }) async {
     try {
       final uri = Uri.parse('$baseUrl/pit-event-config/').replace(
         queryParameters: {
@@ -465,11 +500,9 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     );
 
     try {
-      final uri = Uri.parse('$baseUrl/pit-event-config/').replace(
-        queryParameters: {
-          'config_id': configId.toString(),
-        },
-      );
+      final uri = Uri.parse(
+        '$baseUrl/pit-event-config/',
+      ).replace(queryParameters: {'config_id': configId.toString()});
       final response = await _client.delete(uri);
 
       if (response.statusCode == 200) {
@@ -554,7 +587,9 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
 
   Future<void> _refreshDependentProviders() async {
     try {
-      await ref.read(dashboardProvider('admin').notifier).fetchDashboardData(silent: true);
+      await ref
+          .read(dashboardProvider('admin').notifier)
+          .fetchDashboardData(silent: true);
     } catch (_) {}
     try {
       await ref.read(defenseBoardProvider.notifier).fetchBoard();
@@ -563,6 +598,82 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
 
   AuthenticatedHttpClient get _client =>
       ref.read(authenticatedHttpClientProvider);
+
+  Future<bool> requestPanelistEligibility(int facultyId, String reason) async {
+    return _panelistRequestMutation(
+      '${ApiConfig.usersUrl}/panelist-requests/',
+      {'faculty_id': facultyId, 'reason': reason},
+      success:
+          'Eligibility request submitted. Your schedule selections are retained.',
+    );
+  }
+
+  /// Uses the canonical RBAC endpoint so role history and pending requests stay
+  /// in sync. Only this duty is patched; other roles and credentials are retained.
+  Future<bool> setPanelistEligibility(
+    int facultyId, {
+    required bool eligible,
+  }) async {
+    if (!state.canApprovePanelists) {
+      state = state.copyWith(
+        error: 'Only admins can change panelist eligibility.',
+      );
+      return false;
+    }
+    final ok = await _panelistRequestMutation(
+      '${ApiConfig.usersUrl}/$facultyId/',
+      {'is_panelist': eligible},
+      patch: true,
+      success: eligible
+          ? 'Faculty member added to the eligible panelist pool.'
+          : 'Panelist eligibility removed.',
+    );
+    if (ok) {
+      await ref.read(userManagementProvider.notifier).fetchUsers();
+    }
+    return ok;
+  }
+
+  Future<bool> reviewPanelistEligibility(
+    int requestId, {
+    required bool approve,
+    String note = '',
+  }) async {
+    final ok = await _panelistRequestMutation(
+      '${ApiConfig.usersUrl}/panelist-requests/$requestId/',
+      {'decision': approve ? 'approved' : 'declined', 'review_note': note},
+      patch: true,
+      success: approve
+          ? 'Panelist eligibility approved for future defenses.'
+          : 'Eligibility request declined.',
+    );
+    if (ok && approve) {
+      await ref.read(userManagementProvider.notifier).fetchUsers();
+    }
+    return ok;
+  }
+
+  Future<bool> _panelistRequestMutation(
+    String url,
+    Map<String, dynamic> payload, {
+    bool patch = false,
+    required String success,
+  }) async {
+    try {
+      final response = patch
+          ? await _client.patch(Uri.parse(url), body: jsonEncode(payload))
+          : await _client.post(Uri.parse(url), body: jsonEncode(payload));
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        state = state.copyWith(error: _errorFromResponse(response));
+        return false;
+      }
+      await fetchSchedules(successMessage: success);
+      return true;
+    } catch (e) {
+      state = state.copyWith(error: 'Connection error: $e');
+      return false;
+    }
+  }
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     state = state.copyWith(
@@ -576,6 +687,10 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
       panelists: _readMapList(payload['panelists']),
       documenters: _readMapList(payload['documenters']),
       faculty: _readMapList(payload['faculty']),
+      panelistRequests: _readMapList(payload['panelist_requests']),
+      createdInvitations: _readMapList(payload['created_invitations']),
+      canApprovePanelists: payload['can_approve_panelists'] == true,
+      requiresPanelistApproval: payload['requires_panelist_approval'] == true,
       pitEvents: _readMapList(payload['pit_events']),
       statuses: _readStringList(payload['statuses']),
       counts: payload['counts'] is Map

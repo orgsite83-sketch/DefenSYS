@@ -625,6 +625,8 @@ class BulkImportUsersMixin:
                         if updated_fields:
                             existing_user.save(update_fields=updated_fields)
                     elif existing_user.role == 'faculty' and not self.force_student_only:
+                        from .role_assignments import record_role_changes, snapshot_role_flags
+                        before_flags = snapshot_role_flags(existing_user)
                         updated_fields = []
                         if data.get('first_name') and existing_user.first_name != data['first_name']:
                             existing_user.first_name = data['first_name']
@@ -658,9 +660,13 @@ class BulkImportUsersMixin:
                             updated_fields.append('is_uploader')
                         if updated_fields:
                             existing_user.save(update_fields=updated_fields)
+                            record_role_changes(existing_user, before_flags, changed_by=request.user)
                             created.append(existing_user)
                         else:
                             skipped.append({'row': index, 'id_number': username, 'reason': 'duplicate'})
+                        if existing_user.is_panelist:
+                            from .panelist_eligibility import resolve_approved_requests
+                            resolve_approved_requests(existing_user, request.user)
                     else:
                         skipped.append({'row': index, 'id_number': username, 'reason': 'duplicate'})
                     continue
@@ -681,6 +687,9 @@ class BulkImportUsersMixin:
                     is_uploader=False if self.force_student_only else data.get('is_uploader', False),
                 )
                 user.save()
+                if user.role in ('faculty', 'admin'):
+                    from .role_assignments import ensure_active_role_history
+                    ensure_active_role_history(user, changed_by=request.user)
                 created.append(user)
                 if user.role == 'student' and context_semester is not None and year_level:
                     records_created.append(StudentAcademicRecord.objects.create(
@@ -1038,6 +1047,7 @@ class GuestPanelistCodeListCreateView(APIView):
         serializer = GuestPanelistCodeCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         code = serializer.save(created_by=request.user)
+        code.schedules.add(code.defense_schedule)
         log_high_impact_action(
             category=SystemAuditLog.CATEGORY_GUEST_ACCESS,
             action='guest_code.create',
@@ -1074,7 +1084,8 @@ class GuestPanelistCodeDetailView(APIView):
                 code.is_active = raw_status
             else:
                 code.is_active = str(raw_status).strip().lower() in ['1', 'true', 'yes', 'active']
-            code.save(update_fields=['is_active', 'updated_at'])
+            code.access_version += 1
+            code.save(update_fields=['is_active', 'access_version', 'updated_at'])
             log_high_impact_action(
                 category=SystemAuditLog.CATEGORY_GUEST_ACCESS,
                 action='guest_code.status_change',
@@ -1108,7 +1119,8 @@ class GuestCodeValidateView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        schedule = guest_code.defense_schedule
+        from .external_evaluators import primary_guest_schedule
+        schedule = primary_guest_schedule(guest_code)
         team = schedule.team
         return Response({
             'guestName': guest_code.guest_name,
@@ -1149,6 +1161,9 @@ class GuestCodeExchangeView(APIView):
             action = 'guest_code.first_use'
         else:
             action = 'guest_code.exchange'
+
+        guest_code.last_access_at = timezone.now()
+        guest_code.save(update_fields=['last_access_at', 'updated_at'])
 
         log_high_impact_action(
             category=SystemAuditLog.CATEGORY_GUEST_ACCESS,

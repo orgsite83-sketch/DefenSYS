@@ -1,7 +1,9 @@
 {
     "name": "DefenSYS",
     "short_name": "DefenSYS",
-    "start_url": ".",
+    "id": ".",
+    "scope": ".",
+    "start_url": "./#/login",
     "display": "standalone",
     "background_color": "#7A110A",
     "theme_color": "#7A110A",

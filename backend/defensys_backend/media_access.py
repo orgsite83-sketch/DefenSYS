@@ -25,16 +25,15 @@ def _can_read_submission(user, submission):
         return False
     schedules = DefenseSchedule.objects.filter(team_id=submission.team_id)
     if guest:
-        from django.utils import timezone
         from user_management.models import GuestPanelistCode
+        from user_management.external_evaluators import invitation_is_available, invitation_schedule_ids
 
-        valid_code = GuestPanelistCode.objects.filter(
+        invitation = GuestPanelistCode.objects.select_related('evaluator').filter(
             pk=user.guest_code_id, code=user.guest_code, is_active=True,
-            defense_schedule_id=user.defense_schedule_id,
-        ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())).exists()
-        if not valid_code or str(submission.team_id) != str(user.team_id):
+        ).first()
+        if invitation is None or not invitation_is_available(invitation):
             return False
-        schedules = schedules.filter(pk=user.defense_schedule_id, status=DefenseSchedule.STATUS_SCHEDULED)
+        schedules = schedules.filter(pk__in=invitation_schedule_ids(invitation), status=DefenseSchedule.STATUS_SCHEDULED)
     else:
         schedules = schedules.filter(Q(panel_assignments__panelist=user) | Q(documenter=user))
     return any(schedule.stage_label == submission.stage_label for schedule in schedules)

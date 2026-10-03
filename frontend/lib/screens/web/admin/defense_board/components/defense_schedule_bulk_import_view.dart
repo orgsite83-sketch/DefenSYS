@@ -24,6 +24,7 @@ import 'package:defensys/utils/state/unsaved_changes.dart';
 import 'package:defensys/utils/string_matching_utils.dart';
 
 import '../../defense_scheduler/models/schedule_import_models.dart';
+import '../../defense_scheduler/dialogs/panelist_pool_dialog.dart';
 
 class DefenseScheduleBulkImportView extends ConsumerStatefulWidget {
   const DefenseScheduleBulkImportView({
@@ -2099,6 +2100,21 @@ class _DefenseScheduleBulkImportViewState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildStageHeader(schedState, previewRows),
+          const Align(
+            alignment: Alignment.centerRight,
+            child: PanelistPoolButton(),
+          ),
+          if (schedState.canApprovePanelists)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Confirming this import approves the listed faculty as reusable panelists and assigns them to these defenses.',
+                style: TextStyle(
+                  color: DefensysTokens.textSecondaryOf(context),
+                  fontSize: 13,
+                ),
+              ),
+            ),
           if (_conflictCheckError != null)
             Padding(
               padding: const EdgeInsets.only(top: 12),

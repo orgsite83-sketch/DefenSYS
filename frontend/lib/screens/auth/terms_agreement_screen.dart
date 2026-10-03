@@ -1,20 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../navigation/app_router.dart';
-import '../../services/terms_acceptance.dart';
+import '../../services/auth_provider.dart';
 import '../../theme/app_theme.dart';
 
-class TermsAgreementScreen extends StatefulWidget {
+class TermsAgreementScreen extends ConsumerStatefulWidget {
   final String role;
   final Map<String, dynamic>? userData;
   const TermsAgreementScreen({super.key, required this.role, this.userData});
 
   @override
-  State<TermsAgreementScreen> createState() => _TermsAgreementScreenState();
+  ConsumerState<TermsAgreementScreen> createState() =>
+      _TermsAgreementScreenState();
 }
 
-class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
+class _TermsAgreementScreenState extends ConsumerState<TermsAgreementScreen> {
   bool _agreed = false;
 
   static const _sections = [
@@ -280,9 +282,16 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
                         child: ElevatedButton(
                           onPressed: _agreed
                               ? () async {
-                                  await TermsAcceptance.recordAcceptance();
+                                  await ref
+                                      .read(authProvider.notifier)
+                                      .acceptCurrentTerms();
                                   if (!context.mounted) return;
-                                  context.go(homeRouteForRoleLabel(widget.role));
+                                  context.go(
+                                    homeRouteForUser(
+                                      widget.userData ??
+                                          {'role': widget.role.toLowerCase()},
+                                    ),
+                                  );
                                 }
                               : null,
                           style: ElevatedButton.styleFrom(

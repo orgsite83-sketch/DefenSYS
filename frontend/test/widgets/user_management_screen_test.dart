@@ -6,6 +6,7 @@ import 'package:defensys/screens/web/admin/user_management/bulk_import/bulk_impo
 import 'package:defensys/screens/web/admin/widgets/file_import_staging_modal.dart';
 import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/services/user_management_provider.dart';
+import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/academic/student_academic_records_provider.dart';
 import 'package:defensys/notifications/notifications_provider.dart';
@@ -15,14 +16,34 @@ import '../helpers/pump_app.dart';
 class FakeNotificationsNotifier extends NotificationsNotifier {
   @override
   NotificationsState build() {
-    return const NotificationsState(
-      notifications: [],
-      unreadCount: 0,
-    );
+    return const NotificationsState(notifications: [], unreadCount: 0);
   }
 
   @override
   Future<void> fetchNotifications() async {}
+}
+
+class FakeEligibilityNotifier extends DefenseSchedulerNotifier {
+  @override
+  DefenseSchedulerState build() => const DefenseSchedulerState(
+    canApprovePanelists: true,
+    faculty: [
+      {
+        'id': 1,
+        'name': 'System Admin',
+        'username': 'admin',
+        'is_panelist': false,
+      },
+    ],
+  );
+
+  @override
+  Future<void> fetchSchedules({
+    String? search,
+    String? scope,
+    String? status,
+    String? successMessage,
+  }) async {}
 }
 
 class FakeUserManagementNotifier extends UserManagementNotifier {
@@ -44,17 +65,22 @@ class FakeUserManagementNotifier extends UserManagementNotifier {
           'is_pit_lead': false,
           'is_adviser': false,
           'is_documenter': false,
-        }
+        },
       ],
       guestCodes: [],
     );
   }
 
   @override
-  Future<void> fetchUsers({String? search, String? role, String? successMessage}) async {}
+  Future<void> fetchUsers({
+    String? search,
+    String? role,
+    String? successMessage,
+  }) async {}
 }
 
-class FakeStudentAcademicRecordsNotifier extends StudentAcademicRecordsNotifier {
+class FakeStudentAcademicRecordsNotifier
+    extends StudentAcademicRecordsNotifier {
   @override
   StudentAcademicRecordsState build() {
     return const StudentAcademicRecordsState(
@@ -87,10 +113,7 @@ class FakeStudentAcademicRecordsNotifier extends StudentAcademicRecordsNotifier 
             'section': 'BSIT-3A',
           },
           'action_default': 'promote',
-          'promote_result': {
-            'year_level': '4th Year',
-            'section': 'BSIT-4A',
-          },
+          'promote_result': {'year_level': '4th Year', 'section': 'BSIT-4A'},
           'is_new_student': false,
         },
         {
@@ -104,10 +127,7 @@ class FakeStudentAcademicRecordsNotifier extends StudentAcademicRecordsNotifier 
             'section': 'BSIT-1A',
           },
           'action_default': 'create',
-          'promote_result': {
-            'year_level': '1st Year',
-            'section': 'BSIT-1A',
-          },
+          'promote_result': {'year_level': '1st Year', 'section': 'BSIT-1A'},
           'is_new_student': true,
         },
       ],
@@ -117,10 +137,18 @@ class FakeStudentAcademicRecordsNotifier extends StudentAcademicRecordsNotifier 
   }
 
   @override
-  Future<void> fetchRecords({String? schoolYear, String? semester, String? yearLevel, String? search, String? successMessage}) async {}
+  Future<void> fetchRecords({
+    String? schoolYear,
+    String? semester,
+    String? yearLevel,
+    String? search,
+    String? successMessage,
+  }) async {}
 
   @override
-  Future<List<Map<String, dynamic>>> fetchStudentHistory(String username) async {
+  Future<List<Map<String, dynamic>>> fetchStudentHistory(
+    String username,
+  ) async {
     return [
       {
         'id': 101,
@@ -128,7 +156,7 @@ class FakeStudentAcademicRecordsNotifier extends StudentAcademicRecordsNotifier 
         'semester': '1st Semester',
         'year_level': '4th Year',
         'section': 'BSIT-4A',
-      }
+      },
     ];
   }
 }
@@ -143,7 +171,8 @@ class FakeAcademicPeriodNotifier extends AcademicPeriodNotifier {
   Future<void> fetchPeriods({String? successMessage}) async {}
 }
 
-class FakeAcademicPeriodNotifierWithActiveSemester extends AcademicPeriodNotifier {
+class FakeAcademicPeriodNotifierWithActiveSemester
+    extends AcademicPeriodNotifier {
   @override
   AcademicPeriodState build() {
     return const AcademicPeriodState(
@@ -162,7 +191,45 @@ class FakeAcademicPeriodNotifierWithActiveSemester extends AcademicPeriodNotifie
 }
 
 void main() {
-  testWidgets('UserManagementScreen defaults to Students & Enrollment tab', (tester) async {
+  testWidgets(
+    'Faculty & Staff opens panelist eligibility and returns to the directory',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      await pumpDefensysWidget(
+        tester,
+        const UserManagementScreen(initialUserTab: UserManagementTab.faculty),
+        overrides: [
+          notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+          userManagementProvider.overrideWith(
+            () => FakeUserManagementNotifier(),
+          ),
+          academicPeriodProvider.overrideWith(
+            () => FakeAcademicPeriodNotifier(),
+          ),
+          studentAcademicRecordsProvider.overrideWith(
+            () => FakeStudentAcademicRecordsNotifier(),
+          ),
+          defenseSchedulerProvider.overrideWith(
+            () => FakeEligibilityNotifier(),
+          ),
+        ],
+      );
+      await tester.tap(find.text('Panelist eligibility'));
+      await tester.pumpAndSettle();
+      expect(find.text('Grant eligibility'), findsOneWidget);
+      expect(find.text('ID: admin'), findsOneWidget);
+      await tester.tap(find.text('Faculty & Staff'));
+      await tester.pumpAndSettle();
+      expect(find.text('User & Team Management'), findsOneWidget);
+      expect(find.text('System Admin'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets('UserManagementScreen defaults to Students & Enrollment tab', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -174,7 +241,9 @@ void main() {
         notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
         userManagementProvider.overrideWith(() => FakeUserManagementNotifier()),
         academicPeriodProvider.overrideWith(() => FakeAcademicPeriodNotifier()),
-        studentAcademicRecordsProvider.overrideWith(() => FakeStudentAcademicRecordsNotifier()),
+        studentAcademicRecordsProvider.overrideWith(
+          () => FakeStudentAcademicRecordsNotifier(),
+        ),
       ],
     );
 
@@ -186,133 +255,164 @@ void main() {
     expect(find.text('Juan Dela Cruz'), findsOneWidget);
   });
 
-  testWidgets('UserManagementScreen renders properly with 1 user when faculty tab is selected', (tester) async {
-    tester.view.physicalSize = const Size(1400, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
+  testWidgets(
+    'UserManagementScreen renders properly with 1 user when faculty tab is selected',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
 
-    await pumpDefensysWidget(
-      tester,
-      const Scaffold(body: UserManagementScreen(initialUserTab: UserManagementTab.faculty)),
-      overrides: [
-        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
-        userManagementProvider.overrideWith(() => FakeUserManagementNotifier()),
-        academicPeriodProvider.overrideWith(() => FakeAcademicPeriodNotifier()),
-        studentAcademicRecordsProvider.overrideWith(() => FakeStudentAcademicRecordsNotifier()),
-      ],
-    );
+      await pumpDefensysWidget(
+        tester,
+        const Scaffold(
+          body: UserManagementScreen(initialUserTab: UserManagementTab.faculty),
+        ),
+        overrides: [
+          notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+          userManagementProvider.overrideWith(
+            () => FakeUserManagementNotifier(),
+          ),
+          academicPeriodProvider.overrideWith(
+            () => FakeAcademicPeriodNotifier(),
+          ),
+          studentAcademicRecordsProvider.overrideWith(
+            () => FakeStudentAcademicRecordsNotifier(),
+          ),
+        ],
+      );
 
-    await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
 
-    expect(find.text('User & Team Management'), findsOneWidget);
-    expect(find.text('User ID'), findsOneWidget);
-    expect(find.text('Full Name'), findsOneWidget);
-    expect(find.text('Email Address'), findsOneWidget);
-    expect(find.text('System Role'), findsOneWidget);
-    expect(find.text('Status'), findsOneWidget);
-    expect(find.text('Action'), findsOneWidget);
+      expect(find.text('User & Team Management'), findsOneWidget);
+      expect(find.text('User ID'), findsOneWidget);
+      expect(find.text('Full Name'), findsOneWidget);
+      expect(find.text('Email Address'), findsOneWidget);
+      expect(find.text('System Role'), findsOneWidget);
+      expect(find.text('Status'), findsOneWidget);
+      expect(find.text('Action'), findsOneWidget);
 
-    expect(find.text('admin'), findsWidgets);
-    expect(find.text('System Admin'), findsOneWidget);
-    expect(find.text('admin@defensys.edu'), findsOneWidget);
-    expect(find.text('Administrator'), findsOneWidget);
+      expect(find.text('admin'), findsWidgets);
+      expect(find.text('System Admin'), findsOneWidget);
+      expect(find.text('admin@defensys.edu'), findsOneWidget);
+      expect(find.text('Administrator'), findsOneWidget);
 
-    expect(find.byIcon(Icons.edit_square), findsOneWidget);
-    expect(find.byIcon(Icons.shield_rounded), findsOneWidget);
-    expect(find.byIcon(Icons.delete_outline_rounded), findsNothing);
-    expect(find.byIcon(Icons.lock_reset_rounded), findsNothing);
-  });
+      expect(find.byIcon(Icons.edit_square), findsOneWidget);
+      expect(find.byIcon(Icons.shield_rounded), findsOneWidget);
+      expect(find.byIcon(Icons.delete_outline_rounded), findsNothing);
+      expect(find.byIcon(Icons.lock_reset_rounded), findsNothing);
+    },
+  );
 
-  testWidgets('UserManagementScreen opens Bulk Import Faculty view with faculty format card', (tester) async {
-    tester.view.physicalSize = const Size(1400, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
+  testWidgets(
+    'UserManagementScreen opens Bulk Import Faculty view with faculty format card',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
 
-    await pumpDefensysWidget(
-      tester,
-      const Scaffold(body: UserManagementScreen(initialUserTab: UserManagementTab.faculty)),
-      overrides: [
-        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
-        userManagementProvider.overrideWith(() => FakeUserManagementNotifier()),
-        academicPeriodProvider.overrideWith(() => FakeAcademicPeriodNotifier()),
-        studentAcademicRecordsProvider.overrideWith(() => FakeStudentAcademicRecordsNotifier()),
-      ],
-    );
+      await pumpDefensysWidget(
+        tester,
+        const Scaffold(
+          body: UserManagementScreen(initialUserTab: UserManagementTab.faculty),
+        ),
+        overrides: [
+          notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+          userManagementProvider.overrideWith(
+            () => FakeUserManagementNotifier(),
+          ),
+          academicPeriodProvider.overrideWith(
+            () => FakeAcademicPeriodNotifier(),
+          ),
+          studentAcademicRecordsProvider.overrideWith(
+            () => FakeStudentAcademicRecordsNotifier(),
+          ),
+        ],
+      );
 
-    await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
 
-    expect(find.text('Bulk Import Faculty'), findsOneWidget);
-    await tester.tap(find.text('Bulk Import Faculty'));
-    await tester.pumpAndSettle();
+      expect(find.text('Bulk Import Faculty'), findsOneWidget);
+      await tester.tap(find.text('Bulk Import Faculty'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Bulk Import Faculty & Staff'), findsOneWidget);
-    expect(find.text('CSV Format'), findsOneWidget);
-    expect(find.text('Back to Faculty'), findsOneWidget);
+      expect(find.text('Bulk Import Faculty & Staff'), findsOneWidget);
+      expect(find.text('CSV Format'), findsOneWidget);
+      expect(find.text('Back to Faculty'), findsOneWidget);
 
-    await tester.tap(find.text('Back to Faculty'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Back to Faculty'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('User & Team Management'), findsOneWidget);
-  });
+      expect(find.text('User & Team Management'), findsOneWidget);
+    },
+  );
 
-  testWidgets('BulkImportView staging modal allows staging files and generating preview table', (tester) async {
-    tester.view.physicalSize = const Size(1400, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
+  testWidgets(
+    'BulkImportView staging modal allows staging files and generating preview table',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
 
-    const facultyCsv = '''id_number,first_name,last_name,email,role
+      const facultyCsv = '''id_number,first_name,last_name,email,role
 FAC-101,John,Doe,jdoe@ustp.edu.ph,faculty
 FAC-102,Jane,Smith,jsmith@ustp.edu.ph,faculty
 ''';
 
-    final facultyFile = PickedTabularFile(
-      name: 'faculty_sample.csv',
-      extension: 'csv',
-      bytes: Uint8List.fromList(facultyCsv.codeUnits),
-      text: facultyCsv,
-    );
+      final facultyFile = PickedTabularFile(
+        name: 'faculty_sample.csv',
+        extension: 'csv',
+        bytes: Uint8List.fromList(facultyCsv.codeUnits),
+        text: facultyCsv,
+      );
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: BulkImportView(
-            state: const UserManagementState(isLoading: false, users: [], guestCodes: []),
-            academicState: const AcademicPeriodState(),
-            onBack: () {},
-            onConfirmUpload: (users, context) {},
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BulkImportView(
+              state: const UserManagementState(
+                isLoading: false,
+                users: [],
+                guestCodes: [],
+              ),
+              academicState: const AcademicPeriodState(),
+              onBack: () {},
+              onConfirmUpload: (users, context) {},
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
 
-    // Trigger staging modal manually via showFileImportStagingModal
-    final modalResultFuture = showFileImportStagingModal(
-      tester.element(find.byType(BulkImportView)),
-      initialFiles: [facultyFile],
-      importMode: 'general',
-    );
-    await tester.pumpAndSettle();
+      // Trigger staging modal manually via showFileImportStagingModal
+      final modalResultFuture = showFileImportStagingModal(
+        tester.element(find.byType(BulkImportView)),
+        initialFiles: [facultyFile],
+        importMode: 'general',
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Staged Import Files'), findsOneWidget);
-    expect(find.text('Generate Preview Table (2 rows)'), findsOneWidget);
+      expect(find.text('Staged Import Files'), findsOneWidget);
+      expect(find.text('Generate Preview Table (2 rows)'), findsOneWidget);
 
-    // Tap Generate Preview Table
-    await tester.tap(find.text('Generate Preview Table (2 rows)'));
-    await tester.pumpAndSettle();
+      // Tap Generate Preview Table
+      await tester.tap(find.text('Generate Preview Table (2 rows)'));
+      await tester.pumpAndSettle();
 
-    final result = await modalResultFuture;
-    expect(result, isNotNull);
-    expect(result!.files.length, 1);
-  });
+      final result = await modalResultFuture;
+      expect(result, isNotNull);
+      expect(result!.files.length, 1);
+    },
+  );
 
-  testWidgets('BulkImportView rejects student template and prevents staging student records as faculty', (tester) async {
-    tester.view.physicalSize = const Size(1400, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
+  testWidgets(
+    'BulkImportView rejects student template and prevents staging student records as faculty',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
 
-    const studentCsv = '''Subject Code,IT311
+      const studentCsv = '''Subject Code,IT311
 Class Section,BSIT-3A
 Year Level,3rd Year
 Instructor,Prof. Alan Turing
@@ -322,154 +422,197 @@ Student Number,Full Name,Email,Year Level
 20230002,"DOE, Jane",jane.doe@ustp.edu.ph,3rd Year
 ''';
 
-    final studentFile = PickedTabularFile(
-      name: 'students_import.csv',
-      extension: 'csv',
-      bytes: Uint8List.fromList(studentCsv.codeUnits),
-      text: studentCsv,
-    );
+      final studentFile = PickedTabularFile(
+        name: 'students_import.csv',
+        extension: 'csv',
+        bytes: Uint8List.fromList(studentCsv.codeUnits),
+        text: studentCsv,
+      );
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: BulkImportView(
-            state: const UserManagementState(isLoading: false, users: [], guestCodes: []),
-            academicState: const AcademicPeriodState(),
-            onBack: () {},
-            onConfirmUpload: (users, context) {},
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BulkImportView(
+              state: const UserManagementState(
+                isLoading: false,
+                users: [],
+                guestCodes: [],
+              ),
+              academicState: const AcademicPeriodState(),
+              onBack: () {},
+              onConfirmUpload: (users, context) {},
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
 
-    // Trigger staging modal with student file in general (faculty) mode
-    showFileImportStagingModal(
-      tester.element(find.byType(BulkImportView)),
-      initialFiles: [studentFile],
-      importMode: 'general',
-    );
-    await tester.pumpAndSettle();
+      // Trigger staging modal with student file in general (faculty) mode
+      showFileImportStagingModal(
+        tester.element(find.byType(BulkImportView)),
+        initialFiles: [studentFile],
+        importMode: 'general',
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text('Staged Import Files'), findsOneWidget);
-    expect(find.textContaining('This file is a Student Class List'), findsOneWidget);
-    expect(find.textContaining('Incompatible Format'), findsOneWidget);
+      expect(find.text('Staged Import Files'), findsOneWidget);
+      expect(
+        find.textContaining('This file is a Student Class List'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Incompatible Format'), findsOneWidget);
 
-    // Verify Generate Preview Table is disabled / shows 0 rows
-    expect(find.text('Generate Preview Table'), findsOneWidget);
-    await tester.tap(find.text('Generate Preview Table'));
-    await tester.pumpAndSettle();
+      // Verify Generate Preview Table is disabled / shows 0 rows
+      expect(find.text('Generate Preview Table'), findsOneWidget);
+      await tester.tap(find.text('Generate Preview Table'));
+      await tester.pumpAndSettle();
 
-    // Modal stays open because button is disabled for invalid file
-    expect(find.text('Staged Import Files'), findsOneWidget);
-  });
+      // Modal stays open because button is disabled for invalid file
+      expect(find.text('Staged Import Files'), findsOneWidget);
+    },
+  );
 
-  testWidgets('Students tab shows Batch Enrollment and opens student details with profile card and actions', (tester) async {
-    tester.view.physicalSize = const Size(1400, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
+  testWidgets(
+    'Students tab shows Batch Enrollment and opens student details with profile card and actions',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
 
-    await pumpDefensysWidget(
-      tester,
-      const Scaffold(body: UserManagementScreen(initialUserTab: UserManagementTab.students)),
-      overrides: [
-        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
-        userManagementProvider.overrideWith(() => FakeUserManagementNotifier()),
-        academicPeriodProvider.overrideWith(() => FakeAcademicPeriodNotifier()),
-        studentAcademicRecordsProvider.overrideWith(() => FakeStudentAcademicRecordsNotifier()),
-      ],
-    );
+      await pumpDefensysWidget(
+        tester,
+        const Scaffold(
+          body: UserManagementScreen(
+            initialUserTab: UserManagementTab.students,
+          ),
+        ),
+        overrides: [
+          notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+          userManagementProvider.overrideWith(
+            () => FakeUserManagementNotifier(),
+          ),
+          academicPeriodProvider.overrideWith(
+            () => FakeAcademicPeriodNotifier(),
+          ),
+          studentAcademicRecordsProvider.overrideWith(
+            () => FakeStudentAcademicRecordsNotifier(),
+          ),
+        ],
+      );
 
-    await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
 
-    // Verify Students view rendered with stats and table
-    expect(find.text('Batch Enrollment'), findsOneWidget);
-    expect(find.text('Add Single Student'), findsOneWidget);
-    expect(find.text('Juan Dela Cruz'), findsOneWidget);
+      // Verify Students view rendered with stats and table
+      expect(find.text('Batch Enrollment'), findsOneWidget);
+      expect(find.text('Add Single Student'), findsOneWidget);
+      expect(find.text('Juan Dela Cruz'), findsOneWidget);
 
-    // Open Student Details via details tooltip
-    final detailsButton = find.byTooltip('Student Details');
-    expect(detailsButton, findsOneWidget);
-    await tester.tap(detailsButton);
-    await tester.pumpAndSettle();
+      // Open Student Details via details tooltip
+      final detailsButton = find.byTooltip('Student Details');
+      expect(detailsButton, findsOneWidget);
+      await tester.tap(detailsButton);
+      await tester.pumpAndSettle();
 
-    // Verify Modal Elements
-    expect(find.text('Student Profile & Enrollment'), findsOneWidget);
-    expect(find.text('Edit Details'), findsOneWidget);
-    expect(find.text('Close'), findsOneWidget);
+      // Verify Modal Elements
+      expect(find.text('Student Profile & Enrollment'), findsOneWidget);
+      expect(find.text('Edit Details'), findsOneWidget);
+      expect(find.text('Close'), findsOneWidget);
 
-    // Click Edit Details
-    await tester.tap(find.text('Edit Details'));
-    await tester.pumpAndSettle();
+      // Click Edit Details
+      await tester.tap(find.text('Edit Details'));
+      await tester.pumpAndSettle();
 
-    // Verify Edit Mode
-    expect(find.text('Save Changes'), findsOneWidget);
-    expect(find.text('Cancel'), findsOneWidget);
+      // Verify Edit Mode
+      expect(find.text('Save Changes'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
 
-    // Cancel edit mode back to view mode
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-    expect(find.text('Edit Details'), findsOneWidget);
+      // Cancel edit mode back to view mode
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit Details'), findsOneWidget);
 
-    // Close modal
-    await tester.tap(find.text('Close'));
-    await tester.pumpAndSettle();
+      // Close modal
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
 
-    // Open Batch Enrollment
-    await tester.tap(find.text('Batch Enrollment'));
-    await tester.pumpAndSettle();
+      // Open Batch Enrollment
+      await tester.tap(find.text('Batch Enrollment'));
+      await tester.pumpAndSettle();
 
-    // Verify Hub Elements
-    expect(find.text('Batch Student Enrollment Hub'), findsOneWidget);
-    expect(find.text('Fresh Student Intake (Import)'), findsOneWidget);
-    expect(find.text('Semester Rollover & Promotion'), findsOneWidget);
-    expect(find.text('Back to Students'), findsOneWidget);
+      // Verify Hub Elements
+      expect(find.text('Batch Student Enrollment Hub'), findsOneWidget);
+      expect(find.text('Fresh Student Intake (Import)'), findsOneWidget);
+      expect(find.text('Semester Rollover & Promotion'), findsOneWidget);
+      expect(find.text('Back to Students'), findsOneWidget);
 
-    // Switch to Semester Rollover & Promotion mode
-    await tester.tap(find.text('Semester Rollover & Promotion'));
-    await tester.pumpAndSettle();
+      // Switch to Semester Rollover & Promotion mode
+      await tester.tap(find.text('Semester Rollover & Promotion'));
+      await tester.pumpAndSettle();
 
-    // Click Back to Students
-    await tester.tap(find.text('Back to Students'));
-    await tester.pumpAndSettle();
+      // Click Back to Students
+      await tester.tap(find.text('Back to Students'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('User & Team Management'), findsOneWidget);
-  });
+      expect(find.text('User & Team Management'), findsOneWidget);
+    },
+  );
 
-  testWidgets('Batch Student Enrollment Hub recognizes active semester from academicPeriodProvider', (tester) async {
-    tester.view.physicalSize = const Size(1400, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
+  testWidgets(
+    'Batch Student Enrollment Hub recognizes active semester from academicPeriodProvider',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
 
-    await pumpDefensysWidget(
-      tester,
-      const Scaffold(body: UserManagementScreen(initialUserTab: UserManagementTab.students)),
-      overrides: [
-        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
-        userManagementProvider.overrideWith(() => FakeUserManagementNotifier()),
-        academicPeriodProvider.overrideWith(() => FakeAcademicPeriodNotifierWithActiveSemester()),
-        studentAcademicRecordsProvider.overrideWith(() => FakeStudentAcademicRecordsNotifier()),
-      ],
-    );
+      await pumpDefensysWidget(
+        tester,
+        const Scaffold(
+          body: UserManagementScreen(
+            initialUserTab: UserManagementTab.students,
+          ),
+        ),
+        overrides: [
+          notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+          userManagementProvider.overrideWith(
+            () => FakeUserManagementNotifier(),
+          ),
+          academicPeriodProvider.overrideWith(
+            () => FakeAcademicPeriodNotifierWithActiveSemester(),
+          ),
+          studentAcademicRecordsProvider.overrideWith(
+            () => FakeStudentAcademicRecordsNotifier(),
+          ),
+        ],
+      );
 
-    await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
 
-    // Open Batch Enrollment
-    await tester.tap(find.text('Batch Enrollment'));
-    await tester.pumpAndSettle();
+      // Open Batch Enrollment
+      await tester.tap(find.text('Batch Enrollment'));
+      await tester.pumpAndSettle();
 
-    // Verify no "Active Academic Semester Required" warning banner
-    expect(find.text('Active Academic Semester Required for Student Enrollment'), findsNothing);
+      // Verify no "Active Academic Semester Required" warning banner
+      expect(
+        find.text('Active Academic Semester Required for Student Enrollment'),
+        findsNothing,
+      );
 
-    // Verify Target Term in template card
-    expect(find.textContaining('Target Term: 1st Semester, A.Y. 2026-2027'), findsOneWidget);
+      // Verify Target Term in template card
+      expect(
+        find.textContaining('Target Term: 1st Semester, A.Y. 2026-2027'),
+        findsOneWidget,
+      );
 
-    // Switch to Rollover mode
-    await tester.tap(find.text('Semester Rollover & Promotion'));
-    await tester.pumpAndSettle();
+      // Switch to Rollover mode
+      await tester.tap(find.text('Semester Rollover & Promotion'));
+      await tester.pumpAndSettle();
 
-    // Verify Target Term in rollover rules card
-    expect(find.textContaining('Target Term: 1st Semester, A.Y. 2026-2027'), findsOneWidget);
-  });
+      // Verify Target Term in rollover rules card
+      expect(
+        find.textContaining('Target Term: 1st Semester, A.Y. 2026-2027'),
+        findsOneWidget,
+      );
+    },
+  );
 }
