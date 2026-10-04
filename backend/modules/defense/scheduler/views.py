@@ -33,6 +33,7 @@ from .models import DefenseSchedule, SchedulePanelist, PitEventGradingConfig, Pa
 from .panelist_evaluation import (
     draft_payload, evaluation_context, grading_unavailable_reason,
     save_evaluation_draft, validate_evaluation_submissions,
+    verdict_unavailable_reason,
 )
 from academic_period_management.models import Semester
 
@@ -368,7 +369,8 @@ class DefenseScheduleGeneratePlanView(APIView):
         slots = serializer.generate_slots()
         return Response({
             'slots': slots,
-            'slot_count': len(slots),
+            'slot_count': sum(slot.get('session_key') is not None for slot in slots),
+            'unassigned_count': sum(slot.get('session_key') is None for slot in slots),
             **schedule_options_payload(user=request.user),
         })
 
@@ -821,6 +823,7 @@ class PanelistGradeSubmissionView(APIView):
                         team_grade,
                         item_criteria_scores,
                         panelist=panelist,
+                        expected_context=request.data.get('evaluation_context'),
                         remarks=item_remarks,
                         student=student,
                     )
@@ -855,6 +858,7 @@ class PanelistGradeSubmissionView(APIView):
 def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_chair=False, team_grade=None):
     team = schedule.team
     unavailable_reason = grading_unavailable_reason(schedule, team_grade)
+    verdict_reason = verdict_unavailable_reason(schedule, team_grade)
     raw_weights = weights_for_schedule(schedule)
     grade_weights = _grade_weights_payload(schedule, raw_weights)
     panel_rubric = _panel_rubric_payload(schedule.rubric, grade_weights)
@@ -958,11 +962,8 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
         'grading_available': not is_posted and not unavailable_reason,
         'grading_unavailable_reason': unavailable_reason,
         'evaluation_context': evaluation_context(schedule, team_grade),
-        'can_issue_verdict': (
-            is_chair and schedule.status == DefenseSchedule.STATUS_SCHEDULED
-            and schedule.scheduled_date <= timezone.localdate()
-            and team_grade is not None and team_grade.panel_score is not None
-        ),
+        'can_issue_verdict': is_chair and not verdict_reason,
+        'verdict_unavailable_reason': verdict_reason if is_chair else '',
         'submissions': submissions or [],
         'defense_materials': defense_materials,
         'is_chair': is_chair,
@@ -1243,6 +1244,7 @@ class GuestPanelistGradeSubmissionView(APIView):
                         team_grade,
                         item_criteria_scores,
                         guest=principal,
+                        expected_context=request.data.get('evaluation_context'),
                         remarks=item_remarks,
                         student=student,
                     )
@@ -1350,9 +1352,10 @@ class DefenseScheduleVerdictView(APIView):
         if not team_grade:
             team_grade, _created, _changed = GradeContextService.get_or_create_for_schedule(schedule)
 
-        if team_grade.panel_score is None:
+        reason = verdict_unavailable_reason(schedule, team_grade)
+        if reason:
             return Response(
-                {'detail': 'Panel grading must be submitted before issuing a verdict.'},
+                {'detail': reason},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

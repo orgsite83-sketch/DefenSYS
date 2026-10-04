@@ -76,7 +76,7 @@ void main() {
     expect(find.text('Rubric preview'), findsOneWidget);
     expect(find.byType(TextFormField), findsNothing);
     expect(find.text('PANEL RAW SCORE'), findsNothing);
-    expect(find.text('Submit Official Verdict'), findsNothing);
+    expect(find.text('Submit Verdict'), findsNothing);
     await tester.ensureVisible(find.text('Rubric preview'));
     await tester.tap(find.text('Rubric preview'));
     await tester.pumpAndSettle();

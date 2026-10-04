@@ -445,8 +445,18 @@ class MinutesPdfView(APIView):
             )
             
         minutes = get_object_or_404(DefenseMinutes, schedule=schedule)
+        revision_id = request.query_params.get('revision_id')
+        pdf_file = minutes.pdf_file
+        if revision_id is not None:
+            from .models import DefenseMinutesRevision
+            try:
+                revision_id = int(revision_id)
+            except (ValueError, TypeError):
+                return Response({'detail': 'Invalid minutes revision.'}, status=400)
+            revision = get_object_or_404(DefenseMinutesRevision, pk=revision_id, minutes=minutes)
+            pdf_file = revision.pdf_file
         
-        if minutes.status != DefenseMinutes.STATUS_COMPLETED or not minutes.pdf_file:
+        if (revision_id is None and minutes.status != DefenseMinutes.STATUS_COMPLETED) or not pdf_file:
             return Response(
                 {"detail": "Minutes PDF has not been generated yet."},
                 status=status.HTTP_400_BAD_REQUEST
@@ -454,7 +464,7 @@ class MinutesPdfView(APIView):
             
         # Return response with file data
         try:
-            pdf_data = minutes.pdf_file.read()
+            pdf_data = pdf_file.read()
             response = HttpResponse(pdf_data, content_type='application/pdf')
             # Format filename safely
             safe_team = (minutes.team_name or 'team').replace(' ', '_')

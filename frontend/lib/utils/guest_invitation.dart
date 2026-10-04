@@ -23,9 +23,12 @@ String guestInvitationUrl(String code, {String? portal}) {
   if (address.isEmpty) return '';
   final uri = Uri.parse(address);
   if (uri.hasFragment) {
-    final route = Uri.parse(
-      uri.fragment,
-    ).replace(queryParameters: {'code': code});
+    final route = Uri.parse(uri.fragment).replace(
+      queryParameters: {
+        ...Uri.parse(uri.fragment).queryParameters,
+        'code': code,
+      },
+    );
     return uri.replace(fragment: route.toString()).toString();
   }
   return uri

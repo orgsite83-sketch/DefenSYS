@@ -22,6 +22,14 @@ class _GuestEvaluationEntryState extends ConsumerState<GuestEvaluationEntry> {
   }
 
   @override
+  void didUpdateWidget(covariant GuestEvaluationEntry oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialCode != oldWidget.initialCode) {
+      _code.text = widget.initialCode ?? '';
+    }
+  }
+
+  @override
   void dispose() {
     _code.dispose();
     super.dispose();

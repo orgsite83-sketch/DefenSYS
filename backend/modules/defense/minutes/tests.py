@@ -3,6 +3,9 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
+from django.core.files.base import ContentFile
+from django.test import override_settings
+from tempfile import TemporaryDirectory
 
 from academic_period_management.models import SchoolYear, Semester
 from defense.scheduler.models import DefenseSchedule, SchedulePanelist
@@ -547,7 +550,8 @@ class MinutesEdgeCasesApiTests(APITestCase):
         self.client.force_authenticate(user=self.admin)
         patch_response = self.client.patch(
             f'/api/defense/schedules/{self.schedule.id}/',
-            data={'documenter_id': self.doc_faculty_2.id},
+            data={'documenter_id': self.doc_faculty_2.id, 'reason': 'Documenter emergency requires a replacement',
+                  'revision': self.schedule.revision, 'acknowledge_minutes_amendment': True},
             format='json'
         )
         self.assertEqual(patch_response.status_code, status.HTTP_200_OK)
@@ -558,6 +562,40 @@ class MinutesEdgeCasesApiTests(APITestCase):
         self.assertEqual(minutes.documenter_name, self.doc_faculty_2.get_full_name())
         self.assertIsNone(minutes.documenter_signed_at)
         self.assertIsNone(minutes.documenter_signed_by)
+        self.assertEqual(minutes.revisions.count(), 1)
+        self.assertEqual(minutes.revisions.first().snapshot['documenter_name'], self.doc_faculty_1.get_full_name())
+
+    def test_signed_minutes_pdf_survives_a_documenter_amendment(self):
+        with TemporaryDirectory() as media, override_settings(MEDIA_ROOT=media):
+            minutes = DefenseMinutes.objects.create(
+                schedule=self.schedule, team_name=self.team.name, project_title=self.team.project_title,
+                adviser_name='Original adviser', defense_stage_label=self.stage.label,
+                defense_date=self.schedule.scheduled_date, defense_time=self.schedule.start_time,
+                room=self.schedule.room, documenter_name=self.doc_faculty_1.get_full_name(),
+                status=DefenseMinutes.STATUS_COMPLETED, documenter_signed_at=timezone.now(),
+                documenter_signed_by=self.doc_faculty_1,
+            )
+            pdf_content = b'%PDF-1.4 retained original signed version'
+            minutes.pdf_file.save('original_signed.pdf', ContentFile(pdf_content))
+            original_path = minutes.pdf_file.name
+            self.client.force_authenticate(user=self.admin)
+            payload = {'documenter_id': self.doc_faculty_2.pk, 'revision': self.schedule.revision,
+                       'reason': 'Emergency documenter replacement with retained signatures'}
+            response = self.client.patch(f'/api/defense/schedules/{self.schedule.pk}/', payload, format='json')
+            self.assertEqual(response.status_code, 400, response.data)
+            self.assertFalse(minutes.revisions.exists())
+            response = self.client.patch(f'/api/defense/schedules/{self.schedule.pk}/',
+                {**payload, 'acknowledge_minutes_amendment': True}, format='json')
+            self.assertEqual(response.status_code, 200, response.data)
+            minutes.refresh_from_db()
+            self.assertEqual(minutes.status, DefenseMinutes.STATUS_DRAFT)
+            self.assertFalse(minutes.pdf_file)
+            revision = minutes.revisions.get()
+            self.assertEqual(revision.pdf_file.name, original_path)
+            self.assertEqual(revision.snapshot['documenter_name'], self.doc_faculty_1.get_full_name())
+            pdf_response = self.client.get(f'/api/defense/minutes/{self.schedule.pk}/pdf/?revision_id={revision.pk}')
+            self.assertEqual(pdf_response.status_code, 200)
+            self.assertEqual(pdf_response.content, pdf_content)
 
     def test_cancelled_schedule_blocks_minutes_ops(self):
         # 1. Cancel the schedule
@@ -591,4 +629,3 @@ class MinutesEdgeCasesApiTests(APITestCase):
         submit_response = self.client.post(f'/api/defense/minutes/{self.schedule.id}/submit/')
         self.assertEqual(submit_response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Cannot submit minutes for a cancelled defense schedule.", submit_response.data['detail'])
-

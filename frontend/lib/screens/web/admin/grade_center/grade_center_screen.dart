@@ -45,11 +45,8 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = ref.read(authProvider).user;
       final isAdmin = _isGradeCenterAdmin(user);
-      final pitLeadOnly = _isPitLeadOnly(user);
       ref.read(gradeCenterProvider.notifier).fetchGrades(
-            scope: isAdmin
-                ? 'capstone'
-                : (pitLeadOnly ? 'pit' : null),
+            scope: _defaultScopeForUser(user),
           );
       if (isAdmin) {
         _ensureDefenseStagesLoaded();
@@ -65,10 +62,8 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
   }
 
   String _effectiveScope(GradeCenterState state) {
-    if (state.scope.isNotEmpty) return state.scope;
-    final user = ref.read(authProvider).user;
-    if (_isPitLeadOnly(user)) return 'pit';
-    return 'capstone';
+    if (state.scope == 'capstone' || state.scope == 'pit') return state.scope;
+    return _defaultScopeForUser(ref.read(authProvider).user);
   }
 
   @override
@@ -137,14 +132,8 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
           previous != DefensysAdminSection.gradeCenter) {
         final user = ref.read(authProvider).user;
         final isAdmin = _isGradeCenterAdmin(user);
-        final pitLeadOnly = _isPitLeadOnly(user);
-        final currentScope = state.scope;
         ref.read(gradeCenterProvider.notifier).fetchGrades(
-              scope: currentScope.isNotEmpty
-                  ? currentScope
-                  : (isAdmin
-                      ? 'capstone'
-                      : (pitLeadOnly ? 'pit' : null)),
+              scope: _effectiveScope(state),
             );
         if (isAdmin) {
           _ensureDefenseStagesLoaded();
@@ -281,15 +270,13 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
   Widget _buildScopeTabs(GradeCenterState state) {
     final currentScope = _effectiveScope(state);
     return DefensysSegmentedControl<String>(
-      value: currentScope.isEmpty ? 'capstone' : currentScope,
+      value: currentScope,
       enabled: !state.isSaving,
       items: const [
         DefensysSegmentItem(
           value: 'capstone', label: 'Capstone Stages', icon: Icons.rocket_launch_rounded),
         DefensysSegmentItem(
           value: 'pit', label: 'PIT Expos & Events', icon: Icons.lightbulb_rounded),
-        DefensysSegmentItem(
-          value: 'all', label: 'All Scopes', icon: Icons.bar_chart_rounded),
       ],
       onChanged: (scope) => ref
           .read(gradeCenterProvider.notifier)
@@ -455,10 +442,9 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     const scopeItems = [
       DropdownMenuItem(value: 'capstone', child: Text('Capstone')),
       DropdownMenuItem(value: 'pit', child: Text('PIT')),
-      DropdownMenuItem(value: 'all', child: Text('All scopes')),
     ];
     final defaultScope = _defaultScopeForUser(ref.read(authProvider).user);
-    final currentScope = state.scope.isEmpty ? defaultScope : state.scope;
+    final currentScope = _effectiveScope(state);
 
     return DropdownButtonHideUnderline(
       child: DropdownButton<String>(

@@ -26,7 +26,7 @@ def counts_payload(base_queryset, current_queryset=None):
     from django.utils import timezone
     now = timezone.localtime()
 
-    scheduled_qs = current.filter(status=DefenseSchedule.STATUS_SCHEDULED)
+    scheduled_qs = current.filter(status=DefenseSchedule.STATUS_SCHEDULED, operation_state='normal')
     ongoing_qs = scheduled_qs.filter(
         Q(scheduled_date__lt=now.date())
         | Q(scheduled_date=now.date(), start_time__lte=now.time())
@@ -41,6 +41,9 @@ def counts_payload(base_queryset, current_queryset=None):
         'done': current.filter(status=DefenseSchedule.STATUS_DONE).count(),
         'cancelled': current.filter(status=DefenseSchedule.STATUS_CANCELLED).count(),
         'archived': current.filter(status=DefenseSchedule.STATUS_ARCHIVED).count(),
+        'paused': current.filter(status='scheduled', operation_state='paused').count(),
+        'postponed': current.filter(status='scheduled', operation_state='postponed').count(),
+        'no_show': current.filter(status='scheduled', operation_state='no_show').count(),
     }
 
 
@@ -145,17 +148,19 @@ def filter_board_queryset(request, queryset):
     if status_filter == 'ongoing':
         from django.utils import timezone
         now = timezone.localtime()
-        queryset = queryset.filter(status=DefenseSchedule.STATUS_SCHEDULED).filter(
+        queryset = queryset.filter(status=DefenseSchedule.STATUS_SCHEDULED, operation_state='normal').filter(
             Q(scheduled_date__lt=now.date())
             | Q(scheduled_date=now.date(), start_time__lte=now.time())
         )
     elif status_filter == 'scheduled':
         from django.utils import timezone
         now = timezone.localtime()
-        queryset = queryset.filter(status=DefenseSchedule.STATUS_SCHEDULED).exclude(
+        queryset = queryset.filter(status=DefenseSchedule.STATUS_SCHEDULED, operation_state='normal').exclude(
             Q(scheduled_date__lt=now.date())
             | Q(scheduled_date=now.date(), start_time__lte=now.time())
         )
+    elif status_filter in ('paused', 'postponed', 'no_show'):
+        queryset = queryset.filter(status='scheduled', operation_state=status_filter)
     elif status_filter:
         queryset = queryset.filter(status=status_filter)
     if scope:
@@ -163,12 +168,30 @@ def filter_board_queryset(request, queryset):
     return queryset
 
 
+def schedule_change_payload(log):
+    from defense.scheduler.operations import change_details
+    details = log.new_values.get('change_details') or change_details(log.old_values, log.new_values)
+    return {'id': log.pk, 'created_at': log.created_at.isoformat(),
+            'actor': (log.actor.get_full_name() or log.actor.username) if log.actor else 'Former administrator',
+            'reason': log.reason, 'changes': details,
+            'summary': ', '.join(d['label'] for d in details) + ' updated'}
+
+
+def latest_schedule_changes(queryset):
+    from authentication_access_control.models import SystemAuditLog
+    from django.db.models import OuterRef, Subquery
+    from django.db.models.functions import Cast
+    latest = SystemAuditLog.objects.filter(target_type='DefenseSchedule', target_id=OuterRef('_audit_key'), action='schedule.operational_change').order_by('-created_at', '-pk').values('pk')[:1]
+    ids = queryset.annotate(_audit_key=Cast('pk', CharField()), _latest_audit=Subquery(latest)).values_list('_latest_audit', flat=True)
+    return {log.target_id: schedule_change_payload(log) for log in SystemAuditLog.objects.filter(pk__in=ids).select_related('actor')}
+
+
 def board_payload(request, queryset=None):
     base = board_queryset_for_user(request.user)
     current = queryset if queryset is not None else base
     semester = active_semester()
     return {
-        'schedules': DefenseScheduleSerializer(current, many=True).data,
+        'schedules': DefenseScheduleSerializer(current, many=True, context={'latest_changes': latest_schedule_changes(current) if request.user.role == 'admin' or request.user.is_superuser or request.user.is_pit_lead else {}}).data,
         'counts': counts_payload(base, current),
         'stage_options': stage_options(base),
         'advisers': adviser_options(base),
@@ -176,6 +199,9 @@ def board_payload(request, queryset=None):
         'statuses': [
             DefenseSchedule.STATUS_SCHEDULED,
             'ongoing',
+            'paused',
+            'postponed',
+            'no_show',
             DefenseSchedule.STATUS_DONE,
             DefenseSchedule.STATUS_CANCELLED,
             DefenseSchedule.STATUS_ARCHIVED,
@@ -194,6 +220,39 @@ class DefenseBoardListView(APIView):
     def get(self, request):
         queryset = filter_board_queryset(request, board_queryset_for_user(request.user))
         return Response(board_payload(request, queryset))
+
+
+class DefenseBoardOperationsView(APIView):
+    permission_classes = [CanManageModule]
+
+    def get(self, request):
+        from defense.scheduler.serializers import schedule_options_payload
+        from defense.scheduler.operations import deletion_preview
+        if request.query_params.get('history_for'):
+            from rest_framework import serializers
+            schedule_id = serializers.IntegerField(min_value=1).run_validation(request.query_params['history_for'])
+            schedule = get_object_or_404(board_queryset_for_user(request.user), pk=schedule_id)
+            from authentication_access_control.models import SystemAuditLog
+            schedules = board_queryset_for_user(request.user).filter(session_id=schedule.session_id, semester_id=schedule.semester_id, scope=schedule.scope) if request.query_params.get('session') == '1' else board_queryset_for_user(request.user).filter(pk=schedule.pk)
+            names = {str(s.pk): s.team.name for s in schedules}
+            logs = SystemAuditLog.objects.filter(target_type='DefenseSchedule', target_id__in=names, action='schedule.operational_change').select_related('actor')[:100]
+            return Response({'history': [{**schedule_change_payload(log), 'schedule_id': int(log.target_id), 'team_name': names[log.target_id]} for log in logs]})
+        payload = schedule_options_payload(user=request.user)
+        if request.query_params.get('management') == '1':
+            semester = active_semester()
+            schedules = board_queryset_for_user(request.user).filter(semester=semester) if semester else DefenseSchedule.objects.none()
+            if not (request.user.role == 'admin' or request.user.is_superuser):
+                schedules = schedules.filter(scope='pit') if request.user.is_pit_lead else DefenseSchedule.objects.none()
+            payload.update(deletion_preview(list(schedules.order_by('scheduled_date', 'start_time', 'pk'))))
+            payload['active_semester'] = SemesterSerializer(semester).data if semester else None
+        return Response(payload)
+
+    def post(self, request):
+        from defense.scheduler.operations import OperationSerializer, execute_operation
+        serializer = OperationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        result = execute_operation(request.user, serializer.validated_data, request=request)
+        return Response(result)
 
 
 class DefenseBoardDetailView(APIView):

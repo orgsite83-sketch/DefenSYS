@@ -314,10 +314,10 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
     }
   }
 
-  Future<Uint8List?> downloadPdf(int scheduleId) async {
+  Future<Uint8List?> downloadPdf(int scheduleId, {int? revisionId}) async {
     try {
       final response = await _client.get(
-        Uri.parse('$minutesUrl/$scheduleId/pdf/'),
+        Uri.parse('$minutesUrl/$scheduleId/pdf/').replace(queryParameters: revisionId == null ? null : {'revision_id': '$revisionId'}),
       ).timeout(_requestTimeout);
       if (response.statusCode == 200) {
         return response.bodyBytes;

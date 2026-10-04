@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'scheduler_people_picker.dart';
+import 'scheduler_session_editor.dart';
+import 'scheduler_team_picker.dart';
+import '../models/schedule_session_draft.dart';
 
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
@@ -96,6 +99,103 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   int? _selectedChairId;
   Set<int> _externalIds = {};
   DateTime? _guestExpiry;
+  late final List<ScheduleSessionDraft> _sessions;
+  int _nextSession = 2;
+
+  @override
+  void initState() {
+    super.initState();
+    _sessions = [
+      ScheduleSessionDraft(
+        key: 'session-1',
+        date: widget.dateController,
+        start: widget.timeController,
+        duration: widget.durationController,
+        room: widget.roomController,
+        ownsFields: false,
+      ),
+    ];
+  }
+
+  @override
+  void dispose() {
+    for (final session in _sessions) {
+      session.dispose();
+    }
+    super.dispose();
+  }
+
+  void _addSession() {
+    final previous = _sessions.last;
+    final date = DateTime.tryParse(previous.date.text);
+    final draft = ScheduleSessionDraft(
+      key: 'session-${_nextSession++}',
+      date: TextEditingController(
+        text: date == null
+            ? previous.date.text
+            : formatScheduleDate(date.add(const Duration(days: 1))),
+      ),
+      start: TextEditingController(text: previous.start.text),
+      end: previous.end.text,
+      duration: TextEditingController(text: previous.duration.text),
+      room: TextEditingController(text: previous.room.text),
+    );
+    for (final block in draft.blocks.skip(1)) {
+      block.dispose();
+    }
+    draft.blocks.removeRange(1, draft.blocks.length);
+    draft.blocks.addAll(
+      previous.blocks
+          .skip(1)
+          .map(
+            (block) => ScheduleSessionBlock(
+              start: TextEditingController(text: block.start.text),
+              end: TextEditingController(text: block.end.text),
+            ),
+          ),
+    );
+    setState(() => _sessions.add(draft));
+  }
+
+  void _addTimeBlock(ScheduleSessionDraft session) {
+    final start = scheduleTimeMinutes(session.blocks.last.end.text);
+    final duration = int.tryParse(session.duration.text) ?? 60;
+    if (start < 0 ||
+        duration < 15 ||
+        duration > 240 ||
+        start + duration > 1439) {
+      showValidationToast(
+        context,
+        'Adjust the last block to leave room for another time block.',
+      );
+      return;
+    }
+    setState(
+      () => session.blocks.add(
+        ScheduleSessionBlock(
+          start: TextEditingController(text: scheduleTimeLabel(start)),
+          end: TextEditingController(text: scheduleTimeLabel(start + duration)),
+        ),
+      ),
+    );
+  }
+
+  int get _unassignedCount =>
+      widget.planSlots.where((slot) => slot['session_key'] == null).length;
+
+  void _updatePlan(List<Map<String, dynamic>> slots) {
+    for (final session in _sessions) {
+      session.teamIds = {
+        for (final slot in slots)
+          if ((slot['session_key'] ?? slot['requested_session_key']) ==
+                  session.key &&
+              asInt(slot['team_id']) != null)
+            asInt(slot['team_id'])!,
+      };
+    }
+    _recalculatePlanSlots(slots);
+    widget.onPlanSlotsChanged(slots);
+  }
 
   int? get _effectiveChairId {
     if (_selectedChairId != null &&
@@ -125,7 +225,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     }).toList();
   }
 
-  int _getReadyTeamsCount(DefenseSchedulerState state) {
+  List<Map<String, dynamic>> _eligibleTeams(DefenseSchedulerState state) {
     final activeScopeTeams = teamsForScope(state, widget.scope);
 
     String activeStageOrEvent = '';
@@ -141,14 +241,99 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       activeStageOrEvent = widget.eventController.text.trim();
     }
 
+    if (activeStageOrEvent.isEmpty) return [];
+    final pitConfig = state.pitEvents.firstWhere(
+      (event) =>
+          event['event_name']?.toString().toLowerCase() ==
+          activeStageOrEvent.toLowerCase(),
+      orElse: () => <String, dynamic>{},
+    );
+    final hasPrerequisites =
+        widget.scope == 'capstone' ||
+        (pitConfig['deliverables'] as List? ?? []).any(
+          (item) => item['deliverable_type'] == 'pre',
+        );
     return activeScopeTeams.where((team) {
-      final readyForStage = team['ready_for_stage']?.toString() ?? '';
-      if (readyForStage.isEmpty) return false;
-      if (activeStageOrEvent.isNotEmpty) {
-        return readyForStage.toLowerCase() == activeStageOrEvent.toLowerCase();
-      }
-      return true;
-    }).length;
+      final alreadyScheduled = state.schedules.any(
+        (schedule) =>
+            asInt(schedule['team_id'] ?? schedule['team']?['id']) ==
+                asInt(team['id']) &&
+            (widget.scope == 'capstone'
+                ? asInt(schedule['defense_stage_id']) == widget.stageId &&
+                      schedule['status'] == 'scheduled'
+                : (schedule['event_name']?.toString() ?? '').toLowerCase() ==
+                          activeStageOrEvent.toLowerCase() &&
+                      (schedule['status'] == 'scheduled' ||
+                          schedule['status'] == 'done')),
+      );
+      if (alreadyScheduled) return false;
+      return hasPrerequisites
+          ? isTeamStageReady(team, activeStageOrEvent)
+          : !isTeamStageScheduled(team, activeStageOrEvent) &&
+                !isTeamStageCompleted(team, activeStageOrEvent);
+    }).toList();
+  }
+
+  int _getReadyTeamsCount(DefenseSchedulerState state) =>
+      _eligibleTeams(state).length;
+
+  Future<void> _chooseSessionTeams(
+    ScheduleSessionDraft session,
+    int number,
+  ) async {
+    final chosen = await SchedulerTeamPicker.show(
+      context,
+      teams: _eligibleTeams(widget.state),
+      selected: session.teamIds,
+      assignedElsewhere: {
+        for (int i = 0; i < _sessions.length; i++)
+          if (_sessions[i] != session)
+            for (final id in _sessions[i].teamIds) id: 'Session ${i + 1}',
+      },
+      sessionNumber: number,
+    );
+    if (chosen != null && mounted) setState(() => session.teamIds = chosen);
+  }
+
+  Widget _sessionTeamSelection(ScheduleSessionDraft session, int number) {
+    final names = widget.state.teams
+        .where((team) => session.teamIds.contains(asInt(team['id'])))
+        .map((team) => team['name']?.toString() ?? 'Team')
+        .toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Teams for this session *',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+              ),
+            ),
+            ShadButton.outline(
+              key: ValueKey('choose-session-teams-${session.key}'),
+              onPressed: _isGenerating || _isConfirming
+                  ? null
+                  : () => _chooseSessionTeams(session, number),
+              child: const Text('Choose teams'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          names.isEmpty
+              ? 'Choose teams individually or select an adviser’s advisees.'
+              : names.join(', '),
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 12,
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+        ),
+      ],
+    );
   }
 
   List<Map<String, dynamic>> _rubricsForContext() {
@@ -194,41 +379,13 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   }
 
   void _recalculatePlanSlots(List<Map<String, dynamic>> slots) {
-    if (slots.isEmpty) return;
-    final date = widget.dateController.text.trim();
-    final time = widget.timeController.text.trim();
-    final duration = int.tryParse(widget.durationController.text.trim()) ?? 60;
-
-    DateTime baseDate;
-    try {
-      baseDate = DateTime.tryParse(date) ?? DateTime.now();
-    } catch (_) {
-      baseDate = DateTime.now();
-    }
-
-    int baseHour = 8;
-    int baseMinute = 0;
-    final timeParts = time.split(':');
-    if (timeParts.length >= 2) {
-      baseHour = int.tryParse(timeParts[0]) ?? 8;
-      baseMinute = int.tryParse(timeParts[1]) ?? 0;
-    }
-
-    int currentStartMinutes = baseHour * 60 + baseMinute;
-
-    for (int i = 0; i < slots.length; i++) {
-      final startMins = currentStartMinutes + (i * duration);
-      final endMins = startMins + duration;
-
-      final startH = (startMins ~/ 60).toString().padLeft(2, '0');
-      final startM = (startMins % 60).toString().padLeft(2, '0');
-      final endH = (endMins ~/ 60).toString().padLeft(2, '0');
-      final endM = (endMins % 60).toString().padLeft(2, '0');
-
-      slots[i]['scheduled_date'] = formatScheduleDate(baseDate);
-      slots[i]['start_time'] = '$startH:$startM';
-      slots[i]['end_time'] = '$endH:$endM';
-    }
+    final arranged = arrangeSessionSlots(
+      slots,
+      _sessions.map((session) => session.toPayload()).toList(),
+    );
+    slots
+      ..clear()
+      ..addAll(arranged);
   }
 
   Map<String, dynamic>? _basePayload() {
@@ -237,9 +394,10 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       return null;
     }
 
-    final date = widget.dateController.text.trim();
-    final time = widget.timeController.text.trim();
-    final room = widget.roomController.text.trim();
+    final first = _sessions.first;
+    final date = first.date.text.trim();
+    final time = first.start.text.trim();
+    final room = first.room.text.trim();
 
     if (widget.scope == 'capstone' && widget.stageId == null) {
       showValidationToast(context, 'Select a defense stage.');
@@ -287,6 +445,47 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       return null;
     }
 
+    for (int i = 0; i < _sessions.length; i++) {
+      final session = _sessions[i];
+      final duration = int.tryParse(session.duration.text) ?? 0;
+      int previousEnd = -1;
+      final validBlocks = session.blocks.every((block) {
+        final start = scheduleTimeMinutes(block.start.text);
+        final end = scheduleTimeMinutes(block.end.text);
+        final valid =
+            start >= 0 && start >= previousEnd && end - start >= duration;
+        previousEnd = end;
+        return valid;
+      });
+      if (DateTime.tryParse(session.date.text) == null ||
+          session.room.text.trim().isEmpty ||
+          !validBlocks ||
+          duration < 15 ||
+          duration > 240 ||
+          session.capacity < 1) {
+        showValidationToast(
+          context,
+          'Session ${i + 1}: choose a date, room, 15–240 minute slots, and ordered time blocks that each fit a complete slot.',
+        );
+        return null;
+      }
+      if (session.customStaff && session.panelists.isEmpty) {
+        showValidationToast(
+          context,
+          'Session ${i + 1}: select at least one faculty panelist.',
+        );
+        return null;
+      }
+    }
+
+    if (_sessions.every((session) => session.teamIds.isEmpty)) {
+      showValidationToast(
+        context,
+        'Choose at least one team for your sessions.',
+      );
+      return null;
+    }
+
     final effectiveChair = _effectiveChairId;
     final payload = <String, dynamic>{
       'scope': widget.scope,
@@ -297,8 +496,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       'rubric_id': _validRubricId(),
       'scheduled_date': date,
       'start_time': time,
-      'slot_duration':
-          int.tryParse(widget.durationController.text.trim()) ?? 60,
+      'slot_duration': int.tryParse(first.duration.text.trim()) ?? 60,
       'room': room,
       'panelist_ids': widget.selectedPanelistIds.toList(),
       'external_evaluator_ids': _externalIds.toList(),
@@ -307,6 +505,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       if (effectiveChair != null) 'chair_panelist_id': effectiveChair,
       if (widget.scope == 'capstone' && widget.documenterId != null)
         'documenter_id': widget.documenterId,
+      'sessions': _sessions.map((session) => session.toPayload()).toList(),
     };
 
     if (widget.scope == 'pit') {
@@ -346,7 +545,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       widget.onShowFinalPreviewChanged(false);
       showSuccessToast(
         context,
-        'Generated ${generated.length} schedule slots.',
+        '${generated.where((slot) => slot['session_key'] != null).length} teams assigned · ${generated.where((slot) => slot['session_key'] == null).length} remaining.',
       );
     } finally {
       if (mounted) setState(() => _isGenerating = false);
@@ -354,11 +553,27 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   }
 
   Future<void> _confirmPlan() async {
+    if (_unassignedCount > 0) {
+      showValidationToast(
+        context,
+        'Assign all teams to a session or remove them from this plan before confirming.',
+      );
+      return;
+    }
     final payload = _basePayload();
     if (payload == null || widget.planSlots.isEmpty) return;
 
     payload['slots'] = widget.planSlots
-        .map((slot) => {'team_id': asInt(slot['team_id'])})
+        .map(
+          (slot) => {
+            'team_id': asInt(slot['team_id']),
+            'session_key': slot['session_key'],
+            'scheduled_date': slot['scheduled_date'],
+            'start_time': slot['start_time'],
+            'slot_duration': slot['slot_duration'],
+            'room': slot['room'],
+          },
+        )
         .toList();
 
     setState(() => _isConfirming = true);
@@ -500,49 +715,53 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
 
   Widget _scheduleDateField({required TextEditingController controller}) {
     return InkWell(
-      onTap: () async {
-        final currentText = controller.text.trim();
-        DateTime initialDate = DateTime.now();
-        if (currentText.isNotEmpty) {
-          initialDate = DateTime.tryParse(currentText) ?? DateTime.now();
-        }
+      onTap: _isGenerating || _isConfirming
+          ? null
+          : () async {
+              final currentText = controller.text.trim();
+              DateTime initialDate = DateTime.now();
+              if (currentText.isNotEmpty) {
+                initialDate = DateTime.tryParse(currentText) ?? DateTime.now();
+              }
 
-        final picked = await showDatePicker(
-          context: context,
-          initialDate: initialDate,
-          firstDate: DateTime.now().subtract(const Duration(days: 365)),
-          lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
-          builder: (context, child) {
-            return Theme(
-              data: Theme.of(context).copyWith(
-                colorScheme: _isDark
-                    ? const ColorScheme.dark(
-                        primary: AppColors.maroon,
-                        onPrimary: Colors.white,
-                        surface: DefensysTokens.mistSurface,
-                        onSurface: DefensysTokens.mistTextPrimary,
-                      )
-                    : const ColorScheme.light(
-                        primary: AppColors.maroon,
-                        onPrimary: Colors.white,
-                        onSurface: AppColors.textPrimary,
-                      ),
-              ),
-              child: child!,
-            );
-          },
-        );
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: initialDate,
+                firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                lastDate: DateTime.now().add(const Duration(days: 365 * 2)),
+                builder: (context, child) {
+                  return Theme(
+                    data: Theme.of(context).copyWith(
+                      colorScheme: _isDark
+                          ? const ColorScheme.dark(
+                              primary: AppColors.maroon,
+                              onPrimary: Colors.white,
+                              surface: DefensysTokens.mistSurface,
+                              onSurface: DefensysTokens.mistTextPrimary,
+                            )
+                          : const ColorScheme.light(
+                              primary: AppColors.maroon,
+                              onPrimary: Colors.white,
+                              onSurface: AppColors.textPrimary,
+                            ),
+                    ),
+                    child: child!,
+                  );
+                },
+              );
 
-        if (picked != null) {
-          controller.text = formatScheduleDate(picked);
-          if (widget.planSlots.isNotEmpty) {
-            final copy = List<Map<String, dynamic>>.from(widget.planSlots);
-            _recalculatePlanSlots(copy);
-            widget.onPlanSlotsChanged(copy);
-          }
-          setState(() {});
-        }
-      },
+              if (picked != null) {
+                controller.text = formatScheduleDate(picked);
+                if (widget.planSlots.isNotEmpty) {
+                  final copy = List<Map<String, dynamic>>.from(
+                    widget.planSlots,
+                  );
+                  _recalculatePlanSlots(copy);
+                  widget.onPlanSlotsChanged(copy);
+                }
+                setState(() {});
+              }
+            },
       child: IgnorePointer(
         child: TextFormField(
           controller: controller,
@@ -563,56 +782,60 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
 
   Widget _scheduleTimeField({required TextEditingController controller}) {
     return InkWell(
-      onTap: () async {
-        final currentText = controller.text.trim();
-        TimeOfDay initialTime = const TimeOfDay(hour: 8, minute: 0);
-        if (currentText.isNotEmpty) {
-          final parts = currentText.split(':');
-          if (parts.length >= 2) {
-            final h = int.tryParse(parts[0]);
-            final m = int.tryParse(parts[1]);
-            if (h != null && m != null) {
-              initialTime = TimeOfDay(hour: h, minute: m);
-            }
-          }
-        }
+      onTap: _isGenerating || _isConfirming
+          ? null
+          : () async {
+              final currentText = controller.text.trim();
+              TimeOfDay initialTime = const TimeOfDay(hour: 8, minute: 0);
+              if (currentText.isNotEmpty) {
+                final parts = currentText.split(':');
+                if (parts.length >= 2) {
+                  final h = int.tryParse(parts[0]);
+                  final m = int.tryParse(parts[1]);
+                  if (h != null && m != null) {
+                    initialTime = TimeOfDay(hour: h, minute: m);
+                  }
+                }
+              }
 
-        final picked = await showTimePicker(
-          context: context,
-          initialTime: initialTime,
-          builder: (context, child) {
-            return Theme(
-              data: Theme.of(context).copyWith(
-                colorScheme: _isDark
-                    ? const ColorScheme.dark(
-                        primary: AppColors.maroon,
-                        onPrimary: Colors.white,
-                        surface: DefensysTokens.mistSurface,
-                        onSurface: DefensysTokens.mistTextPrimary,
-                      )
-                    : const ColorScheme.light(
-                        primary: AppColors.maroon,
-                        onPrimary: Colors.white,
-                        onSurface: AppColors.textPrimary,
-                      ),
-              ),
-              child: child!,
-            );
-          },
-        );
+              final picked = await showTimePicker(
+                context: context,
+                initialTime: initialTime,
+                builder: (context, child) {
+                  return Theme(
+                    data: Theme.of(context).copyWith(
+                      colorScheme: _isDark
+                          ? const ColorScheme.dark(
+                              primary: AppColors.maroon,
+                              onPrimary: Colors.white,
+                              surface: DefensysTokens.mistSurface,
+                              onSurface: DefensysTokens.mistTextPrimary,
+                            )
+                          : const ColorScheme.light(
+                              primary: AppColors.maroon,
+                              onPrimary: Colors.white,
+                              onSurface: AppColors.textPrimary,
+                            ),
+                    ),
+                    child: child!,
+                  );
+                },
+              );
 
-        if (picked != null) {
-          final hh = picked.hour.toString().padLeft(2, '0');
-          final mm = picked.minute.toString().padLeft(2, '0');
-          controller.text = '$hh:$mm';
-          if (widget.planSlots.isNotEmpty) {
-            final copy = List<Map<String, dynamic>>.from(widget.planSlots);
-            _recalculatePlanSlots(copy);
-            widget.onPlanSlotsChanged(copy);
-          }
-          setState(() {});
-        }
-      },
+              if (picked != null) {
+                final hh = picked.hour.toString().padLeft(2, '0');
+                final mm = picked.minute.toString().padLeft(2, '0');
+                controller.text = '$hh:$mm';
+                if (widget.planSlots.isNotEmpty) {
+                  final copy = List<Map<String, dynamic>>.from(
+                    widget.planSlots,
+                  );
+                  _recalculatePlanSlots(copy);
+                  widget.onPlanSlotsChanged(copy);
+                }
+                setState(() {});
+              }
+            },
       child: IgnorePointer(
         child: TextFormField(
           controller: controller,
@@ -795,7 +1018,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       children: [
         _setupHeading(
           'Schedule details',
-          'Set the shared timing and venue for this batch.',
+          'A session groups teams on one day. Use time blocks to set breaks.',
         ),
         const SizedBox(height: 20),
         if (widget.scope == 'capstone') ...[
@@ -827,6 +1050,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 onChanged: (value) async {
+                  for (final session in _sessions) {
+                    session.teamIds.clear();
+                  }
                   widget.onScopeChanged('capstone');
                   widget.onStageChanged(value);
                   widget.onRubricChanged(null);
@@ -868,6 +1094,11 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                     Text(value, overflow: TextOverflow.ellipsis),
                 onChanged: (value) {
                   if (value == null) return;
+                  for (final session in _sessions) {
+                    session.teamIds.clear();
+                  }
+                  widget.onPlanSlotsChanged([]);
+                  widget.onShowFinalPreviewChanged(false);
                   widget.eventController.text = value;
                   widget.onPrefillPitEventConfig();
                   setState(() {});
@@ -877,33 +1108,59 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           ),
         ],
         const SizedBox(height: 20),
-        _setupFieldPair(
-          _labeledField(
-            'Date *',
-            _scheduleDateField(controller: widget.dateController),
+        for (int i = 0; i < _sessions.length; i++)
+          SchedulerSessionEditor(
+            key: ValueKey(_sessions[i].key),
+            draft: _sessions[i],
+            number: i + 1,
+            faculty: state.selectablePanelists,
+            documenters: state.documenters,
+            externals: ref.watch(externalEvaluatorProvider).approved,
+            capstone: widget.scope == 'capstone',
+            enabled: !busy,
+            dateField: (controller) =>
+                _scheduleDateField(controller: controller),
+            timeField: (controller) =>
+                _scheduleTimeField(controller: controller),
+            teamSelection: _sessionTeamSelection(_sessions[i], i + 1),
+            onAddBlock: () => _addTimeBlock(_sessions[i]),
+            onRemoveBlock: (index) {
+              final removed = _sessions[i].blocks.removeAt(index);
+              setState(() {});
+              WidgetsBinding.instance.addPostFrameCallback(
+                (_) => removed.dispose(),
+              );
+            },
+            onChanged: () => setState(() {}),
+            onRemove: i == 0
+                ? null
+                : () {
+                    final removed = _sessions.removeAt(i);
+                    setState(() {});
+                    WidgetsBinding.instance.addPostFrameCallback(
+                      (_) => removed.dispose(),
+                    );
+                  },
+            onCustomize: () => setState(() {
+              final session = _sessions[i];
+              session.customStaff = !session.customStaff;
+              if (session.customStaff) {
+                session.panelists = Set.of(widget.selectedPanelistIds);
+                session.chair = _effectiveChairId;
+                session.externals = Set.of(_externalIds);
+                session.documenter = widget.scope == 'capstone'
+                    ? widget.documenterId
+                    : null;
+              }
+            }),
           ),
-          _labeledField(
-            'Start time *',
-            _scheduleTimeField(controller: widget.timeController),
-          ),
-        ),
-        const SizedBox(height: 20),
-        _setupFieldPair(
-          _labeledField(
-            'Slot duration (minutes) *',
-            ShadInput(
-              controller: widget.durationController,
-              enabled: !busy,
-              keyboardType: TextInputType.number,
-            ),
-          ),
-          _labeledField(
-            'Room / venue *',
-            ShadInput(
-              controller: widget.roomController,
-              enabled: !busy,
-              placeholder: const Text('e.g. Lab 3'),
-            ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ShadButton.outline(
+            key: const ValueKey('add-schedule-session'),
+            onPressed: busy ? null : _addSession,
+            leading: const Icon(Icons.add, size: 16),
+            child: const Text('Add session'),
           ),
         ),
       ],
@@ -912,6 +1169,11 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     final people = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _setupHeading(
+          'Shared staff defaults',
+          'Used by sessions unless you customize their staff.',
+        ),
+        const SizedBox(height: 20),
         _setupHeading(
           'Faculty panelists *',
           state.canApprovePanelists
@@ -1093,8 +1355,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${widget.scope == 'pit' ? 'PIT' : 'Capstone'} batch / '
-                    '${selectedPanelists.length} faculty / ${_externalIds.length} external',
+                    '${_sessions.fold<int>(0, (total, session) => total + session.teamIds.length)} selected / '
+                    '${_sessions.fold<int>(0, (total, session) => total + session.capacity)} slots available',
                     style: TextStyle(color: _textSecondary, fontSize: 12),
                   ),
                 ],
@@ -1140,21 +1402,6 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     );
   }
 
-  Widget _setupFieldPair(Widget first, Widget second) => LayoutBuilder(
-    builder: (_, constraints) => constraints.maxWidth < 360
-        ? Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [first, const SizedBox(height: 20), second],
-          )
-        : Row(
-            children: [
-              Expanded(child: first),
-              const SizedBox(width: 16),
-              Expanded(child: second),
-            ],
-          ),
-  );
-
   Widget _planTableHeader(List<String> headers) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1170,22 +1417,32 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         ),
       ),
       child: Row(
-        children: headers
-            .map(
-              (h) => Expanded(
+        children: [
+          for (int i = 0; i < headers.length; i++)
+            if (i == 0 || headers[i] == 'Actions')
+              SizedBox(
+                width: i == 0 ? 32 : 120,
                 child: Text(
-                  h,
+                  headers[i],
                   style: TextStyle(
-                    color: _isDark
-                        ? DefensysTokens.mistTextSecondary
-                        : const Color(0xFF475467),
+                    color: _textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: Text(
+                  headers[i],
+                  style: TextStyle(
+                    color: _textSecondary,
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
-            )
-            .toList(),
+        ],
       ),
     );
   }
@@ -1200,6 +1457,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     required String room,
     required String panel,
     required VoidCallback onDelete,
+    Widget? moveAction,
+    Widget? dragAction,
   }) {
     return Container(
       key: key,
@@ -1278,6 +1537,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
               ),
             ),
           ),
+          if (moveAction != null) moveAction,
           IconButton(
             icon: const Icon(
               Icons.delete_outline,
@@ -1287,6 +1547,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             onPressed: onDelete,
             tooltip: 'Remove slot',
           ),
+          if (dragAction != null) dragAction,
         ],
       ),
     );
@@ -1382,12 +1643,19 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     );
   }
 
-  String _panelNamesFromSelection(DefenseSchedulerState state) {
-    final effectiveChair = _effectiveChairId;
+  String _panelNamesFromSelection(
+    DefenseSchedulerState state, [
+    ScheduleSessionDraft? session,
+  ]) {
+    final custom = session?.customStaff == true;
+    final ids = custom ? session!.panelists : widget.selectedPanelistIds;
+    final effectiveChair = custom
+        ? (session!.chair ?? ids.firstOrNull)
+        : _effectiveChairId;
     final names = state.selectablePanelists
         .where((p) {
           final id = asInt(p['id']);
-          return id != null && widget.selectedPanelistIds.contains(id);
+          return id != null && ids.contains(id);
         })
         .map((p) {
           final id = asInt(p['id']);
@@ -1397,7 +1665,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
               p['username']?.toString() ??
               '';
           if (id == effectiveChair) {
-            return '👑 $name (Chair)';
+            return '$name (Chair)';
           }
           return name;
         })
@@ -1407,59 +1675,351 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       ref
           .read(externalEvaluatorProvider)
           .approved
-          .where((e) => _externalIds.contains(e['id']))
+          .where(
+            (e) =>
+                (custom ? session!.externals : _externalIds).contains(e['id']),
+          )
           .map((e) => '${e['name']} (External)'),
     );
     if (names.isEmpty) return 'No panelists assigned';
     return names.join(', ');
   }
 
+  Widget _moveTeamMenu(Map<String, dynamic> slot) => PopupMenuButton<String>(
+    key: ValueKey('move-team-${slot['team_id']}'),
+    tooltip: 'Move team to session',
+    icon: const Icon(Icons.drive_file_move_outline, size: 18),
+    onSelected: (key) {
+      final copy = widget.planSlots
+          .map((s) => Map<String, dynamic>.from(s))
+          .toList();
+      final moved = copy.firstWhere((s) => s['team_id'] == slot['team_id']);
+      moved['session_key'] = key == 'unassigned' ? null : key;
+      moved['requested_session_key'] = moved['session_key'];
+      _updatePlan(copy);
+    },
+    itemBuilder: (_) => [
+      for (int i = 0; i < _sessions.length; i++)
+        PopupMenuItem(
+          value: _sessions[i].key,
+          enabled:
+              slot['session_key'] != _sessions[i].key &&
+              widget.planSlots
+                      .where((s) => s['session_key'] == _sessions[i].key)
+                      .length <
+                  _sessions[i].capacity,
+          child: Text(
+            'Session ${i + 1} · ${_sessions[i].date.text} · ${_sessions[i].start.text}',
+          ),
+        ),
+      PopupMenuItem(
+        value: 'unassigned',
+        enabled: slot['session_key'] != null,
+        child: const Text('Unassigned'),
+      ),
+    ],
+  );
+
+  Widget _sessionPlanGroup(
+    DefenseSchedulerState state,
+    ScheduleSessionDraft? session, {
+    bool preview = false,
+  }) {
+    final indices = [
+      for (int i = 0; i < widget.planSlots.length; i++)
+        if (widget.planSlots[i]['session_key'] == session?.key) i,
+    ];
+    if (session == null && indices.isEmpty) return const SizedBox.shrink();
+    final number = session == null ? 0 : _sessions.indexOf(session) + 1;
+    final panel = session == null
+        ? 'Assign a session to set staff'
+        : _panelNamesFromSelection(state, session);
+    final docId = session?.customStaff == true
+        ? session!.documenter
+        : widget.documenterId;
+    final documenters = state.documenters.where((p) => asInt(p['id']) == docId);
+    final docName = documenters.isEmpty
+        ? 'Unassigned'
+        : schedulerPersonName(documenters.first);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              Text(
+                session == null ? 'Unassigned teams' : 'Session $number',
+                style: TextStyle(
+                  color: _textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Text(
+                session == null
+                    ? '${indices.length} ${indices.length == 1 ? 'team needs' : 'teams need'} a session'
+                    : '${indices.length} / ${session.capacity} slots',
+                style: TextStyle(color: _textSecondary, fontSize: 12),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          if (session != null) ...[
+            Text(
+              '${session.date.text} · ${session.timeWindowLabel} · ${session.room.text}',
+              style: TextStyle(color: _textSecondary, fontSize: 13),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '$panel${widget.scope == 'capstone' ? ' · Documenter: $docName' : ''}',
+              style: TextStyle(color: _textSecondary, fontSize: 12),
+            ),
+          ],
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (_, constraints) {
+              final wide = constraints.maxWidth >= 800;
+              Widget row(int index) {
+                final slot = widget.planSlots[indices[index]];
+                final team = slot['team_name']?.toString() ?? 'Team';
+                final stage = slot['stage_label']?.toString() ?? 'Stage';
+                final date = slot['scheduled_date']?.toString() ?? '';
+                final time = session == null
+                    ? 'Unassigned'
+                    : '${slot['start_time']}–${slot['end_time']}';
+                void remove() {
+                  final copy = List<Map<String, dynamic>>.from(widget.planSlots)
+                    ..removeAt(indices[index]);
+                  _updatePlan(copy);
+                }
+
+                final key = ValueKey('session-team-${slot['team_id']}');
+                if (!wide) {
+                  return Container(
+                    key: key,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(
+                          color: DefensysTokens.borderOf(context),
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${index + 1}. $team',
+                                style: TextStyle(
+                                  color: _textPrimary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '$stage · $time',
+                                style: TextStyle(
+                                  color: _textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (!preview) ...[
+                          _moveTeamMenu(slot),
+                          IconButton(
+                            onPressed: remove,
+                            tooltip: 'Remove slot',
+                            icon: const Icon(Icons.delete_outline, size: 18),
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                }
+                if (preview) {
+                  return KeyedSubtree(
+                    key: key,
+                    child: _finalPreviewRow(
+                      index: index,
+                      team: team,
+                      stage: stage,
+                      date: date,
+                      time: time,
+                      room: slot['room']?.toString() ?? '',
+                      panel: panel,
+                    ),
+                  );
+                }
+                return _planTableRow(
+                  key: key,
+                  index: index,
+                  team: team,
+                  stage: stage,
+                  date: date,
+                  time: time,
+                  room: slot['room']?.toString() ?? '',
+                  panel: panel,
+                  onDelete: remove,
+                  moveAction: _moveTeamMenu(slot),
+                  dragAction: ReorderableDragStartListener(
+                    index: index,
+                    child: Tooltip(
+                      message: 'Drag to reorder team',
+                      child: SizedBox(
+                        width: 24,
+                        child: Icon(
+                          Icons.drag_handle,
+                          size: 18,
+                          color: _textSecondary,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (wide)
+                    _planTableHeader([
+                      '#',
+                      'Team Name',
+                      'Stage / Event',
+                      'Date & Time',
+                      'Room',
+                      'Assigned Panel',
+                      if (!preview) 'Actions',
+                    ]),
+                  if (indices.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        'No teams assigned.',
+                        style: TextStyle(color: _textSecondary),
+                      ),
+                    )
+                  else if (preview) ...[
+                    for (int i = 0; i < indices.length; i++) row(i),
+                  ] else
+                    ReorderableListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      buildDefaultDragHandles: false,
+                      itemCount: indices.length,
+                      onReorder: (oldIndex, newIndex) {
+                        if (newIndex > oldIndex) {
+                          newIndex--;
+                        }
+                        final copy = widget.planSlots
+                            .map((s) => Map<String, dynamic>.from(s))
+                            .toList();
+                        final ordered = [
+                          for (final index in indices) copy[index],
+                        ];
+                        ordered.insert(newIndex, ordered.removeAt(oldIndex));
+                        for (int i = 0; i < indices.length; i++) {
+                          copy[indices[i]] = ordered[i];
+                        }
+                        _updatePlan(copy);
+                      },
+                      itemBuilder: (_, index) => wide
+                          ? row(index)
+                          : ReorderableDelayedDragStartListener(
+                              key: ValueKey(
+                                'drag-team-${widget.planSlots[indices[index]]['team_id']}',
+                              ),
+                              index: index,
+                              child: row(index),
+                            ),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _planStepHeading(
+    int step,
+    String title,
+    String badge,
+    Color background,
+    Color foreground,
+  ) => LayoutBuilder(
+    builder: (_, constraints) {
+      final heading = Row(
+        children: [
+          CircleAvatar(
+            radius: 12,
+            backgroundColor: AppColors.maroon,
+            child: Text(
+              '$step',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: _textPrimary,
+              ),
+            ),
+          ),
+        ],
+      );
+      final status = _softBadge(badge, background, foreground);
+      return constraints.maxWidth < 650
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [heading, const SizedBox(height: 10), status],
+            )
+          : Row(
+              children: [
+                Expanded(child: heading),
+                const SizedBox(width: 16),
+                status,
+              ],
+            );
+    },
+  );
+
   Widget _buildStepTwo(DefenseSchedulerState state) {
     return _schedulerCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    const CircleAvatar(
-                      radius: 12,
-                      backgroundColor: AppColors.maroon,
-                      child: Text(
-                        '2',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Step 2: Review & Arrange Teams',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w900,
-                        color: _textPrimary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              _softBadge(
-                '${widget.planSlots.length} slots prepared',
-                const Color(0xFFEFF8FF),
-                const Color(0xFF175CD3),
-              ),
-            ],
+          _planStepHeading(
+            2,
+            'Step 2: Review & Arrange Teams',
+            '${widget.planSlots.length - _unassignedCount} assigned · $_unassignedCount remaining',
+            const Color(0xFFEFF8FF),
+            const Color(0xFF175CD3),
           ),
           const SizedBox(height: 10),
           Divider(height: 1, color: _isDark ? DefensysTokens.mistBorder : null),
           const SizedBox(height: 16),
           Text(
-            'Review the generated slot sequence. You can reorder teams or remove individual slots before finalizing.',
+            'Reorder teams within a session or move them to another session with space. Add sessions in Step 1 if more time is needed.',
             style: TextStyle(
               color: _textSecondary,
               fontSize: 14,
@@ -1467,55 +2027,13 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             ),
           ),
           const SizedBox(height: 20),
-          _planTableHeader(const [
-            '#',
-            'Team Name',
-            'Stage / Event',
-            'Date & Time',
-            'Room',
-            'Assigned Panel',
-            'Actions',
-          ]),
-          ReorderableListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: widget.planSlots.length,
-            onReorder: (oldIndex, newIndex) {
-              final copy = List<Map<String, dynamic>>.from(widget.planSlots);
-              if (newIndex > oldIndex) newIndex -= 1;
-              final item = copy.removeAt(oldIndex);
-              copy.insert(newIndex, item);
-              _recalculatePlanSlots(copy);
-              widget.onPlanSlotsChanged(copy);
-            },
-            itemBuilder: (context, index) {
-              final slot = widget.planSlots[index];
-              return _planTableRow(
-                key: ValueKey(slot['team_id'] ?? index),
-                index: index,
-                team: slot['team_name']?.toString() ?? 'Team',
-                stage:
-                    slot['stage_label']?.toString() ??
-                    slot['event_name']?.toString() ??
-                    'Stage',
-                date: slot['scheduled_date']?.toString() ?? '',
-                time: slot['start_time']?.toString() ?? '',
-                room: slot['room']?.toString() ?? '',
-                panel: _panelNamesFromSelection(state),
-                onDelete: () {
-                  final copy = List<Map<String, dynamic>>.from(
-                    widget.planSlots,
-                  );
-                  copy.removeAt(index);
-                  _recalculatePlanSlots(copy);
-                  widget.onPlanSlotsChanged(copy);
-                },
-              );
-            },
-          ),
+          for (final session in _sessions) _sessionPlanGroup(state, session),
+          _sessionPlanGroup(state, null),
           const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 14,
+            runSpacing: 12,
             children: [
               OutlinedButton.icon(
                 onPressed: () {
@@ -1548,9 +2066,10 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
-              const SizedBox(width: 14),
               ElevatedButton.icon(
-                onPressed: () => widget.onShowFinalPreviewChanged(true),
+                onPressed: _unassignedCount > 0
+                    ? null
+                    : () => widget.onShowFinalPreviewChanged(true),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.maroon,
                   foregroundColor: Colors.white,
@@ -1581,41 +2100,12 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    const CircleAvatar(
-                      radius: 12,
-                      backgroundColor: AppColors.maroon,
-                      child: Text(
-                        '3',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Step 3: Final Schedule Preview',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w900,
-                        color: _textPrimary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              _softBadge(
-                'Ready to Save',
-                const Color(0xFFECFDF3),
-                const Color(0xFF027A48),
-              ),
-            ],
+          _planStepHeading(
+            3,
+            'Step 3: Final Schedule Preview',
+            'Ready to Save',
+            const Color(0xFFECFDF3),
+            const Color(0xFF027A48),
           ),
           const SizedBox(height: 10),
           Divider(height: 1, color: _isDark ? DefensysTokens.mistBorder : null),
@@ -1629,37 +2119,13 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             ),
           ),
           const SizedBox(height: 20),
-          _planTableHeader(const [
-            '#',
-            'Team Name',
-            'Stage / Event',
-            'Date & Time',
-            'Room',
-            'Assigned Panel',
-          ]),
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: widget.planSlots.length,
-            itemBuilder: (context, index) {
-              final slot = widget.planSlots[index];
-              return _finalPreviewRow(
-                index: index,
-                team: slot['team_name']?.toString() ?? 'Team',
-                stage:
-                    slot['stage_label']?.toString() ??
-                    slot['event_name']?.toString() ??
-                    'Stage',
-                date: slot['scheduled_date']?.toString() ?? '',
-                time: slot['start_time']?.toString() ?? '',
-                room: slot['room']?.toString() ?? '',
-                panel: _panelNamesFromSelection(state),
-              );
-            },
-          ),
+          for (final session in _sessions)
+            _sessionPlanGroup(state, session, preview: true),
           const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 14,
+            runSpacing: 12,
             children: [
               OutlinedButton.icon(
                 onPressed: () => widget.onShowFinalPreviewChanged(false),
@@ -1689,7 +2155,6 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
-              const SizedBox(width: 14),
               ElevatedButton.icon(
                 onPressed: _isConfirming ? null : _confirmPlan,
                 style: ElevatedButton.styleFrom(

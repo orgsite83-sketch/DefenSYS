@@ -145,6 +145,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             'current_defense_stage',
             'display_semester',
             'leader_name',
+            'adviser',
             'adviser_name',
             'instructor_name',
             'completed_stages',
@@ -251,6 +252,11 @@ class SchedulePanelistSerializer(serializers.ModelSerializer):
 
 
 class DefenseScheduleSerializer(serializers.ModelSerializer):
+    latest_change = serializers.SerializerMethodField()
+    can_delete = serializers.SerializerMethodField()
+    can_edit = serializers.SerializerMethodField()
+    can_reschedule = serializers.SerializerMethodField()
+    deletion_blockers = serializers.SerializerMethodField()
     semester_id = serializers.IntegerField(source='semester.id', read_only=True)
     display_semester = serializers.CharField(source='semester.display_name', read_only=True)
     team_id = serializers.IntegerField(source='team.id', read_only=True)
@@ -284,6 +290,15 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'batch_id',
+            'session_id',
+            'revision',
+            'latest_change',
+            'operation_state',
+            'operation_reason',
+            'can_delete',
+            'can_edit',
+            'can_reschedule',
+            'deletion_blockers',
             'scope',
             'semester_id',
             'display_semester',
@@ -322,6 +337,9 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
             'updated_at',
         ]
 
+    def get_latest_change(self, obj):
+        return self.context.get('latest_changes', {}).get(str(obj.pk))
+
     def get_grade_id(self, obj):
         try:
             grades = list(obj.grade_records.all())
@@ -340,9 +358,6 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
                     defense_stage_id=obj.defense_stage_id,
                 ).order_by('-updated_at', '-id').first()
                 if grade:
-                    if grade.schedule_id != obj.id:
-                        grade.schedule = obj
-                        grade.save(update_fields=['schedule'])
                     return grade.id
             elif obj.scope == DefenseSchedule.SCOPE_PIT and obj.event_name:
                 grade = TeamGrade.objects.filter(
@@ -351,9 +366,6 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
                     stage_label=obj.event_name,
                 ).order_by('-updated_at', '-id').first()
                 if grade:
-                    if grade.schedule_id != obj.id:
-                        grade.schedule = obj
-                        grade.save(update_fields=['schedule'])
                     return grade.id
             elif obj.stage_label:
                 grade = TeamGrade.objects.filter(
@@ -362,19 +374,25 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
                     stage_label=obj.stage_label,
                 ).order_by('-updated_at', '-id').first()
                 if grade:
-                    if grade.schedule_id != obj.id:
-                        grade.schedule = obj
-                        grade.save(update_fields=['schedule'])
                     return grade.id
         except Exception:
             pass
 
-        try:
-            from grading.grades.services import GradeContextService
-            grade, _, _ = GradeContextService.get_or_create_for_schedule(obj)
-            return grade.id if grade else None
-        except Exception:
-            return None
+        return None
+
+    def get_deletion_blockers(self, obj):
+        from .services import deletion_blockers
+        return deletion_blockers(obj)
+
+    def get_can_delete(self, obj):
+        return not self.get_deletion_blockers(obj)
+
+    def get_can_edit(self, obj):
+        from grading.grades.corrections import protected_grade
+        return obj.status not in ('done', 'archived') and not any(protected_grade(g) for g in obj.grade_records.all())
+
+    def get_can_reschedule(self, obj):
+        return not obj.panelist_grade_submissions.exists()
 
     def get_grade_status(self, obj):
         try:
@@ -408,6 +426,8 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
         return None
 
     def get_display_status(self, obj):
+        if obj.operation_state != 'normal' and obj.status == DefenseSchedule.STATUS_SCHEDULED:
+            return obj.operation_state
         if obj.status == DefenseSchedule.STATUS_SCHEDULED:
             from django.utils import timezone
             from datetime import datetime
@@ -857,6 +877,8 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
         )
         self._sync_panelists(schedule, panelists, chair_panelist_id=chair_panelist_id)
         create_invitations(externals, [schedule], actor, guest_expiry)
+        from .operations import join_matching_session
+        join_matching_session(schedule)
         self._sync_grade_row(schedule)
         if schedule.documenter:
             send_documenter_assignment_notification(schedule)
@@ -971,7 +993,112 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
         ])
 
 
-class GenerateSchedulePlanSerializer(ScheduleBaseSerializer):
+class ScheduleTimeBlockSerializer(serializers.Serializer):
+    start_time = serializers.TimeField()
+    end_time = serializers.TimeField()
+
+
+class ScheduleSessionSerializer(serializers.Serializer):
+    key = serializers.CharField(max_length=64)
+    scheduled_date = FlexibleDateField()
+    start_time = serializers.TimeField()
+    end_time = serializers.TimeField(required=False)
+    time_blocks = ScheduleTimeBlockSerializer(many=True, required=False, min_length=1, max_length=20)
+    team_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, max_length=5000)
+    slot_duration = serializers.IntegerField(min_value=15, max_value=240)
+    room = serializers.CharField(max_length=120)
+    panelist_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), min_length=1, required=False)
+    external_evaluator_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, max_length=30)
+    chair_panelist_id = serializers.IntegerField(required=False, allow_null=True)
+    documenter_id = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        blocks = attrs.get('time_blocks')
+        if blocks is None:
+            if 'end_time' not in attrs:
+                raise serializers.ValidationError({'end_time': 'Set an end time or define the session time blocks.'})
+            blocks = [{'start_time': attrs['start_time'], 'end_time': attrs['end_time']}]
+        previous_end = -1
+        for block in blocks:
+            start, end = time_to_minutes(block['start_time']), time_to_minutes(block['end_time'])
+            if start < previous_end or end - start < attrs['slot_duration']:
+                raise serializers.ValidationError({'time_blocks': 'Time blocks must be in order, must not overlap, and must fit a complete team slot.'})
+            previous_end = end
+        if 'team_ids' in attrs and len(attrs['team_ids']) != len(set(attrs['team_ids'])):
+            raise serializers.ValidationError({'team_ids': 'Select each team only once.'})
+        attrs['time_blocks'] = blocks
+        attrs['start_time'] = blocks[0]['start_time']
+        attrs['end_time'] = blocks[-1]['end_time']
+        return attrs
+
+
+class SchedulePlanSlotSerializer(serializers.Serializer):
+    team_id = serializers.IntegerField(min_value=1)
+    session_key = serializers.CharField(max_length=64, required=False)
+    scheduled_date = FlexibleDateField(required=False)
+    start_time = serializers.TimeField(required=False)
+    slot_duration = serializers.IntegerField(required=False, min_value=15, max_value=240)
+    room = serializers.CharField(required=False, max_length=120)
+
+
+class SchedulePlanSerializer(ScheduleBaseSerializer):
+    sessions = ScheduleSessionSerializer(many=True, required=False, min_length=1, max_length=100)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        sessions = attrs.get('sessions')
+        if sessions is None:
+            attrs['plan_sessions'] = {'legacy': {**attrs, 'key': 'legacy', 'capacity': None, 'slot_intervals': None}}
+            return attrs
+        selected_mode = any('team_ids' in session for session in sessions)
+        selected_ids = set()
+        resolved = {}
+        actor = getattr(self.context.get('request'), 'user', None)
+        for session in sessions:
+            key = session['key']
+            if key in resolved:
+                raise serializers.ValidationError({'sessions': 'Each session must have a unique key.'})
+            if selected_mode:
+                if 'team_ids' not in session:
+                    raise serializers.ValidationError({'sessions': 'Choose teams explicitly for every session.'})
+                if selected_ids.intersection(session['team_ids']):
+                    raise serializers.ValidationError({'sessions': 'A team can only belong to one session in this plan.'})
+                selected_ids.update(session['team_ids'])
+            current = {**attrs, **session}
+            current['panelists'] = self._resolve_panelists(current['panelist_ids'])
+            current['external_evaluators'] = resolve_evaluators(current.get('external_evaluator_ids', []), actor)
+            current['documenter'] = self._resolve_documenter(current)
+            if 'chair_panelist_id' not in session and current.get('chair_panelist_id') not in current['panelist_ids']:
+                current['chair_panelist_id'] = current['panelists'][0].pk
+            if current.get('chair_panelist_id') and current['chair_panelist_id'] not in current['panelist_ids']:
+                raise serializers.ValidationError({'sessions': f'{key}: chair must be an assigned panelist.'})
+            if current.get('documenter') in current['panelists']:
+                raise serializers.ValidationError({'sessions': f'{key}: a panelist cannot also be the documenter.'})
+            current['slot_intervals'] = []
+            for block in current['time_blocks']:
+                start, end = time_to_minutes(block['start_time']), time_to_minutes(block['end_time'])
+                for offset in range(start, end - current['slot_duration'] + 1, current['slot_duration']):
+                    current['slot_intervals'].append((offset, offset + current['slot_duration']))
+            current['capacity'] = len(current['slot_intervals'])
+            resolved[key] = current
+        attrs['plan_sessions'] = resolved
+        attrs['selected_team_ids'] = selected_ids if selected_mode else None
+        return attrs
+
+    def _plan_entry(self, session, index):
+        if session['capacity'] is not None and index >= session['capacity']:
+            raise serializers.ValidationError({'slots': 'Teams exceed the available session time. Add another session.'})
+        if session['slot_intervals'] is not None:
+            start, end = session['slot_intervals'][index]
+        else:
+            start = time_to_minutes(session['start_time']) + session['slot_duration'] * index
+            end = start + session['slot_duration']
+        if end > 24 * 60:
+            raise serializers.ValidationError({'slots': 'Teams exceed the available session time. Add another session.'})
+        return {**session, 'start_time': minutes_to_time(start), 'slot_end_time': minutes_to_time(end)}
+
+
+class GenerateSchedulePlanSerializer(SchedulePlanSerializer):
     def _validate_capstone_stage_setup(self, attrs):
         # Frontend syncs Capstone rubrics to StageGradingConfig immediately *before* 
         # calling confirm-plan. During generate-plan, the config might be incomplete, 
@@ -983,33 +1110,58 @@ class GenerateSchedulePlanSerializer(ScheduleBaseSerializer):
     def generate_slots(self):
         attrs = self.validated_data
         teams = self._ready_teams(attrs)
-        start_minutes = attrs['start_time'].hour * 60 + attrs['start_time'].minute
-        chair_id = attrs.get('chair_panelist_id') or (attrs['panelists'][0].id if attrs.get('panelists') else None)
-        panelists_data = []
-        for p in attrs['panelists']:
-            p_data = PanelistOptionSerializer(p).data
-            p_data['is_chair'] = (p.id == chair_id)
-            panelists_data.append(p_data)
-
         slots = []
-        for index, team in enumerate(teams):
-            slot_start = minutes_to_time(start_minutes + attrs['slot_duration'] * index)
-            slot_end = minutes_to_time(start_minutes + attrs['slot_duration'] * (index + 1))
+        entries = []
+        assignments = []
+        if attrs.get('selected_team_ids') is not None:
+            team_map = {team.pk: team for team in teams}
+            if not attrs['selected_team_ids']:
+                raise serializers.ValidationError({'sessions': 'Choose at least one team for this plan.'})
+            if not attrs['selected_team_ids'].issubset(team_map):
+                raise serializers.ValidationError({'sessions': 'Some selected teams are not eligible for this stage or event. Refresh the team selection.'})
+            for key, session in attrs['plan_sessions'].items():
+                for index, team_id in enumerate(session['team_ids']):
+                    entry = self._plan_entry(session, index) if index < session['capacity'] else None
+                    assignments.append((team_map[team_id], key if entry else None, entry, key))
+        else:
+            available = []
+            for key, session in attrs['plan_sessions'].items():
+                capacity = session['capacity'] if session['capacity'] is not None else len(teams)
+                for index in range(min(capacity, len(teams) - len(available))):
+                    available.append((key, self._plan_entry(session, index)))
+            for index, team in enumerate(teams):
+                key, entry = available[index] if index < len(available) else (None, None)
+                assignments.append((team, key, entry, key))
+        for index, (team, key, entry, requested_key) in enumerate(assignments):
+            chair_id = (entry.get('chair_panelist_id') or entry['panelists'][0].pk) if entry else None
+            panelists_data = []
+            for person in entry['panelists'] if entry else []:
+                person_data = PanelistOptionSerializer(person).data
+                person_data['is_chair'] = person.pk == chair_id
+                panelists_data.append(person_data)
+            if entry:
+                if entry.get('documenter') and team.adviser_id == entry['documenter'].pk:
+                    raise serializers.ValidationError({'slots': f'Documenter cannot be the adviser of team {team.name}.'})
+                entries.append(entry)
             slots.append({
                 'slot': index + 1,
+                'session_key': key,
+                'requested_session_key': requested_key,
                 'team_id': team.id,
                 'team_name': team.name,
                 'project_title': team.project_title,
                 'team_level': team.level,
                 'stage_label': attrs['event_name'] if attrs['scope'] == DefenseSchedule.SCOPE_PIT else attrs['defense_stage'].label,
-                'scheduled_date': attrs['scheduled_date'],
-                'start_time': slot_start,
-                'end_time': slot_end,
-                'slot_duration': attrs['slot_duration'],
-                'room': attrs['room'],
+                'scheduled_date': entry['scheduled_date'] if entry else None,
+                'start_time': entry['start_time'] if entry else None,
+                'end_time': entry['slot_end_time'] if entry else None,
+                'slot_duration': entry['slot_duration'] if entry else None,
+                'room': entry['room'] if entry else '',
                 'chair_panelist_id': chair_id,
                 'panelists': panelists_data,
             })
+        from .sessions import validate_plan_conflicts
+        validate_plan_conflicts(entries)
         return slots
 
     def _ready_teams(self, attrs):
@@ -1035,8 +1187,8 @@ class GenerateSchedulePlanSerializer(ScheduleBaseSerializer):
         return list(queryset.exclude(pk__in=scheduled_team_ids).order_by('name'))
 
 
-class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
-    slots = serializers.ListField(child=serializers.DictField(), min_length=1)
+class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
+    slots = SchedulePlanSlotSerializer(many=True, min_length=1, max_length=5000)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -1045,9 +1197,11 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
             team_id = slot.get('team_id')
             if team_id is None:
                 raise serializers.ValidationError({'slots': 'Every slot requires team_id.'})
-            team_ids.append(int(team_id))
+            team_ids.append(team_id)
         if len(team_ids) != len(set(team_ids)):
             raise serializers.ValidationError({'slots': 'A team can only appear once in a schedule plan.'})
+        if attrs.get('selected_team_ids') is not None and set(team_ids) != attrs['selected_team_ids']:
+            raise serializers.ValidationError({'slots': 'The preview must include exactly the teams selected for this plan.'})
 
         teams = StudentTeam.objects.select_related('semester').filter(pk__in=team_ids, semester=attrs['semester'])
         team_map = {team.id: team for team in teams}
@@ -1112,50 +1266,62 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
                 if done_existing.exists():
                     raise serializers.ValidationError({'slots': f'{team.name} has already completed this PIT event.'})
 
-        doc = attrs.get('documenter')
-        if doc:
-            if doc in attrs['panelists']:
-                raise serializers.ValidationError({'documenter_id': 'Documenter cannot be one of the panelists assigned to this schedule.'})
-            for team_id in team_ids:
-                team = team_map[team_id]
-                if team.adviser_id == doc.id:
-                    raise serializers.ValidationError({'slots': f"Documenter cannot be the adviser of team {team.name}."})
-
         attrs['teams'] = [team_map[team_id] for team_id in team_ids]
-        slot_intervals = [
-            self._slot_interval(attrs, index)
-            for index, _team in enumerate(attrs['teams'])
-        ]
-        self._validate_internal_slot_overlaps(slot_intervals)
-        self._validate_room_overlap(attrs, slot_intervals, error_field='slots')
-        self._validate_panelist_overlap(attrs, slot_intervals, error_field='slots')
+        counts = {}
+        entries = []
+        for slot, team in zip(attrs['slots'], attrs['teams']):
+            key = slot.get('session_key', 'legacy' if 'sessions' not in attrs else None)
+            if key not in attrs['plan_sessions']:
+                raise serializers.ValidationError({'slots': 'Assign every team to a valid session before confirming.'})
+            if 'team_ids' in attrs['plan_sessions'][key] and team.pk not in attrs['plan_sessions'][key]['team_ids']:
+                raise serializers.ValidationError({'slots': f'{team.name} is not selected for this session.'})
+            entry = self._plan_entry(attrs['plan_sessions'][key], counts.get(key, 0))
+            counts[key] = counts.get(key, 0) + 1
+            for field in ('scheduled_date', 'start_time', 'slot_duration', 'room'):
+                if field in slot and slot[field] != entry[field]:
+                    raise serializers.ValidationError({'slots': f'{team.name}: the preview no longer matches its session. Regenerate the plan.'})
+            doc = entry.get('documenter')
+            if doc and (doc in entry['panelists'] or team.adviser_id == doc.pk):
+                raise serializers.ValidationError({'slots': f'Documenter cannot be a panelist or the adviser of team {team.name}.'})
+            entries.append(entry)
+        from .sessions import validate_plan_conflicts
+        validate_plan_conflicts(entries)
+        attrs['plan_entries'] = entries
         return attrs
 
     @transaction.atomic
     def save(self):
         attrs = self.validated_data
+        # Serialize confirmations for the same teams and recheck the preview
+        # after acquiring locks; validation alone may precede another save.
+        list(StudentTeam.objects.select_for_update().filter(
+            pk__in=[team.pk for team in attrs['teams']],
+        ).order_by('pk'))
+        attrs = self.validate(dict(attrs))
         actor = getattr(self.context.get('request'), 'user', None)
-        self._ensure_panelist_roles(attrs['panelists'], changed_by=actor)
-        if attrs.get('documenter'):
-            self._ensure_documenter_role(attrs['documenter'], changed_by=actor)
         batch_id = uuid.uuid4()
-        start_minutes = attrs['start_time'].hour * 60 + attrs['start_time'].minute
-        chair_id = attrs.get('chair_panelist_id') or (attrs['panelists'][0].id if attrs.get('panelists') else None)
+        session_ids = {key: uuid.uuid4() if 'sessions' in attrs else batch_id for key in attrs['plan_sessions']}
         schedules = []
-        for index, team in enumerate(attrs['teams']):
+        session_schedules = {}
+        for team, entry in zip(attrs['teams'], attrs['plan_entries']):
+            self._ensure_panelist_roles(entry['panelists'], changed_by=actor)
+            if entry.get('documenter'):
+                self._ensure_documenter_role(entry['documenter'], changed_by=actor)
+            chair_id = entry.get('chair_panelist_id') or entry['panelists'][0].pk
             schedule = DefenseSchedule.objects.create(
                 batch_id=batch_id,
+                session_id=session_ids[entry['key']],
                 scope=attrs['scope'],
                 semester=attrs['semester'],
                 team=team,
                 defense_stage=attrs.get('defense_stage'),
                 event_name=attrs.get('event_name', ''),
                 rubric=attrs.get('rubric'),
-                documenter=attrs.get('documenter'),
-                scheduled_date=attrs['scheduled_date'],
-                start_time=minutes_to_time(start_minutes + attrs['slot_duration'] * index),
-                slot_duration=attrs['slot_duration'],
-                room=attrs['room'],
+                documenter=entry.get('documenter'),
+                scheduled_date=entry['scheduled_date'],
+                start_time=entry['start_time'],
+                slot_duration=entry['slot_duration'],
+                room=entry['room'],
                 status=DefenseSchedule.STATUS_SCHEDULED,
                 created_by=actor,
             )
@@ -1166,10 +1332,12 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
                     order=order,
                     is_chair=(panelist.id == chair_id),
                 )
-                for order, panelist in enumerate(attrs['panelists'])
+                for order, panelist in enumerate(entry['panelists'])
             ])
             schedules.append(schedule)
-        create_invitations(attrs.get('external_evaluators', []), schedules, actor, attrs.get('guest_access_expires_at'))
+            session_schedules.setdefault(entry['key'], []).append(schedule)
+        for key, group in session_schedules.items():
+            create_invitations(attrs['plan_sessions'][key].get('external_evaluators', []), group, actor, attrs.get('guest_access_expires_at'))
         from grading.grades.services import _sync_grade_for_schedule
 
         for schedule in schedules:
@@ -1238,6 +1406,9 @@ def send_documenter_assignment_notification(schedule):
 
 
 class DefenseSchedulePatchSerializer(serializers.ModelSerializer):
+    reason = serializers.CharField(required=True, min_length=5, max_length=2000)
+    revision = serializers.IntegerField(required=True, min_value=1)
+    acknowledge_minutes_amendment = serializers.BooleanField(required=False)
     status = serializers.ChoiceField(
         choices=[choice[0] for choice in DefenseSchedule.STATUS_CHOICES],
         required=False,
@@ -1253,7 +1424,7 @@ class DefenseSchedulePatchSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DefenseSchedule
-        fields = ['status', 'documenter_id', 'chair_panelist_id']
+        fields = ['status', 'documenter_id', 'chair_panelist_id', 'reason', 'revision', 'acknowledge_minutes_amendment']
 
     @property
     def schedule_instance(self):
@@ -1307,67 +1478,19 @@ class DefenseSchedulePatchSerializer(serializers.ModelSerializer):
         return value
 
     def save(self, **kwargs):
+        from .operations import execute_operation
         schedule = self.schedule_instance
-        validated_data = self.validated_data
-
-        has_documenter_change = False
-        new_doc_id = validated_data.get('documenter_id', 'not_provided')
-
-        if new_doc_id != 'not_provided':
-            old_doc_id = schedule.documenter_id
-            if new_doc_id != old_doc_id:
-                has_documenter_change = True
-
-        # Perform updates
-        request = self.context.get('request')
-        actor = request.user if request else None
-
-        if 'status' in validated_data:
-            transition_schedule_status(
-                schedule,
-                validated_data['status'],
-                actor=actor,
-                reason='patch_serializer_update',
-                request=request,
-            )
-
-        new_chair_id = validated_data.get('chair_panelist_id', 'not_provided')
-        if new_chair_id != 'not_provided' and new_chair_id is not None:
-            schedule.panel_assignments.all().update(is_chair=False)
-            schedule.panel_assignments.filter(panelist_id=new_chair_id).update(is_chair=True)
-
-        if new_doc_id != 'not_provided':
-            if new_doc_id is not None:
-                doc = User.objects.filter(pk=new_doc_id).first()
-                if doc and getattr(doc, 'role', None) in ['faculty', 'admin'] and not getattr(doc, 'is_documenter', False):
-                    from user_management.role_assignments import record_role_changes, snapshot_role_flags
-                    before_flags = snapshot_role_flags(doc)
-                    doc.is_documenter = True
-                    doc.save(update_fields=['is_documenter'])
-                    record_role_changes(doc, before_flags, changed_by=actor)
-            schedule.documenter_id = new_doc_id
-            schedule.save()
-
-        # Trigger notifications and reset/update minutes on documenter reassignment
-        if has_documenter_change:
-            from defense.minutes.models import DefenseMinutes
-            minutes = DefenseMinutes.objects.filter(schedule=schedule).first()
-            if minutes:
-                minutes.status = DefenseMinutes.STATUS_DRAFT
-                minutes.documenter_name = schedule.documenter.get_full_name() if schedule.documenter else ''
-                minutes.documenter_signed_at = None
-                minutes.documenter_signed_by = None
-                minutes.adviser_signed_at = None
-                minutes.adviser_signed_by = None
-                minutes.chairman_signed_at = None
-                minutes.chairman_signed_by = None
-                if minutes.pdf_file:
-                    minutes.pdf_file.delete(save=False)
-                minutes.save()
-
-            if schedule.documenter:
-                send_documenter_assignment_notification(schedule)
-
+        request = self.context['request']
+        raw = request.data
+        changes = dict(self.validated_data)
+        changes.pop('reason', None)
+        changes.pop('revision', None)
+        execute_operation(request.user, {
+            'action': 'update', 'target': 'schedule', 'anchor_id': schedule.pk,
+            'expected_revisions': {str(schedule.pk): raw.get('revision')},
+            'reason': raw.get('reason', ''), 'changes': changes,
+        }, request=request)
+        schedule.refresh_from_db()
         return schedule
 
 

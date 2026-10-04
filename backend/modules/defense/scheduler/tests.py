@@ -19,6 +19,10 @@ User = get_user_model()
 
 
 class DefenseSchedulerApiTests(APITestCase):
+    def patch_schedule(self, url, data, **kwargs):
+        row = DefenseSchedule.objects.get(pk=int(url.rstrip('/').split('/')[-1]))
+        return self.client.patch(url, {'reason': 'Recorded operational change for this test', 'revision': row.revision, **data}, **kwargs)
+
     def setUp(self):
         self.admin = User.objects.create_user(
             username='admin-user',
@@ -272,18 +276,15 @@ class DefenseSchedulerApiTests(APITestCase):
         progress.refresh_from_db()
         self.assertEqual(progress.status, TeamStageProgress.STATUS_READY)
 
-    def test_delete_schedule_blocked_when_ongoing_or_completed(self):
+    def test_empty_past_schedule_can_be_deleted_but_completed_schedule_cannot(self):
         schedule = self.create_scheduled_defense()
         schedule.scheduled_date = '2020-01-01'
         schedule.save()
-        response = self.client.delete(f'/api/defense/schedules/{schedule.id}/')
-        self.assertEqual(response.status_code, 409)
-
-        schedule.scheduled_date = '2099-05-15'
-        schedule.status = DefenseSchedule.STATUS_DONE
-        schedule.save()
-        response = self.client.delete(f'/api/defense/schedules/{schedule.id}/')
-        self.assertEqual(response.status_code, 409)
+        self.assertEqual(self.client.delete(f'/api/defense/schedules/{schedule.id}/').status_code, 200)
+        completed = self.create_scheduled_defense()
+        completed.status = DefenseSchedule.STATUS_DONE
+        completed.save()
+        self.assertEqual(self.client.delete(f'/api/defense/schedules/{completed.id}/').status_code, 409)
 
     def test_delete_schedule_blocked_when_has_grade_submissions(self):
         # Create a scheduled defense
@@ -353,7 +354,7 @@ class DefenseSchedulerApiTests(APITestCase):
         self.assertEqual(progress.status, TeamStageProgress.STATUS_SCHEDULED)
 
         # Cancel the schedule
-        response = self.client.patch(
+        response = self.patch_schedule(
             f'/api/defense/schedules/{schedule.id}/',
             {'status': DefenseSchedule.STATUS_CANCELLED},
             format='json',
@@ -502,7 +503,7 @@ class DefenseSchedulerApiTests(APITestCase):
         )
         schedule_id = create.data['schedule']['id']
 
-        response = self.client.patch(
+        response = self.patch_schedule(
             f'/api/defense/schedules/{schedule_id}/',
             {'status': DefenseSchedule.STATUS_CANCELLED},
             format='json',
@@ -1103,7 +1104,7 @@ class DefenseSchedulerApiTests(APITestCase):
         from notifications.models import Notification
         Notification.objects.all().delete()
         
-        response = self.client.patch(
+        response = self.patch_schedule(
             f'/api/defense/schedules/{schedule.id}/',
             {'documenter_id': documenter.id},
             format='json'
@@ -1115,7 +1116,7 @@ class DefenseSchedulerApiTests(APITestCase):
         notifications = Notification.objects.filter(recipient=documenter)
         self.assertEqual(notifications.count(), 1)
         
-        response = self.client.patch(
+        response = self.patch_schedule(
             f'/api/defense/schedules/{schedule.id}/',
             {'documenter_id': None},
             format='json'
@@ -1128,7 +1129,7 @@ class DefenseSchedulerApiTests(APITestCase):
         schedule = self.create_scheduled_defense()
         
         adviser_user = self.adviser
-        response = self.client.patch(
+        response = self.patch_schedule(
             f'/api/defense/schedules/{schedule.id}/',
             {'documenter_id': adviser_user.id},
             format='json'
@@ -1137,7 +1138,7 @@ class DefenseSchedulerApiTests(APITestCase):
         self.assertIn('documenter_id', response.data)
         
         panelist_user = self.panelist
-        response = self.client.patch(
+        response = self.patch_schedule(
             f'/api/defense/schedules/{schedule.id}/',
             {'documenter_id': panelist_user.id},
             format='json'
@@ -1375,7 +1376,7 @@ class DefenseSchedulerApiTests(APITestCase):
         SchedulePanelist.objects.filter(schedule=schedule, panelist=self.second_panelist).update(is_chair=False)
 
         self.client.force_authenticate(user=self.admin)
-        patch_res = self.client.patch(f'/api/defense/schedules/{schedule.id}/', {
+        patch_res = self.patch_schedule(f'/api/defense/schedules/{schedule.id}/', {
             'chair_panelist_id': self.second_panelist.id,
         }, format='json')
         self.assertEqual(patch_res.status_code, 200)
@@ -1393,7 +1394,7 @@ class DefenseSchedulerApiTests(APITestCase):
         )
         schedule = self.create_scheduled_defense()
         self.client.force_authenticate(user=self.admin)
-        patch_res = self.client.patch(f'/api/defense/schedules/{schedule.id}/', {
+        patch_res = self.patch_schedule(f'/api/defense/schedules/{schedule.id}/', {
             'chair_panelist_id': other_faculty.id,
         }, format='json')
         self.assertEqual(patch_res.status_code, 400)

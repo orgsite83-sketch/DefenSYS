@@ -9,8 +9,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:intl/intl.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../config/api_config.dart';
+import '../../../navigation/admin_route_paths.dart';
+import '../../../navigation/workspace_access.dart';
 import '../../../services/auth_provider.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../services/theme_provider.dart';
@@ -20,6 +23,7 @@ import '../../../widgets/confirm_dialog.dart';
 import '../../about_screen.dart';
 import '../../privacy_screen.dart';
 import '../../terms_screen.dart';
+import '../app_settings_screen.dart';
 
 MediaType _inferMediaType(String filename) {
   final ext = filename.toLowerCase().split('.').last;
@@ -52,7 +56,12 @@ class StudentProfile {
 /// - Shows real-time Activity Audit Trail.
 class ProfileScreen extends ConsumerStatefulWidget {
   final bool? showAppBar;
-  const ProfileScreen({super.key, this.showAppBar});
+  final bool includeAppSettings;
+  const ProfileScreen({
+    super.key,
+    this.showAppBar,
+    this.includeAppSettings = false,
+  });
 
   @override
   ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
@@ -469,7 +478,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final showBar = widget.showAppBar ?? !kIsWeb;
 
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: DefensysTokens.backgroundOf(context),
       appBar: showBar
           ? AppBar(
               backgroundColor: DefensysTokens.maroon,
@@ -511,6 +520,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     flex: 7,
                     child: Column(
                       children: [
+                        if (widget.includeAppSettings) ...[
+                          const AppSettingsContent(),
+                          const SizedBox(height: 20),
+                        ],
                         _buildChangePasswordCard(username, email),
                         const SizedBox(height: 20),
                         _buildHistoryCard(),
@@ -524,6 +537,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             else
               Column(
                 children: [
+                  if (widget.includeAppSettings) ...[
+                    const AppSettingsContent(),
+                    const SizedBox(height: 16),
+                  ],
                   _buildIdentityCard(displayName, username, email, roleLabel, user),
                   if (!isStudent) ...[
                     const SizedBox(height: 16),
@@ -1002,12 +1019,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         children: [
           Icon(icon, size: 12, color: Colors.white70),
           const SizedBox(width: 4),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: Colors.white70,
+          Flexible(
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Colors.white70,
+              ),
             ),
           ),
         ],
@@ -1026,9 +1045,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   ) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.panelOf(context),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
@@ -1049,25 +1068,27 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   color: DefensysTokens.maroon.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.person_outline_rounded,
                   size: 18,
-                  color: DefensysTokens.maroon,
+                  color: DefensysTokens.maroonOf(context),
                 ),
               ),
               const SizedBox(width: 12),
-              const Text(
-                'Identity & Account Details',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF0F172A),
+              Expanded(
+                child: Text(
+                  'Identity & Account Details',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: DefensysTokens.textPrimaryOf(context),
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          Divider(height: 1, color: DefensysTokens.borderOf(context)),
           const SizedBox(height: 16),
           _detailGridItem('Full Name', displayName, Icons.account_circle_outlined),
           const SizedBox(height: 14),
@@ -1096,7 +1117,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Widget _detailGridItem(String label, String value, IconData icon) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: const Color(0xFF64748B)),
+        Icon(icon, size: 18, color: DefensysTokens.textSecondaryOf(context)),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
@@ -1104,20 +1125,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             children: [
               Text(
                 label.toUpperCase(),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFF94A3B8),
+                  color: DefensysTokens.textSecondaryOf(context),
                   letterSpacing: 0.5,
                 ),
               ),
               const SizedBox(height: 2),
               Text(
                 value,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF1E293B),
+                  color: DefensysTokens.textPrimaryOf(context),
                 ),
               ),
             ],
@@ -1137,9 +1158,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.panelOf(context),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
@@ -1155,7 +1176,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
+              Expanded(child: Row(
                 children: [
                   Container(
                     padding: const EdgeInsets.all(8),
@@ -1163,23 +1184,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       color: DefensysTokens.maroon.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.draw_rounded,
                       size: 18,
-                      color: DefensysTokens.maroon,
+                      color: DefensysTokens.maroonOf(context),
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Text(
-                    'Official E-Signature',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF0F172A),
+                  Expanded(
+                    child: Text(
+                      'Official E-Signature',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: DefensysTokens.textPrimaryOf(context),
+                      ),
                     ),
                   ),
                 ],
-              ),
+              )),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
@@ -1217,7 +1241,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          Divider(height: 1, color: DefensysTokens.borderOf(context)),
           const SizedBox(height: 16),
 
           // Signature Preview Box (styled like a document signing box)
@@ -1353,7 +1377,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   icon: const Icon(Icons.file_upload_outlined, size: 16),
                   label: const Text('Upload Image'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF1E293B),
+                    foregroundColor: DefensysTokens.textPrimaryOf(context),
                     side: const BorderSide(color: Color(0xFFCBD5E1)),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(
@@ -1449,9 +1473,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.panelOf(context),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
@@ -1474,25 +1498,27 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     color: DefensysTokens.maroon.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.lock_outline_rounded,
                     size: 18,
-                    color: DefensysTokens.maroon,
+                    color: DefensysTokens.maroonOf(context),
                   ),
                 ),
                 const SizedBox(width: 12),
-                const Text(
-                  'Security & Password',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF0F172A),
+                Expanded(
+                  child: Text(
+                    'Security & Password',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: DefensysTokens.textPrimaryOf(context),
+                    ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+            Divider(height: 1, color: DefensysTokens.borderOf(context)),
             const SizedBox(height: 14),
 
             _passwordField(
@@ -1523,23 +1549,25 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: DefensysTokens.surfaceHigherOf(context),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Row(
+                    Row(
                       children: [
-                        Icon(Icons.info_outline_rounded, size: 15, color: DefensysTokens.maroon),
-                        SizedBox(width: 8),
-                        Text(
-                          'Password Guidelines & Accepted Characters',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF1E293B),
+                        const Icon(Icons.info_outline_rounded, size: 15, color: DefensysTokens.maroon),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Password Guidelines & Accepted Characters',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: DefensysTokens.textPrimaryOf(context),
+                            ),
                           ),
                         ),
                       ],
@@ -1550,7 +1578,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       '• Restrictions: Min 8 characters; cannot be too similar to your username or email; cannot be a common password.',
                       style: TextStyle(
                         fontSize: 11,
-                        color: Colors.grey.shade700,
+                        color: DefensysTokens.textSecondaryOf(context),
                         height: 1.4,
                       ),
                     ),
@@ -1588,7 +1616,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFAFAFA),
+                  color: DefensysTokens.surfaceHigherOf(context),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: const Color(0xFFF1F5F9)),
                 ),
@@ -1673,7 +1701,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             style: TextStyle(
               fontSize: 11,
               fontWeight: isSatisfied ? FontWeight.w600 : FontWeight.normal,
-              color: isSatisfied ? const Color(0xFF0F172A) : Colors.grey.shade600,
+              color: isSatisfied ? DefensysTokens.textPrimaryOf(context) : DefensysTokens.textSecondaryOf(context),
             ),
           ),
         ),
@@ -1697,7 +1725,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       style: const TextStyle(fontSize: 14),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+        labelStyle: TextStyle(fontSize: 13, color: DefensysTokens.textSecondaryOf(context)),
         prefixIcon: const Icon(Icons.key_outlined, size: 18),
         suffixIcon: IconButton(
           icon: Icon(
@@ -1707,15 +1735,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           onPressed: onToggle,
         ),
         filled: true,
-        fillColor: const Color(0xFFF8FAFC),
+        fillColor: DefensysTokens.surfaceHigherOf(context),
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+          borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+          borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
@@ -1730,9 +1758,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   Widget _buildHistoryCard() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.panelOf(context),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
@@ -1748,7 +1776,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
+              Expanded(child: Row(
                 children: [
                   Container(
                     padding: const EdgeInsets.all(8),
@@ -1756,32 +1784,34 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       color: DefensysTokens.maroon.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.history_toggle_off_rounded,
                       size: 18,
-                      color: DefensysTokens.maroon,
+                      color: DefensysTokens.maroonOf(context),
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Text(
-                    'Activity History',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF0F172A),
+                  Expanded(
+                    child: Text(
+                      'Activity History',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: DefensysTokens.textPrimaryOf(context),
+                      ),
                     ),
                   ),
                 ],
-              ),
+              )),
               IconButton(
-                icon: const Icon(Icons.refresh_rounded, size: 18, color: DefensysTokens.maroon),
+                icon: Icon(Icons.refresh_rounded, size: 18, color: DefensysTokens.maroonOf(context)),
                 onPressed: _isLoadingHistory ? null : _fetchHistory,
                 tooltip: 'Refresh Activity Log',
               ),
             ],
           ),
           const SizedBox(height: 16),
-          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          Divider(height: 1, color: DefensysTokens.borderOf(context)),
           const SizedBox(height: 16),
 
           if (_isLoadingHistory)
@@ -1934,10 +1964,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 const SizedBox(height: 4),
                                 Text(
                                   action,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
-                                    color: Color(0xFF1E293B),
+                                    color: DefensysTokens.textPrimaryOf(context),
                                   ),
                                 ),
                                 if (reason.isNotEmpty) ...[
@@ -1947,7 +1977,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontStyle: FontStyle.italic,
-                                      color: Colors.grey.shade600,
+                                      color: DefensysTokens.textSecondaryOf(context),
                                     ),
                                   ),
                                 ],
@@ -2086,18 +2116,29 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ),
               ),
               const SizedBox(width: 12),
-              Text(
-                'Application & Preferences',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: isDark ? const Color(0xFFF4F4F5) : DefensysTokens.textPrimary,
+              Expanded(
+                child: Text(
+                  widget.includeAppSettings ? 'About & Session' : 'Application & Preferences',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? const Color(0xFFF4F4F5) : DefensysTokens.textPrimary,
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          _themePreferenceTile(),
+          if (!widget.includeAppSettings) _themePreferenceTile(),
+          if (widget.includeAppSettings &&
+              kIsWeb &&
+              WorkspaceAccess.hasStaffWorkspace(ref.watch(authProvider).user ?? {}))
+            _infoTile(
+              icon: Icons.desktop_windows_outlined,
+              title: 'Staff workspace',
+              subtitle: 'Open management tools',
+              onTap: () => context.push(FacultyRoutes.dashboard),
+            ),
           Divider(height: 1, color: isDark ? DefensysTokens.mistBorder : const Color(0xFFF1F5F9)),
           _infoTile(
             icon: Icons.info_outline_rounded,
@@ -2205,7 +2246,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           ),
           Switch(
             value: isDark,
-            activeColor: DefensysTokens.mistMaroon,
+            activeThumbColor: DefensysTokens.mistMaroon,
             activeTrackColor: DefensysTokens.mistMaroon.withValues(alpha: 0.3),
             inactiveThumbColor: Colors.white,
             inactiveTrackColor: DefensysTokens.switchInactiveTrack,

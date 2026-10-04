@@ -4,8 +4,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Future<void> loadPreviewFonts() async {
-  if (Platform.environment['DEFENSYS_CAPTURE_PREVIEW'] != '1') return;
+Future<void> loadPreviewFonts({bool force = false}) async {
+  if (!force && Platform.environment['DEFENSYS_CAPTURE_PREVIEW'] != '1') return;
   for (final entry in {
     'Inter': 'assets/fonts/Inter-Regular.ttf',
     'MaterialIcons': 'fonts/MaterialIcons-Regular.otf',

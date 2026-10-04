@@ -274,7 +274,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
           canSchedulePit: data['can_schedule_pit'] == true,
           canScheduleCapstone: data['can_schedule_capstone'] == true,
           allowedScopes: _readStringList(data['allowed_scopes']),
-          message: '${data['slot_count'] ?? 0} schedule slots generated.',
+          message: '${data['slot_count'] ?? 0} teams assigned · ${data['unassigned_count'] ?? 0} remaining.',
           clearError: true,
         );
         return true;

@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../../../../services/documenter_provider.dart';
 import '../../../../services/auth_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
@@ -238,8 +239,8 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
     }
   }
 
-  Future<void> _viewPdf() async {
-    final bytes = await ref.read(documenterProvider.notifier).downloadPdf(widget.scheduleId);
+  Future<void> _viewPdf({int? revisionId}) async {
+    final bytes = await ref.read(documenterProvider.notifier).downloadPdf(widget.scheduleId, revisionId: revisionId);
     if (bytes != null && mounted) {
       final minutes = ref.read(documenterProvider).activeMinutes;
       final team = minutes?['team_name']?.toString() ?? 'team';
@@ -430,6 +431,22 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
           // Horizontal Progress Step Header
           _buildSigningFlowStepper(status),
           const SizedBox(height: 24),
+          if ((minutes['revisions'] as List? ?? []).isNotEmpty) ...[
+            DefensysShadcnScope(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              const Text('Retained minutes versions', style: TextStyle(fontWeight: FontWeight.w700)),
+              ...(minutes['revisions'] as List).whereType<Map>().map((revision) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(children: [
+                  Expanded(child: Text('${revision['created_at']} · ${revision['reason']}')),
+                  if (revision['pdf_url'] != null) ShadButton.outline(
+                    onPressed: () => _viewPdf(revisionId: (revision['id'] as num).toInt()),
+                    child: const Text('View signed version'),
+                  ),
+                ]),
+              )),
+            ])),
+            const SizedBox(height: 24),
+          ],
 
           // Main Layout
           Row(

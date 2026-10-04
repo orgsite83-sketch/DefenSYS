@@ -96,3 +96,17 @@ class MinutesPanelistComment(models.Model):
 
     def __str__(self):
         return f"Comment by {self.panelist_name_snapshot} ({self.panelist_role_snapshot}) on {self.minutes}"
+
+
+class DefenseMinutesRevision(models.Model):
+    """Signed versions survive a reasoned amendment and remain downloadable."""
+    minutes = models.ForeignKey(DefenseMinutes, on_delete=models.PROTECT, related_name='revisions')
+    snapshot = models.JSONField()
+    pdf_file = models.FileField(upload_to='defense_minutes/', null=True, blank=True)
+    reason = models.TextField()
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = 'defense'
+        ordering = ['-created_at', '-pk']

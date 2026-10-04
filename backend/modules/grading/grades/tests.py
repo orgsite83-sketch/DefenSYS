@@ -27,6 +27,10 @@ User = get_user_model()
 
 
 class GradeCenterApiTests(APITestCase):
+    def patch_grade(self, url, data, **kwargs):
+        row = TeamGrade.objects.get(pk=int(url.rstrip('/').split('/')[-1]))
+        return self.client.patch(url, {'reason': 'Recorded administrative correction for this test', 'expected_updated_at': row.updated_at.isoformat(), **data}, **kwargs)
+
     def setUp(self):
         self.admin = User.objects.create_user(
             username='admin-user',
@@ -207,13 +211,37 @@ class GradeCenterApiTests(APITestCase):
         )
         self.client.force_authenticate(user=self.admin)
 
+    def _record_panel_evaluations(self, grade):
+        # Complete source evaluations are required before closing a defense.
+        from .models import PanelistGradeSubmission, PanelistCriterionScore
+        grade.refresh_from_db()
+        schedule = grade.schedule
+        if not schedule or grade.panel_score is None:
+            return
+        rubric = schedule.rubric or (grade.pit_event_config.panel_rubric if grade.pit_event_config_id else None)
+        if not rubric:
+            return
+        if not rubric.criteria.exists():
+            RubricCriterion.objects.create(rubric=rubric, name='Presentation', max_score=10, scale=Rubric.SCALE_10)
+        if not schedule.rubric_id:
+            schedule.rubric = rubric
+            schedule.save(update_fields=['rubric'])
+        for assignment in schedule.panel_assignments.all():
+            submission, _ = PanelistGradeSubmission.objects.get_or_create(team_grade=grade, schedule=schedule, panelist=assignment.panelist)
+            for criterion in rubric.criteria.all():
+                PanelistCriterionScore.objects.get_or_create(submission=submission, criterion=criterion, defaults={
+                    'criterion_name_snapshot': criterion.name, 'max_score_snapshot': criterion.max_score,
+                    'score': grade.panel_score * Decimal(criterion.max_score) / Decimal(100), 'display_order': criterion.display_order,
+                })
+
     def _make_capstone_grade_ready_for_close(self, grade):
         self._enable_capstone_peer_grading()
-        self.client.patch(
+        self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
             {'panel_score': '100.00', 'adviser_score': '100.00'},
             format='json',
         )
+        self._record_panel_evaluations(grade)
         self._submit_all_capstone_peer_evaluations()
 
     def test_sync_endpoint_syncs_schedules_into_grade_rows(self):
@@ -663,12 +691,12 @@ class GradeCenterApiTests(APITestCase):
     def test_update_scores_calculates_status_and_final_grade(self):
         grade = self._capstone_grade()
 
-        awaiting = self.client.patch(
+        awaiting = self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
             {'panel_score': '88.00', 'adviser_score': '90.00'},
             format='json',
         )
-        complete = self.client.patch(
+        complete = self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
             {'peer_score': '86.00'},
             format='json',
@@ -683,12 +711,13 @@ class GradeCenterApiTests(APITestCase):
 
     def test_publish_sets_team_result_and_schedule_done(self):
         grade = self._capstone_grade()
-        self.client.patch(
+        self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
             {'panel_score': '70.00', 'adviser_score': '70.00', 'peer_score': '70.00'},
             format='json',
         )
 
+        self._record_panel_evaluations(grade)
         response = self.client.post(f'/api/grading/grades/{grade.id}/publish/')
         self.capstone_team.refresh_from_db()
         self.capstone_schedule.refresh_from_db()
@@ -713,11 +742,12 @@ class GradeCenterApiTests(APITestCase):
 
     def test_admin_dashboard_counts_grades_and_reports_phase_eleven(self):
         grade = self._capstone_grade()
-        self.client.patch(
+        self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
             {'panel_score': '88.00', 'adviser_score': '90.00', 'peer_score': '87.00'},
             format='json',
         )
+        self._record_panel_evaluations(grade)
         self.client.post(f'/api/grading/grades/{grade.id}/publish/')
 
         response = self.client.get('/api/dashboards/admin/')
@@ -725,6 +755,121 @@ class GradeCenterApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['stats']['published_grades'], 1)
         self.assertEqual(response.data['migration']['phase'], 15)
+
+    def test_completion_preflight_lists_hidden_teams_without_writes(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        grade = self._capstone_grade()
+        before = TeamGrade.objects.filter(pk=grade.pk).values().get()
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get('/api/grading/grades/group-settings/', {
+                'scope': 'capstone', 'stage_label': self.stage.label,
+                'search': 'does not match', 'year_level': '1st Year', 'status': 'published',
+            })
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data['can_complete'])
+        self.assertEqual(response.data['grading_total_team_count'], 1)
+        self.assertEqual(response.data['incomplete_teams'][0]['team_id'], grade.team_id)
+        self.assertIn('panel', response.data['incomplete_teams'][0]['missing_components'])
+        self.assertEqual(before, TeamGrade.objects.filter(pk=grade.pk).values().get())
+        self.assertFalse(any(q['sql'].lstrip().upper().startswith(('INSERT', 'UPDATE', 'DELETE')) for q in queries))
+
+    def test_completion_preflight_checks_redefense_grades_and_keeps_verdict_separate(self):
+        grade = self._capstone_grade()
+        grade.verdict = TeamGrade.VERDICT_FOR_REDEFENSE
+        grade.save(update_fields=['verdict'])
+        params = {'scope': 'capstone', 'stage_label': self.stage.label}
+        blocked = self.client.get('/api/grading/grades/group-settings/', params)
+        self.assertFalse(blocked.data['can_complete'])
+        self.assertEqual(blocked.data['incomplete_teams'][0]['team_id'], grade.team_id)
+        grade.verdict = ''
+        grade.save(update_fields=['verdict'])
+        self._make_capstone_grade_ready_for_close(grade)
+        grade.refresh_from_db()
+        grade.verdict = TeamGrade.VERDICT_FOR_REDEFENSE
+        grade.save(update_fields=['verdict'])
+        ready = self.client.get('/api/grading/grades/group-settings/', params)
+        self.assertEqual(ready.status_code, 200)
+        self.assertTrue(ready.data['can_complete'])
+        self.assertEqual(ready.data['grading_ready_team_count'], 1)
+        self.assertEqual(ready.data['incomplete_teams'], [])
+        self.assertEqual(ready.data['redefense_teams'][0]['team_id'], grade.team_id)
+        grade.refresh_from_db()
+        self.capstone_schedule.refresh_from_db()
+        self.assertEqual(grade.verdict, TeamGrade.VERDICT_FOR_REDEFENSE)
+        self.assertEqual(grade.status, TeamGrade.STATUS_PENDING)
+        self.assertEqual(self.capstone_schedule.status, DefenseSchedule.STATUS_SCHEDULED)
+
+    def test_completion_preflight_approved_with_revisions_still_needs_grades(self):
+        grade = self._capstone_grade()
+        grade.verdict = TeamGrade.VERDICT_APPROVED_WITH_REVISIONS
+        grade.save(update_fields=['verdict'])
+        params = {'scope': 'capstone', 'stage_label': self.stage.label}
+        blocked = self.client.get('/api/grading/grades/group-settings/', params)
+        self.assertEqual(blocked.status_code, 200)
+        self.assertFalse(blocked.data['can_complete'])
+        self.assertIn('panel', blocked.data['incomplete_teams'][0]['missing_components'])
+        self._make_capstone_grade_ready_for_close(grade)
+        ready = self.client.get('/api/grading/grades/group-settings/', params)
+        self.assertTrue(ready.data['can_complete'])
+        self.assertEqual(ready.data['redefense_teams'], [])
+        grade.refresh_from_db()
+        self.assertEqual(grade.verdict, TeamGrade.VERDICT_APPROVED_WITH_REVISIONS)
+
+    def test_completion_preflight_empty_stage_does_not_create_configuration(self):
+        from defense.stages.models import StageGradingConfig
+
+        stage = DefenseStage.objects.get(label='Concept Proposal')
+        configs_before = StageGradingConfig.objects.count()
+        response = self.client.get('/api/grading/grades/group-settings/', {
+            'scope': 'capstone', 'stage_label': stage.label,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data['can_complete'])
+        self.assertEqual(response.data['grading_total_team_count'], 0)
+        self.assertEqual(StageGradingConfig.objects.count(), configs_before)
+
+    def test_completion_preflight_pit_lead_checks_only_assigned_year(self):
+        self.pit_team.semester = self.semester
+        self.pit_team.save(update_fields=['semester'])
+        self.pit_schedule.semester = self.semester
+        self.pit_schedule.save(update_fields=['semester'])
+        config = self._ensure_pit_event_config(event_name='PIT Expo', semester=self.semester)
+        sync_missing_grade_rows(user=self.admin)
+        other_team = StudentTeam.objects.create(
+            name='Other-year PIT', level=StudentTeam.LEVEL_3_PIT,
+            year_level='3rd Year', semester=self.semester,
+            leader=self.second_student,
+        )
+        TeamGrade.objects.create(
+            team=other_team,
+            semester=self.semester,
+            scope=TeamGrade.SCOPE_PIT,
+            pit_event_config=config,
+            stage_label='PIT Expo',
+            panel_weight=80,
+            adviser_weight=0,
+            peer_weight=20,
+        )
+        self.client.force_authenticate(user=self.pit_lead)
+        response = self.client.get('/api/grading/grades/group-settings/', {
+            'scope': 'pit', 'stage_label': 'PIT Expo',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['grading_total_team_count'], 1)
+        self.assertEqual([team['team_id'] for team in response.data['incomplete_teams']], [self.pit_team.pk])
+        forbidden = self.client.get('/api/grading/grades/group-settings/', {
+            'scope': 'capstone', 'stage_label': self.stage.label,
+        })
+        self.assertEqual(forbidden.status_code, 403)
+
+    def test_completion_preflight_requires_management_permission(self):
+        self.client.force_authenticate(user=self.panelist)
+        response = self.client.get('/api/grading/grades/group-settings/', {
+            'scope': 'capstone', 'stage_label': self.stage.label,
+        })
+        self.assertEqual(response.status_code, 403)
 
     def test_list_includes_group_settings(self):
         sync_missing_grade_rows(user=self.admin)
@@ -882,7 +1027,7 @@ class GradeCenterApiTests(APITestCase):
         self._ensure_pit_event_config(event_name='PIT Expo', semester=self.semester)
         sync_missing_grade_rows(user=self.admin)
         grade = TeamGrade.objects.get(team=self.pit_team, scope=TeamGrade.SCOPE_PIT)
-        self.client.patch(
+        self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
             {'panel_score': '90.00', 'peer_score': '80.00'},
             format='json',
@@ -891,6 +1036,7 @@ class GradeCenterApiTests(APITestCase):
         self.assertEqual(grade.status, TeamGrade.STATUS_PENDING)
         self.assertGreaterEqual(grade.final_grade, Decimal('75.00'))
 
+        self._record_panel_evaluations(grade)
         response = self.client.patch(
             '/api/grading/grades/group-settings/',
             {
@@ -980,7 +1126,7 @@ class GradeCenterApiTests(APITestCase):
         )
         sync_missing_grade_rows(user=self.admin)
         grade = TeamGrade.objects.get(team=failed_team, scope=TeamGrade.SCOPE_PIT)
-        self.client.patch(
+        self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
             {'panel_score': '50.00', 'peer_score': '50.00'},
             format='json',
@@ -1075,6 +1221,7 @@ class GradeCenterApiTests(APITestCase):
         other_grade.peer_score = Decimal('95.00')
         other_grade.save()
 
+        self._record_panel_evaluations(own_grade)
         self.client.force_authenticate(user=self.pit_lead)
         response = self.client.patch(
             '/api/grading/grades/group-settings/',
@@ -1184,7 +1331,7 @@ class GradeCenterApiTests(APITestCase):
     def test_capstone_official_complete_skips_below_threshold(self):
         grade = self._capstone_grade()
         self._disable_capstone_peer_grading()
-        self.client.patch(
+        self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
             {'panel_score': '70.00', 'adviser_score': '70.00', 'peer_score': '70.00'},
             format='json',
@@ -1192,6 +1339,7 @@ class GradeCenterApiTests(APITestCase):
         grade.refresh_from_db()
         self.assertLess(grade.final_grade, Decimal('75.00'))
 
+        self._record_panel_evaluations(grade)
         response = self.client.patch(
             '/api/grading/grades/group-settings/',
             {
@@ -1504,7 +1652,7 @@ class GradeCenterApiTests(APITestCase):
     def test_capstone_close_blocked_when_term_peer_enabled_no_submissions(self):
         self._enable_capstone_peer_grading()
         grade = self._capstone_grade()
-        self.client.patch(
+        self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
             {'panel_score': '100.00', 'adviser_score': '100.00'},
             format='json',
@@ -1524,7 +1672,7 @@ class GradeCenterApiTests(APITestCase):
     def test_capstone_close_blocked_when_adviser_missing(self):
         self._enable_capstone_peer_grading()
         grade = self._capstone_grade()
-        self.client.patch(
+        self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
             {'panel_score': '100.00'},
             format='json',
@@ -1583,7 +1731,7 @@ class GradeCenterApiTests(APITestCase):
             format='json',
         )
 
-        response = self.client.patch(
+        response = self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
             {'panel_score': '80.00'},
             format='json',
@@ -2032,7 +2180,7 @@ class GradeCenterApiTests(APITestCase):
         self.assertFalse(grade.peer_score_is_override)
 
         self.client.force_authenticate(user=self.admin)
-        res = self.client.patch(
+        res = self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
             {
                 'panel_score': '85.00',
@@ -2080,7 +2228,7 @@ class GradeCenterApiTests(APITestCase):
         self.semester.save()
 
         self.client.force_authenticate(user=self.admin)
-        res = self.client.patch(
+        res = self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
             {'adviser_score': '90.00'},
             format='json'
@@ -2093,7 +2241,7 @@ class GradeCenterApiTests(APITestCase):
         self.semester.capstone_adviser_grading_enabled = False
         self.semester.save()
 
-        res = self.client.patch(
+        res = self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
             {'adviser_score': '95.00'},
             format='json'
@@ -2322,7 +2470,8 @@ class GradeCenterApiTests(APITestCase):
             start_time=datetime.time(9, 0),
             room='Room 301',
             scheduled_date=datetime.date(2026, 6, 20),
-            status=DefenseSchedule.STATUS_DONE,
+            status=DefenseSchedule.STATUS_SCHEDULED,
+            rubric=self.panel_rubric,
         )
         SchedulePanelist.objects.create(
             schedule=schedule,

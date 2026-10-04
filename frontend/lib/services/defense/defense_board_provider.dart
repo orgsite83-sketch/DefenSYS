@@ -120,11 +120,66 @@ class DefenseBoardState {
 }
 
 class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
-    static String get baseUrl => ApiConfig.defenseBoardUrl;
+  static String get baseUrl => ApiConfig.defenseBoardUrl;
 
   @override
   DefenseBoardState build() {
     return const DefenseBoardState();
+  }
+
+  Future<Map<String, dynamic>> operation(Map<String, dynamic> payload) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/operations/'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(payload),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(_errorFromResponse(response));
+    }
+    final result = Map<String, dynamic>.from(jsonDecode(response.body));
+    if (!'${payload['action']}'.startsWith('preview_')) {
+      await fetchBoard(
+        successMessage: payload['action'] == 'delete'
+            ? '${result['deleted']} schedules deleted. ${result['protected'] ?? 0} protected schedules kept.'
+            : '${result['updated']} defenses updated. ${result['unchanged'] ?? 0} unchanged.',
+      );
+    }
+    return result;
+  }
+
+  Future<Map<String, dynamic>> operationOptions() async {
+    final response = await _client.get(Uri.parse('$baseUrl/operations/'));
+    if (response.statusCode != 200) {
+      throw Exception(_errorFromResponse(response));
+    }
+    return Map<String, dynamic>.from(jsonDecode(response.body));
+  }
+
+  Future<Map<String, dynamic>> managementContext() async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/operations/?management=1'),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(_errorFromResponse(response));
+    }
+    return Map<String, dynamic>.from(jsonDecode(response.body));
+  }
+
+  Future<List<Map<String, dynamic>>> scheduleHistory(
+    int id, {
+    bool session = false,
+  }) async {
+    final response = await _client.get(
+      Uri.parse(
+        '$baseUrl/operations/?history_for=$id${session ? '&session=1' : ''}',
+      ),
+    );
+    if (response.statusCode != 200) {
+      throw Exception(_errorFromResponse(response));
+    }
+    return (jsonDecode(response.body)['history'] as List)
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
   }
 
   Future<void> fetchBoard({
@@ -199,7 +254,7 @@ class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
     try {
       final response = await _client.patch(
         Uri.parse('$baseUrl/$scheduleId/'),
-        
+
         body: jsonEncode({'status': status}),
       );
 
@@ -257,10 +312,7 @@ class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
     );
 
     try {
-      final response = await _client.delete(
-        Uri.parse('$baseUrl/$scheduleId/'),
-        
-      );
+      final response = await _client.delete(Uri.parse('$baseUrl/$scheduleId/'));
 
       if (response.statusCode == 200) {
         await fetchBoard(successMessage: 'Schedule entry removed.');
@@ -288,9 +340,8 @@ class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
     }
   }
 
-
-  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
-
+  AuthenticatedHttpClient get _client =>
+      ref.read(authenticatedHttpClientProvider);
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     state = state.copyWith(

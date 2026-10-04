@@ -1,3 +1,5 @@
+import 'grade_correction_dialog.dart';
+import 'incomplete_grading_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -199,8 +201,7 @@ String gradeDisplayStatus(Map<String, dynamic> grade) {
     return verdict;
   }
   final workflow = grade['status']?.toString() ?? '';
-  if (workflow == 'published' ||
-      workflow == 'awaiting_peers') {
+  if (workflow == 'published' || workflow == 'awaiting_peers') {
     return workflow;
   }
   if (asDouble(grade['final_grade']) != null) {
@@ -353,7 +354,10 @@ Widget attemptBadgeWidget(int attemptCount) {
     decoration: BoxDecoration(
       color: const Color(0xFF6366F1).withValues(alpha: 0.12),
       borderRadius: BorderRadius.circular(6),
-      border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.3), width: 1),
+      border: Border.all(
+        color: const Color(0xFF6366F1).withValues(alpha: 0.3),
+        width: 1,
+      ),
     ),
     child: Text(
       'Attempt #$attemptCount',
@@ -499,7 +503,8 @@ class CriterionEvaluatorEntry {
   });
 
   bool get isIndividual =>
-      studentId != null || (studentName != null && studentName!.trim().isNotEmpty);
+      studentId != null ||
+      (studentName != null && studentName!.trim().isNotEmpty);
 }
 
 class AggregatedCriterion {
@@ -572,7 +577,9 @@ List<AggregatedCriterion> aggregateBreakdowns(
     for (final row in group) {
       final score = asDouble(row['score']) ?? 0.0;
       final rowMax = asDouble(row['max_score']) ?? maxScore;
-      final rowPct = rowMax > 0 ? (score / rowMax * 100.0).clamp(0.0, 100.0) : 0.0;
+      final rowPct = rowMax > 0
+          ? (score / rowMax * 100.0).clamp(0.0, 100.0)
+          : 0.0;
 
       final studentId = asInt(row['student_id'] ?? row['student']);
       final studentName = row['student_name']?.toString().trim();
@@ -592,7 +599,9 @@ List<AggregatedCriterion> aggregateBreakdowns(
       String evaluatorName = '';
       if (firstLine.startsWith('Panelist:')) {
         final key = firstLine.substring('Panelist:'.length).trim();
-        evaluatorName = panelistMap[key] ?? (key.isNotEmpty ? 'Panelist $key' : 'Panelist #$unnamedIndex');
+        evaluatorName =
+            panelistMap[key] ??
+            (key.isNotEmpty ? 'Panelist $key' : 'Panelist #$unnamedIndex');
       } else if (firstLine.startsWith('Guest panelist:')) {
         evaluatorName = firstLine.substring('Guest panelist:'.length).trim();
       } else if (firstLine.isNotEmpty && rest.isEmpty) {
@@ -602,7 +611,8 @@ List<AggregatedCriterion> aggregateBreakdowns(
       }
 
       if (evaluatorName.isEmpty) {
-        evaluatorName = row['evaluator_name']?.toString() ??
+        evaluatorName =
+            row['evaluator_name']?.toString() ??
             row['panelist_name']?.toString() ??
             'Evaluator #$unnamedIndex';
       }
@@ -611,13 +621,19 @@ List<AggregatedCriterion> aggregateBreakdowns(
 
       final comment = rest.isNotEmpty
           ? rest
-          : (raw.isNotEmpty && !raw.startsWith('Panelist:') && !raw.startsWith('Guest panelist:') ? raw : null);
+          : (raw.isNotEmpty &&
+                    !raw.startsWith('Panelist:') &&
+                    !raw.startsWith('Guest panelist:')
+                ? raw
+                : null);
 
       evaluators.add(
         CriterionEvaluatorEntry(
           evaluatorName: evaluatorName,
           studentId: studentId,
-          studentName: (studentName != null && studentName.isNotEmpty) ? studentName : null,
+          studentName: (studentName != null && studentName.isNotEmpty)
+              ? studentName
+              : null,
           studentUsername: studentUsername,
           score: score,
           maxScore: rowMax,
@@ -654,7 +670,8 @@ class ExpandableCriterionCard extends StatefulWidget {
   final bool initiallyExpanded;
 
   @override
-  State<ExpandableCriterionCard> createState() => _ExpandableCriterionCardState();
+  State<ExpandableCriterionCard> createState() =>
+      _ExpandableCriterionCardState();
 }
 
 class _ExpandableCriterionCardState extends State<ExpandableCriterionCard> {
@@ -681,15 +698,16 @@ class _ExpandableCriterionCardState extends State<ExpandableCriterionCard> {
     final scoreColor = pct >= 75
         ? const Color(0xFF059669)
         : pct >= 60
-            ? const Color(0xFFD97706)
-            : const Color(0xFFDC2626);
+        ? const Color(0xFFD97706)
+        : const Color(0xFFDC2626);
     final scoreBg = pct >= 75
         ? const Color(0xFFECFDF5)
         : pct >= 60
-            ? const Color(0xFFFFFBEB)
-            : const Color(0xFFFEF2F2);
+        ? const Color(0xFFFFFBEB)
+        : const Color(0xFFFEF2F2);
 
-    final hasMultiple = crit.evaluators.length > 1 ||
+    final hasMultiple =
+        crit.evaluators.length > 1 ||
         (crit.evaluators.isNotEmpty && crit.evaluators.first.comment != null);
 
     return Container(
@@ -698,7 +716,9 @@ class _ExpandableCriterionCardState extends State<ExpandableCriterionCard> {
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: _isExpanded ? const Color(0xFFCBD5E1) : const Color(0xFFE2E8F0),
+          color: _isExpanded
+              ? const Color(0xFFCBD5E1)
+              : const Color(0xFFE2E8F0),
         ),
       ),
       child: Column(
@@ -736,7 +756,10 @@ class _ExpandableCriterionCardState extends State<ExpandableCriterionCard> {
                                 ),
                                 const SizedBox(width: 8),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 1.5,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: crit.isIndividual
                                         ? const Color(0xFFF5F3FF)
@@ -777,7 +800,10 @@ class _ExpandableCriterionCardState extends State<ExpandableCriterionCard> {
                                 ),
                                 const SizedBox(width: 6),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 1.5,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: _isExpanded
                                         ? const Color(0xFFDBEAFE)
@@ -788,7 +814,9 @@ class _ExpandableCriterionCardState extends State<ExpandableCriterionCard> {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Text(
-                                        _isExpanded ? 'Hide details' : '${crit.evaluators.length} grades',
+                                        _isExpanded
+                                            ? 'Hide details'
+                                            : '${crit.evaluators.length} grades',
                                         style: TextStyle(
                                           fontSize: 10,
                                           fontWeight: FontWeight.w700,
@@ -817,11 +845,16 @@ class _ExpandableCriterionCardState extends State<ExpandableCriterionCard> {
                       ),
                       const SizedBox(width: 12),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: scoreBg,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: scoreColor.withValues(alpha: 0.2)),
+                          border: Border.all(
+                            color: scoreColor.withValues(alpha: 0.2),
+                          ),
                         ),
                         child: Text(
                           '${pct.toStringAsFixed(1)}%',
@@ -1023,20 +1056,27 @@ class _ExpandableCriterionCardState extends State<ExpandableCriterionCard> {
               rows: students.map((sName) {
                 final evMap = studentMap[sName] ?? {};
                 final sScores = evMap.values.toList();
-                final sTotal = sScores.fold<double>(0.0, (sum, e) => sum + e.score);
-                final sAvg = sScores.isNotEmpty ? (sTotal / sScores.length) : 0.0;
-                final sPct = crit.maxScore > 0 ? (sAvg / crit.maxScore * 100.0).clamp(0.0, 100.0) : 0.0;
+                final sTotal = sScores.fold<double>(
+                  0.0,
+                  (sum, e) => sum + e.score,
+                );
+                final sAvg = sScores.isNotEmpty
+                    ? (sTotal / sScores.length)
+                    : 0.0;
+                final sPct = crit.maxScore > 0
+                    ? (sAvg / crit.maxScore * 100.0).clamp(0.0, 100.0)
+                    : 0.0;
 
                 final avgScoreColor = sPct >= 75
                     ? const Color(0xFF059669)
                     : sPct >= 60
-                        ? const Color(0xFFD97706)
-                        : const Color(0xFFDC2626);
+                    ? const Color(0xFFD97706)
+                    : const Color(0xFFDC2626);
                 final avgScoreBg = sPct >= 75
                     ? const Color(0xFFECFDF5)
                     : sPct >= 60
-                        ? const Color(0xFFFFFBEB)
-                        : const Color(0xFFFEF2F2);
+                    ? const Color(0xFFFFFBEB)
+                    : const Color(0xFFFEF2F2);
 
                 return DataRow(
                   cells: [
@@ -1079,15 +1119,18 @@ class _ExpandableCriterionCardState extends State<ExpandableCriterionCard> {
                       final eScoreColor = ePct >= 75
                           ? const Color(0xFF059669)
                           : ePct >= 60
-                              ? const Color(0xFFD97706)
-                              : const Color(0xFFDC2626);
+                          ? const Color(0xFFD97706)
+                          : const Color(0xFFDC2626);
 
                       return DataCell(
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 3,
+                              ),
                               decoration: BoxDecoration(
                                 color: eScoreColor.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(5),
@@ -1101,10 +1144,12 @@ class _ExpandableCriterionCardState extends State<ExpandableCriterionCard> {
                                 ),
                               ),
                             ),
-                            if (entry.comment != null && entry.comment!.trim().isNotEmpty) ...[
+                            if (entry.comment != null &&
+                                entry.comment!.trim().isNotEmpty) ...[
                               const SizedBox(width: 4),
                               Tooltip(
-                                message: '${entry.evaluatorName}: "${entry.comment}"',
+                                message:
+                                    '${entry.evaluatorName}: "${entry.comment}"',
                                 child: const Icon(
                                   Icons.chat_bubble_outline_rounded,
                                   size: 12,
@@ -1121,11 +1166,16 @@ class _ExpandableCriterionCardState extends State<ExpandableCriterionCard> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: avgScoreBg,
                               borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: avgScoreColor.withValues(alpha: 0.2)),
+                              border: Border.all(
+                                color: avgScoreColor.withValues(alpha: 0.2),
+                              ),
                             ),
                             child: Text(
                               '${sPct.toStringAsFixed(0)}%',
@@ -1169,7 +1219,11 @@ class _ExpandableCriterionCardState extends State<ExpandableCriterionCard> {
               children: [
                 const Row(
                   children: [
-                    Icon(Icons.rate_review_outlined, size: 13, color: Color(0xFF64748B)),
+                    Icon(
+                      Icons.rate_review_outlined,
+                      size: 13,
+                      color: Color(0xFF64748B),
+                    ),
                     SizedBox(width: 5),
                     Text(
                       'REMARKS & FEEDBACK PER STUDENT',
@@ -1188,11 +1242,18 @@ class _ExpandableCriterionCardState extends State<ExpandableCriterionCard> {
                     padding: const EdgeInsets.symmetric(vertical: 2.5),
                     child: RichText(
                       text: TextSpan(
-                        style: const TextStyle(fontSize: 11.5, color: Color(0xFF334155), height: 1.35),
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: Color(0xFF334155),
+                          height: 1.35,
+                        ),
                         children: [
                           TextSpan(
                             text: '${r['evaluator']} ',
-                            style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF0F172A),
+                            ),
                           ),
                           const TextSpan(
                             text: 'on ',
@@ -1200,7 +1261,10 @@ class _ExpandableCriterionCardState extends State<ExpandableCriterionCard> {
                           ),
                           TextSpan(
                             text: '${r['student']}: ',
-                            style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF7C3AED)),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF7C3AED),
+                            ),
                           ),
                           TextSpan(
                             text: '"${r['comment']}"',
@@ -1229,8 +1293,8 @@ class _ExpandableCriterionCardState extends State<ExpandableCriterionCard> {
         final evScoreColor = evPct >= 75
             ? const Color(0xFF059669)
             : evPct >= 60
-                ? const Color(0xFFD97706)
-                : const Color(0xFFDC2626);
+            ? const Color(0xFFD97706)
+            : const Color(0xFFDC2626);
 
         final initials = ev.evaluatorName
             .trim()
@@ -1279,7 +1343,10 @@ class _ExpandableCriterionCardState extends State<ExpandableCriterionCard> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: evScoreColor.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(4),
@@ -1318,7 +1385,10 @@ class _ExpandableCriterionCardState extends State<ExpandableCriterionCard> {
                 const SizedBox(height: 6),
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF8FAFC),
                     borderRadius: BorderRadius.circular(4),
@@ -1392,13 +1462,22 @@ Widget gradeFormulaLine(Map<String, dynamic> grade) {
   final adviserScore = asDouble(grade['adviser_score']);
   final peerScore = asDouble(grade['peer_score']);
 
-  final panelWeight = asDouble(weightText(grade, 'panel')) ?? (isPit ? 70.0 : 50.0);
-  final adviserWeight = asDouble(weightText(grade, 'adviser')) ?? (isPit ? 0.0 : 30.0);
-  final peerWeight = asDouble(weightText(grade, 'peer')) ?? (isPit ? 30.0 : 20.0);
+  final panelWeight =
+      asDouble(weightText(grade, 'panel')) ?? (isPit ? 70.0 : 50.0);
+  final adviserWeight =
+      asDouble(weightText(grade, 'adviser')) ?? (isPit ? 0.0 : 30.0);
+  final peerWeight =
+      asDouble(weightText(grade, 'peer')) ?? (isPit ? 30.0 : 20.0);
 
-  final panelContrib = panelScore != null ? (panelScore * panelWeight / 100.0) : null;
-  final adviserContrib = adviserScore != null ? (adviserScore * adviserWeight / 100.0) : null;
-  final peerContrib = peerScore != null ? (peerScore * peerWeight / 100.0) : null;
+  final panelContrib = panelScore != null
+      ? (panelScore * panelWeight / 100.0)
+      : null;
+  final adviserContrib = adviserScore != null
+      ? (adviserScore * adviserWeight / 100.0)
+      : null;
+  final peerContrib = peerScore != null
+      ? (peerScore * peerWeight / 100.0)
+      : null;
 
   return Container(
     width: double.infinity,
@@ -1434,26 +1513,50 @@ Widget gradeFormulaLine(Map<String, dynamic> grade) {
             _formulaBadge(
               'Panel',
               '${panelWeight.toStringAsFixed(0)}%',
-              panelScore != null ? '${panelScore.toStringAsFixed(2)}%' : 'Pending',
-              panelContrib != null ? '+${panelContrib.toStringAsFixed(2)} pts' : null,
+              panelScore != null
+                  ? '${panelScore.toStringAsFixed(2)}%'
+                  : 'Pending',
+              panelContrib != null
+                  ? '+${panelContrib.toStringAsFixed(2)} pts'
+                  : null,
               accentColor: const Color(0xFF2563EB),
             ),
             if (!isPit && adviserWeight > 0) ...[
-              const Text('+', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF94A3B8))),
+              const Text(
+                '+',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF94A3B8),
+                ),
+              ),
               _formulaBadge(
                 'Adviser',
                 '${adviserWeight.toStringAsFixed(0)}%',
-                adviserScore != null ? '${adviserScore.toStringAsFixed(2)}%' : 'Pending',
-                adviserContrib != null ? '+${adviserContrib.toStringAsFixed(2)} pts' : null,
+                adviserScore != null
+                    ? '${adviserScore.toStringAsFixed(2)}%'
+                    : 'Pending',
+                adviserContrib != null
+                    ? '+${adviserContrib.toStringAsFixed(2)} pts'
+                    : null,
                 accentColor: const Color(0xFF059669),
               ),
             ],
-            const Text('+', style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF94A3B8))),
+            const Text(
+              '+',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF94A3B8),
+              ),
+            ),
             _formulaBadge(
               'Peer',
               '${peerWeight.toStringAsFixed(0)}%',
-              peerScore != null ? '${peerScore.toStringAsFixed(2)}%' : 'Pending',
-              peerContrib != null ? '+${peerContrib.toStringAsFixed(2)} pts' : null,
+              peerScore != null
+                  ? '${peerScore.toStringAsFixed(2)}%'
+                  : 'Pending',
+              peerContrib != null
+                  ? '+${peerContrib.toStringAsFixed(2)} pts'
+                  : null,
               accentColor: const Color(0xFF7C3AED),
             ),
           ],
@@ -1483,14 +1586,13 @@ Widget _formulaBadge(
         Container(
           width: 6,
           height: 6,
-          decoration: BoxDecoration(
-            color: accentColor,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: accentColor, shape: BoxShape.circle),
         ),
         const SizedBox(width: 6),
         Text(
-          contrib != null ? '$label ($weight): $contrib' : '$label ($weight): $score',
+          contrib != null
+              ? '$label ($weight): $contrib'
+              : '$label ($weight): $score',
           style: const TextStyle(
             fontSize: 11.5,
             fontWeight: FontWeight.w600,
@@ -1565,10 +1667,7 @@ Widget gradeCenterLockedBanner({required bool isLocked}) {
               SizedBox(height: 2),
               Text(
                 'Grades for this stage are locked. Evaluations and breakdowns are preserved for official academic records.',
-                style: TextStyle(
-                  color: Color(0xFF64748B),
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
               ),
             ],
           ),
@@ -1583,20 +1682,27 @@ Widget gradeCenterPeerMemberTile(
   bool isLeader = false,
 }) {
   final name = peer['student_name']?.toString() ?? 'Student';
-  final initials = name.trim().split(' ').map((s) => s.isNotEmpty ? s[0] : '').take(2).join().toUpperCase();
+  final initials = name
+      .trim()
+      .split(' ')
+      .map((s) => s.isNotEmpty ? s[0] : '')
+      .take(2)
+      .join()
+      .toUpperCase();
 
   // Extract individual peer score from StudentStageGradeSerializer
-  final score = asDouble(peer['peer_score']) ??
+  final score =
+      asDouble(peer['peer_score']) ??
       asDouble(peer['normalized_score']) ??
       asDouble(peer['average_score']);
 
   final scoreColor = score == null
       ? const Color(0xFF94A3B8)
       : score >= 75
-          ? const Color(0xFF059669)
-          : score >= 60
-              ? const Color(0xFFD97706)
-              : const Color(0xFFDC2626);
+      ? const Color(0xFF059669)
+      : score >= 60
+      ? const Color(0xFFD97706)
+      : const Color(0xFFDC2626);
 
   return Container(
     margin: const EdgeInsets.only(bottom: 10),
@@ -1641,7 +1747,10 @@ Widget gradeCenterPeerMemberTile(
                   if (isLeader) ...[
                     const SizedBox(width: 6),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 1.5,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFFEF3C7),
                         borderRadius: BorderRadius.circular(4),
@@ -1699,11 +1808,10 @@ Widget gradeCenterPeerMemberTile(
   );
 }
 
-Widget gradeCenterHeroSummaryCard({
-  required Map<String, dynamic> grade,
-}) {
+Widget gradeCenterHeroSummaryCard({required Map<String, dynamic> grade}) {
   final finalGrade = asDouble(grade['final_grade']);
-  final result = grade['result']?.toString() ??
+  final result =
+      grade['result']?.toString() ??
       (finalGrade != null && finalGrade >= 75 ? 'passed' : 'pending');
   final status = gradeDisplayStatus(grade);
   final isPit = grade['scope'] == 'pit';
@@ -1712,18 +1820,29 @@ Widget gradeCenterHeroSummaryCard({
   final adviserScore = asDouble(grade['adviser_score']);
   final peerScore = asDouble(grade['peer_score']);
 
-  final panelWeight = asDouble(weightText(grade, 'panel')) ?? (isPit ? 70.0 : 50.0);
-  final adviserWeight = asDouble(weightText(grade, 'adviser')) ?? (isPit ? 0.0 : 30.0);
-  final peerWeight = asDouble(weightText(grade, 'peer')) ?? (isPit ? 30.0 : 20.0);
+  final panelWeight =
+      asDouble(weightText(grade, 'panel')) ?? (isPit ? 70.0 : 50.0);
+  final adviserWeight =
+      asDouble(weightText(grade, 'adviser')) ?? (isPit ? 0.0 : 30.0);
+  final peerWeight =
+      asDouble(weightText(grade, 'peer')) ?? (isPit ? 30.0 : 20.0);
 
-  final panelContrib = panelScore != null ? (panelScore * panelWeight / 100.0) : null;
-  final adviserContrib = adviserScore != null ? (adviserScore * adviserWeight / 100.0) : null;
-  final peerContrib = peerScore != null ? (peerScore * peerWeight / 100.0) : null;
+  final panelContrib = panelScore != null
+      ? (panelScore * panelWeight / 100.0)
+      : null;
+  final adviserContrib = adviserScore != null
+      ? (adviserScore * adviserWeight / 100.0)
+      : null;
+  final peerContrib = peerScore != null
+      ? (peerScore * peerWeight / 100.0)
+      : null;
 
   final stageLabel = grade['stage_label']?.toString() ?? 'Defense Stage';
   final semester = grade['display_semester']?.toString() ?? '';
   final adviserName = grade['adviser_name']?.toString() ?? '';
-  final panelistsList = grade['panelists'] is List ? (grade['panelists'] as List) : [];
+  final panelistsList = grade['panelists'] is List
+      ? (grade['panelists'] as List)
+      : [];
 
   return DefensysCard(
     padding: const EdgeInsets.all(24),
@@ -1742,7 +1861,10 @@ Widget gradeCenterHeroSummaryCard({
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 3.5,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFEFF6FF),
                         borderRadius: BorderRadius.circular(6),
@@ -1760,7 +1882,10 @@ Widget gradeCenterHeroSummaryCard({
                     ),
                     if (stageLabel.isNotEmpty)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 3.5,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFF1F5F9),
                           borderRadius: BorderRadius.circular(6),
@@ -1777,7 +1902,10 @@ Widget gradeCenterHeroSummaryCard({
                       ),
                     if (semester.isNotEmpty)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 3.5,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFF1F5F9),
                           borderRadius: BorderRadius.circular(6),
@@ -1792,10 +1920,11 @@ Widget gradeCenterHeroSummaryCard({
                           ),
                         ),
                       ),
-                    if (!isPit && asInt(grade['attempt_count']) != null && (asInt(grade['attempt_count']) ?? 1) > 1)
+                    if (!isPit &&
+                        asInt(grade['attempt_count']) != null &&
+                        (asInt(grade['attempt_count']) ?? 1) > 1)
                       attemptBadgeWidget(asInt(grade['attempt_count']) ?? 1),
-                    if (!isPit)
-                      defenseMinutesStatusBadgeWidget(grade),
+                    if (!isPit) defenseMinutesStatusBadgeWidget(grade),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -1825,9 +1954,15 @@ Widget gradeCenterHeroSummaryCard({
                   runSpacing: 6,
                   children: [
                     if (adviserName.isNotEmpty && !isPit)
-                      _metaIconLabel(Icons.school_outlined, 'Adviser: $adviserName'),
+                      _metaIconLabel(
+                        Icons.school_outlined,
+                        'Adviser: $adviserName',
+                      ),
                     if (panelistsList.isNotEmpty)
-                      _metaIconLabel(Icons.gavel_outlined, '${panelistsList.length} Panelists Assigned'),
+                      _metaIconLabel(
+                        Icons.gavel_outlined,
+                        '${panelistsList.length} Panelists Assigned',
+                      ),
                     _metaIconLabel(Icons.flag_outlined, 'Passing Mark: 75.00%'),
                   ],
                 ),
@@ -1842,7 +1977,9 @@ Widget gradeCenterHeroSummaryCard({
                 border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
               child: Column(
-                crossAxisAlignment: isWide ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                crossAxisAlignment: isWide
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text(
@@ -1861,7 +1998,9 @@ Widget gradeCenterHeroSummaryCard({
                     textBaseline: TextBaseline.alphabetic,
                     children: [
                       Text(
-                        finalGrade == null ? '--' : finalGrade.toStringAsFixed(2),
+                        finalGrade == null
+                            ? '--'
+                            : finalGrade.toStringAsFixed(2),
                         style: TextStyle(
                           fontSize: 32,
                           fontWeight: FontWeight.w900,
@@ -1869,8 +2008,8 @@ Widget gradeCenterHeroSummaryCard({
                           color: finalGrade == null
                               ? const Color(0xFF94A3B8)
                               : finalGrade >= 75
-                                  ? const Color(0xFF0F172A)
-                                  : const Color(0xFFDC2626),
+                              ? const Color(0xFF0F172A)
+                              : const Color(0xFFDC2626),
                         ),
                       ),
                       if (finalGrade != null)
@@ -1889,7 +2028,9 @@ Widget gradeCenterHeroSummaryCard({
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       _resultOutcomeBadge(result),
-                      if (!isPit && grade['verdict'] != null && (grade['verdict']?.toString() ?? '').isNotEmpty) ...[
+                      if (!isPit &&
+                          grade['verdict'] != null &&
+                          (grade['verdict']?.toString() ?? '').isNotEmpty) ...[
                         const SizedBox(width: 8),
                         verdictBadgeWidget(grade['verdict']?.toString()),
                       ],
@@ -1945,8 +2086,12 @@ Widget gradeCenterHeroSummaryCard({
             _formulaPill(
               label: 'Panel',
               weight: '${panelWeight.toStringAsFixed(0)}%',
-              score: panelScore != null ? '${panelScore.toStringAsFixed(2)}%' : 'Pending',
-              contrib: panelContrib != null ? '+${panelContrib.toStringAsFixed(2)}' : null,
+              score: panelScore != null
+                  ? '${panelScore.toStringAsFixed(2)}%'
+                  : 'Pending',
+              contrib: panelContrib != null
+                  ? '+${panelContrib.toStringAsFixed(2)}'
+                  : null,
               icon: Icons.gavel_rounded,
               accentColor: const Color(0xFF2563EB),
               badgeBg: const Color(0xFFEFF6FF),
@@ -1957,8 +2102,12 @@ Widget gradeCenterHeroSummaryCard({
               _formulaPill(
                 label: 'Adviser',
                 weight: '${adviserWeight.toStringAsFixed(0)}%',
-                score: adviserScore != null ? '${adviserScore.toStringAsFixed(2)}%' : 'Pending',
-                contrib: adviserContrib != null ? '+${adviserContrib.toStringAsFixed(2)}' : null,
+                score: adviserScore != null
+                    ? '${adviserScore.toStringAsFixed(2)}%'
+                    : 'Pending',
+                contrib: adviserContrib != null
+                    ? '+${adviserContrib.toStringAsFixed(2)}'
+                    : null,
                 icon: Icons.school_rounded,
                 accentColor: const Color(0xFF059669),
                 badgeBg: const Color(0xFFECFDF5),
@@ -1969,14 +2118,22 @@ Widget gradeCenterHeroSummaryCard({
             _formulaPill(
               label: 'Peer',
               weight: '${peerWeight.toStringAsFixed(0)}%',
-              score: peerScore != null ? '${peerScore.toStringAsFixed(2)}%' : 'Pending',
-              contrib: peerContrib != null ? '+${peerContrib.toStringAsFixed(2)}' : null,
+              score: peerScore != null
+                  ? '${peerScore.toStringAsFixed(2)}%'
+                  : 'Pending',
+              contrib: peerContrib != null
+                  ? '+${peerContrib.toStringAsFixed(2)}'
+                  : null,
               icon: Icons.groups_rounded,
               accentColor: const Color(0xFF7C3AED),
               badgeBg: const Color(0xFFF5F3FF),
               badgeBorder: const Color(0xFFDDD6FE),
             ),
-            const Icon(Icons.drag_handle_rounded, size: 16, color: Color(0xFF94A3B8)),
+            const Icon(
+              Icons.drag_handle_rounded,
+              size: 16,
+              color: Color(0xFF94A3B8),
+            ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
@@ -1996,7 +2153,9 @@ Widget gradeCenterHeroSummaryCard({
                     ),
                   ),
                   Text(
-                    finalGrade != null ? '${finalGrade.toStringAsFixed(2)}%' : 'Incomplete',
+                    finalGrade != null
+                        ? '${finalGrade.toStringAsFixed(2)}%'
+                        : 'Incomplete',
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
@@ -2008,7 +2167,9 @@ Widget gradeCenterHeroSummaryCard({
             ),
           ],
         ),
-        if (!isPit && (grade['verdict'] != null || (grade['verdict_remarks']?.toString() ?? '').isNotEmpty)) ...[
+        if (!isPit &&
+            (grade['verdict'] != null ||
+                (grade['verdict_remarks']?.toString() ?? '').isNotEmpty)) ...[
           const SizedBox(height: 16),
           _verdictDirectivesCard(grade),
         ],
@@ -2041,28 +2202,28 @@ Widget _resultOutcomeBadge(String result) {
   final color = isPassed
       ? const Color(0xFF047857)
       : isFailed
-          ? const Color(0xFFB91C1C)
-          : const Color(0xFFB45309);
+      ? const Color(0xFFB91C1C)
+      : const Color(0xFFB45309);
   final bg = isPassed
       ? const Color(0xFFECFDF5)
       : isFailed
-          ? const Color(0xFFFEF2F2)
-          : const Color(0xFFFFFBEB);
+      ? const Color(0xFFFEF2F2)
+      : const Color(0xFFFFFBEB);
   final border = isPassed
       ? const Color(0xFFA7F3D0)
       : isFailed
-          ? const Color(0xFFFECACA)
-          : const Color(0xFFFDE68A);
+      ? const Color(0xFFFECACA)
+      : const Color(0xFFFDE68A);
   final icon = isPassed
       ? Icons.check_circle_outline_rounded
       : isFailed
-          ? Icons.highlight_off_rounded
-          : Icons.pending_outlined;
+      ? Icons.highlight_off_rounded
+      : Icons.pending_outlined;
   final label = isPassed
       ? 'PASSED'
       : isFailed
-          ? 'FAILED'
-          : 'PENDING';
+      ? 'FAILED'
+      : 'PENDING';
 
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2167,7 +2328,8 @@ Widget gradeCenterKpiStatCard({
   required Color iconBg,
   double progress = 1.0,
 }) {
-  final isDark = context != null && Theme.of(context).brightness == Brightness.dark;
+  final isDark =
+      context != null && Theme.of(context).brightness == Brightness.dark;
   final clamped = progress.clamp(0.0, 1.0);
   return Container(
     height: 112,
@@ -2175,10 +2337,14 @@ Widget gradeCenterKpiStatCard({
     decoration: BoxDecoration(
       color: isDark ? DefensysTokens.mistSurface : Colors.white,
       borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
+      border: Border.all(
+        color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
+      ),
       boxShadow: [
         BoxShadow(
-          color: isDark ? Colors.black.withValues(alpha: 0.25) : Colors.black.withValues(alpha: 0.06),
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.25)
+              : Colors.black.withValues(alpha: 0.06),
           blurRadius: 14,
           offset: const Offset(0, 5),
         ),
@@ -2205,7 +2371,9 @@ Widget gradeCenterKpiStatCard({
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F2743),
+                  color: isDark
+                      ? DefensysTokens.textPrimaryDark
+                      : const Color(0xFF0F2743),
                   fontSize: 21,
                   fontWeight: FontWeight.w800,
                   height: 1,
@@ -2228,7 +2396,9 @@ Widget gradeCenterKpiStatCard({
                 child: LinearProgressIndicator(
                   value: clamped,
                   minHeight: 5,
-                  backgroundColor: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
+                  backgroundColor: isDark
+                      ? DefensysTokens.mistBorder
+                      : const Color(0xFFE5E7EB),
                   color: accent,
                 ),
               ),
@@ -2241,9 +2411,12 @@ Widget gradeCenterKpiStatCard({
 }
 
 Widget gradeCenterOnOffChip({required bool enabled, BuildContext? context}) {
-  final isDark = context != null && Theme.of(context).brightness == Brightness.dark;
+  final isDark =
+      context != null && Theme.of(context).brightness == Brightness.dark;
   final bg = enabled
-      ? (isDark ? const Color(0xFF064E3B).withValues(alpha: 0.35) : const Color(0xFFD1FAE5))
+      ? (isDark
+            ? const Color(0xFF064E3B).withValues(alpha: 0.35)
+            : const Color(0xFFD1FAE5))
       : (isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6));
   final fg = enabled
       ? (isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
@@ -2253,7 +2426,9 @@ Widget gradeCenterOnOffChip({required bool enabled, BuildContext? context}) {
     decoration: BoxDecoration(
       color: bg,
       borderRadius: BorderRadius.circular(999),
-      border: isDark && enabled ? Border.all(color: const Color(0xFF065F46)) : null,
+      border: isDark && enabled
+          ? Border.all(color: const Color(0xFF065F46))
+          : null,
     ),
     child: Text(
       enabled ? 'ON' : 'OFF',
@@ -2330,19 +2505,28 @@ Widget gradeCenterFilterField({
   required Widget dropdown,
   BuildContext? context,
 }) {
-  final isDark = context != null && Theme.of(context).brightness == Brightness.dark;
+  final isDark =
+      context != null && Theme.of(context).brightness == Brightness.dark;
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     mainAxisSize: MainAxisSize.min,
     children: [
       Row(
         children: [
-          Icon(icon, size: 14, color: isDark ? DefensysTokens.textSecondaryDark : DefensysUi.steelGrey),
+          Icon(
+            icon,
+            size: 14,
+            color: isDark
+                ? DefensysTokens.textSecondaryDark
+                : DefensysUi.steelGrey,
+          ),
           const SizedBox(width: 4),
           Text(
             label,
             style: TextStyle(
-              color: isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF98A2B3),
+              color: isDark
+                  ? DefensysTokens.textSecondaryDark
+                  : const Color(0xFF98A2B3),
               fontSize: 10.5,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.2,
@@ -2356,15 +2540,21 @@ Widget gradeCenterFilterField({
   );
 }
 
-Widget gradeCenterFilterDropdownShell({required Widget child, BuildContext? context}) {
-  final isDark = context != null && Theme.of(context).brightness == Brightness.dark;
+Widget gradeCenterFilterDropdownShell({
+  required Widget child,
+  BuildContext? context,
+}) {
+  final isDark =
+      context != null && Theme.of(context).brightness == Brightness.dark;
   return Container(
     height: 40,
     padding: const EdgeInsets.symmetric(horizontal: 10),
     decoration: BoxDecoration(
       color: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF9FAFB),
       borderRadius: BorderRadius.circular(7),
-      border: Border.all(color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB)),
+      border: Border.all(
+        color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB),
+      ),
     ),
     child: child,
   );
@@ -2502,9 +2692,11 @@ List<CapstoneStageRow> buildPitStageRows({
     final groupKey = gradeGroupKey('pit', label);
     final settings = groupSettingsForKey(state, groupKey);
     final teamCount = gradesForGroup(state, 'pit', label).length;
-    final isComplete = settings['is_officially_complete'] == true ||
+    final isComplete =
+        settings['is_officially_complete'] == true ||
         ev['is_officially_complete'] == true;
-    final peerEnabled = settings['peer_grading_enabled'] == true ||
+    final peerEnabled =
+        settings['peer_grading_enabled'] == true ||
         ev['peer_grading_enabled'] == true;
 
     final order = asInt(ev['display_order']) ?? (i + 1);
@@ -2581,10 +2773,7 @@ List<CapstoneStageRow> buildAllStageRows({
     state: state,
     defenseStages: defenseStages,
   );
-  final pitRows = buildPitStageRows(
-    state: state,
-    pitEvents: pitEvents,
-  );
+  final pitRows = buildPitStageRows(state: state, pitEvents: pitEvents);
 
   final combined = <CapstoneStageRow>[];
   var order = 1;
@@ -2625,7 +2814,8 @@ const double kCapstoneStagesTableRowHeight = 24;
 
 double capstoneStagesTableBodyHeight(int rowCount) {
   if (rowCount <= 0) return 0;
-  final raw = kCapstoneStagesTableHeaderBlockHeight +
+  final raw =
+      kCapstoneStagesTableHeaderBlockHeight +
       rowCount * kCapstoneStagesTableRowHeight;
   return raw > kCapstoneStagesTableBodyMaxHeight
       ? kCapstoneStagesTableBodyMaxHeight
@@ -2718,25 +2908,17 @@ Widget officialCompleteMilestoneButton({
   required bool isComplete,
   required bool enabled,
   required ValueChanged<bool> onChanged,
+  required Future<GradeGroupCompletionReadiness> Function() checkCompletion,
   String stageLabel = 'Stage',
   int teamCount = 0,
-  int redefenseCount = 0,
-  List<String> redefenseTeams = const [],
-  int failingCount = 0,
-  List<String> failingTeams = const [],
   bool isPit = false,
+  String? disabledReason,
 }) {
   final targetName = isPit ? 'event' : 'stage';
   final targetTitle = isPit ? 'Event' : 'Stage';
   final hasTeams = teamCount > 0;
   final teamNotice = hasTeams
       ? '\n\n$teamCount team${teamCount == 1 ? '' : 's'} will be affected.'
-      : '';
-  final redefenseNotice = !isPit && redefenseCount > 0
-      ? '\n\n⚠️ WARNING: $redefenseCount team${redefenseCount == 1 ? '' : 's'}${redefenseTeams.isNotEmpty ? ' (${redefenseTeams.take(3).join(', ')}${redefenseTeams.length > 3 ? '...' : ''})' : ''} currently ${redefenseCount == 1 ? 'has' : 'have'} a "For Re-defense" verdict and ${redefenseCount == 1 ? 'has' : 'have'} not passed.\n\nMarking this stage complete will finalize this milestone. These teams will officially FAIL this stage and will NOT advance to the next stage.'
-      : '';
-  final failingNotice = failingCount > 0
-      ? '\n\n⚠️ NOTICE: $failingCount team${failingCount == 1 ? '' : 's'}${failingTeams.isNotEmpty ? ' (${failingTeams.take(3).join(', ')}${failingTeams.length > 3 ? '...' : ''})' : ''} currently ${failingCount == 1 ? 'has' : 'have'} a failing grade (< 75.0%).\n\nMarking this $targetName complete will finalize this milestone. Failing teams will NOT be eligible for the ${isPit ? 'PIT ' : ''}Project Archive.'
       : '';
 
   if (isComplete) {
@@ -2779,7 +2961,8 @@ Widget officialCompleteMilestoneButton({
             const SizedBox(width: 6),
             // Explicit Reopen action button
             Tooltip(
-              message: 'Reopen $stageLabel to allow editing faculty & panel grades',
+              message:
+                  'Reopen $stageLabel to allow editing faculty & panel grades',
               child: Material(
                 color: Colors.transparent,
                 child: InkWell(
@@ -2851,22 +3034,19 @@ Widget officialCompleteMilestoneButton({
   return Tooltip(
     message: enabled
         ? 'Mark this $targetName officially complete and lock grades'
-        : 'Complete all required evaluations before marking officially complete',
+        : disabledReason ??
+              'Complete all required evaluations before marking officially complete',
     child: Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(6),
         onTap: enabled
             ? () async {
-                final confirmed = await showConfirmDialog(
+                final confirmed = await reviewGradeGroupCompletion(
                   context,
-                  title: 'Mark $stageLabel Complete?',
-                  message:
-                      'Marking this $targetName officially complete will lock faculty and panel grades, finalize student scores, and make passed teams eligible for ${isPit ? 'the PIT ' : ''}project archiving.$teamNotice$redefenseNotice$failingNotice\n\nAre you sure you want to mark $stageLabel officially complete?',
-                  confirmLabel: 'Mark Complete',
-                  cancelLabel: 'Cancel',
-                  destructive: false,
-                  icon: Icons.verified_rounded,
+                  stageLabel: stageLabel,
+                  isPit: isPit,
+                  checkCompletion: checkCompletion,
                 );
                 if (confirmed) {
                   onChanged(true);
@@ -2879,7 +3059,9 @@ Widget officialCompleteMilestoneButton({
             color: enabled ? const Color(0xFFF8FAFC) : const Color(0xFFF9FAFB),
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
-              color: enabled ? const Color(0xFFCBD5E1) : const Color(0xFFEAECF0),
+              color: enabled
+                  ? const Color(0xFFCBD5E1)
+                  : const Color(0xFFEAECF0),
               width: 1,
             ),
             boxShadow: enabled
@@ -2901,13 +3083,17 @@ Widget officialCompleteMilestoneButton({
                 Icon(
                   Icons.verified_outlined,
                   size: 13.5,
-                  color: enabled ? const Color(0xFF334155) : const Color(0xFF98A2B3),
+                  color: enabled
+                      ? const Color(0xFF334155)
+                      : const Color(0xFF98A2B3),
                 ),
                 const SizedBox(width: 5),
                 Text(
                   'Mark Complete',
                   style: TextStyle(
-                    color: enabled ? const Color(0xFF1E293B) : const Color(0xFF98A2B3),
+                    color: enabled
+                        ? const Color(0xFF1E293B)
+                        : const Color(0xFF98A2B3),
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.1,
@@ -2926,6 +3112,7 @@ Widget officialCompleteToggleRow({
   required bool value,
   required bool enabled,
   required ValueChanged<bool> onChanged,
+  required Future<GradeGroupCompletionReadiness> Function() checkCompletion,
   String stageLabel = 'Stage',
   int teamCount = 0,
 }) {
@@ -2937,6 +3124,7 @@ Widget officialCompleteToggleRow({
       stageLabel: stageLabel,
       teamCount: teamCount,
       onChanged: onChanged,
+      checkCompletion: checkCompletion,
     ),
   );
 }
@@ -3025,8 +3213,43 @@ bool pitPeerStageToggleEnabled({
 
 bool groupOfficialCloseBlocked({
   required List<Map<String, dynamic>> grades,
+  Map<String, dynamic> settings = const {},
 }) {
-  return grades.any((grade) => grade['grading_ready'] != true);
+  final total = groupGradingTeamCount(settings, grades: grades);
+  final ready = groupGradingReadyTeamCount(settings, grades: grades);
+  return total <= 0 || ready != total;
+}
+
+/// Server counts include teams hidden by search, year-level, or status filters.
+int groupGradingTeamCount(
+  Map<String, dynamic> settings, {
+  List<Map<String, dynamic>> grades = const [],
+}) {
+  return asInt(settings['grading_total_team_count']) ?? grades.length;
+}
+
+int groupGradingReadyTeamCount(
+  Map<String, dynamic> settings, {
+  List<Map<String, dynamic>> grades = const [],
+}) {
+  return asInt(settings['grading_ready_team_count']) ??
+      grades.where((grade) => grade['grading_ready'] == true).length;
+}
+
+String groupOfficialCloseBlockedReason({
+  required List<Map<String, dynamic>> grades,
+  Map<String, dynamic> settings = const {},
+}) {
+  final total = groupGradingTeamCount(settings, grades: grades);
+  final ready = groupGradingReadyTeamCount(settings, grades: grades);
+  if (total <= 0) {
+    return 'Schedule teams before marking complete.';
+  }
+  if (ready < 0 || ready > total) {
+    return 'Refresh grading readiness before marking complete.';
+  }
+  final remaining = total - ready;
+  return '$remaining of $total teams still need required evaluations.';
 }
 
 @Deprecated('Use groupOfficialCloseBlocked')
@@ -3034,20 +3257,15 @@ bool groupPeerCloseBlocked({
   required List<Map<String, dynamic>> grades,
   required Map<String, dynamic> settings,
 }) {
-  return groupOfficialCloseBlocked(grades: grades);
+  return groupOfficialCloseBlocked(grades: grades, settings: settings);
 }
 
 String groupGradingReadinessSummary(
   Map<String, dynamic> settings, {
   List<Map<String, dynamic>> grades = const [],
 }) {
-  if (grades.isNotEmpty) {
-    final ready =
-        grades.where((grade) => grade['grading_ready'] == true).length;
-    return '$ready of ${grades.length} teams grading-ready';
-  }
-  final ready = asInt(settings['grading_ready_team_count']) ?? 0;
-  final total = asInt(settings['grading_total_team_count']) ?? 0;
+  final ready = groupGradingReadyTeamCount(settings, grades: grades);
+  final total = groupGradingTeamCount(settings, grades: grades);
   if (total == 0) {
     return 'No teams in this group';
   }
@@ -3092,20 +3310,6 @@ Widget adviserGradingStatusWidget(Map<String, dynamic> grade) {
   );
 }
 
-String _missingComponentLabel(String component, Map<String, dynamic> team) {
-  switch (component) {
-    case 'panel':
-      return 'Panel missing';
-    case 'adviser':
-      return 'Adviser missing';
-    case 'peer':
-      return 'Peer ${team['evaluators_done'] ?? 0}/${team['evaluators_total'] ?? 0} '
-          'evaluators · ${team['submitted'] ?? 0}/${team['required'] ?? 0} submissions';
-    default:
-      return component;
-  }
-}
-
 Widget peerEvalFormsStatusWidget(Map<String, dynamic> grade) {
   final complete = grade['peer_eval_complete'] == true;
   final submitted = asInt(grade['peer_submissions_submitted']) ?? 0;
@@ -3147,45 +3351,164 @@ Future<void> showIncompleteGradingTeamsDialog(
 }) {
   return showDialog<void>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Grading not ready'),
-      content: SizedBox(
-        width: 460,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'These teams must complete all required grading before you '
-                'can mark the event or stage officially complete:',
-              ),
-              const SizedBox(height: 12),
-              ...teams.map((team) {
-                final missing = team['missing_components'];
-                final parts = missing is List
-                    ? missing
-                        .map((c) => _missingComponentLabel(c.toString(), team))
-                        .join(' · ')
-                    : 'Incomplete';
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(
-                    '• ${team['team_name'] ?? 'Team'} — $parts',
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                );
-              }),
-            ],
+    builder: (_) => IncompleteGradingTeamsDialog(teams: teams),
+  );
+}
+
+/// Inspect current server readiness before asking to finalize any grades.
+Future<bool> reviewGradeGroupCompletion(
+  BuildContext context, {
+  required String stageLabel,
+  required Future<GradeGroupCompletionReadiness> Function() checkCompletion,
+  bool isPit = false,
+}) async {
+  late GradeGroupCompletionReadiness readiness;
+  try {
+    readiness = await checkCompletion();
+  } catch (error) {
+    if (!context.mounted) return false;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Unable to check grading'),
+        content: Text(error.toString().replaceFirst('Exception: ', '')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
           ),
-        ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(),
-          child: const Text('OK'),
+    );
+    return false;
+  }
+  if (!context.mounted) return false;
+  if (readiness.incompleteTeams.isNotEmpty) {
+    await showIncompleteGradingTeamsDialog(
+      context,
+      teams: readiness.incompleteTeams,
+    );
+    return false;
+  }
+  if (!readiness.canComplete ||
+      readiness.totalTeams <= 0 ||
+      readiness.readyTeams != readiness.totalTeams) {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+          readiness.isComplete
+              ? 'Already officially complete'
+              : 'Grading not ready',
         ),
-      ],
+        content: Text(
+          readiness.isComplete
+              ? 'This stage or event has already been marked complete. Refresh the Grade Center to see its current status.'
+              : (readiness.totalTeams == 0
+                    ? 'Schedule teams before marking this stage or event complete.'
+                    : 'Grading readiness has changed. Refresh the Grade Center and check again.'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+    return false;
+  }
+
+  String names(List<Map<String, dynamic>> teams) =>
+      teams
+          .take(3)
+          .map((team) => team['team_name']?.toString() ?? 'Team')
+          .join(', ') +
+      (teams.length > 3 ? ' and ${teams.length - 3} more' : '');
+  final target = isPit ? 'event' : 'stage';
+  final redefense = readiness.redefenseTeams;
+  final failing = readiness.failingTeams;
+  final warnings = [
+    if (redefense.isNotEmpty)
+      '${redefense.length} team${redefense.length == 1 ? '' : 's'} still '
+          '${redefense.length == 1 ? 'has' : 'have'} a For Re-defense verdict '
+          '(${names(redefense)}). Marking complete finalizes this milestone: '
+          'these teams will fail this stage and will not advance or qualify for archiving.',
+    if (failing.isNotEmpty)
+      '${failing.length} team${failing.length == 1 ? '' : 's'} '
+          '(${names(failing)}) have failing grades and will not qualify for archiving.',
+  ];
+  final warningMessage = warnings.isEmpty ? '' : '\n\n${warnings.join('\n\n')}';
+  return showConfirmDialog(
+    context,
+    title: 'Mark $stageLabel Complete?',
+    message:
+        'Marking this $target officially complete will lock faculty and panel '
+        'grades, finalize student scores, and make passed teams eligible for '
+        'project archiving.\n\n${readiness.totalTeams} teams will be affected.'
+        '$warningMessage',
+    confirmLabel: 'Mark Complete',
+    destructive: false,
+    icon: Icons.verified_rounded,
+    contentPrefix: Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: DefensysTokens.isDark(context)
+            ? DefensysTokens.successText.withValues(alpha: 0.16)
+            : DefensysTokens.successBg,
+        border: Border.all(
+          color: DefensysTokens.isDark(context)
+              ? DefensysTokens.successText
+              : DefensysTokens.successBorder,
+        ),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.check_circle_outline_rounded,
+            size: 24,
+            color: DefensysTokens.isDark(context)
+                ? const Color(0xFF6EE7B7)
+                : DefensysTokens.successText,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${readiness.readyTeams} of ${readiness.totalTeams} teams grading-ready',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: DefensysTokens.textPrimaryOf(context),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  'Every team has all required grades.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: DefensysTokens.textPrimaryOf(context),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'All required panel, adviser and peer evaluations are complete.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.5,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     ),
   );
 }
@@ -3231,10 +3554,7 @@ Widget capstoneTermStatusBadgeRow(
   );
 }
 
-Widget pitTermStatusBadgeRow(
-  GradeCenterState state, {
-  BuildContext? context,
-}) {
+Widget pitTermStatusBadgeRow(GradeCenterState state, {BuildContext? context}) {
   return Wrap(
     spacing: 8,
     runSpacing: 6,
@@ -3284,10 +3604,7 @@ Widget capstoneTermStatusChip({
         Container(
           width: 5.5,
           height: 5.5,
-          decoration: BoxDecoration(
-            color: dotColor,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
         ),
         const SizedBox(width: 6),
         Text(
@@ -3325,10 +3642,12 @@ Widget capstoneTermStatusChip({
 Widget gradeGroupStageControlsSection({
   required GradeCenterState state,
   required String scope,
+  required String stageLabel,
   required bool isOfficiallyComplete,
   required bool peerGradingEnabled,
   required ValueChanged<bool> onOfficiallyCompleteChanged,
   required ValueChanged<bool> onPeerGradingChanged,
+  required Future<GradeGroupCompletionReadiness> Function() checkCompletion,
   bool showCapstonePeerTermBadge = false,
   Map<String, dynamic>? groupSettings,
   List<Map<String, dynamic>> grades = const [],
@@ -3337,17 +3656,25 @@ Widget gradeGroupStageControlsSection({
   final isPit = scope == 'pit';
   final settings = groupSettings ?? const <String, dynamic>{};
   final peerSummary = groupGradingReadinessSummary(settings, grades: grades);
-  final closeBlocked = groupOfficialCloseBlocked(grades: grades);
+  final closeBlocked = groupOfficialCloseBlocked(
+    grades: grades,
+    settings: settings,
+  );
+  final blockedReason = groupOfficialCloseBlockedReason(
+    grades: grades,
+    settings: settings,
+  );
 
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      if (grades.isNotEmpty ||
-          (settings['peer_total_team_count'] as num? ?? 0) > 0) ...[
+      if (groupGradingTeamCount(settings, grades: grades) > 0) ...[
         Text(
           peerSummary,
           style: TextStyle(
-            color: closeBlocked ? const Color(0xFFD97706) : const Color(0xFF667085),
+            color: closeBlocked
+                ? const Color(0xFFD97706)
+                : const Color(0xFF667085),
             fontSize: 12,
             fontWeight: FontWeight.w600,
           ),
@@ -3360,36 +3687,21 @@ Widget gradeGroupStageControlsSection({
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           Builder(
-            builder: (context) {
-              final redefenseTeams = grades
-                  .where((g) => g['verdict']?.toString() == 'for_redefense')
-                  .map((g) => g['team_name']?.toString() ?? g['team']?['name']?.toString() ?? 'Unknown Team')
-                  .toList();
-              final failingTeams = grades
-                  .where((g) {
-                    final res = g['result']?.toString();
-                    if (res == 'failed') return true;
-                    final fg = asDouble(g['final_grade']);
-                    return fg != null && fg < 75.0 && g['verdict']?.toString() != 'for_redefense';
-                  })
-                  .map((g) => g['team_name']?.toString() ?? g['team']?['name']?.toString() ?? 'Unknown Team')
-                  .toList();
-              return officialCompleteMilestoneButton(
-                context: context,
-                isComplete: isOfficiallyComplete,
-                enabled: !state.isSaving &&
-                    officialCompleteToggleEnabled &&
-                    (!closeBlocked || isOfficiallyComplete),
-                stageLabel: isPit ? 'Event' : 'Stage',
-                teamCount: grades.length,
-                redefenseCount: redefenseTeams.length,
-                redefenseTeams: redefenseTeams,
-                failingCount: failingTeams.length,
-                failingTeams: failingTeams,
-                isPit: isPit,
-                onChanged: onOfficiallyCompleteChanged,
-              );
-            },
+            builder: (context) => officialCompleteMilestoneButton(
+              context: context,
+              isComplete: isOfficiallyComplete,
+              enabled:
+                  !state.isSaving &&
+                  !state.isLoading &&
+                  !state.isCheckingCompletion &&
+                  officialCompleteToggleEnabled,
+              stageLabel: stageLabel,
+              teamCount: groupGradingTeamCount(settings, grades: grades),
+              isPit: isPit,
+              disabledReason: blockedReason,
+              onChanged: onOfficiallyCompleteChanged,
+              checkCompletion: checkCompletion,
+            ),
           ),
           if (isPit)
             Builder(
@@ -3431,6 +3743,17 @@ Widget gradeGroupStageControlsSection({
             ),
         ],
       ),
+      if (!isOfficiallyComplete && closeBlocked) ...[
+        const SizedBox(height: 8),
+        Text(
+          blockedReason,
+          style: const TextStyle(
+            color: Color(0xFFD97706),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
       if (isPit) ...[
         const SizedBox(height: 8),
         const Text(
@@ -3460,10 +3783,7 @@ Widget groupToggleRow({
     decoration: BoxDecoration(
       color: enabled ? const Color(0xFFF8FAFC) : const Color(0xFFF1F5F9),
       borderRadius: BorderRadius.circular(6),
-      border: Border.all(
-        color: const Color(0xFFE2E8F0),
-        width: 1,
-      ),
+      border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
     ),
     child: Row(
       mainAxisSize: MainAxisSize.min,
@@ -3488,7 +3808,9 @@ Widget groupToggleRow({
                 child: Icon(
                   Icons.help_outline_rounded,
                   size: 13.5,
-                  color: enabled ? const Color(0xFF667085) : const Color(0xFF98A2B3),
+                  color: enabled
+                      ? const Color(0xFF667085)
+                      : const Color(0xFF98A2B3),
                 ),
               ),
             ),
@@ -3586,7 +3908,11 @@ void showPeerGradingHelpDialog(BuildContext context, {required bool isPit}) {
                   ),
                   IconButton(
                     onPressed: () => Navigator.of(dialogCtx).pop(),
-                    icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF94A3B8)),
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      size: 20,
+                      color: Color(0xFF94A3B8),
+                    ),
                     tooltip: 'Close',
                   ),
                 ],
@@ -3627,7 +3953,9 @@ void showPeerGradingHelpDialog(BuildContext context, {required bool isPit}) {
               const SizedBox(height: 10),
               _buildHelpStepCard(
                 stepNum: '4',
-                title: isPit ? 'Grade Calculation & Event Archival' : 'Grade Finalization & Safe Lock',
+                title: isPit
+                    ? 'Grade Calculation & Event Archival'
+                    : 'Grade Finalization & Safe Lock',
                 description: isPit
                     ? 'Once all peer scores are in, composite grades calculate automatically based on panel and peer weights. Marking the event officially complete locks peer grading and readies teams for project archive.'
                     : 'Once panel, adviser, and peer scores are in, composite grades calculate automatically. Marking the stage officially complete locks grading and advances passing teams to the next stage.',
@@ -3643,8 +3971,13 @@ void showPeerGradingHelpDialog(BuildContext context, {required bool isPit}) {
                   style: FilledButton.styleFrom(
                     backgroundColor: DefensysUi.primaryMaroon,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 10,
+                    ),
                   ),
                   child: const Text(
                     'Got it',
@@ -3681,10 +4014,7 @@ Widget _buildHelpStepCard({
         Container(
           width: 24,
           height: 24,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           child: Center(
             child: Text(
               stepNum,
@@ -3748,10 +4078,10 @@ Widget gradeScoreSummaryCard({
   final scoreColor = score == null
       ? const Color(0xFF94A3B8)
       : score >= 75
-          ? const Color(0xFF059669)
-          : score >= 60
-              ? const Color(0xFFD97706)
-              : const Color(0xFFDC2626);
+      ? const Color(0xFF059669)
+      : score >= 60
+      ? const Color(0xFFD97706)
+      : const Color(0xFFDC2626);
 
   final resolvedIconColor = iconColor ?? const Color(0xFF2563EB);
   final resolvedIconBg = iconBg ?? resolvedIconColor.withValues(alpha: 0.1);
@@ -3791,7 +4121,10 @@ Widget gradeScoreSummaryCard({
                   if (weightText != null && weightText.isNotEmpty) ...[
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF1F5F9),
                         borderRadius: BorderRadius.circular(6),
@@ -3814,7 +4147,10 @@ Widget gradeScoreSummaryCard({
               trailing
             else
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: scoreColor.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(8),
@@ -3853,22 +4189,22 @@ Widget defenseMinutesStatusBadgeWidget(Map<String, dynamic> grade) {
   final label = isCompleted
       ? 'Official Minutes: Signed & Completed'
       : minutesStatus == 'adviser_signed'
-          ? 'Minutes: Awaiting Chair Sign'
-          : minutesStatus == 'submitted'
-              ? 'Minutes: Awaiting Adviser Sign'
-              : 'Minutes: In Progress by Documenter';
+      ? 'Minutes: Awaiting Chair Sign'
+      : minutesStatus == 'submitted'
+      ? 'Minutes: Awaiting Adviser Sign'
+      : 'Minutes: In Progress by Documenter';
 
   final color = isCompleted
       ? const Color(0xFF047857)
       : minutesStatus == 'adviser_signed' || minutesStatus == 'submitted'
-          ? const Color(0xFF2563EB)
-          : const Color(0xFF64748B);
+      ? const Color(0xFF2563EB)
+      : const Color(0xFF64748B);
 
   final icon = isCompleted
       ? Icons.verified_outlined
       : minutesStatus == 'adviser_signed' || minutesStatus == 'submitted'
-          ? Icons.draw_outlined
-          : Icons.edit_note_outlined;
+      ? Icons.draw_outlined
+      : Icons.edit_note_outlined;
 
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
@@ -3908,26 +4244,26 @@ Widget _verdictDirectivesCard(Map<String, dynamic> grade) {
   final accentColor = isApproved
       ? const Color(0xFF16A34A)
       : isApprovedRevisions
-          ? const Color(0xFFD97706)
-          : isForRedefense
-              ? const Color(0xFFDC2626)
-              : const Color(0xFF64748B);
+      ? const Color(0xFFD97706)
+      : isForRedefense
+      ? const Color(0xFFDC2626)
+      : const Color(0xFF64748B);
 
   final bgColor = isApproved
       ? const Color(0xFFF0FDF4)
       : isApprovedRevisions
-          ? const Color(0xFFFFFBEB)
-          : isForRedefense
-              ? const Color(0xFFFEF2F2)
-              : const Color(0xFFF8FAFC);
+      ? const Color(0xFFFFFBEB)
+      : isForRedefense
+      ? const Color(0xFFFEF2F2)
+      : const Color(0xFFF8FAFC);
 
   final borderColor = isApproved
       ? const Color(0xFFBBF7D0)
       : isApprovedRevisions
-          ? const Color(0xFFFDE68A)
-          : isForRedefense
-              ? const Color(0xFFFECACA)
-              : const Color(0xFFE2E8F0);
+      ? const Color(0xFFFDE68A)
+      : isForRedefense
+      ? const Color(0xFFFECACA)
+      : const Color(0xFFE2E8F0);
 
   return Container(
     width: double.infinity,
@@ -3973,7 +4309,11 @@ Widget _verdictDirectivesCard(Map<String, dynamic> grade) {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.event_available_rounded, size: 13, color: Color(0xFFD97706)),
+                    const Icon(
+                      Icons.event_available_rounded,
+                      size: 13,
+                      color: Color(0xFFD97706),
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       'Revision Due: $deadline',
@@ -4052,7 +4392,11 @@ Widget attemptHistoryCardWidget({
                 color: const Color(0xFF6366F1).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: const Icon(Icons.history_edu_rounded, size: 18, color: Color(0xFF4F46E5)),
+              child: const Icon(
+                Icons.history_edu_rounded,
+                size: 18,
+                color: Color(0xFF4F46E5),
+              ),
             ),
             const SizedBox(width: 10),
             const Text(
@@ -4084,10 +4428,7 @@ Widget attemptHistoryCardWidget({
         const SizedBox(height: 10),
         const Text(
           'Historical evaluation attempts preserved for accreditation, ISO 9001:2015 audit retention, and re-defense tracking.',
-          style: TextStyle(
-            fontSize: 12,
-            color: Color(0xFF64748B),
-          ),
+          style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
         ),
         const SizedBox(height: 14),
         ...attemptHistory.map((item) {
@@ -4116,7 +4457,10 @@ Widget attemptHistoryCardWidget({
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2.5,
+                      ),
                       decoration: BoxDecoration(
                         color: const Color(0xFF6366F1).withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(6),
@@ -4143,13 +4487,23 @@ Widget attemptHistoryCardWidget({
                     if (pScore != null) ...[
                       Text(
                         'Panel: ${pScore.toStringAsFixed(2)}%',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF334155),
+                        ),
                       ),
                       const SizedBox(width: 12),
                     ],
                     Text(
-                      fGrade != null ? 'Final: ${fGrade.toStringAsFixed(2)}%' : 'Incomplete',
-                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                      fGrade != null
+                          ? 'Final: ${fGrade.toStringAsFixed(2)}%'
+                          : 'Incomplete',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF0F172A),
+                      ),
                     ),
                     const SizedBox(width: 10),
                     verdictBadgeWidget(vVerdict),
@@ -4159,7 +4513,10 @@ Widget attemptHistoryCardWidget({
                   const SizedBox(height: 8),
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(6),
@@ -4171,11 +4528,19 @@ Widget attemptHistoryCardWidget({
                         if (vByName.isNotEmpty)
                           Text(
                             'Directive by $vByName:',
-                            style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF64748B),
+                            ),
                           ),
                         Text(
                           vRemarks,
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF334155), height: 1.35),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF334155),
+                            height: 1.35,
+                          ),
                         ),
                       ],
                     ),
@@ -4197,96 +4562,8 @@ class GradeCenterActions {
     required Map<String, dynamic> grade,
   }) async {
     final gradeId = asInt(grade['id']);
-    if (gradeId == null) {
-      return;
-    }
-
-    final panel = TextEditingController(text: scoreInput(grade['panel_score']));
-    final adviser = TextEditingController(
-      text: scoreInput(grade['adviser_score']),
-    );
-    final peer = TextEditingController(text: scoreInput(grade['peer_score']));
-    final isPit = grade['scope'] == 'pit';
-
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Edit Grade Scores'),
-        content: SizedBox(
-          width: 480,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                grade['team_name']?.toString() ?? '',
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              const Text(
-                'Scores are percentages from 0 to 100.',
-                style: TextStyle(color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: panel,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: 'Panel Score (${weightText(grade, 'panel')}%)',
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (!isPit) ...[
-                TextField(
-                  controller: adviser,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText:
-                        'Adviser Score (${weightText(grade, 'adviser')}%)',
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-              TextField(
-                controller: peer,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: 'Peer Score (${weightText(grade, 'peer')}%)',
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            icon: const Icon(Icons.save_rounded, size: 16),
-            label: const Text('Save Scores'),
-            style: DefensysTokens.saveButtonStyle(isPill: false),
-          ),
-        ],
-      ),
-    );
-
-    final panelText = panel.text;
-    final adviserText = adviser.text;
-    final peerText = peer.text;
-    panel.dispose();
-    adviser.dispose();
-    peer.dispose();
-
-    if (!context.mounted || saved != true) {
-      return;
-    }
-
-    await ref.read(gradeCenterProvider.notifier).updateGrade(gradeId, {
-      'panel_score': scorePayload(panelText),
-      if (!isPit) 'adviser_score': scorePayload(adviserText),
-      'peer_score': scorePayload(peerText),
-    });
+    if (gradeId == null) return;
+    await showGradeCorrectionDialog(context, gradeId);
   }
 
   static Widget _verdictRadioOption({
@@ -4304,7 +4581,9 @@ class GradeCenterActions {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? color.withValues(alpha: 0.08) : const Color(0xFFF8FAFC),
+          color: isSelected
+              ? color.withValues(alpha: 0.08)
+              : const Color(0xFFF8FAFC),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
             color: isSelected ? color : const Color(0xFFE2E8F0),
@@ -4360,10 +4639,14 @@ class GradeCenterActions {
 
     String selectedVerdict = grade['verdict']?.toString() ?? 'approved';
     if (selectedVerdict.isEmpty) selectedVerdict = 'approved';
-    final remarksController = TextEditingController(text: grade['verdict_remarks']?.toString() ?? '');
+    final remarksController = TextEditingController(
+      text: grade['verdict_remarks']?.toString() ?? '',
+    );
     DateTime? revisionDeadline;
     if (grade['revision_deadline'] != null) {
-      revisionDeadline = DateTime.tryParse(grade['revision_deadline'].toString());
+      revisionDeadline = DateTime.tryParse(
+        grade['revision_deadline'].toString(),
+      );
     }
 
     final saved = await showDialog<bool>(
@@ -4371,7 +4654,9 @@ class GradeCenterActions {
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setState) {
           return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             title: Row(
               children: [
                 Container(
@@ -4380,12 +4665,20 @@ class GradeCenterActions {
                     color: AppColors.maroon.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.gavel_rounded, color: AppColors.maroon, size: 20),
+                  child: const Icon(
+                    Icons.gavel_rounded,
+                    color: AppColors.maroon,
+                    size: 20,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 const Text(
                   'Render Defense Verdict',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0F172A),
+                  ),
                 ),
               ],
             ),
@@ -4398,60 +4691,87 @@ class GradeCenterActions {
                   children: [
                     Text(
                       '${grade['team_name'] ?? 'Team'} · ${grade['stage_label'] ?? 'Defense Stage'}',
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF475569)),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: Color(0xFF475569),
+                      ),
                     ),
                     const SizedBox(height: 16),
                     const Text(
                       'OFFICIAL VERDICT',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF64748B), letterSpacing: 0.5),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF64748B),
+                        letterSpacing: 0.5,
+                      ),
                     ),
                     const SizedBox(height: 8),
                     _verdictRadioOption(
                       title: 'Approved',
-                      subtitle: 'The team successfully passed with no mandatory re-defense.',
+                      subtitle:
+                          'The team successfully passed with no mandatory re-defense.',
                       value: 'approved',
                       groupValue: selectedVerdict,
                       color: const Color(0xFF16A34A),
-                      onChanged: (val) => setState(() => selectedVerdict = val!),
+                      onChanged: (val) =>
+                          setState(() => selectedVerdict = val!),
                     ),
                     const SizedBox(height: 8),
                     _verdictRadioOption(
                       title: 'Approved with Revisions',
-                      subtitle: 'Passed, but required manuscript or system changes must be submitted by a deadline.',
+                      subtitle:
+                          'Passed, but required manuscript or system changes must be submitted by a deadline.',
                       value: 'approved_with_revisions',
                       groupValue: selectedVerdict,
                       color: const Color(0xFFD97706),
-                      onChanged: (val) => setState(() => selectedVerdict = val!),
+                      onChanged: (val) =>
+                          setState(() => selectedVerdict = val!),
                     ),
                     const SizedBox(height: 8),
                     _verdictRadioOption(
                       title: 'For Re-defense',
-                      subtitle: 'Concept rejected, prototype unsatisfactory, or major deficiencies requiring re-presentation.',
+                      subtitle:
+                          'Concept rejected, prototype unsatisfactory, or major deficiencies requiring re-presentation.',
                       value: 'for_redefense',
                       groupValue: selectedVerdict,
                       color: const Color(0xFFDC2626),
-                      onChanged: (val) => setState(() => selectedVerdict = val!),
+                      onChanged: (val) =>
+                          setState(() => selectedVerdict = val!),
                     ),
                     if (selectedVerdict == 'approved_with_revisions') ...[
                       const SizedBox(height: 16),
                       const Text(
                         'REVISION SUBMISSION DEADLINE',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF64748B), letterSpacing: 0.5),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF64748B),
+                          letterSpacing: 0.5,
+                        ),
                       ),
                       const SizedBox(height: 6),
                       OutlinedButton.icon(
                         onPressed: () async {
                           final picked = await showDatePicker(
                             context: context,
-                            initialDate: revisionDeadline ?? DateTime.now().add(const Duration(days: 14)),
+                            initialDate:
+                                revisionDeadline ??
+                                DateTime.now().add(const Duration(days: 14)),
                             firstDate: DateTime.now(),
-                            lastDate: DateTime.now().add(const Duration(days: 365)),
+                            lastDate: DateTime.now().add(
+                              const Duration(days: 365),
+                            ),
                           );
                           if (picked != null) {
                             setState(() => revisionDeadline = picked);
                           }
                         },
-                        icon: const Icon(Icons.calendar_today_rounded, size: 16),
+                        icon: const Icon(
+                          Icons.calendar_today_rounded,
+                          size: 16,
+                        ),
                         label: Text(
                           revisionDeadline != null
                               ? '${revisionDeadline!.year}-${revisionDeadline!.month.toString().padLeft(2, '0')}-${revisionDeadline!.day.toString().padLeft(2, '0')}'
@@ -4463,15 +4783,23 @@ class GradeCenterActions {
                     const SizedBox(height: 16),
                     const Text(
                       'PANEL INSTRUCTIONS & DIRECTIVES FOR TEAM',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF64748B), letterSpacing: 0.5),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF64748B),
+                        letterSpacing: 0.5,
+                      ),
                     ),
                     const SizedBox(height: 6),
                     TextField(
                       controller: remarksController,
                       maxLines: 4,
                       decoration: InputDecoration(
-                        hintText: 'Enter panel directives, recommendations, required changes, or new title instructions…',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        hintText:
+                            'Enter panel directives, recommendations, required changes, or new title instructions…',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                         filled: true,
                         fillColor: const Color(0xFFF8FAFC),
                       ),
@@ -4490,7 +4818,10 @@ class GradeCenterActions {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.maroon,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 10,
+                  ),
                 ),
                 child: const Text('Submit Verdict'),
               ),
@@ -4509,12 +4840,14 @@ class GradeCenterActions {
         ? '${revisionDeadline!.year}-${revisionDeadline!.month.toString().padLeft(2, '0')}-${revisionDeadline!.day.toString().padLeft(2, '0')}'
         : null;
 
-    await ref.read(gradeCenterProvider.notifier).submitVerdict(
-      gradeId,
-      verdict: selectedVerdict,
-      remarks: remarks,
-      revisionDeadline: deadlineStr,
-    );
+    await ref
+        .read(gradeCenterProvider.notifier)
+        .submitVerdict(
+          gradeId,
+          verdict: selectedVerdict,
+          remarks: remarks,
+          revisionDeadline: deadlineStr,
+        );
   }
 
   static Future<void> confirmPublish({

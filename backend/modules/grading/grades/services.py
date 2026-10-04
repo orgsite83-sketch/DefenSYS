@@ -242,7 +242,7 @@ def recompute_panel_score(team_grade):
     is_both = (target_type == 'both')
 
     submissions = list(
-        team_grade.panelist_submissions.prefetch_related('criterion_scores').all()
+        team_grade.panelist_submissions.filter(is_void=False).prefetch_related('criterion_scores')
     )
 
     if submissions:
@@ -344,12 +344,16 @@ def recompute_panel_score(team_grade):
 
     # Fallback to breakdowns
     breakdowns = list(
-        team_grade.breakdowns.filter(evaluation_type=GradeBreakdown.EVAL_PANEL).order_by(
+        team_grade.breakdowns.filter(evaluation_type=GradeBreakdown.EVAL_PANEL, is_void=False).order_by(
             'display_order', 'id'
         )
     )
     if not breakdowns:
         team_grade.panel_score = None
+        for row in team_grade.student_grades.all():
+            row.panel_score = None
+            row.save()
+            recalculate_student_grade(row)
         team_grade.save()
         return team_grade.panel_score
 
@@ -586,10 +590,31 @@ def _submission_identity_kwargs(panelist=None, guest=None):
 
 
 @transaction.atomic
-def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=None, guest=None, remarks='', student=None):
+def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=None, guest=None, remarks='', student=None, expected_context=None):
+    from defense.scheduler.models import DefenseSchedule
+    from defense.scheduler.panelist_evaluation import grading_unavailable_reason, evaluation_context
+    schedule = DefenseSchedule.objects.select_for_update().get(pk=schedule.pk)
+    team_grade = TeamGrade.objects.select_for_update().get(pk=team_grade.pk)
+    if expected_context and expected_context != evaluation_context(schedule, team_grade):
+        raise ValidationError('This evaluation changed. Refresh your assignment before submitting.')
+    unavailable = grading_unavailable_reason(schedule, team_grade)
+    if unavailable:
+        raise ValidationError(unavailable)
+    if panelist and not schedule.panel_assignments.filter(panelist=panelist).exists():
+        raise ValidationError('Your panel assignment changed. Refresh before submitting.')
+    if guest:
+        from user_management.models import GuestPanelistCode
+        invitation = GuestPanelistCode.objects.select_for_update().filter(pk=guest.guest_code_id, is_active=True).first()
+        from user_management.external_evaluators import invitation_schedule_ids, invitation_is_available
+        token = getattr(guest, 'token', {})
+        if (not invitation or not invitation_is_available(invitation) or schedule.pk not in invitation_schedule_ids(invitation)
+                or invitation.access_version != token.get('access_version', 1)):
+            raise ValidationError('Your external evaluator assignment changed. Refresh before submitting.')
     if bool(panelist) == bool(guest):
         raise ValidationError({'panelist': 'Use either a panelist or a guest identity.'})
-
+    identity_filter = {'panelist': panelist} if panelist else {'guest_code_id': str(guest.guest_code_id)}
+    if team_grade.panelist_submissions.filter(schedule=schedule, student=student, **identity_filter).exists():
+        raise ValidationError('This evaluation has already been recorded. Request a correction instead of submitting again.')
     rows = _validated_panel_criterion_rows(schedule, criteria_scores, student=student)
     identity = _submission_identity_kwargs(panelist=panelist, guest=guest)
     
@@ -629,6 +654,7 @@ def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=Non
     GradeBreakdown.objects.bulk_create([
         GradeBreakdown(
             team_grade=team_grade,
+            source_submission=submission,
             student=student,
             rubric=schedule.rubric,
             evaluation_type=GradeBreakdown.EVAL_PANEL,
@@ -778,6 +804,9 @@ def _merge_stale_grade(stale, canonical):
         canonical.published_at = stale.published_at
 
     stale.breakdowns.update(team_grade=canonical)
+    stale.corrections.update(grade=canonical)
+    stale.panelist_submissions.update(team_grade=canonical)
+    stale.attempt_history.update(team_grade=canonical)
     
     from .models import StudentStageGrade
     for stale_sg in list(stale.student_grades.all()):
@@ -1230,10 +1259,13 @@ class GradeContextService:
         return None
 
     @staticmethod
+    @transaction.atomic
     def get_for_adviser_context(adviser, grade):
         if grade.team.adviser_id != getattr(adviser, 'id', None):
             raise ValidationError({'grade': 'This grade does not belong to one of your advised teams.'})
-        return resolve_canonical_capstone_grade(grade)
+        canonical = resolve_canonical_capstone_grade(grade)
+        _cleanup_stale_capstone_grades_for_team(canonical, canonical.team, canonical.semester)
+        return canonical
 
     @staticmethod
     def finalize_for_archive(grade, user=None):
@@ -1247,6 +1279,8 @@ class GradeContextService:
         grade.recalculate()
         if not grade.is_complete:
             raise ValidationError({'status': 'Only complete grades can be finalized for archive.'})
+        if not team_grading_readiness(grade, grade.semester, grade.scope)['ready']:
+            raise ValidationError('Complete every required evaluator before finalizing this defense.')
         verdict = getattr(grade, 'verdict', '')
         if verdict == TeamGrade.VERDICT_FOR_REDEFENSE:
             raise ValidationError({'status': 'Grades marked for re-defense cannot be finalized for archive.'})
@@ -1286,6 +1320,8 @@ class GradeContextService:
 
     @staticmethod
     def publish(grade, user=None):
+        if not team_grading_readiness(grade, grade.semester, grade.scope)['ready']:
+            raise ValidationError('Complete every required evaluator and grading component before publishing.')
         grade.publish(user=user)
         if grade.schedule_id and grade.schedule.status != DefenseSchedule.STATUS_DONE:
             from defense.scheduler.services import transition_schedule_status
@@ -1837,6 +1873,10 @@ def team_grading_readiness(grade, semester, scope, config=None):
         )
     else:
         panel_complete = grade.panel_score is not None
+    from .corrections import evaluator_completion
+    completion = evaluator_completion(grade)
+    if completion['required']:
+        panel_complete = panel_complete and completion['submitted'] == completion['required']
 
     peer_required = peer_required_for_grade(grade, semester, scope, config=config)
     peer_complete = is_team_peer_eval_complete(grade) if peer_required else True
@@ -1854,6 +1894,8 @@ def team_grading_readiness(grade, semester, scope, config=None):
     summary = peer_completion_summary(grade) if peer_required else {}
     return {
         'panel_complete': panel_complete,
+        'panel_evaluators_submitted': completion['submitted'],
+        'panel_evaluators_required': completion['required'],
         'peer_complete': peer_complete,
         'adviser_complete': adviser_complete,
         'peer_required': peer_required,
@@ -1951,6 +1993,52 @@ def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=N
     }
 
 
+def group_completion_readiness(*, semester, scope, stage_label, user):
+    """Read the same cohort and grading blockers used by official completion.
+
+    This preflight never creates configs, finalizes grades, or changes schedules.
+    """
+    label = (stage_label or '').strip()
+    year_level = None
+    if _is_pit_lead_only(user) and scope != TeamGrade.SCOPE_PIT:
+        raise PermissionDenied('PIT leads can only complete PIT events.')
+    if scope == TeamGrade.SCOPE_PIT:
+        from defense.scheduler.models import PitEventGradingConfig
+
+        config = PitEventGradingConfig.objects.filter(
+            semester=semester, event_name__iexact=label,
+        ).first()
+        if config is None:
+            raise ValidationError({'stage_label': 'No PIT event configuration found.'})
+        if not _is_pit_event_in_user_scope(config, label, user):
+            raise PermissionDenied('PIT leads can only complete PIT events for their assigned year level.')
+        if _is_pit_lead_only(user):
+            year_level = (user.pit_lead_year or '').strip()
+    else:
+        from defense.stages.models import DefenseStage, StageGradingConfig
+
+        stage = DefenseStage.objects.filter(label=label).first()
+        if stage is None:
+            raise ValidationError({'stage_label': 'No defense stage found.'})
+        config = StageGradingConfig.objects.filter(
+            semester=semester, defense_stage=stage,
+        ).first()
+
+    counts = grading_readiness_counts_for_group(
+        semester, scope, label, config=config, year_level=year_level,
+    )
+    incomplete = incomplete_grading_teams_for_group(
+        semester, scope, label, config=config, year_level=year_level,
+    )
+    is_complete = bool(config and config.is_officially_complete)
+    return {
+        **counts,
+        'is_officially_complete': is_complete,
+        'can_complete': counts['grading_total_team_count'] > 0 and not incomplete and not is_complete,
+        'incomplete_teams': incomplete,
+    }
+
+
 def _auto_finalize_passed_grades_in_queryset(grades, user=None):
     from .peer_eval import is_team_peer_eval_complete, peer_submission_count
 
@@ -2029,7 +2117,7 @@ def maybe_auto_finalize_passed_grade(grade, user=None):
     verdict = getattr(grade, 'verdict', '')
     if verdict == TeamGrade.VERDICT_FOR_REDEFENSE:
         return grade
-    if grade.is_complete:
+    if grade.is_complete and team_grading_readiness(grade, grade.semester, grade.scope)['ready']:
         if verdict in TeamGrade.PASSING_VERDICTS:
             return finalize_passed_grade_for_archive(grade, user=user)
         if not verdict and grade.final_grade is not None and grade.final_grade >= PASS_GRADE_THRESHOLD:

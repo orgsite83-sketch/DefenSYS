@@ -309,6 +309,8 @@ class TeamGrade(models.Model):
 
 
 class GradeBreakdown(models.Model):
+    source_submission = models.ForeignKey('grading.PanelistGradeSubmission', null=True, blank=True, on_delete=models.SET_NULL, related_name='breakdown_rows')
+    is_void = models.BooleanField(default=False)
     EVAL_PANEL = 'panel'
     EVAL_ADVISER = 'adviser'
     EVAL_PEER = 'peer'
@@ -371,6 +373,9 @@ class GradeBreakdown(models.Model):
 
 
 class PanelistGradeSubmission(models.Model):
+    is_void = models.BooleanField(default=False)
+    void_reason = models.TextField(blank=True)
+    voided_at = models.DateTimeField(null=True, blank=True)
     team_grade = models.ForeignKey(
         TeamGrade,
         related_name='panelist_submissions',

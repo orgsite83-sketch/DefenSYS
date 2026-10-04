@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../theme/defensys_tokens.dart';
+import '../../theme/login_palette.dart';
 import '../branding/defensys_logo_mark.dart';
 import 'defensys_skeleton.dart';
 
@@ -11,14 +12,14 @@ class DefensysShimmer extends StatefulWidget {
   const DefensysShimmer({
     super.key,
     required this.child,
-    this.baseColor = const Color(0xFFE2E8F0),
-    this.highlightColor = const Color(0xFFF8FAFC),
+    this.baseColor,
+    this.highlightColor,
     this.duration = const Duration(milliseconds: 1400),
   });
 
   final Widget child;
-  final Color baseColor;
-  final Color highlightColor;
+  final Color? baseColor;
+  final Color? highlightColor;
   final Duration duration;
 
   @override
@@ -46,6 +47,7 @@ class _DefensysShimmerState extends State<DefensysShimmer>
 
   @override
   Widget build(BuildContext context) {
+    final palette = LoginPalette.of(context);
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
@@ -56,9 +58,9 @@ class _DefensysShimmerState extends State<DefensysShimmer>
               begin: const Alignment(-1.0, -0.3),
               end: const Alignment(1.0, 0.3),
               colors: [
-                widget.baseColor,
-                widget.highlightColor,
-                widget.baseColor,
+                widget.baseColor ?? palette.border,
+                widget.highlightColor ?? palette.inputFill,
+                widget.baseColor ?? palette.border,
               ],
               stops: const [0.1, 0.5, 0.9],
               transform: _SlidingGradientTransform(
@@ -376,6 +378,7 @@ class _MobileLoginSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = LoginPalette.of(context);
     return Scaffold(
       backgroundColor: const Color(0xFF4D0817),
       body: Stack(
@@ -465,13 +468,13 @@ class _MobileLoginSkeleton extends StatelessWidget {
                             ],
                           ),
                           const SizedBox(height: 28),
-                          // White Card Container (Floating sheet)
+                          // Theme-aware form surface (floating sheet)
                           Container(
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: palette.surface,
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: const Color(0xFFE2E8F0),
+                                color: palette.border,
                                 width: 1.0,
                               ),
                               boxShadow: [
@@ -500,9 +503,9 @@ class _MobileLoginSkeleton extends StatelessWidget {
                                         opacity: 0.07,
                                         child: Transform.rotate(
                                           angle: -0.12,
-                                          child: const DefensysLogoMark(
+                                          child: DefensysLogoMark(
                                             size: 180,
-                                            customColor: Color(0xFF6B1527),
+                                            customColor: palette.action,
                                           ),
                                         ),
                                       ),
@@ -554,6 +557,7 @@ class _MobileLoginSkeleton extends StatelessWidget {
                                               const SizedBox(height: 7),
                                               // Field 1 input box placeholder
                                               _buildSkeletonInputBox(
+                                                palette: palette,
                                                 icon: Icons.person_outline,
                                                 hintWidth: 150,
                                               ),
@@ -567,6 +571,7 @@ class _MobileLoginSkeleton extends StatelessWidget {
                                               const SizedBox(height: 7),
                                               // Field 2 input box placeholder
                                               _buildSkeletonInputBox(
+                                                palette: palette,
                                                 icon: Icons.lock_outline,
                                                 hintWidth: 90,
                                                 hasSuffix: true,
@@ -605,13 +610,13 @@ class _MobileLoginSkeleton extends StatelessWidget {
                                                 height: 52,
                                                 width: double.infinity,
                                                 decoration: BoxDecoration(
-                                                  color: const Color(0xFF6B1527)
+                                                  color: palette.action
                                                       .withValues(alpha: 0.85),
                                                   borderRadius:
                                                       BorderRadius.circular(12),
                                                   boxShadow: [
                                                     BoxShadow(
-                                                      color: const Color(0xFF6B1527)
+                                                      color: palette.action
                                                           .withValues(alpha: 0.25),
                                                       blurRadius: 10,
                                                       offset: const Offset(0, 4),
@@ -634,9 +639,9 @@ class _MobileLoginSkeleton extends StatelessWidget {
                                               // Divider OR placeholder
                                               Row(
                                                 children: [
-                                                  const Expanded(
+                                                  Expanded(
                                                     child: Divider(
-                                                      color: Color(0xFFE2E8F0),
+                                                      color: palette.border,
                                                       height: 1,
                                                     ),
                                                   ),
@@ -650,9 +655,9 @@ class _MobileLoginSkeleton extends StatelessWidget {
                                                       borderRadius: 2,
                                                     ),
                                                   ),
-                                                  const Expanded(
+                                                  Expanded(
                                                     child: Divider(
-                                                      color: Color(0xFFE2E8F0),
+                                                      color: palette.border,
                                                       height: 1,
                                                     ),
                                                   ),
@@ -664,11 +669,11 @@ class _MobileLoginSkeleton extends StatelessWidget {
                                                 height: 48,
                                                 width: double.infinity,
                                                 decoration: BoxDecoration(
-                                                  color: Colors.white,
+                                                  color: palette.surface,
                                                   borderRadius:
                                                       BorderRadius.circular(12),
                                                   border: Border.all(
-                                                      color: const Color(0xFFCBD5E1)),
+                                                      color: palette.inputBorder),
                                                 ),
                                                 alignment: Alignment.center,
                                                 child: DefensysSkeleton.box(
@@ -750,6 +755,7 @@ class _MobileLoginSkeleton extends StatelessWidget {
   }
 
   static Widget _buildSkeletonInputBox({
+    required LoginPalette palette,
     required IconData icon,
     required double hintWidth,
     bool hasSuffix = false,
@@ -757,14 +763,14 @@ class _MobileLoginSkeleton extends StatelessWidget {
     return Container(
       height: 50,
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: palette.inputFill,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFCBD5E1), width: 1.0),
+        border: Border.all(color: palette.inputBorder, width: 1.0),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: const Color(0xFF94A3B8)),
+          Icon(icon, size: 20, color: palette.muted),
           const SizedBox(width: 12),
           DefensysSkeleton.box(
             width: hintWidth,
@@ -773,10 +779,10 @@ class _MobileLoginSkeleton extends StatelessWidget {
           ),
           if (hasSuffix) ...[
             const Spacer(),
-            const Icon(
+            Icon(
               Icons.visibility_outlined,
               size: 20,
-              color: Color(0xFF94A3B8),
+              color: palette.muted,
             ),
           ],
         ],
@@ -792,16 +798,17 @@ class _WebLoginSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = LoginPalette.of(context);
     final isCompact = constraints.maxWidth < 980;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: palette.background,
       body: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Left Side: Hero Event Carousel Skeleton (60%)
           Expanded(
-            flex: 6,
+            flex: isCompact ? 5 : 6,
             child: Stack(
               children: [
                 Positioned.fill(
@@ -925,22 +932,24 @@ class _WebLoginSkeleton extends StatelessWidget {
           ),
           // Right Side: Centered Form Card (40%)
           Expanded(
-            flex: 4,
+            flex: isCompact ? 5 : 4,
             child: Container(
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    Color(0xFFF8FAFC),
-                    Color(0xFFF1F5F9),
+                    palette.background,
+                    palette.panel,
                   ],
                 ),
               ),
               child: Center(
                 child: SingleChildScrollView(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isCompact ? 16 : 32,
+                    vertical: 24,
+                  ),
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 440),
                     child: Column(
@@ -955,7 +964,7 @@ class _WebLoginSkeleton extends StatelessWidget {
                                 width: 44,
                                 height: 44,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFE2E8F0),
+                                  color: palette.border,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                               ),
@@ -963,14 +972,14 @@ class _WebLoginSkeleton extends StatelessWidget {
                               Container(
                                 width: 1,
                                 height: 32,
-                                color: const Color(0xFFCBD5E1),
+                                color: palette.inputBorder,
                               ),
                               const SizedBox(width: 14),
                               Container(
                                 width: 44,
                                 height: 44,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFE2E8F0),
+                                  color: palette.border,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                               ),
@@ -978,14 +987,14 @@ class _WebLoginSkeleton extends StatelessWidget {
                               Container(
                                 width: 1,
                                 height: 32,
-                                color: const Color(0xFFCBD5E1),
+                                color: palette.inputBorder,
                               ),
                               const SizedBox(width: 14),
                               Container(
                                 width: 44,
                                 height: 44,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFFE2E8F0),
+                                  color: palette.border,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                               ),
@@ -996,10 +1005,10 @@ class _WebLoginSkeleton extends StatelessWidget {
                         // Web Card Skeleton
                         Container(
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: palette.surface,
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: const Color(0xFFE2E8F0),
+                              color: palette.border,
                               width: 1.0,
                             ),
                             boxShadow: [
@@ -1017,7 +1026,12 @@ class _WebLoginSkeleton extends StatelessWidget {
                               ),
                             ],
                           ),
-                          padding: const EdgeInsets.fromLTRB(36, 34, 36, 30),
+                          padding: EdgeInsets.fromLTRB(
+                            isCompact ? 24 : 36,
+                            34,
+                            isCompact ? 24 : 36,
+                            30,
+                          ),
                           child: DefensysShimmer(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1059,6 +1073,7 @@ class _WebLoginSkeleton extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 8),
                                 _MobileLoginSkeleton._buildSkeletonInputBox(
+                                  palette: palette,
                                   icon: Icons.person_outline,
                                   hintWidth: 150,
                                 ),
@@ -1070,6 +1085,7 @@ class _WebLoginSkeleton extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 8),
                                 _MobileLoginSkeleton._buildSkeletonInputBox(
+                                  palette: palette,
                                   icon: Icons.lock_outline,
                                   hintWidth: 90,
                                   hasSuffix: true,
@@ -1106,7 +1122,7 @@ class _WebLoginSkeleton extends StatelessWidget {
                                   height: 50,
                                   width: double.infinity,
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF6B1527)
+                                    color: palette.action
                                         .withValues(alpha: 0.85),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
@@ -1139,8 +1155,8 @@ class _WebLoginSkeleton extends StatelessWidget {
                               Container(
                                 width: 4,
                                 height: 4,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF94A3B8),
+                                decoration: BoxDecoration(
+                                  color: palette.muted,
                                   shape: BoxShape.circle,
                                 ),
                               ),
@@ -1154,8 +1170,8 @@ class _WebLoginSkeleton extends StatelessWidget {
                               Container(
                                 width: 4,
                                 height: 4,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF94A3B8),
+                                decoration: BoxDecoration(
+                                  color: palette.muted,
                                   shape: BoxShape.circle,
                                 ),
                               ),

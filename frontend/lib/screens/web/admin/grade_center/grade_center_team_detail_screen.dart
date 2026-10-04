@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../services/grade_center_provider.dart';
+import '../../../../services/auth_provider.dart';
+import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'grade_correction_dialog.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/error_banner.dart';
 import '../../../../widgets/table/defensys_segmented_control.dart';
@@ -128,6 +132,8 @@ class _GradeCenterTeamDetailScreenState
         gradeIdValue != null &&
         grade['status'] != 'published' &&
         grade['grading_ready'] == true;
+    final user = ref.watch(authProvider).user;
+    final canCorrect = gradeIdValue != null && (user?['role'] == 'admin' || user?['is_superuser'] == true);
     final canEdit = !widget.isLocked && gradeIdValue != null;
 
     final panelWeight = asDouble(weightText(grade, 'panel')) ?? (isPit ? 70.0 : 50.0);
@@ -329,23 +335,12 @@ class _GradeCenterTeamDetailScreenState
                       )
                     : const Icon(Icons.refresh_rounded, size: 20),
               ),
-              if (canEdit) ...[
+              if (canCorrect) ...[
                 const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: () => GradeCenterActions.showEditScoresDialog(
-                    context: context,
-                    ref: ref,
-                    grade: grade,
-                  ),
-                  icon: const Icon(Icons.edit_rounded, size: 15),
-                  label: const Text('Edit scores'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF0F172A),
-                    backgroundColor: isDark ? DefensysTokens.mistInputFill : Colors.white,
-                    side: BorderSide(color: isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1)),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  ),
-                ),
+                DefensysShadcnScope(child: ShadButton.outline(
+                  onPressed: () => showGradeCorrectionDialog(context, gradeIdValue),
+                  child: const Text('Correct a score'),
+                )),
               ],
               if (!isPit && canEdit) ...[
                 const SizedBox(width: 8),

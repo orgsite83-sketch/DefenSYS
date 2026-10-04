@@ -61,6 +61,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         !onGuestEntry) {
       return AppRoutes.terms;
     }
+    // An invitation link must open its own code even when this browser already
+    // has a guest session for another stage/event. Other guest routes remain
+    // confined to the evaluation workspace.
+    if (onGuestEntry &&
+        (state.uri.queryParameters['code']?.trim().isNotEmpty ?? false)) {
+      return null;
+    }
     return WorkspaceAccess.redirect(auth.user!, location);
   }
 

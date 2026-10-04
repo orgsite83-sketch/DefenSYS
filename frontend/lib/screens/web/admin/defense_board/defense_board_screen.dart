@@ -1,3 +1,10 @@
+import 'package:shadcn_ui/shadcn_ui.dart';
+import '../../../../widgets/shadcn/defensys_action_menu.dart';
+import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
+import 'components/schedule_operations_dialog.dart';
+import 'components/schedule_group_actions.dart';
+import 'components/schedule_manager_dialog.dart';
+import '../grade_center/grade_correction_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -75,7 +82,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       _showScheduleBulkImport = true;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(defenseBoardProvider.notifier).fetchBoard();
+      ref.read(defenseBoardProvider.notifier).fetchBoard(
+            scope: _effectiveBoardScope(ref.read(defenseBoardProvider)),
+          );
       ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
       _checkImportDraft();
     });
@@ -199,7 +208,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       activeAdminSectionProvider,
       (previous, next) {
         if (next == DefensysAdminSection.defenseBoard) {
-          ref.read(defenseBoardProvider.notifier).fetchBoard();
+          ref.read(defenseBoardProvider.notifier).fetchBoard(
+                scope: _effectiveBoardScope(ref.read(defenseBoardProvider)),
+              );
           ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
         }
       },
@@ -1237,23 +1248,15 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isStacked = constraints.maxWidth < 1100;
+          final isStacked = constraints.maxWidth < 1300;
           final isPit = state.scope == 'pit';
 
           if (isStacked) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _buildScopeTabs(state),
-                      const SizedBox(width: 10),
-                      _buildCollapseAllButton(state),
-                    ],
-                  ),
-                ),
+                Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [_buildScopeTabs(state), _buildCollapseAllButton(state), _buildManageSchedulesButton(state)]),
                 const SizedBox(height: 14),
                 Row(
                   children: [
@@ -1295,6 +1298,8 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               Expanded(child: _buildSearchField(state, null)),
               const SizedBox(width: 10),
               _buildCollapseAllButton(state),
+              const SizedBox(width: 10),
+              _buildManageSchedulesButton(state),
             ],
           );
         },
@@ -1302,12 +1307,29 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     );
   }
 
+  Widget _buildManageSchedulesButton(DefenseBoardState state) {
+    final user = ref.read(authProvider).user;
+    if (!(user?['role'] == 'admin' || user?['is_superuser'] == true || user?['is_pit_lead'] == true)) return const SizedBox.shrink();
+    return DefensysShadcnScope(child: ShadButton.outline(
+      enabled: !state.isSaving,
+      leading: const Icon(LucideIcons.slidersHorizontal, size: 16),
+      onPressed: () => showScheduleManager(context, defenseType: _effectiveBoardScope(state)),
+      child: const Text('Manage schedules'),
+    ));
+  }
+
+  String _effectiveBoardScope(DefenseBoardState state) {
+    if (state.scope == 'capstone' || state.scope == 'pit') return state.scope;
+    final user = ref.read(authProvider).user;
+    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    if (!isAdmin && user?['is_pit_lead'] == true) return 'pit';
+    return 'capstone';
+  }
+
   Widget _buildScopeTabs(DefenseBoardState state) {
     return DefensysSegmentedControl<String>(
-      value: state.scope,
+      value: _effectiveBoardScope(state),
       items: const [
-        DefensysSegmentItem(
-          value: '', label: 'All Defenses', icon: Icons.grid_view_rounded),
         DefensysSegmentItem(
           value: 'capstone', label: 'Capstone', icon: Icons.school_rounded),
         DefensysSegmentItem(
@@ -1663,9 +1685,22 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     }
 
     final groups = _groupSchedules(state.schedules);
-
+    final stages = <String, List<_SessionGroup>>{};
+    for (final group in groups) {
+      final anchor = group.schedules.first;
+      final stageKey = '${group.scope}|${anchor['semester_id']}|${group.scope == 'pit' ? group.stageLabel.toLowerCase() : anchor['defense_stage_id'] ?? group.stageLabel}';
+      stages.putIfAbsent(stageKey, () => []).add(group);
+    }
     return Column(
-      children: groups.map((group) => _buildSessionCard(group, state)).toList(),
+      children: [for (final stageGroups in stages.values) ...[
+        StageScheduleHeader(
+          schedule: stageGroups.expand((group) => group.schedules).where((s) => s['can_edit'] != false && s['status'] == 'scheduled').firstOrNull ?? stageGroups.first.schedules.first,
+          sessionCount: stageGroups.length,
+          canManage: _canManageSession(stageGroups.first) && (stageGroups.first.scope == 'pit' || _asInt(stageGroups.first.schedules.first['defense_stage_id']) != null),
+          isSaving: state.isSaving,
+        ),
+        ...stageGroups.map((group) => _buildSessionCard(group, state)),
+      ]],
     );
   }
 
@@ -1682,7 +1717,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       final documenter = item['documenter_name']?.toString() ?? '';
       final scope = item['scope']?.toString() ?? 'capstone';
 
-      final key = '$stageLabel|$date|$room|$panel|$documenter';
+      final key = '${item['session_id'] ?? item['batch_id']}|$scope|${item['semester_id']}';
 
       if (!groupMap.containsKey(key)) {
         groupMap[key] = _SessionGroup(
@@ -1701,9 +1736,13 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
     // Sort schedules inside each group by start_time
     for (final group in groupMap.values) {
+      if (group.schedules.map(_panelistNames).toSet().length > 1) group.panelNames = 'Assignments vary by defense';
+      if (group.schedules.map((s) => s['documenter_name']).toSet().length > 1) group.documenterName = 'Varies by defense';
+      if (group.schedules.map((s) => s['room']).toSet().length > 1) group.room = 'Multiple rooms';
+      if (group.schedules.map((s) => s['scheduled_date']).toSet().length > 1) group.scheduledDate = 'Multiple dates';
       group.schedules.sort((a, b) {
-        final tA = a['start_time']?.toString() ?? '';
-        final tB = b['start_time']?.toString() ?? '';
+        final tA = '${a['scheduled_date']} ${a['start_time']}';
+        final tB = '${b['scheduled_date']} ${b['start_time']}';
         return tA.compareTo(tB);
       });
     }
@@ -1746,6 +1785,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         ],
       ),
     );
+  }
+
+  bool _canManageSession(_SessionGroup group) {
+    final user = ref.read(authProvider).user;
+    return user?['role'] == 'admin' || user?['is_superuser'] == true || (user?['is_pit_lead'] == true && group.scope == 'pit');
   }
 
   Widget _buildSessionHeader(_SessionGroup group, bool isCollapsed) {
@@ -1874,6 +1918,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                               ),
                             ),
                             const Spacer(),
+                            if (_canManageSession(group)) ...[
+                              _sessionActionMenu(group),
+                              const SizedBox(width: 8),
+                            ],
                             // Team count badge
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1923,6 +1971,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                           ],
                         ),
                         const SizedBox(height: 10),
+                        if (_canManageSession(group) && group.schedules.any((s) => s['latest_change'] != null)) ...[
+                          Align(alignment: Alignment.centerLeft, child: ScheduleChangesButton(schedules: group.schedules)),
+                          const SizedBox(height: 8),
+                        ],
                         // Row 2: Panel and Documenter together in natural reading order
                         Wrap(
                           spacing: 18,
@@ -2461,47 +2513,54 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
     final isPitLead = user?['is_pit_lead'] == true;
     final isSchedulePit = schedule['scope'] == 'pit';
-    final canDelete = isAdmin || (isPitLead && isSchedulePit);
-
-    final currentStatus = (schedule['display_status']?.toString() ??
-            schedule['status']?.toString() ??
-            '')
-        .toLowerCase();
-    final isScheduled = !['ongoing', 'done', 'completed', 'archived'].contains(currentStatus);
-    final scheduleId = _asInt(schedule['id']);
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          tooltip: 'View Defense Details',
-          splashRadius: 18,
-          iconSize: 18,
-          color: _textSecondaryColor,
-          style: IconButton.styleFrom(
-            hoverColor: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
+    final canManage = isAdmin || (isPitLead && isSchedulePit);
+    final editable = schedule['can_edit'] != false &&
+        !const ['done', 'archived'].contains(schedule['status']) &&
+        schedule['grade_status'] != 'published';
+    final gradeId = _asInt(schedule['grade_id']);
+    final canReschedule = editable && schedule['can_reschedule'] != false;
+    void edit(String task) => showScheduleOperationsDialog(context, schedule, tab: task);
+    return DefensysActionMenu(
+      key: ValueKey('defense-actions-${schedule['id']}'),
+      label: 'More actions for ${schedule['team_name']}',
+      enabled: !state.isSaving,
+      items: [
+        DefensysMenuItem(label: 'View details', icon: LucideIcons.info, onPressed: () => _showDefenseDetailsDialog(schedule, group)),
+        DefensysMenuItem(label: 'Evaluation & grades', icon: LucideIcons.clipboardList, onPressed: () => _openEvaluationAndGrades(schedule)),
+        if (isAdmin && gradeId != null)
+          DefensysMenuItem(label: 'Correct a score', icon: LucideIcons.pencil, onPressed: () => showGradeCorrectionDialog(context, gradeId)),
+        if (canManage) ...[
+          DefensysMenuItem(label: 'View change history', icon: LucideIcons.history,
+            onPressed: () => showScheduleHistory(context, _asInt(schedule['id'])!)),
+          const Divider(height: 9),
+          DefensysMenuItem(label: 'Edit panel', icon: LucideIcons.users, onPressed: editable ? () => edit('panel') : null),
+          if (!isSchedulePit) DefensysMenuItem(label: 'Change documenter', icon: LucideIcons.filePenLine, onPressed: editable ? () => edit('documenter') : null),
+          DefensysMenuItem(label: 'Change room', icon: LucideIcons.mapPin, hint: canReschedule ? null : 'Recorded evaluations keep their original room and time.', onPressed: canReschedule ? () => edit('room') : null),
+          DefensysMenuItem(label: 'Reschedule defense', icon: LucideIcons.calendarClock, hint: canReschedule ? null : 'Recorded evaluations keep their original room and time.', onPressed: canReschedule ? () => edit('time') : null),
+          const Divider(height: 9),
+          DefensysMenuItem(
+            label: schedule['operation_state'] != null && schedule['operation_state'] != 'normal' || schedule['status'] == 'cancelled' ? 'Resume defense' : 'Pause defense',
+            icon: LucideIcons.circlePause,
+            onPressed: editable ? () => edit(schedule['operation_state'] != null && schedule['operation_state'] != 'normal' || schedule['status'] == 'cancelled' ? 'normal' : 'paused') : null,
           ),
-          onPressed: () => _showDefenseDetailsDialog(schedule, group),
-          icon: const Icon(Icons.info_outline_rounded),
-        ),
-        if (canDelete && isScheduled)
-          IconButton(
-            tooltip: 'Delete schedule',
-            splashRadius: 18,
-            iconSize: 18,
-            color: const Color(0xFFEF4444),
-            style: IconButton.styleFrom(
-              hoverColor: const Color(0xFFFEE2E2),
-            ),
-            onPressed: state.isSaving || scheduleId == null
-                ? null
-                : () => _confirmDelete(
-                    scheduleId,
-                    schedule['team_name']?.toString() ?? 'schedule',
-                  ),
-            icon: const Icon(Icons.delete_outline_rounded),
-          ),
+          DefensysMenuItem(label: 'Postpone defense', icon: LucideIcons.clock, onPressed: editable ? () => edit('postponed') : null),
+          DefensysMenuItem(label: 'Mark as no-show', icon: LucideIcons.userX, onPressed: editable ? () => edit('no_show') : null),
+          DefensysMenuItem(label: 'Cancel defense', icon: LucideIcons.circleX, onPressed: editable ? () => edit('cancelled') : null),
+          const Divider(height: 9),
+          DefensysMenuItem(label: 'Delete schedule', icon: LucideIcons.trash2, destructive: true,
+            hint: schedule['can_delete'] == true ? null : (schedule['deletion_blockers'] as List? ?? ['Recorded activity protects this schedule.']).join(' '),
+            onPressed: schedule['can_delete'] == true ? () => edit('delete') : null),
+        ],
       ],
+    );
+  }
+
+  Widget _sessionActionMenu(_SessionGroup group) {
+    final anchor = group.schedules.where((s) => s['status'] == 'scheduled').firstOrNull ?? group.schedules.first;
+    return ScheduleGroupActions(
+      key: ValueKey('session-actions-${group.key}'),
+      schedule: anchor,
+      enabled: !ref.watch(defenseBoardProvider).isSaving,
     );
   }
 
@@ -2518,6 +2577,8 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     final status = (schedule['display_status']?.toString() ?? schedule['status']?.toString() ?? 'scheduled').toLowerCase();
     final startTime = _shortTime(schedule['start_time']);
     final slotDuration = schedule['slot_duration']?.toString() ?? '60';
+    final panelNames = _panelistNames(schedule);
+    final documenterName = schedule['documenter_name']?.toString() ?? '';
 
     showDialog(
       context: context,
@@ -2574,7 +2635,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '${group.scheduledDate} • $startTime ($slotDuration min) • ${group.room}',
+                            '${schedule['scheduled_date']} • $startTime ($slotDuration min) • ${schedule['room']}',
                             style: TextStyle(
                               fontSize: 12,
                               color: _textSecondaryColor,
@@ -2728,7 +2789,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                                 ),
                                 Expanded(
                                   child: Text(
-                                    group.panelNames.isNotEmpty ? group.panelNames : 'None assigned',
+                                    panelNames,
                                     style: TextStyle(
                                       fontSize: 13,
                                       color: _textPrimaryColor,
@@ -2754,11 +2815,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                                   ),
                                   Expanded(
                                     child: Text(
-                                      group.documenterName.isNotEmpty ? group.documenterName : 'Unassigned',
+                                      documenterName.isNotEmpty ? documenterName : 'Unassigned',
                                       style: TextStyle(
                                         fontSize: 13,
-                                        fontWeight: group.documenterName.isEmpty ? FontWeight.w600 : FontWeight.w500,
-                                        color: group.documenterName.isEmpty ? DefensysTokens.warningText : _textPrimaryColor,
+                                        fontWeight: documenterName.isEmpty ? FontWeight.w600 : FontWeight.w500,
+                                        color: documenterName.isEmpty ? DefensysTokens.warningText : _textPrimaryColor,
                                       ),
                                     ),
                                   ),
@@ -2905,6 +2966,15 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     String text;
 
     switch (normalized) {
+      case 'paused':
+      case 'postponed':
+      case 'no_show':
+        bg = _isDark ? const Color(0xFF78350F).withValues(alpha: 0.3) : DefensysTokens.warningBg;
+        fg = _isDark ? const Color(0xFFFDE68A) : DefensysTokens.warningText;
+        border = _isDark ? const Color(0xFFB45309).withValues(alpha: 0.5) : DefensysTokens.warningBorder;
+        iconData = Icons.pause_circle_outline;
+        text = normalized == 'paused' ? 'Interrupted' : normalized == 'postponed' ? 'Postponed' : 'No-show';
+        break;
       case 'ongoing':
         bg = _isDark ? const Color(0xFF78350F).withValues(alpha: 0.3) : DefensysTokens.warningBg;
         fg = _isDark ? const Color(0xFFFDE68A) : DefensysTokens.warningText;
@@ -3110,35 +3180,6 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       _schedulerEventName = eventName;
       _showScheduler = true;
     });
-  }
-
-  Future<void> _confirmDelete(int scheduleId, String teamName) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: const Text('Delete Schedule'),
-          content: Text('Delete schedule for $teamName?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.danger,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (!mounted || confirmed != true) return;
-    await ref.read(defenseBoardProvider.notifier).deleteSchedule(scheduleId);
   }
 
   String _panelistNames(Map<String, dynamic> schedule) {
@@ -3424,10 +3465,10 @@ class _BodyCell extends StatelessWidget {
 class _SessionGroup {
   final String key;
   final String stageLabel;
-  final String scheduledDate;
-  final String room;
-  final String panelNames;
-  final String documenterName;
+  String scheduledDate;
+  String room;
+  String panelNames;
+  String documenterName;
   final String scope;
   final List<Map<String, dynamic>> schedules;
 

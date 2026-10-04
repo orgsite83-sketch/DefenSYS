@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:defensys/utils/guest_invitation.dart';
 import '../helpers/auth_test_overrides.dart';
 
 class _Auth extends AuthNotifier {
@@ -30,13 +31,17 @@ void main() {
     ),
   );
   tearDown(resetApiHttpClientForTesting);
-  Future<ProviderContainer> app(WidgetTester tester, AuthState auth) async {
+  Future<ProviderContainer> app(
+    WidgetTester tester,
+    AuthState auth, {
+    String location = AppRoutes.guestEntry,
+  }) async {
     final container = ProviderContainer(
       overrides: [authProvider.overrideWith(() => _Auth(auth))],
     );
     addTearDown(container.dispose);
     final router = container.read(appRouterProvider);
-    router.go(AppRoutes.guestEntry);
+    router.go(location);
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
@@ -70,6 +75,77 @@ void main() {
     );
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets(
+    'A new invitation opens its own code while another guest session is active',
+    (tester) async {
+      final link = guestInvitationUrl(
+        'DEF-NEW-STAGE',
+        portal: 'http://192.168.1.3:57583/#/guest/evaluate',
+      );
+      final container = await app(
+        tester,
+        AuthState(
+          isRestoring: false,
+          token: testAccessToken,
+          user: const {
+            'id': 21,
+            'role': 'guest_panelist',
+            'name': 'Guest Evaluator',
+          },
+        ),
+        location: Uri.parse(link).fragment,
+      );
+      expect(find.text('Guest evaluation'), findsOneWidget);
+      expect(
+        tester
+            .widget<TextFormField>(find.byType(TextFormField))
+            .controller!
+            .text,
+        'DEF-NEW-STAGE',
+      );
+      expect(
+        container
+            .read(appRouterProvider)
+            .routerDelegate
+            .currentConfiguration
+            .uri
+            .queryParameters['code'],
+        'DEF-NEW-STAGE',
+      );
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'Changing invitation links updates the code without keeping the previous stage',
+    (tester) async {
+      final container = await app(
+        tester,
+        const AuthState(isRestoring: false),
+        location: '${AppRoutes.guestEntry}?code=DEF-FIRST',
+      );
+      final router = container.read(appRouterProvider);
+      expect(
+        tester
+            .widget<TextFormField>(find.byType(TextFormField))
+            .controller!
+            .text,
+        'DEF-FIRST',
+      );
+      router.go('${AppRoutes.guestEntry}?code=DEF-SECOND');
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<TextFormField>(find.byType(TextFormField))
+            .controller!
+            .text,
+        'DEF-SECOND',
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
   testWidgets('Guest identity is confined to its evaluation workspace', (
     tester,
   ) async {

@@ -5,6 +5,7 @@ from .peer_views import StudentPeerEvaluationSubmitView
 from .views import (
     CapstoneEvaluationSettingsView,
     GradeCenterDetailView,
+    GradeCorrectionsView,
     GradeCenterGroupSettingsView,
     GradeCenterListView,
     GradeCenterPublishView,
@@ -27,6 +28,7 @@ urlpatterns = [
         name='grade_center_group_settings',
     ),
     path('<int:grade_id>/', GradeCenterDetailView.as_view(), name='grade_center_detail'),
+    path('<int:grade_id>/corrections/', GradeCorrectionsView.as_view(), name='grade_corrections'),
     path('<int:grade_id>/publish/', GradeCenterPublishView.as_view(), name='grade_center_publish'),
     path('<int:grade_id>/verdict/', TeamGradeVerdictView.as_view(), name='team_grade_verdict'),
     # Adviser-specific grading endpoints

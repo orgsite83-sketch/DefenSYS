@@ -140,10 +140,11 @@ class DefenseBoardApiTests(APITestCase):
         self.pit_schedule.scheduled_date = '2099-05-16'
         self.pit_schedule.save()
         delete = self.client.delete(f'/api/defense/board/{self.pit_schedule.id}/')
+        self.capstone_schedule.status = DefenseSchedule.STATUS_DONE
+        self.capstone_schedule.save()
         delete_completed = self.client.delete(f'/api/defense/board/{self.capstone_schedule.id}/')
 
-        self.assertEqual(update.status_code, 200)
-        self.assertEqual(update.data['schedule']['status'], DefenseSchedule.STATUS_DONE)
+        self.assertEqual(update.status_code, 400)
         self.assertEqual(delete.status_code, 200)
         self.assertFalse(DefenseSchedule.objects.filter(pk=self.pit_schedule.id).exists())
         self.assertEqual(delete_completed.status_code, 409)

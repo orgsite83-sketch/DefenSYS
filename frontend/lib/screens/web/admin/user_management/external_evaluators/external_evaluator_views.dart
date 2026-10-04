@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:defensys/services/admin/external_evaluator_provider.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/utils/clipboard_copy.dart';
@@ -12,6 +13,7 @@ import 'external_assignment_dialog.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/widgets/table/defensys_data_table.dart';
 import 'package:defensys/widgets/table/defensys_table_column.dart';
+import 'package:defensys/widgets/table/defensys_table_tokens.dart';
 
 String _date(dynamic value) {
   final date = DateTime.tryParse(value?.toString() ?? '');
@@ -217,9 +219,14 @@ class _ExternalEvaluatorCreateDialogState
   }
 }
 
-class GuestInvitationDialog extends StatelessWidget {
-  const GuestInvitationDialog({super.key, required this.invitations});
+class GuestInvitationDialog extends StatefulWidget {
+  const GuestInvitationDialog({
+    super.key,
+    required this.invitations,
+    this.portal,
+  });
   final List<Map<String, dynamic>> invitations;
+  final String? portal;
 
   static Future<void> show(
     BuildContext context,
@@ -232,19 +239,45 @@ class GuestInvitationDialog extends StatelessWidget {
     );
   }
 
-  Future<void> _copy(BuildContext context, String value, String success) async {
+  @override
+  State<GuestInvitationDialog> createState() => _GuestInvitationDialogState();
+}
+
+class _GuestInvitationDialogState extends State<GuestInvitationDialog> {
+  String? _copyError;
+  String? _copied;
+  String? _feedbackCode;
+
+  Future<void> _copy(String value, String success, String code) async {
     final ok = await copyTextToClipboard(value);
-    if (!context.mounted) return;
-    if (ok) {
-      showSuccessToast(context, success);
-    } else {
-      showErrorToast(context, 'Copy failed. Select and copy the access code.');
+    if (!mounted) return;
+    setState(() {
+      _feedbackCode = code;
+      _copied = ok ? success : null;
+      _copyError = ok
+          ? null
+          : 'Your browser could not copy automatically. Select the link or code and use Copy.';
+    });
+  }
+
+  Future<void> _open(String link, String code) async {
+    try {
+      if (await launchUrl(Uri.parse(link), webOnlyWindowName: '_blank')) return;
+    } catch (_) {
+      // Keep the complete, selectable link available if opening is blocked.
+    }
+    if (mounted) {
+      setState(() {
+        _feedbackCode = code;
+        _copied = null;
+        _copyError = 'Could not open the link. Copy it into a browser tab.';
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final portal = guestPortalUrl();
+    final portal = widget.portal ?? guestPortalUrl();
     final local =
         portal.isNotEmpty &&
         ['localhost', '127.0.0.1', '0.0.0.0'].contains(Uri.parse(portal).host);
@@ -258,70 +291,76 @@ class GuestInvitationDialog extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(color: DefensysTokens.borderOf(context)),
         ),
-        child: SizedBox(
-          width: 680,
-          height: (MediaQuery.sizeOf(context).height * .82).clamp(0, 660),
+        child: ConstrainedBox(
+          key: const ValueKey('guest-invitation-content'),
+          constraints: BoxConstraints(
+            maxWidth: 640,
+            maxHeight: MediaQuery.sizeOf(context).height * .86,
+          ),
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'Evaluator invitations',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Evaluator invitations',
+                        style: DefensysTokens.dialogTitle.copyWith(
+                          color: DefensysTokens.textPrimaryOf(context),
+                        ),
+                      ),
+                    ),
+                    Tooltip(
+                      message: 'Close invitations',
+                      child: ShadButton.ghost(
+                        size: ShadButtonSize.sm,
+                        onPressed: () => Navigator.pop(context),
+                        child: const Icon(LucideIcons.x, size: 16),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '${invitations.length} access links. Share each stage or event invitation with its evaluator.',
-                  style: TextStyle(
+                  widget.invitations.length == 1
+                      ? 'Share the login link or access code with this evaluator.'
+                      : '${widget.invitations.length} invitations. Share each one with its evaluator.',
+                  style: DefensysTokens.subtitle.copyWith(
                     color: DefensysTokens.textSecondaryOf(context),
-                    fontSize: 13,
                   ),
                 ),
                 const SizedBox(height: 20),
-                Expanded(
-                  child: ListView(
-                    children: [
-                      if (local)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: Text(
-                            'For remote evaluators, use the deployed DefenSYS address instead of localhost.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: DefensysTokens.textSecondaryOf(context),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (local)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: Text(
+                              'For remote evaluators, use the deployed DefenSYS address instead of localhost.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: DefensysTokens.textSecondaryOf(context),
+                              ),
                             ),
                           ),
-                        ),
-                      for (final invitation in invitations)
-                        _invitationCard(context, invitation, portal),
-                      if (portal.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Portal address',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        SelectableText(
-                          portal,
-                          style: TextStyle(
-                            fontSize: 12,
+                        for (final invitation in widget.invitations)
+                          _invitationCard(context, invitation, portal),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Access is limited to the assigned defenses. Evaluators can open the link in any browser.',
+                          style: DefensysTokens.caption.copyWith(
                             color: DefensysTokens.textSecondaryOf(context),
                           ),
                         ),
                       ],
-                      const SizedBox(height: 8),
-                      Text(
-                        'Evaluators open the link in a browser. If needed, they can enter the access code on the portal.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: DefensysTokens.textSecondaryOf(context),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -352,6 +391,7 @@ class GuestInvitationDialog extends StatelessWidget {
         .toSet()
         .toList();
     final code = invitation['code']?.toString() ?? '';
+    final link = guestInvitationUrl(code, portal: portal);
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(16),
@@ -364,13 +404,15 @@ class GuestInvitationDialog extends StatelessWidget {
         children: [
           Text(
             invitation['guest_name']?.toString() ?? 'Evaluator',
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+            style: DefensysTokens.body.copyWith(
+              color: DefensysTokens.textPrimaryOf(context),
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 5),
           Text(
             '$sessions · ${(invitation['schedule_ids'] as List? ?? []).length} defense${(invitation['schedule_ids'] as List? ?? []).length == 1 ? '' : 's'}',
-            style: TextStyle(
-              fontSize: 12,
+            style: DefensysTokens.subtitle.copyWith(
               color: DefensysTokens.textSecondaryOf(context),
             ),
           ),
@@ -380,15 +422,69 @@ class GuestInvitationDialog extends StatelessWidget {
               message: teams.join(', '),
               child: Text(
                 '${teams.take(3).join(', ')}${teams.length > 3 ? ' + ${teams.length - 3} more' : ''}',
-                style: const TextStyle(fontSize: 12),
+                style: DefensysTokens.tableCell.copyWith(
+                  color: DefensysTokens.textPrimaryOf(context),
+                ),
               ),
             ),
           ],
           const SizedBox(height: 12),
+          if (link.isNotEmpty) ...[
+            Text(
+              'Login link',
+              style: DefensysTokens.caption.copyWith(
+                color: DefensysTokens.textSecondaryOf(context),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.only(
+                left: 12,
+                right: 4,
+                top: 6,
+                bottom: 6,
+              ),
+              decoration: BoxDecoration(
+                color: DefensysTokens.surfaceHigherOf(context),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: SelectableText(
+                      link,
+                      key: ValueKey('invitation-link-${invitation['id']}'),
+                      style: DefensysTokens.caption.copyWith(
+                        color: DefensysTokens.textPrimaryOf(context),
+                      ),
+                    ),
+                  ),
+                  Tooltip(
+                    message: 'Open login link',
+                    child: ShadButton.ghost(
+                      onPressed: () => _open(link, code),
+                      size: ShadButtonSize.sm,
+                      child: const Icon(LucideIcons.externalLink, size: 15),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+          Text(
+            'Access code',
+            style: DefensysTokens.caption.copyWith(
+              color: DefensysTokens.textSecondaryOf(context),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: DefensysTokens.panelOf(context),
+              color: DefensysTokens.surfaceHigherOf(context),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Row(
@@ -396,19 +492,10 @@ class GuestInvitationDialog extends StatelessWidget {
                 Expanded(
                   child: SelectableText(
                     code,
-                    style: const TextStyle(
-                      fontSize: 15,
+                    style: DefensysTokens.tableCell.copyWith(
+                      color: DefensysTokens.textPrimaryOf(context),
                       fontWeight: FontWeight.w600,
                     ),
-                  ),
-                ),
-                Tooltip(
-                  message: 'Copy access code',
-                  child: ShadButton.ghost(
-                    size: ShadButtonSize.sm,
-                    onPressed: () =>
-                        _copy(context, code, 'Access code copied.'),
-                    child: const Icon(LucideIcons.copy, size: 15),
                   ),
                 ),
               ],
@@ -416,9 +503,8 @@ class GuestInvitationDialog extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Access until ${_date(invitation['expires_at'])}',
-            style: TextStyle(
-              fontSize: 12,
+            'Access expires ${_date(invitation['expires_at'])}',
+            style: DefensysTokens.caption.copyWith(
               color: DefensysTokens.textSecondaryOf(context),
             ),
           ),
@@ -430,25 +516,50 @@ class GuestInvitationDialog extends StatelessWidget {
               ShadButton(
                 size: ShadButtonSize.sm,
                 onPressed: () => _copy(
-                  context,
-                  guestInvitationText(invitation),
-                  'Invitation copied.',
+                  link.isEmpty ? guestInvitationText(invitation) : link,
+                  link.isEmpty ? 'Invitation copied.' : 'Login link copied.',
+                  code,
                 ),
                 leading: const Icon(LucideIcons.copy, size: 14),
-                child: const Text('Copy invitation'),
-              ),
-              if (portal.isNotEmpty)
-                ShadButton.outline(
-                  size: ShadButtonSize.sm,
-                  onPressed: () => _copy(
-                    context,
-                    guestInvitationUrl(code),
-                    'Login link copied.',
+                child: Text(
+                  link.isEmpty ? 'Copy invitation' : 'Copy login link',
+                  style: const TextStyle(
+                    fontFamily: DefensysTokens.fontFamily,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
                   ),
-                  child: const Text('Copy login link'),
                 ),
+              ),
+              ShadButton.outline(
+                size: ShadButtonSize.sm,
+                onPressed: () => _copy(code, 'Access code copied.', code),
+                leading: const Icon(LucideIcons.keyRound, size: 14),
+                child: const Text(
+                  'Copy code',
+                  style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamily,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
             ],
           ),
+          if (_feedbackCode == code &&
+              (_copyError != null || _copied != null)) ...[
+            const SizedBox(height: 10),
+            Semantics(
+              liveRegion: true,
+              child: Text(
+                _copyError ?? _copied!,
+                style: DefensysTokens.caption.copyWith(
+                  color: _copyError != null
+                      ? Theme.of(context).colorScheme.error
+                      : DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -579,35 +690,37 @@ class _ExternalEvaluatorDirectoryState
   Widget _review(
     Map<String, dynamic> evaluator,
     ExternalEvaluatorState state,
-  ) => Wrap(
-    spacing: 4,
-    runSpacing: 4,
-    children: [
+  ) => _EvaluatorActionsMenu(
+    key: ValueKey('evaluator-actions-${evaluator['id']}'),
+    label: 'More actions for ${evaluator['name']}',
+    enabled: !state.saving && !state.loading,
+    items: [
       if (evaluator['status'] == 'approved' && evaluator['is_active'] == true)
-        ShadButton.outline(
-          size: ShadButtonSize.sm,
+        _rowAction(
+          'Assign',
+          LucideIcons.userPlus,
           onPressed: state.saving
               ? null
               : () => ExternalInvitationCreateDialog.show(
                   context,
                   evaluatorId: evaluator['id'] as int,
                 ),
-          child: const Text('Assign'),
         ),
       if (state.canApprove)
-        ShadButton.ghost(
-          size: ShadButtonSize.sm,
+        _rowAction(
+          'Edit',
+          LucideIcons.pencil,
           onPressed: state.saving
               ? null
               : () => ExternalEvaluatorCreateDialog.show(
                   context,
                   evaluator: evaluator,
                 ),
-          child: const Text('Edit'),
         ),
       if (state.canApprove && evaluator['status'] == 'pending') ...[
-        ShadButton.ghost(
-          size: ShadButtonSize.sm,
+        _rowAction(
+          'Approve',
+          LucideIcons.check,
           onPressed: state.saving
               ? null
               : () => _mutate(
@@ -616,10 +729,11 @@ class _ExternalEvaluatorDirectoryState
                     {'status': 'approved'},
                   ),
                 ),
-          child: const Text('Approve'),
         ),
-        ShadButton.ghost(
-          size: ShadButtonSize.sm,
+        _rowAction(
+          'Decline',
+          LucideIcons.x,
+          destructive: true,
           onPressed: state.saving
               ? null
               : () => _mutate(
@@ -628,11 +742,20 @@ class _ExternalEvaluatorDirectoryState
                     {'status': 'declined'},
                   ),
                 ),
-          child: const Text('Decline'),
         ),
       ] else if (state.canApprove)
-        ShadButton.ghost(
-          size: ShadButtonSize.sm,
+        _rowAction(
+          evaluator['status'] == 'declined'
+              ? 'Approve'
+              : evaluator['is_active'] == true
+              ? 'Deactivate'
+              : 'Reactivate',
+          evaluator['is_active'] == true
+              ? LucideIcons.userRoundMinus
+              : LucideIcons.userRoundCheck,
+          destructive:
+              evaluator['is_active'] == true &&
+              evaluator['status'] != 'declined',
           onPressed: state.saving
               ? null
               : () => _mutate(
@@ -645,40 +768,59 @@ class _ExternalEvaluatorDirectoryState
                             : {'is_active': evaluator['is_active'] != true},
                       ),
                 ),
-          child: Text(
-            evaluator['status'] == 'declined'
-                ? 'Approve'
-                : evaluator['is_active'] == true
-                ? 'Deactivate'
-                : 'Reactivate',
-          ),
         ),
     ],
   );
   Widget _accessActions(
     Map<String, dynamic> item,
     ExternalEvaluatorState state,
-  ) => Wrap(
-    spacing: 4,
-    runSpacing: 4,
-    children: [
-      ShadButton.ghost(
-        size: ShadButtonSize.sm,
+  ) => _EvaluatorActionsMenu(
+    key: ValueKey('invitation-actions-${item['id']}'),
+    label: 'More actions for ${item['guest_name']} invitation',
+    enabled: !state.saving && !state.loading,
+    items: [
+      _rowAction(
+        'View access',
+        LucideIcons.externalLink,
         onPressed: () => GuestInvitationDialog.show(context, [item]),
-        child: const Text('View / copy'),
+      ),
+      _rowAction(
+        'Renew',
+        LucideIcons.refreshCw,
+        onPressed: state.saving ? null : () => _renew(item),
       ),
       if (item['status'] == 'Active')
-        ShadButton.ghost(
-          size: ShadButtonSize.sm,
+        _rowAction(
+          'Revoke',
+          LucideIcons.shieldOff,
+          destructive: true,
           onPressed: state.saving ? null : () => _revoke(item),
-          child: const Text('Revoke'),
         ),
-      ShadButton.ghost(
-        size: ShadButtonSize.sm,
-        onPressed: state.saving ? null : () => _renew(item),
-        child: const Text('Renew'),
-      ),
     ],
+  );
+
+  Widget _rowAction(
+    String label,
+    IconData icon, {
+    required VoidCallback? onPressed,
+    bool destructive = false,
+  }) => ShadContextMenuItem(
+    enabled: onPressed != null,
+    onPressed: onPressed,
+    height: DefensysTokens.buttonHeightSm,
+    textStyle: DefensysTokens.tableCell.copyWith(
+      color: destructive
+          ? Theme.of(context).colorScheme.error
+          : DefensysTokens.textPrimaryOf(context),
+    ),
+    leading: Icon(
+      icon,
+      size: 14,
+      color: destructive
+          ? Theme.of(context).colorScheme.error
+          : DefensysTokens.textPrimaryOf(context),
+    ),
+    child: Text(label, maxLines: 1),
   );
   Widget _identity(Map<String, dynamic> item) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -713,93 +855,151 @@ class _ExternalEvaluatorDirectoryState
   Widget _table(
     List<Map<String, dynamic>> items,
     ExternalEvaluatorState state,
-  ) => ClipRRect(
-    borderRadius: BorderRadius.circular(8),
-    child: Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: DefensysTokens.borderOf(context)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: DefensysDataTable<Map<String, dynamic>>(
-        key: ValueKey(
-          _invitations
-              ? 'evaluator-invitations-table'
-              : 'evaluator-directory-table',
+  ) => DefaultTextStyle.merge(
+    style: DefensysTableTokens.cellBodyTextStyleOf(context),
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: DefensysTokens.borderOf(context)),
+          borderRadius: BorderRadius.circular(8),
         ),
-        items: items,
-        columns: [
-          DefensysTableColumn(
-            title: 'Evaluator',
-            minWidth: 200,
-            flex: 2,
-            cellBuilder: (_, e, index) => _identity(e),
+        child: DefensysDataTable<Map<String, dynamic>>(
+          key: ValueKey(
+            _invitations
+                ? 'evaluator-invitations-table'
+                : 'evaluator-directory-table',
           ),
-          if (_invitations) ...[
+          items: items,
+          columns: [
             DefensysTableColumn(
-              title: 'Defense session',
-              minWidth: 180,
-              flex: 1.6,
-              cellBuilder: (_, e, index) => Text(_sessions(e)),
-            ),
-            DefensysTableColumn(
-              title: 'Progress',
-              minWidth: 120,
-              cellBuilder: (_, e, index) => Text(
-                '${e['submitted_count']} / ${(e['schedule_ids'] as List).length} submitted',
-              ),
-            ),
-            DefensysTableColumn(
-              title: 'Access expires',
-              minWidth: 150,
-              flex: 1.2,
-              cellBuilder: (_, e, index) => Text(_date(e['expires_at'])),
-            ),
-            DefensysTableColumn(
-              title: 'Last access',
-              minWidth: 150,
-              flex: 1.2,
-              cellBuilder: (_, e, index) =>
-                  Text(_date(e['last_access_at'] ?? e['used_at'])),
-            ),
-            DefensysTableColumn(
-              title: 'Status',
-              minWidth: 110,
-              cellBuilder: (_, e, index) => _status(e['status'], true),
-            ),
-            DefensysTableColumn(
-              title: 'Actions',
-              minWidth: 225,
-              flex: 2,
-              cellBuilder: (_, e, index) => _accessActions(e, state),
-            ),
-          ] else ...[
-            DefensysTableColumn(
-              title: 'Institution',
+              title: 'Evaluator',
               minWidth: 180,
               flex: 2,
-              cellBuilder: (_, e, index) => Text(
-                (e['institution'] ?? '').toString().isEmpty
-                    ? '—'
-                    : e['institution'],
+              cellBuilder: (_, e, index) => _identity(e),
+            ),
+            if (_invitations) ...[
+              DefensysTableColumn(
+                title: 'Defense session',
+                minWidth: 180,
+                flex: 1.6,
+                cellBuilder: (_, e, index) => _sessionCell(e),
               ),
-            ),
-            DefensysTableColumn(
-              title: 'Approval',
-              minWidth: 125,
-              cellBuilder: (_, e, index) =>
-                  _status(e['status'], e['is_active'] == true),
-            ),
-            DefensysTableColumn(
-              title: 'Actions',
-              minWidth: 275,
-              flex: 2.2,
-              cellBuilder: (_, e, index) => _review(e, state),
-            ),
+              DefensysTableColumn(
+                title: 'Progress',
+                minWidth: 120,
+                cellBuilder: (_, e, index) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${e['submitted_count']} / ${(e['schedule_ids'] as List).length}',
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'submitted',
+                      style: DefensysTokens.caption.copyWith(
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              DefensysTableColumn(
+                title: 'Access expires',
+                minWidth: 145,
+                flex: 1.2,
+                cellBuilder: (_, e, index) => _dateCell(e['expires_at']),
+              ),
+              DefensysTableColumn(
+                title: 'Last access',
+                minWidth: 145,
+                flex: 1.2,
+                cellBuilder: (_, e, index) =>
+                    _dateCell(e['last_access_at'] ?? e['used_at']),
+              ),
+              DefensysTableColumn(
+                title: 'Status',
+                minWidth: 100,
+                cellBuilder: (_, e, index) => _status(e['status'], true),
+              ),
+              DefensysTableColumn(
+                title: 'Actions',
+                minWidth: 88,
+                flex: .65,
+                alignment: Alignment.centerRight,
+                cellBuilder: (_, e, index) => _accessActions(e, state),
+              ),
+            ] else ...[
+              DefensysTableColumn(
+                title: 'Institution',
+                minWidth: 180,
+                flex: 2,
+                cellBuilder: (_, e, index) => Text(
+                  (e['institution'] ?? '').toString().isEmpty
+                      ? '—'
+                      : e['institution'],
+                ),
+              ),
+              DefensysTableColumn(
+                title: 'Approval',
+                minWidth: 125,
+                cellBuilder: (_, e, index) =>
+                    _status(e['status'], e['is_active'] == true),
+              ),
+              DefensysTableColumn(
+                title: 'Actions',
+                minWidth: 88,
+                flex: .45,
+                alignment: Alignment.centerRight,
+                cellBuilder: (_, e, index) => _review(e, state),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     ),
   );
+
+  Widget _dateCell(dynamic value) {
+    final parsed = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
+    if (parsed == null) return const Text('—');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(DateFormat('MMM d, y').format(parsed)),
+        const SizedBox(height: 4),
+        Text(
+          DateFormat('h:mm a').format(parsed),
+          style: DefensysTokens.caption.copyWith(
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _sessionCell(Map<String, dynamic> item) {
+    final sessions = <String, Map>{
+      for (final schedule in item['schedules'] as List? ?? [])
+        '${schedule['scope']}:${schedule['stage_label']}:${schedule['date']}':
+            schedule as Map,
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final session in sessions.values) ...[
+          Text(session['stage_label'].toString()),
+          const SizedBox(height: 4),
+          Text(
+            '${session['scope'].toString().toUpperCase()} · ${session['date']}',
+            style: DefensysTokens.caption.copyWith(
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
 
   Widget _mobileRows(
     List<Map<String, dynamic>> items,
@@ -818,7 +1018,14 @@ class _ExternalEvaluatorDirectoryState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _identity(e),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: _identity(e)),
+                    const SizedBox(width: 8),
+                    _invitations ? _accessActions(e, state) : _review(e, state),
+                  ],
+                ),
                 const SizedBox(height: 12),
                 if (_invitations) ...[
                   _status(e['status'], true),
@@ -837,8 +1044,6 @@ class _ExternalEvaluatorDirectoryState
                     'Last access ${_date(e['last_access_at'] ?? e['used_at'])}',
                     style: const TextStyle(fontSize: 12),
                   ),
-                  const SizedBox(height: 12),
-                  _accessActions(e, state),
                 ] else ...[
                   if ((e['institution'] ?? '').toString().isNotEmpty) ...[
                     Text(
@@ -851,10 +1056,6 @@ class _ExternalEvaluatorDirectoryState
                     const SizedBox(height: 12),
                   ],
                   _status(e['status'], e['is_active'] == true),
-                  if (state.canApprove) ...[
-                    const SizedBox(height: 12),
-                    _review(e, state),
-                  ],
                 ],
               ],
             ),
@@ -1059,6 +1260,78 @@ class _ExternalEvaluatorDirectoryState
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EvaluatorActionsMenu extends StatefulWidget {
+  const _EvaluatorActionsMenu({
+    super.key,
+    required this.label,
+    required this.enabled,
+    required this.items,
+  });
+  final String label;
+  final bool enabled;
+  final List<Widget> items;
+
+  @override
+  State<_EvaluatorActionsMenu> createState() => _EvaluatorActionsMenuState();
+}
+
+class _EvaluatorActionsMenuState extends State<_EvaluatorActionsMenu> {
+  final _controller = ShadContextMenuController();
+
+  @override
+  void didUpdateWidget(covariant _EvaluatorActionsMenu oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.enabled || widget.items.isEmpty) _controller.hide();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.items.isEmpty) return const SizedBox.shrink();
+    // shadcn context menus share a tap group for nested menus. Give each row
+    // its own region too, so opening another row dismisses this menu.
+    return TapRegion(
+      groupId: _controller,
+      onTapOutside: (_) => _controller.hide(),
+      child: ShadContextMenu(
+        controller: _controller,
+        groupId: widget.key,
+        anchor: const ShadAnchorAuto(
+          targetAnchor: Alignment.bottomRight,
+          followerAnchor: Alignment.bottomLeft,
+          offset: Offset(0, 4),
+          fallback: ShadAnchorAuto(
+            targetAnchor: Alignment.topRight,
+            followerAnchor: Alignment.topLeft,
+            offset: Offset(0, -4),
+          ),
+        ),
+        constraints: const BoxConstraints(minWidth: 180, maxWidth: 220),
+        items: [
+          for (final item in widget.items)
+            TapRegion(groupId: _controller, child: item),
+        ],
+        child: Tooltip(
+          message: widget.label,
+          child: ShadButton.outline(
+            enabled: widget.enabled,
+            width: 32,
+            height: 32,
+            padding: EdgeInsets.zero,
+            onPressed: widget.enabled ? _controller.toggle : null,
+            child: const Icon(LucideIcons.ellipsis, size: 16),
           ),
         ),
       ),

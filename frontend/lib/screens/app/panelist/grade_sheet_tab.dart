@@ -392,7 +392,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           ],
           if (team.isCapstone && !team.isLockedByDate) ...[
             const SizedBox(height: 14),
-            if (team.isChair && team.canIssueVerdict)
+            if (team.isChair)
               _buildChairVerdictCard(team)
             else
               _buildPanelistVerdictCard(team),
@@ -584,7 +584,10 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                 children: [
                   TactileButton.secondary(
                     label: _isSavingDraft ? 'Saving draft...' : 'Save Draft',
-                    onPressed: locked || _isSavingDraft || (!team.hasDraft && !team.hasUnsavedChanges)
+                    onPressed:
+                        locked ||
+                            _isSavingDraft ||
+                            (!team.hasDraft && !team.hasUnsavedChanges)
                         ? null
                         : () => _saveDraft(team),
                     icon: const Icon(Icons.save_outlined, size: 16),
@@ -842,12 +845,14 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     final fileUrl = (item['file_url']?.toString().isNotEmpty == true)
         ? item['file_url']?.toString()
         : sub?['file_url']?.toString();
-    final String fileName = (item['file_name']?.toString().isNotEmpty == true && item['file_name'] != 'File')
+    final String fileName =
+        (item['file_name']?.toString().isNotEmpty == true &&
+            item['file_name'] != 'File')
         ? item['file_name']!.toString()
         : (sub?['file_name']?.toString() ??
-            item['name']?.toString() ??
-            item['label']?.toString() ??
-            'Document');
+              item['name']?.toString() ??
+              item['label']?.toString() ??
+              'Document');
     if (fileUrl == null || fileUrl.isEmpty) {
       showErrorToast(context, 'No file URL available for this material');
       return;
@@ -988,26 +993,33 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           ] else ...[
             const SizedBox(height: 10),
             ...materials.map((mat) {
-              final sub = mat['submission'] is Map ? mat['submission'] as Map : null;
-              final docName = (mat['label']?.toString().isNotEmpty == true
+              final sub = mat['submission'] is Map
+                  ? mat['submission'] as Map
+                  : null;
+              final docName =
+                  (mat['label']?.toString().isNotEmpty == true
                       ? mat['label']?.toString()
                       : mat['name']?.toString()) ??
                   'Defense Material';
-              final rawFileName = (mat['file_name']?.toString().isNotEmpty == true && mat['file_name'] != 'File'
+              final rawFileName =
+                  (mat['file_name']?.toString().isNotEmpty == true &&
+                          mat['file_name'] != 'File'
                       ? mat['file_name']?.toString()
                       : sub?['file_name']?.toString()) ??
                   '';
               final fileName = rawFileName.isNotEmpty
                   ? rawFileName
                   : (mat['suggested_file_name']?.toString().isNotEmpty == true
-                      ? mat['suggested_file_name']!.toString()
-                      : 'File');
+                        ? mat['suggested_file_name']!.toString()
+                        : 'File');
               final ext = fileName.split('.').last.toLowerCase();
               final isPdf = ext == 'pdf';
               final isDoc = ext == 'doc' || ext == 'docx';
               final iconData = isPdf
                   ? Icons.picture_as_pdf
-                  : (isDoc ? Icons.description_outlined : Icons.insert_drive_file_outlined);
+                  : (isDoc
+                        ? Icons.description_outlined
+                        : Icons.insert_drive_file_outlined);
               final iconColor = isPdf
                   ? const Color(0xFFDC2626)
                   : (isDoc ? const Color(0xFF2563EB) : const Color(0xFF64748B));
@@ -1024,11 +1036,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                 ),
                 child: Row(
                   children: [
-                    Icon(
-                      iconData,
-                      color: iconColor,
-                      size: 24,
-                    ),
+                    Icon(iconData, color: iconColor, size: 24),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
@@ -2271,6 +2279,14 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
   Widget _buildChairVerdictCard(TeamData team) {
     final hasVerdict = team.hasVerdict;
+    final canEditVerdict = team.canIssueVerdict && !_isSubmittingVerdict;
+    final unavailableReason = team.verdictUnavailableReason.isNotEmpty
+        ? team.verdictUnavailableReason
+        : team.gradingUnavailableReason.isNotEmpty
+        ? team.gradingUnavailableReason
+        : !team.isPosted
+        ? 'Panel grading must be submitted before issuing a verdict.'
+        : 'The official verdict is currently unavailable. Refresh this assignment for the latest status.';
     final isForRedefense = _selectedVerdict == 'for_redefense';
     final isRevisions = _selectedVerdict == 'approved_with_revisions';
 
@@ -2293,249 +2309,293 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         padding: const EdgeInsets.all(16),
         child: RadioGroup<String>(
           groupValue: _selectedVerdict,
-          onChanged: (value) => setState(() => _selectedVerdict = value),
+          onChanged: (value) {
+            if (canEditVerdict) setState(() => _selectedVerdict = value);
+          },
           child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              children: [
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.gavel_rounded,
+                      size: 20,
+                      color: Color(0xFF92400E),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Panel Chair Official Verdict',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: DefensysTokens.maroon,
+                          ),
+                        ),
+                        Text(
+                          'Issue the official stage decision for ${team.name}.',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (hasVerdict) _verdictStatusChip(team.verdict!),
+                ],
+              ),
+
+              if (!team.canIssueVerdict) ...[
+                const SizedBox(height: 12),
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  key: const ValueKey('chair-verdict-unavailable'),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFEF3C7),
+                    color: DefensysTokens.warningBg,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(
-                    Icons.gavel_rounded,
-                    size: 20,
-                    color: Color(0xFF92400E),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Panel Chair Official Verdict',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                          color: DefensysTokens.maroon,
-                        ),
+                      const Icon(
+                        Icons.lock_outline,
+                        size: 18,
+                        color: Color(0xFF92400E),
                       ),
-                      Text(
-                        'Issue the official stage decision for ${team.name}.',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey,
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          unavailableReason,
+                          style: const TextStyle(fontSize: 12, height: 1.4),
                         ),
                       ),
                     ],
                   ),
                 ),
-                if (hasVerdict) _verdictStatusChip(team.verdict!),
               ],
-            ),
-
-            if (team.isForRedefense) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(
-                      Icons.warning_amber_rounded,
-                      color: Colors.red,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Team marked for Re-defense (Attempt #${team.attemptCount}). The team is now eligible for Attempt #${team.attemptCount + 1} re-scheduling in the Defense Scheduler.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.red.shade900,
-                          fontWeight: FontWeight.w600,
+              if (team.isForRedefense) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        color: Colors.red,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Team marked for Re-defense (Attempt #${team.attemptCount}). The team is now eligible for Attempt #${team.attemptCount + 1} re-scheduling in the Defense Scheduler.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.red.shade900,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                ),
+              ],
+
+              const Divider(height: 24),
+              const Text(
+                'OFFICIAL STAGE VERDICT',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                  color: Color(0xFF6B7280),
+                ),
+              ),
+              const SizedBox(height: 8),
+
+              // Radio Options
+              _verdictRadioOption(
+                enabled: canEditVerdict,
+                value: 'approved',
+                title: 'Approved',
+                description:
+                    'The team successfully passed with no mandatory re-defense.',
+                icon: Icons.check_circle,
+                color: const Color(0xFF10B981),
+              ),
+              const SizedBox(height: 8),
+              _verdictRadioOption(
+                enabled: canEditVerdict,
+                value: 'approved_with_revisions',
+                title: 'Approved with Revisions',
+                description:
+                    'Passed, but required manuscript or system changes must be submitted.',
+                icon: Icons.edit_calendar,
+                color: const Color(0xFFD97706),
+              ),
+              const SizedBox(height: 8),
+              _verdictRadioOption(
+                enabled: canEditVerdict,
+                value: 'for_redefense',
+                title: 'For Re-defense',
+                description:
+                    'Concept rejected, prototype unsatisfactory, or major deficiencies requiring re-presentation.',
+                icon: Icons.replay_rounded,
+                color: const Color(0xFFEF4444),
+              ),
+
+              if (isRevisions) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.amber.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.event,
+                        size: 18,
+                        color: Color(0xFF92400E),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Revision Deadline (Optional)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF92400E),
+                              ),
+                            ),
+                            Text(
+                              _revisionDeadline != null
+                                  ? DateFormat(
+                                      'MMMM d, yyyy',
+                                    ).format(_revisionDeadline!)
+                                  : 'No deadline set',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: !canEditVerdict
+                            ? null
+                            : () async {
+                                final picked = await showDatePicker(
+                                  context: context,
+                                  initialDate:
+                                      _revisionDeadline ??
+                                      DateTime.now().add(
+                                        const Duration(days: 14),
+                                      ),
+                                  firstDate: DateTime.now(),
+                                  lastDate: DateTime.now().add(
+                                    const Duration(days: 365),
+                                  ),
+                                );
+                                if (picked != null) {
+                                  setState(() => _revisionDeadline = picked);
+                                }
+                              },
+                        icon: const Icon(Icons.calendar_today, size: 14),
+                        label: Text(
+                          _revisionDeadline != null ? 'Change' : 'Set Date',
+                        ),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF92400E),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 14),
+              const Text(
+                'PANEL INSTRUCTIONS & DIRECTIVES FOR TEAM',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                  color: Color(0xFF6B7280),
+                ),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _verdictRemarksController,
+                readOnly: !canEditVerdict,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: isForRedefense
+                      ? 'Enter reasons for re-defense and specific instructions for Attempt #${team.attemptCount + 1}...'
+                      : 'Enter panel directives, recommendations, or required manuscript updates...',
+                  hintStyle: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: TactileButton.primary(
+                  label: _isSubmittingVerdict
+                      ? 'Submitting...'
+                      : (hasVerdict ? 'Update Verdict' : 'Submit Verdict'),
+                  onPressed:
+                      _isSubmittingVerdict ||
+                          _selectedVerdict == null ||
+                          !team.canIssueVerdict
+                      ? null
+                      : () => _confirmSubmitVerdict(team),
+                  icon: const Icon(
+                    Icons.gavel_rounded,
+                    size: 16,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ],
-
-            const Divider(height: 24),
-            const Text(
-              'OFFICIAL STAGE VERDICT',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-                color: Color(0xFF6B7280),
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            // Radio Options
-            _verdictRadioOption(
-              value: 'approved',
-              title: 'Approved',
-              description:
-                  'The team successfully passed with no mandatory re-defense.',
-              icon: Icons.check_circle,
-              color: const Color(0xFF10B981),
-            ),
-            const SizedBox(height: 8),
-            _verdictRadioOption(
-              value: 'approved_with_revisions',
-              title: 'Approved with Revisions',
-              description:
-                  'Passed, but required manuscript or system changes must be submitted.',
-              icon: Icons.edit_calendar,
-              color: const Color(0xFFD97706),
-            ),
-            const SizedBox(height: 8),
-            _verdictRadioOption(
-              value: 'for_redefense',
-              title: 'For Re-defense',
-              description:
-                  'Concept rejected, prototype unsatisfactory, or major deficiencies requiring re-presentation.',
-              icon: Icons.replay_rounded,
-              color: const Color(0xFFEF4444),
-            ),
-
-            if (isRevisions) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.amber.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.amber.shade200),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.event, size: 18, color: Color(0xFF92400E)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Revision Deadline (Optional)',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF92400E),
-                            ),
-                          ),
-                          Text(
-                            _revisionDeadline != null
-                                ? DateFormat(
-                                    'MMMM d, yyyy',
-                                  ).format(_revisionDeadline!)
-                                : 'No deadline set',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    TextButton.icon(
-                      onPressed: () async {
-                        final picked = await showDatePicker(
-                          context: context,
-                          initialDate:
-                              _revisionDeadline ??
-                              DateTime.now().add(const Duration(days: 14)),
-                          firstDate: DateTime.now(),
-                          lastDate: DateTime.now().add(
-                            const Duration(days: 365),
-                          ),
-                        );
-                        if (picked != null) {
-                          setState(() => _revisionDeadline = picked);
-                        }
-                      },
-                      icon: const Icon(Icons.calendar_today, size: 14),
-                      label: Text(
-                        _revisionDeadline != null ? 'Change' : 'Set Date',
-                      ),
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xFF92400E),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            const SizedBox(height: 14),
-            const Text(
-              'PANEL INSTRUCTIONS & DIRECTIVES FOR TEAM',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5,
-                color: Color(0xFF6B7280),
-              ),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _verdictRemarksController,
-              maxLines: 3,
-              decoration: InputDecoration(
-                hintText: isForRedefense
-                    ? 'Enter reasons for re-defense and specific instructions for Attempt #${team.attemptCount + 1}...'
-                    : 'Enter panel directives, recommendations, or required manuscript updates...',
-                hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                contentPadding: const EdgeInsets.all(12),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: TactileButton.primary(
-                label: _isSubmittingVerdict
-                    ? 'Submitting Verdict...'
-                    : (hasVerdict
-                          ? 'Update Official Verdict'
-                          : 'Submit Official Verdict'),
-                onPressed:
-                    _isSubmittingVerdict ||
-                        _selectedVerdict == null ||
-                        !team.canIssueVerdict
-                    ? null
-                    : () => _confirmSubmitVerdict(team),
-                icon: const Icon(
-                  Icons.gavel_rounded,
-                  size: 16,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
         ),
       ),
     );
   }
 
   Widget _verdictRadioOption({
+    required bool enabled,
     required String value,
     required String title,
     required String description,
@@ -2544,7 +2604,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   }) {
     final isSelected = _selectedVerdict == value;
     return InkWell(
-      onTap: () => setState(() => _selectedVerdict = value),
+      onTap: enabled ? () => setState(() => _selectedVerdict = value) : null,
       borderRadius: BorderRadius.circular(10),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -2560,10 +2620,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         ),
         child: Row(
           children: [
-            Radio<String>(
-              value: value,
-              activeColor: color,
-            ),
+            Radio<String>(value: value, enabled: enabled, activeColor: color),
             Icon(icon, size: 20, color: color),
             const SizedBox(width: 10),
             Expanded(

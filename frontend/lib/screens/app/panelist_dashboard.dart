@@ -1,10 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:go_router/go_router.dart';
-import '../../navigation/admin_route_paths.dart';
-import '../../navigation/workspace_access.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../about_screen.dart';
@@ -252,6 +248,8 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
                 team['grading_unavailable_reason']?.toString() ?? '',
             evaluationContext: team['evaluation_context']?.toString() ?? '',
             serverCanIssueVerdict: team['can_issue_verdict'] as bool?,
+            verdictUnavailableReason:
+                team['verdict_unavailable_reason']?.toString() ?? '',
             scheduleStatus: team['schedule_status']?.toString() ?? 'scheduled',
             draftSubmissions: (team['draft']?['submissions'] as List? ?? [])
                 .whereType<Map>()
@@ -328,7 +326,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
     }
 
     return IndexedStack(
-      index: _selectedIndex,
+      index: _selectedIndex.clamp(0, 2),
       children: [
         AssignmentsTab(
           teams: _teams,
@@ -370,41 +368,49 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
             foregroundColor: Colors.white,
             title: _buildAppBarTitle(),
             actions: [
-              if (!_isGuest)
+              if (_isGuest)
                 IconButton(
-                  icon: const Icon(Icons.settings_outlined),
-                  tooltip: 'Settings',
-                  onPressed: () => context.push(AppRoutes.settings),
+                  icon: const Icon(Icons.account_circle_outlined),
+                  tooltip: 'Guest access & sign out',
+                  onPressed: () => _showGuestAccessSheet(context),
                 ),
-              IconButton(
-                icon: const Icon(Icons.account_circle_outlined),
-                tooltip: _isGuest ? 'Guest access & sign out' : 'Profile',
-                onPressed: () => _showProfileSheet(context),
-              ),
             ],
           ),
           body: OfflineBanner(
-            child: _loading
-                ? Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                        child: Text(
-                          context.l10n.loadingAssignments,
-                          style: const TextStyle(
-                            color: DefensysTokens.textSecondary,
-                            fontSize: 13,
+            child: IndexedStack(
+              index: _selectedIndex == 3 ? 1 : 0,
+              children: [
+                _loading
+                    ? Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                            child: Text(
+                              context.l10n.loadingAssignments,
+                              style: const TextStyle(
+                                color: DefensysTokens.textSecondary,
+                                fontSize: 13,
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      Expanded(
-                        child: SingleChildScrollView(
-                          child: DefensysSkeleton.list(count: 6, rowHeight: 64),
-                        ),
-                      ),
-                    ],
-                  )
-                : _buildBody(),
+                          Expanded(
+                            child: SingleChildScrollView(
+                              child: DefensysSkeleton.list(
+                                count: 6,
+                                rowHeight: 64,
+                              ),
+                            ),
+                          ),
+                        ],
+                      )
+                    : _buildBody(),
+                if (!_isGuest)
+                  const ProfileScreen(
+                    showAppBar: false,
+                    includeAppSettings: true,
+                  ),
+              ],
+            ),
           ),
           bottomNavigationBar: NavigationBar(
             selectedIndex: _selectedIndex,
@@ -428,6 +434,12 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
                 icon: const Icon(Icons.bar_chart),
                 label: context.l10n.navResults,
               ),
+              if (!_isGuest)
+                const NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person),
+                  label: 'Profile',
+                ),
             ],
           ),
         ),
@@ -472,6 +484,11 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
           'Defense Results',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
         );
+      case 3:
+        return const Text(
+          'Profile',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
+        );
       default:
         return const Text(
           'Panelist Workspace',
@@ -487,14 +504,14 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
         : 'External evaluator · Access expires ${DateFormat('MMM d · h:mm a').format(expiry.toLocal())}';
   }
 
-  void _showProfileSheet(BuildContext context) {
+  void _showGuestAccessSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       constraints: BoxConstraints(
         maxHeight: MediaQuery.sizeOf(context).height * 0.9,
       ),
-      backgroundColor: Colors.white,
+      backgroundColor: DefensysTokens.panelOf(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -549,59 +566,11 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                       subtitle: Text(
-                        _isGuest
-                            ? _guestAccessLabel(user)
-                            : 'Panelist · ID ${widget.userData?['id'] ?? '—'}',
+                        _guestAccessLabel(user),
                         style: const TextStyle(fontSize: 12),
                       ),
                     ),
                     const Divider(),
-                    if (!_isGuest)
-                      ListTile(
-                        leading: const Icon(Icons.settings_outlined),
-                        title: const Text('Settings'),
-                        onTap: () {
-                          Navigator.pop(sheetCtx);
-                          context.push(AppRoutes.settings);
-                        },
-                      ),
-                    if (!_isGuest &&
-                        kIsWeb &&
-                        WorkspaceAccess.hasStaffWorkspace(
-                          user ?? widget.userData ?? {},
-                        ))
-                      ListTile(
-                        leading: const Icon(Icons.desktop_windows_outlined),
-                        title: const Text('Staff workspace'),
-                        subtitle: const Text('Open management tools'),
-                        onTap: () {
-                          Navigator.pop(sheetCtx);
-                          context.push(FacultyRoutes.dashboard);
-                        },
-                      ),
-                    if (!_isGuest)
-                      ListTile(
-                        leading: const Icon(
-                          Icons.person_outline,
-                          color: DefensysTokens.maroon,
-                        ),
-                        title: const Text(
-                          'Profile',
-                          style: TextStyle(
-                            color: DefensysTokens.maroon,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        onTap: () {
-                          Navigator.pop(sheetCtx);
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const ProfileScreen(),
-                            ),
-                          );
-                        },
-                      ),
                     ListTile(
                       leading: const Icon(Icons.info_outline_rounded),
                       title: const Text('About DefenSYS'),

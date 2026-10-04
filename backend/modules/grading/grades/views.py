@@ -23,6 +23,7 @@ from .services import (
     active_semester,
     build_group_settings_map,
     group_settings_key,
+    group_completion_readiness,
     publish_grade_record,
     require_grade_editable,
     sync_missing_grade_rows,
@@ -212,35 +213,48 @@ class GradeCenterDetailView(APIView):
         return Response({'grade': TeamGradeSerializer(grade).data})
 
     def patch(self, request, grade_id):
-        if not CanManageModule().has_permission(request, self):
-            raise PermissionDenied('Only administrators and PIT leads can manage this resource.')
+        if not IsSystemAdmin().has_permission(request, self):
+            raise PermissionDenied('Only administrators can correct recorded grades.')
         grade = self.get_object(request, grade_id)
-        old_values = grade_audit_values(grade)
-        try:
-            require_grade_editable(grade)
-        except DjangoValidationError as exc:
-            return Response(
-                {'detail': exc.messages[0] if getattr(exc, 'messages', None) else str(exc)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        serializer = TeamGradeUpdateSerializer(data=request.data, context={'grade': grade})
+        from .corrections import request_correction
+        changes = {key: value for key, value in request.data.items() if key in ('panel_score', 'adviser_score', 'peer_score')}
+        result = request_correction(grade.pk, request.user, {
+            'changes': {'aggregate': changes}, 'reason': request.data.get('reason'),
+            'expected_updated_at': request.data.get('expected_updated_at'),
+        }, request=request)
+        grade.refresh_from_db()
+        return Response({'grade': TeamGradeSerializer(grade).data, 'correction': result})
+
+
+class GradeCorrectionsView(APIView):
+    permission_classes = [IsSystemAdmin]
+
+    def get(self, request, grade_id):
+        from .corrections import correction_details
+        grade = get_object_or_404(grade_records_for(request.user), pk=grade_id)
+        return Response(correction_details(grade))
+
+    def post(self, request, grade_id):
+        from .corrections import request_correction, review_correction
+        get_object_or_404(grade_records_for(request.user), pk=grade_id)
+        serializer = CorrectionActionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        grade = serializer.save()
-        new_values = grade_audit_values(grade)
-        if old_values != new_values:
-            log_high_impact_action(
-                category=SystemAuditLog.CATEGORY_GRADE_CENTER,
-                action='grade.manual_edit',
-                target=grade,
-                old_values=old_values,
-                new_values=new_values,
-                request=request,
-            )
-        grade = grade_records_for(request.user).get(pk=grade.pk)
-        return Response({
-            'grade': TeamGradeSerializer(grade).data,
-            **grade_center_payload(request),
-        })
+        data = serializer.validated_data
+        if data['action'] in ('approve', 'reject'):
+            result = review_correction(grade_id, data.get('correction_id'), request.user, data, request=request)
+        else:
+            result = request_correction(grade_id, request.user, data, request=request)
+        return Response(result)
+
+
+class CorrectionActionSerializer(drf_serializers.Serializer):
+    action = drf_serializers.ChoiceField(choices=['request', 'approve', 'reject'], default='request')
+    reason = drf_serializers.CharField(min_length=5, max_length=2000)
+    changes = drf_serializers.DictField(required=False)
+    expected_updated_at = drf_serializers.CharField(required=False)
+    preview = drf_serializers.BooleanField(default=False)
+    correction_id = drf_serializers.IntegerField(min_value=1, required=False)
+    acknowledge_published_change = drf_serializers.BooleanField(default=False)
 
 
 class GradeCenterPublishView(APIView):
@@ -256,7 +270,10 @@ class GradeCenterPublishView(APIView):
                 {'detail': exc.messages[0] if getattr(exc, 'messages', None) else str(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        grade = publish_grade_record(grade, user=request.user)
+        try:
+            grade = publish_grade_record(grade, user=request.user)
+        except DjangoValidationError as exc:
+            return Response({'detail': ' '.join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
         log_high_impact_action(
             category=SystemAuditLog.CATEGORY_GRADE_CENTER,
             action='grade.publish',
@@ -329,8 +346,30 @@ class GradeCenterGroupSettingsSerializer(drf_serializers.Serializer):
         return attrs
 
 
+class GradeCenterGroupReadinessSerializer(drf_serializers.Serializer):
+    scope = drf_serializers.ChoiceField(choices=[TeamGrade.SCOPE_CAPSTONE, TeamGrade.SCOPE_PIT])
+    stage_label = drf_serializers.CharField(max_length=120)
+
+
 class GradeCenterGroupSettingsView(APIView):
     permission_classes = [CanManageModule]
+
+    def get(self, request):
+        semester = active_semester()
+        if semester is None:
+            return Response({'detail': 'No active semester is configured.'}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = GradeCenterGroupReadinessSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        try:
+            payload = group_completion_readiness(
+                semester=semester, user=request.user, **serializer.validated_data,
+            )
+        except PermissionDenied as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except DjangoValidationError as exc:
+            payload = exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}
+            return Response(payload, status=status.HTTP_400_BAD_REQUEST)
+        return Response(payload)
 
     def patch(self, request):
         semester = active_semester()

@@ -107,7 +107,9 @@ class TeamGradeSerializer(serializers.ModelSerializer):
     weights = serializers.SerializerMethodField()
     result = serializers.CharField(read_only=True)
     panelists = serializers.SerializerMethodField()
-    breakdowns = GradeBreakdownSerializer(many=True, read_only=True)
+    breakdowns = serializers.SerializerMethodField()
+    panel_evaluators_submitted = serializers.SerializerMethodField()
+    panel_evaluators_required = serializers.SerializerMethodField()
     peer_per_student = StudentStageGradeSerializer(source='student_grades', many=True, read_only=True)
     published_by_name = serializers.SerializerMethodField()
     verdict_by_name = serializers.SerializerMethodField()
@@ -178,6 +180,8 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             'peer_evaluators_done',
             'peer_evaluators_total',
             'panel_complete',
+            'panel_evaluators_submitted',
+            'panel_evaluators_required',
             'adviser_complete',
             'adviser_required',
             'is_officially_complete',
@@ -205,6 +209,15 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             }
             for m in obj.team.memberships.select_related('student').all()
         ]
+
+    def get_breakdowns(self, obj):
+        return GradeBreakdownSerializer(obj.breakdowns.filter(is_void=False), many=True).data
+
+    def get_panel_evaluators_submitted(self, obj):
+        return self._grading_readiness(obj)['panel_evaluators_submitted']
+
+    def get_panel_evaluators_required(self, obj):
+        return self._grading_readiness(obj)['panel_evaluators_required']
 
     def get_rubric_target_type(self, obj):
         if obj.schedule and obj.schedule.rubric:
@@ -293,8 +306,12 @@ class TeamGradeSerializer(serializers.ModelSerializer):
 
     def _grading_readiness(self, obj):
         from .services import team_grading_readiness
-
-        return team_grading_readiness(obj, obj.semester, obj.scope)
+        if not hasattr(self, '_readiness_cache'):
+            self._readiness_cache = {}
+        key = (obj.pk, obj.updated_at)
+        if key not in self._readiness_cache:
+            self._readiness_cache[key] = team_grading_readiness(obj, obj.semester, obj.scope)
+        return self._readiness_cache[key]
 
     def get_panel_complete(self, obj):
         return self._grading_readiness(obj)['panel_complete']

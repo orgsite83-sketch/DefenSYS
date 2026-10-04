@@ -62,6 +62,13 @@ class DefenseSchedule(models.Model):
     )
 
     batch_id = models.UUIDField(default=uuid.uuid4, editable=False, db_index=True)
+    session_id = models.UUIDField(default=uuid.uuid4, editable=False, db_index=True)
+    revision = models.PositiveIntegerField(default=1)
+    operation_state = models.CharField(max_length=20, default='normal', choices=[
+        ('normal', 'Normal'), ('paused', 'Interrupted'),
+        ('postponed', 'Postponed'), ('no_show', 'No-show'),
+    ])
+    operation_reason = models.TextField(blank=True)
     scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, default=SCOPE_CAPSTONE)
     semester = models.ForeignKey(
         'academic_period_management.Semester',

@@ -1,6 +1,6 @@
 from defense.stages.models import DefenseStage, StageDeliverable
 from defense.scheduler.models import DefenseSchedule, SchedulePanelist, PanelistEvaluationDraft
-from defense.minutes.models import DefenseMinutes, MinutesPanelistComment
+from defense.minutes.models import DefenseMinutes, MinutesPanelistComment, DefenseMinutesRevision
 
 __all__ = [
     'DefenseStage',

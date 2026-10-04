@@ -25,6 +25,7 @@ class MinutesPanelistCommentSerializer(serializers.ModelSerializer):
 
 
 class DefenseMinutesSerializer(serializers.ModelSerializer):
+    revisions = serializers.SerializerMethodField()
     schedule = serializers.SerializerMethodField()
     panelist_comments = MinutesPanelistCommentSerializer(many=True, read_only=True)
     documenter_signed_by_name = serializers.SerializerMethodField()
@@ -35,6 +36,7 @@ class DefenseMinutesSerializer(serializers.ModelSerializer):
         model = DefenseMinutes
         fields = [
             'id',
+            'revisions',
             'schedule',
             'team_name',
             'project_title',
@@ -70,6 +72,11 @@ class DefenseMinutesSerializer(serializers.ModelSerializer):
     def get_documenter_signed_by_name(self, obj):
         return display_name(obj.documenter_signed_by)
 
+    def get_revisions(self, obj):
+        return [{'id': item.pk, 'reason': item.reason, 'created_at': item.created_at.isoformat(),
+                 'snapshot': item.snapshot, 'pdf_url': item.pdf_file.url if item.pdf_file else None}
+                for item in obj.revisions.all()]
+
     def get_adviser_signed_by_name(self, obj):
         return display_name(obj.adviser_signed_by)
 
@@ -94,4 +101,3 @@ class DefenseMinutesSerializer(serializers.ModelSerializer):
             'status': schedule.status,
             'panelists': panelists,
         }
-

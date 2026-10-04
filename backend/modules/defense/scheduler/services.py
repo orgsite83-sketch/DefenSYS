@@ -3,6 +3,7 @@ from rest_framework.exceptions import ValidationError, APIException
 from authentication_access_control.audit import audit_scope_metadata, log_high_impact_action
 from authentication_access_control.models import SystemAuditLog
 from .models import DefenseSchedule
+from django.db import transaction
 
 class ScheduleDeletionBlocked(APIException):
     status_code = status.HTTP_409_CONFLICT
@@ -44,8 +45,10 @@ def schedule_audit_values(schedule, **extra):
     values.update(extra)
     return values
 
+@transaction.atomic
 def transition_schedule_status(schedule, new_status, *, actor=None, reason='', request=None):
     """Single source of truth for schedule status transitions."""
+    schedule = DefenseSchedule.objects.select_for_update().get(pk=schedule.pk)
     old_status = schedule.status
     if new_status == old_status:
         return schedule
@@ -54,8 +57,14 @@ def transition_schedule_status(schedule, new_status, *, actor=None, reason='', r
     if new_status not in allowed:
         raise ValidationError({'status': f'Cannot change status from "{old_status}" to "{new_status}".'})
 
+    if new_status == DefenseSchedule.STATUS_DONE:
+        from grading.grades.services import team_grading_readiness
+        grade = schedule.grade_records.first()
+        if not grade or not team_grading_readiness(grade, grade.semester, grade.scope)['ready']:
+            raise ValidationError('Complete all required evaluators and grading components before closing this defense.')
     schedule.status = new_status
-    schedule.save(update_fields=['status', 'updated_at'])
+    schedule.revision += 1
+    schedule.save(update_fields=['status', 'revision', 'updated_at'])
 
     # Log transition
     log_high_impact_action(
@@ -66,32 +75,51 @@ def transition_schedule_status(schedule, new_status, *, actor=None, reason='', r
         old_values=schedule_audit_values(schedule, status=old_status),
         new_values=schedule_audit_values(schedule, status=new_status, reason=reason),
         request=request,
+        reason=reason,
+        strict=True,
     )
     return schedule
 
 
-def delete_schedule(schedule, *, actor=None, request=None):
-    """Single source of truth for deleting a defense schedule securely."""
+def deletion_blockers(schedule):
+    """Protect authored content; scaffold rows and zero-valued scores differ."""
+    from django.db.models import Q
+    from defense.minutes.models import DefenseMinutes
+    from grading.grades.models import TeamGrade
+    blockers = []
     if schedule.panelist_grade_submissions.exists():
-        raise ScheduleDeletionBlocked()
-
+        blockers.append('This schedule has panelist grades already submitted (including voided evaluations).')
+    if any(any(item.get('criteria_scores') or str(item.get('remarks', '')).strip()
+               for item in draft.submissions if isinstance(item, dict))
+           for draft in schedule.evaluation_drafts.all()):
+        blockers.append('Saved evaluation drafts contain scores or remarks.')
+    minutes = DefenseMinutes.objects.filter(schedule=schedule).first()
+    if minutes and (minutes.status != 'draft' or minutes.pdf_file or minutes.revisions.exists()
+                    or minutes.documenter_signed_at or minutes.adviser_signed_at or minutes.chairman_signed_at
+                    or any(c.comments.strip() for c in minutes.panelist_comments.all())):
+        blockers.append('Minutes contain comments, signatures, or a generated document.')
+    grades = TeamGrade.objects.filter(team_id=schedule.team_id, semester_id=schedule.semester_id, scope=schedule.scope)
+    grades = grades.filter(defense_stage_id=schedule.defense_stage_id) if schedule.scope == 'capstone' else grades.filter(stage_label__iexact=schedule.event_name)
+    for grade in grades:
+        if (any(getattr(grade, name) is not None for name in ('panel_score', 'adviser_score', 'peer_score', 'final_grade'))
+                or grade.verdict or grade.status == 'published' or grade.published_at
+                or grade.breakdowns.exists() or grade.peer_evaluation_submissions.exists()
+                or grade.panelist_submissions.exists() or grade.attempt_history.exists() or grade.corrections.exists()
+                or grade.student_grades.filter(Q(panel_score__isnull=False) | Q(adviser_score__isnull=False) | Q(peer_score__isnull=False) | Q(final_grade__isnull=False)).exists()):
+            blockers.append('Grades, a verdict, or correction history have been recorded.')
+            break
     if schedule.status in (DefenseSchedule.STATUS_DONE, DefenseSchedule.STATUS_ARCHIVED):
-        raise ScheduleDeletionBlocked(
-            detail={'warning': 'Cannot delete a completed or archived schedule.'},
-        )
+        blockers.append('Completed and archived schedules must be preserved.')
+    return blockers
 
-    if schedule.status == DefenseSchedule.STATUS_SCHEDULED:
-        from django.utils import timezone
-        from datetime import datetime
-        now = timezone.localtime()
-        scheduled_start = timezone.make_aware(
-            datetime.combine(schedule.scheduled_date, schedule.start_time),
-            timezone.get_current_timezone(),
-        )
-        if now >= scheduled_start:
-            raise ScheduleDeletionBlocked(
-                detail={'warning': 'Cannot delete an ongoing defense schedule.'},
-            )
+
+@transaction.atomic
+def delete_schedule(schedule, *, actor=None, request=None, reason='Empty schedule removal'):
+    """Single source of truth for deleting a defense schedule securely."""
+    schedule = DefenseSchedule.objects.select_for_update().get(pk=schedule.pk)
+    blockers = deletion_blockers(schedule)
+    if blockers:
+        raise ScheduleDeletionBlocked(detail={'detail': ' '.join(blockers), 'code': 'has_grade_data', 'blockers': blockers})
 
     schedule_pk = schedule.pk
     audit_values = schedule_audit_values(schedule, status=schedule.status)
@@ -107,5 +135,6 @@ def delete_schedule(schedule, *, actor=None, request=None):
         new_values={'deleted': True},
         actor=actor,
         request=request,
+        reason=reason,
+        strict=True,
     )
-

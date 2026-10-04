@@ -12,7 +12,27 @@ final gradeCenterProvider =
       GradeCenterNotifier.new,
     );
 
+class GradeGroupCompletionReadiness {
+  const GradeGroupCompletionReadiness({
+    required this.totalTeams,
+    required this.readyTeams,
+    required this.canComplete,
+    this.isComplete = false,
+    this.incompleteTeams = const [],
+    this.redefenseTeams = const [],
+    this.failingTeams = const [],
+  });
+
+  final int totalTeams;
+  final int readyTeams;
+  final bool canComplete, isComplete;
+  final List<Map<String, dynamic>> incompleteTeams,
+      redefenseTeams,
+      failingTeams;
+}
+
 class GradeCenterState {
+  final bool isCheckingCompletion;
   final bool isLoading;
   final bool isSaving;
   final bool isRefreshingGrade;
@@ -34,6 +54,7 @@ class GradeCenterState {
   final List<Map<String, dynamic>> incompleteTeams;
 
   const GradeCenterState({
+    this.isCheckingCompletion = false,
     this.isLoading = false,
     this.isSaving = false,
     this.isRefreshingGrade = false,
@@ -56,6 +77,7 @@ class GradeCenterState {
   });
 
   GradeCenterState copyWith({
+    bool? isCheckingCompletion,
     bool? isLoading,
     bool? isSaving,
     bool? isRefreshingGrade,
@@ -81,6 +103,7 @@ class GradeCenterState {
     bool clearIncompleteTeams = false,
   }) {
     return GradeCenterState(
+      isCheckingCompletion: isCheckingCompletion ?? this.isCheckingCompletion,
       isLoading: isLoading ?? this.isLoading,
       isSaving: isSaving ?? this.isSaving,
       isRefreshingGrade: isRefreshingGrade ?? this.isRefreshingGrade,
@@ -109,7 +132,7 @@ class GradeCenterState {
 }
 
 class GradeCenterNotifier extends Notifier<GradeCenterState> {
-    static String get baseUrl => ApiConfig.gradeCenterUrl;
+  static String get baseUrl => ApiConfig.gradeCenterUrl;
 
   @override
   GradeCenterState build() {
@@ -176,10 +199,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     state = state.copyWith(isRefreshingGrade: true, clearError: true);
 
     try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/$gradeId/'),
-        
-      );
+      final response = await _client.get(Uri.parse('$baseUrl/$gradeId/'));
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -219,10 +239,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     );
 
     try {
-      final response = await _client.post(
-        Uri.parse('$baseUrl/sync/'),
-        
-      );
+      final response = await _client.post(Uri.parse('$baseUrl/sync/'));
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -258,7 +275,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     try {
       final response = await _client.patch(
         Uri.parse('$baseUrl/$gradeId/'),
-        
+
         body: jsonEncode(payload),
       );
 
@@ -279,6 +296,39 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     }
   }
 
+  Future<Map<String, dynamic>> correctionDetails(int gradeId) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/$gradeId/corrections/'),
+    );
+    if (response.statusCode != 200)
+      throw Exception(_errorFromResponse(response));
+    return Map<String, dynamic>.from(jsonDecode(response.body));
+  }
+
+  Future<Map<String, dynamic>> correctGrade(
+    int gradeId,
+    Map<String, dynamic> payload,
+  ) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/$gradeId/corrections/'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(payload),
+    );
+    if (response.statusCode != 200)
+      throw Exception(_errorFromResponse(response));
+    final result = Map<String, dynamic>.from(jsonDecode(response.body));
+    if (payload['preview'] != true) {
+      await fetchGrades(
+        successMessage: result['status'] == 'pending'
+            ? 'Amendment requested. Review and approve it in correction history.'
+            : 'Grade correction recorded.',
+      );
+      await refreshGrade(gradeId);
+      await _refreshDependentProviders();
+    }
+    return result;
+  }
+
   Future<bool> publishGrade(int gradeId) async {
     state = state.copyWith(
       isSaving: true,
@@ -289,7 +339,6 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/$gradeId/publish/'),
-        
       );
 
       if (response.statusCode == 200) {
@@ -311,6 +360,39 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     }
   }
 
+  Future<GradeGroupCompletionReadiness> checkGroupCompletion({
+    required String scope,
+    required String stageLabel,
+  }) async {
+    state = state.copyWith(isCheckingCompletion: true);
+    try {
+      final response = await _client.get(
+        Uri.parse(
+          '$baseUrl/group-settings/',
+        ).replace(queryParameters: {'scope': scope, 'stage_label': stageLabel}),
+      );
+      if (response.statusCode != 200) {
+        throw Exception(_errorFromResponse(response));
+      }
+      final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+      List<Map<String, dynamic>> teams(String key) => (payload[key] as List)
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+      return GradeGroupCompletionReadiness(
+        totalTeams: (payload['grading_total_team_count'] as num).toInt(),
+        readyTeams: (payload['grading_ready_team_count'] as num).toInt(),
+        canComplete: payload['can_complete'] == true,
+        isComplete: payload['is_officially_complete'] == true,
+        incompleteTeams: teams('incomplete_teams'),
+        redefenseTeams: teams('redefense_teams'),
+        failingTeams: teams('failing_teams'),
+      );
+    } finally {
+      state = state.copyWith(isCheckingCompletion: false);
+    }
+  }
+
   Future<bool> updateGroupSettings({
     required String scope,
     required String stageLabel,
@@ -327,10 +409,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       clearIncompleteTeams: true,
     );
     try {
-      final body = <String, dynamic>{
-        'scope': scope,
-        'stage_label': stageLabel,
-      };
+      final body = <String, dynamic>{'scope': scope, 'stage_label': stageLabel};
       if (isOfficiallyComplete != null) {
         body['is_officially_complete'] = isOfficiallyComplete;
       }
@@ -339,12 +418,14 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       }
       final response = await _client.patch(
         Uri.parse('$baseUrl/group-settings/'),
-        
+
         body: jsonEncode(body),
       );
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
-        final merged = Map<String, Map<String, dynamic>>.from(state.groupSettings);
+        final merged = Map<String, Map<String, dynamic>>.from(
+          state.groupSettings,
+        );
         final updated = payload['group_settings'];
         if (updated is Map) {
           for (final entry in updated.entries) {
@@ -358,7 +439,8 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
         var message = 'Event settings updated.';
         final autoPublish = payload['auto_publish'] ?? payload['auto_finalize'];
         if (autoPublish is Map && isOfficiallyComplete == true) {
-          final readyCount = autoPublish['ready_for_archive_count'] ??
+          final readyCount =
+              autoPublish['ready_for_archive_count'] ??
               autoPublish['published_count'];
           if (readyCount is int && readyCount > 0) {
             message =
@@ -376,8 +458,11 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
           clearIncompleteTeams: true,
         );
         if (isOfficiallyComplete == true &&
-            (payload['auto_publish'] != null || payload['auto_finalize'] != null)) {
-          await fetchGrades(scope: state.scope.isNotEmpty ? state.scope : scope);
+            (payload['auto_publish'] != null ||
+                payload['auto_finalize'] != null)) {
+          await fetchGrades(
+            scope: state.scope.isNotEmpty ? state.scope : scope,
+          );
         }
         return true;
       }
@@ -393,7 +478,9 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     }
   }
 
-  List<Map<String, dynamic>> _incompleteTeamsFromResponse(http.Response response) {
+  List<Map<String, dynamic>> _incompleteTeamsFromResponse(
+    http.Response response,
+  ) {
     try {
       final data = jsonDecode(response.body);
       if (data is! Map) {
@@ -439,7 +526,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       }
       final response = await _client.patch(
         Uri.parse('$baseUrl/evaluation-settings/'),
-        
+
         body: jsonEncode(body),
       );
       if (response.statusCode == 200) {
@@ -500,7 +587,10 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
             clearError: true,
           );
         } else {
-          _applyPayload(payload, successMessage: 'Defense verdict submitted successfully.');
+          _applyPayload(
+            payload,
+            successMessage: 'Defense verdict submitted successfully.',
+          );
         }
         return true;
       }
@@ -517,15 +607,17 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
 
   Future<void> _refreshDependentProviders() async {
     try {
-      await ref.read(dashboardProvider('admin').notifier).fetchDashboardData(silent: true);
+      await ref
+          .read(dashboardProvider('admin').notifier)
+          .fetchDashboardData(silent: true);
     } catch (_) {}
     try {
       await ref.read(curriculumAnalyticsProvider.notifier).fetchAnalytics();
     } catch (_) {}
   }
 
-  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
-
+  AuthenticatedHttpClient get _client =>
+      ref.read(authenticatedHttpClientProvider);
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     state = state.copyWith(

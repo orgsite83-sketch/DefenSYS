@@ -81,6 +81,56 @@ class PanelistEvaluationTests(APITestCase):
         grade.refresh_from_db()
         self.assertFalse(grade.verdict)
 
+    def test_chair_role_is_preserved_while_verdict_waits_for_panel_grading(self):
+        schedule = self.schedule()
+        assignment = self.client.get('/api/defense/schedules/panelist-assignments/').data['teams'][0]
+        self.assertTrue(assignment['is_chair'])
+        self.assertTrue(assignment['grading_available'])
+        self.assertFalse(assignment['can_issue_verdict'])
+        self.assertEqual(assignment['verdict_unavailable_reason'],
+                         'Panel grading must be submitted before issuing a verdict.')
+        response = self.client.patch(f'/api/defense/schedules/{schedule.pk}/verdict/',
+                                     {'verdict': 'approved'}, format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(response.data['detail'], assignment['verdict_unavailable_reason'])
+        self.assertFalse(schedule.grade_records.first().verdict)
+
+    def test_submitted_zero_scores_unlock_verdict_only_for_the_chair(self):
+        schedule = self.schedule()
+        response = self.client.post('/api/defense/schedules/submit-grades/', {
+            'team_id': self.team.pk, 'schedule_id': schedule.pk, 'criteria_scores': self.scores(0),
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        assignment = self.client.get('/api/defense/schedules/panelist-assignments/').data['teams'][0]
+        self.assertTrue(assignment['is_chair'])
+        self.assertTrue(assignment['can_issue_verdict'])
+        self.assertEqual(assignment['verdict_unavailable_reason'], '')
+        self.client.force_authenticate(user=self.second_panelist)
+        member_assignment = self.client.get('/api/defense/schedules/panelist-assignments/').data['teams'][0]
+        self.assertFalse(member_assignment['is_chair'])
+        self.assertFalse(member_assignment['can_issue_verdict'])
+        self.assertEqual(self.client.patch(f'/api/defense/schedules/{schedule.pk}/verdict/',
+                                          {'verdict': 'approved'}, format='json').status_code, 403)
+        self.client.force_authenticate(user=self.panelist)
+        self.assertEqual(self.client.patch(f'/api/defense/schedules/{schedule.pk}/verdict/',
+                                          {'verdict': 'approved'}, format='json').status_code, 200)
+
+    def test_paused_defense_reports_the_same_verdict_lock_as_submission(self):
+        schedule = self.schedule(operation_state='paused')
+        grade, _, _ = GradeContextService.get_or_create_for_schedule(schedule)
+        grade.panel_score = 80
+        grade.save(update_fields=['panel_score'])
+        assignment = self.client.get('/api/defense/schedules/panelist-assignments/').data['teams'][0]
+        self.assertTrue(assignment['is_chair'])
+        self.assertFalse(assignment['can_issue_verdict'])
+        self.assertIn('paused', assignment['verdict_unavailable_reason'])
+        response = self.client.patch(f'/api/defense/schedules/{schedule.pk}/verdict/',
+                                     {'verdict': 'approved'}, format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(response.data['detail'], assignment['verdict_unavailable_reason'])
+        grade.refresh_from_db()
+        self.assertFalse(grade.verdict)
+
     def test_draft_restores_zero_and_remarks_without_contributing_grades(self):
         schedule = self.schedule()
         self.assertEqual(self.save_draft(schedule).status_code, 200)
@@ -169,8 +219,11 @@ class PanelistEvaluationTests(APITestCase):
 
     def test_guest_draft_is_private_and_resumes_without_submission(self):
         schedule = self.schedule()
+        from user_management.models import GuestPanelistCode
+        invitation = GuestPanelistCode.objects.create(guest_name='Guest Panelist', defense_schedule=schedule)
+        invitation.schedules.add(schedule)
         guest = GuestPanelistPrincipal({
-            'guest_code_id': 'guest-123', 'defense_schedule_id': schedule.pk,
+            'guest_code_id': str(invitation.pk), 'defense_schedule_id': schedule.pk,
             'team_id': self.team.pk, 'guest_name': 'Guest Panelist',
         })
         self.client.force_authenticate(user=guest)

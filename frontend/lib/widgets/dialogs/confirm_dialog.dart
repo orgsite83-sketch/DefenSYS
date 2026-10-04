@@ -15,14 +15,17 @@ Future<bool> showConfirmDialog(
   Color? confirmColor,
   Color? iconColor,
   Color? iconBgColor,
+  Widget? contentPrefix,
 }) async {
-  final effectiveIconColor = iconColor ??
+  final effectiveIconColor =
+      iconColor ??
       (destructive
           ? DefensysTokens.danger
           : (confirmColor ?? DefensysTokens.maroon));
   final effectiveIconBgColor =
       iconBgColor ?? effectiveIconColor.withValues(alpha: 0.08);
-  final effectiveConfirmColor = confirmColor ??
+  final effectiveConfirmColor =
+      confirmColor ??
       (destructive ? DefensysTokens.danger : DefensysTokens.maroon);
 
   final confirmed = await showDialog<bool>(
@@ -39,13 +42,11 @@ Future<bool> showConfirmDialog(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: effectiveIconBgColor,
-                    borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                    borderRadius: BorderRadius.circular(
+                      DefensysTokens.radiusSm,
+                    ),
                   ),
-                  child: Icon(
-                    icon,
-                    size: 20,
-                    color: effectiveIconColor,
-                  ),
+                  child: Icon(icon, size: 20, color: effectiveIconColor),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -64,12 +65,32 @@ Future<bool> showConfirmDialog(
                 color: DefensysTokens.textPrimaryOf(context),
               ),
             ),
-      content: Text(
-        message,
-        style: DefensysTokens.dialogContent.copyWith(
-          color: DefensysTokens.textSecondaryOf(context),
-        ),
-      ),
+      content: contentPrefix == null
+          ? Text(
+              message,
+              style: DefensysTokens.dialogContent.copyWith(
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+            )
+          : SizedBox(
+              width: 620,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    contentPrefix,
+                    const SizedBox(height: 18),
+                    Text(
+                      message,
+                      style: DefensysTokens.dialogContent.copyWith(
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
       actions: [
         TextButton(
           style: TextButton.styleFrom(
@@ -177,7 +198,8 @@ Future<bool> showDestructiveTypeConfirmDialog(
       return StatefulBuilder(
         builder: (ctx, setDialogState) {
           final isMatched =
-              typedText.trim().toLowerCase() == matchTarget.trim().toLowerCase();
+              typedText.trim().toLowerCase() ==
+              matchTarget.trim().toLowerCase();
 
           return AlertDialog(
             surfaceTintColor: Colors.transparent,
@@ -193,7 +215,9 @@ Future<bool> showDestructiveTypeConfirmDialog(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFEF2F2),
-                    borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                    borderRadius: BorderRadius.circular(
+                      DefensysTokens.radiusSm,
+                    ),
                     border: Border.all(color: const Color(0xFFFCA5A5)),
                   ),
                   child: const Icon(
@@ -231,8 +255,11 @@ Future<bool> showDestructiveTypeConfirmDialog(
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.warning_amber_rounded,
-                              size: 16, color: Color(0xFFDC2626)),
+                          const Icon(
+                            Icons.warning_amber_rounded,
+                            size: 16,
+                            color: Color(0xFFDC2626),
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
@@ -249,10 +276,7 @@ Future<bool> showDestructiveTypeConfirmDialog(
                     ),
                     const SizedBox(height: 14),
                   ],
-                  Text(
-                    message,
-                    style: DefensysTokens.dialogContent,
-                  ),
+                  Text(message, style: DefensysTokens.dialogContent),
                   const SizedBox(height: 16),
                   RichText(
                     text: TextSpan(
@@ -262,7 +286,9 @@ Future<bool> showDestructiveTypeConfirmDialog(
                         height: 1.4,
                       ),
                       children: [
-                        const TextSpan(text: 'To confirm deletion, please type '),
+                        const TextSpan(
+                          text: 'To confirm deletion, please type ',
+                        ),
                         TextSpan(
                           text: matchTarget,
                           style: const TextStyle(
@@ -297,7 +323,9 @@ Future<bool> showDestructiveTypeConfirmDialog(
                       fillColor: const Color(0xFFF9FAFB),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: DefensysTokens.border),
+                        borderSide: const BorderSide(
+                          color: DefensysTokens.border,
+                        ),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -350,7 +378,9 @@ Future<bool> showDestructiveTypeConfirmDialog(
                     vertical: 10,
                   ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                    borderRadius: BorderRadius.circular(
+                      DefensysTokens.radiusMd,
+                    ),
                   ),
                 ),
                 icon: const Icon(Icons.delete_outline_rounded, size: 16),

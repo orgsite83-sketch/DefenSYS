@@ -14,6 +14,8 @@ from .models import DefenseSchedule, PanelistEvaluationDraft
 def grading_unavailable_reason(schedule, grade=None):
     if schedule.status != DefenseSchedule.STATUS_SCHEDULED:
         return 'This defense is closed or cancelled.'
+    if schedule.operation_state != 'normal':
+        return f'This defense is {schedule.operation_state.replace("_", " ")}. An administrator must resume it before grading.'
     if schedule.scheduled_date > timezone.localdate():
         return f'Grading is locked until the scheduled date: {schedule.scheduled_date.strftime("%B %d, %Y")}.'
     if not schedule.rubric_id:
@@ -29,10 +31,21 @@ def grading_unavailable_reason(schedule, grade=None):
     return ''
 
 
+def verdict_unavailable_reason(schedule, grade=None):
+    """Shared verdict readiness for assignment display and the submit endpoint."""
+    reason = grading_unavailable_reason(schedule)
+    if reason:
+        return reason
+    if grade is None or grade.panel_score is None:
+        return 'Panel grading must be submitted before issuing a verdict.'
+    return ''
+
+
 def evaluation_context(schedule, grade=None):
     rubric = schedule.rubric
     context = {
         'schedule': schedule.pk,
+        'revision': schedule.revision,
         'date': str(schedule.scheduled_date),
         'rubric': schedule.rubric_id,
         'target': rubric.target_type if rubric else None,
@@ -128,6 +141,23 @@ def validate_evaluation_submissions(schedule, submissions, *, partial=False):
 
 
 def save_evaluation_draft(schedule, payload, *, panelist=None, guest=None):
+    from django.db import transaction
+    with transaction.atomic():
+        locked = DefenseSchedule.objects.select_for_update().get(pk=schedule.pk)
+        if panelist and not locked.panel_assignments.filter(panelist=panelist).exists():
+            raise ValidationError('Your assignment changed. Refresh this defense before grading.')
+        if guest:
+            from user_management.models import GuestPanelistCode
+            from user_management.external_evaluators import invitation_is_available, invitation_schedule_ids
+            invitation = GuestPanelistCode.objects.select_for_update().filter(pk=guest.guest_code_id, is_active=True).first()
+            token = getattr(guest, 'token', {})
+            if (not invitation or not invitation_is_available(invitation) or locked.pk not in invitation_schedule_ids(invitation)
+                    or invitation.access_version != token.get('access_version', 1)):
+                raise ValidationError('Your assignment changed. Refresh this defense before grading.')
+        return _save_evaluation_draft(locked, payload, panelist=panelist, guest=guest)
+
+
+def _save_evaluation_draft(schedule, payload, *, panelist=None, guest=None):
     owner = {'panelist': panelist} if panelist else {'guest_code_id': str(guest.guest_code_id)}
     grade = schedule.grade_records.first()
     reason = grading_unavailable_reason(schedule, grade)

@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import '../../navigation/admin_route_paths.dart';
 import '../about_screen.dart';
 import '../privacy_screen.dart';
 import '../terms_screen.dart';
@@ -170,7 +168,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
       const RepositoryTab(),
       if (isPM)
         SectionIntegrationTab(studentData: dataToPass),
-      const ProfileScreen(showAppBar: false),
+      const ProfileScreen(showAppBar: false, includeAppSettings: true),
     ];
 
     final l10n = context.l10n;
@@ -282,8 +280,6 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
           ],
         ),
         actions: [
-          IconButton(icon: const Icon(Icons.settings_outlined), tooltip: 'Settings',
-            onPressed: () => context.push(AppRoutes.settings)),
           Consumer(
             builder: (context, ref, child) {
               final state = ref.watch(notificationsProvider);
@@ -318,7 +314,10 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         ],
       ),
       body: OfflineBanner(
-        child: showFatalError
+        child: IndexedStack(
+          index: safeIndex == tabChildren.length - 1 ? 1 : 0,
+          children: [
+            showFatalError
             ? Center(
                 child: Padding(
                   padding: const EdgeInsets.all(24),
@@ -361,9 +360,12 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
             : initialLoad
                 ? DefensysSkeleton.tabContent()
                 : IndexedStack(
-                    index: safeIndex,
-                    children: tabChildren,
+                    index: safeIndex.clamp(0, tabChildren.length - 2),
+                    children: tabChildren.sublist(0, tabChildren.length - 1),
                   ),
+            tabChildren.last,
+          ],
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: safeIndex,
@@ -609,9 +611,9 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                   ),
 
                   _drawerSectionHeader('SYSTEM & POLICIES'),
-                  _drawerItem(icon: Icons.settings_outlined, title: 'Settings', onTap: () {
+                  _drawerItem(icon: Icons.person_outline, title: 'Profile & Settings', onTap: () {
                     Navigator.pop(context);
-                    context.push(AppRoutes.settings);
+                    setState(() => _selectedIndex = (isPM ? 4 : 3));
                   }),
                   _drawerItem(
                     icon: Icons.info_outline_rounded,

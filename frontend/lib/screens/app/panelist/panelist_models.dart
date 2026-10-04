@@ -44,6 +44,7 @@ class TeamData {
   final String gradingUnavailableReason;
   final String evaluationContext;
   final bool? serverCanIssueVerdict;
+  final String verdictUnavailableReason;
   final String scheduleStatus;
   List<Map<String, dynamic>> draftSubmissions;
   String? draftSavedAt;
@@ -92,6 +93,7 @@ class TeamData {
     this.gradingUnavailableReason = '',
     this.evaluationContext = '',
     this.serverCanIssueVerdict,
+    this.verdictUnavailableReason = '',
     this.scheduleStatus = 'scheduled',
     this.draftSubmissions = const [],
     this.draftSavedAt,
@@ -121,6 +123,7 @@ class TeamData {
       scheduleStatus == 'scheduled' &&
       (serverGradingAvailable ?? true);
   bool get canIssueVerdict =>
+      isChair &&
       !isLockedByDate &&
       scheduleStatus == 'scheduled' &&
       (serverCanIssueVerdict ?? isPosted);

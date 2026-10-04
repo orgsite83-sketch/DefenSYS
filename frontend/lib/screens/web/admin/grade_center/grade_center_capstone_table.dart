@@ -23,6 +23,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     required this.onOpenStage,
     required this.onOfficiallyCompleteChanged,
     this.onPeerGradingChanged,
+    this.onCheckCompletion,
     required this.onSearchChanged,
     required this.onSearchSubmitted,
     required this.onSearchFocusChanged,
@@ -45,6 +46,8 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
   final void Function(CapstoneStageRow row, bool value)
   onOfficiallyCompleteChanged;
   final void Function(CapstoneStageRow row, bool value)? onPeerGradingChanged;
+  final Future<GradeGroupCompletionReadiness> Function(CapstoneStageRow row)?
+  onCheckCompletion;
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onSearchSubmitted;
   final ValueChanged<bool> onSearchFocusChanged;
@@ -61,29 +64,32 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     final rows = isPit
         ? buildPitStageRows(state: state, pitEvents: stages)
         : (isAll
-            ? buildAllStageRows(
-                state: state,
-                defenseStages: stages,
-                pitEvents: state.pitEvents,
-              )
-            : buildCapstoneStageRows(state: state, defenseStages: stages));
+              ? buildAllStageRows(
+                  state: state,
+                  defenseStages: stages,
+                  pitEvents: state.pitEvents,
+                )
+              : buildCapstoneStageRows(state: state, defenseStages: stages));
     final sem = state.activeSemester;
     final termLabel = sem?['display_name']?.toString().trim() ?? '';
 
-    final effectiveIcon = icon ??
+    final effectiveIcon =
+        icon ??
         (isPit
             ? Icons.lightbulb_rounded
             : (isAll ? Icons.auto_graph_rounded : Icons.rocket_launch_rounded));
-    final effectiveTitle = title ??
+    final effectiveTitle =
+        title ??
         (isPit
             ? 'PIT Expos & Event Stages'
             : (isAll ? 'All Grade Groups' : 'Capstone stages'));
-    final effectiveSubtitle = subtitle ??
+    final effectiveSubtitle =
+        subtitle ??
         (isPit
             ? 'Manage panel and peer grading across PIT year-level expos and event tracks.'
             : (isAll
-                ? 'Overview of all Capstone and PIT grade groups for the active term.'
-                : 'Manage grading by defense stage for the active term.'));
+                  ? 'Overview of all Capstone and PIT grade groups for the active term.'
+                  : 'Manage grading by defense stage for the active term.'));
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -97,11 +103,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  effectiveIcon,
-                  color: DefensysUi.primaryMaroon,
-                  size: 22,
-                ),
+                Icon(effectiveIcon, color: DefensysUi.primaryMaroon, size: 22),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -112,7 +114,9 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w800,
-                          color: isDark ? DefensysTokens.mistTextPrimary : DefensysUi.textDark,
+                          color: isDark
+                              ? DefensysTokens.mistTextPrimary
+                              : DefensysUi.textDark,
                         ),
                       ),
                       const SizedBox(height: 3),
@@ -120,7 +124,9 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                         effectiveSubtitle,
                         style: TextStyle(
                           fontSize: 12.5,
-                          color: isDark ? DefensysTokens.mistTextSecondary : DefensysUi.steelGrey,
+                          color: isDark
+                              ? DefensysTokens.mistTextSecondary
+                              : DefensysUi.steelGrey,
                           height: 1.35,
                         ),
                       ),
@@ -128,10 +134,8 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                         const SizedBox(height: 8),
                         if (isPit) ...[
                           Builder(
-                            builder: (ctx) => pitTermStatusBadgeRow(
-                              state,
-                              context: ctx,
-                            ),
+                            builder: (ctx) =>
+                                pitTermStatusBadgeRow(state, context: ctx),
                           ),
                           const SizedBox(height: 4),
                           const Text(
@@ -159,16 +163,19 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                                 ),
                                 capstoneTermStatusChip(
                                   label: 'Adviser grading (Capstone)',
-                                  enabled:
-                                      capstoneTermAdviserGradingEnabled(state),
+                                  enabled: capstoneTermAdviserGradingEnabled(
+                                    state,
+                                  ),
                                 ),
                                 capstoneTermStatusChip(
                                   label: 'Peer evaluation',
                                   enabled: capstoneTermPeerEvalEnabled(state),
                                   helpTooltip:
                                       'Click for Peer Evaluation Workflow Guide',
-                                  onHelpTap: () =>
-                                      showPeerGradingHelpDialog(ctx, isPit: false),
+                                  onHelpTap: () => showPeerGradingHelpDialog(
+                                    ctx,
+                                    isPit: false,
+                                  ),
                                 ),
                                 capstoneTermStatusChip(
                                   label: 'PIT Panel & Peer',
@@ -235,7 +242,9 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
             child: Text(
               'Open a stage to view teams, edit scores, and mark officially complete.',
               style: TextStyle(
-                color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF98A2B3),
+                color: isDark
+                    ? DefensysTokens.mistTextSecondary
+                    : const Color(0xFF98A2B3),
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
                 height: 1.35,
@@ -255,7 +264,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
               ),
             ),
           ],
-          _tableBody(rows, context),
+          _tableBody(rows, context, ref),
         ],
       ),
     );
@@ -278,7 +287,9 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
         style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF5D6678),
+          color: isDark
+              ? DefensysTokens.mistTextSecondary
+              : const Color(0xFF5D6678),
         ),
       ),
     );
@@ -343,16 +354,22 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                 enabled: !state.isSaving,
                 style: TextStyle(
                   fontSize: 13,
-                  color: isDark ? DefensysTokens.mistTextPrimary : DefensysUi.textDark,
+                  color: isDark
+                      ? DefensysTokens.mistTextPrimary
+                      : DefensysUi.textDark,
                 ),
                 decoration: InputDecoration(
                   hintText: 'Search teams...',
                   hintStyle: TextStyle(
-                    color: isDark ? DefensysTokens.mistTextSecondary : DefensysUi.steelGrey,
+                    color: isDark
+                        ? DefensysTokens.mistTextSecondary
+                        : DefensysUi.steelGrey,
                     fontSize: 12.5,
                   ),
                   filled: true,
-                  fillColor: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF9FAFB),
+                  fillColor: isDark
+                      ? DefensysTokens.mistInputFill
+                      : const Color(0xFFF9FAFB),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 10,
@@ -360,13 +377,17 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(7),
                     borderSide: BorderSide(
-                      color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB),
+                      color: isDark
+                          ? DefensysTokens.mistBorder
+                          : const Color(0xFFD1D5DB),
                     ),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(7),
                     borderSide: BorderSide(
-                      color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB),
+                      color: isDark
+                          ? DefensysTokens.mistBorder
+                          : const Color(0xFFD1D5DB),
                     ),
                   ),
                   focusedBorder: OutlineInputBorder(
@@ -388,7 +409,11 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     );
   }
 
-  Widget _tableBody(List<CapstoneStageRow> rows, BuildContext context) {
+  Widget _tableBody(
+    List<CapstoneStageRow> rows,
+    BuildContext context,
+    WidgetRef ref,
+  ) {
     final isPit = scope == 'pit';
     final isAll = scope == 'all';
     if (state.isLoading || (stagesLoading && stages.isEmpty)) {
@@ -420,16 +445,20 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
         description: isAll
             ? 'No Capstone defense stages or PIT events match the selected filters.'
             : (isPit
-                ? 'No PIT stages match the selected filters.'
-                : 'Activate stages under Defense Stages Setup to track student team grades.'),
+                  ? 'No PIT stages match the selected filters.'
+                  : 'Activate stages under Defense Stages Setup to track student team grades.'),
         size: DefensysEmptyStateSize.compact,
       );
     }
 
-    return _stageCardsList(rows, context);
+    return _stageCardsList(rows, context, ref);
   }
 
-  Widget _stageCardsList(List<CapstoneStageRow> rows, BuildContext context) {
+  Widget _stageCardsList(
+    List<CapstoneStageRow> rows,
+    BuildContext context,
+    WidgetRef ref,
+  ) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
       child: Column(
@@ -437,31 +466,38 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
         children: [
           for (int i = 0; i < rows.length; i++) ...[
             if (i > 0) const SizedBox(height: 14),
-            _stageMilestoneCard(rows[i], context),
+            _stageMilestoneCard(rows[i], context, ref),
           ],
         ],
       ),
     );
   }
 
-  Widget _stageMilestoneCard(CapstoneStageRow row, BuildContext context) {
+  Widget _stageMilestoneCard(
+    CapstoneStageRow row,
+    BuildContext context,
+    WidgetRef ref,
+  ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final order = row.displayOrder > 0 ? row.displayOrder : 1;
     final isComplete = row.isOfficiallyComplete;
     final rowScope = row.groupKey.split('|').first;
     final isPitRow = rowScope == 'pit';
     final groupGrades = gradesForGroup(state, rowScope, row.label);
-    final redefenseTeams = groupGrades
-        .where((g) => g['verdict']?.toString() == 'for_redefense')
-        .map((g) => g['team_name']?.toString() ?? g['team']?['name']?.toString() ?? 'Unknown Team')
-        .toList();
-    final redefenseNotice = redefenseTeams.isNotEmpty
-        ? '\n\n⚠️ WARNING: ${redefenseTeams.length} team${redefenseTeams.length == 1 ? '' : 's'} (${redefenseTeams.take(3).join(', ')}${redefenseTeams.length > 3 ? '...' : ''}) currently ${redefenseTeams.length == 1 ? 'has' : 'have'} a "For Re-defense" verdict and ${redefenseTeams.length == 1 ? 'has' : 'have'} not passed.\n\nMarking this stage complete will finalize this milestone. These teams will officially FAIL this stage and will NOT advance to the next stage.'
-        : '';
+    final settings = groupSettingsForKey(state, row.groupKey);
+    final closeBlocked = groupOfficialCloseBlocked(
+      grades: groupGrades,
+      settings: settings,
+    );
+    final blockedReason = groupOfficialCloseBlockedReason(
+      grades: groupGrades,
+      settings: settings,
+    );
+    final totalTeamCount = groupGradingTeamCount(settings, grades: groupGrades);
 
-    final hasTeams = row.teamCount > 0;
+    final hasTeams = totalTeamCount > 0;
     final teamNotice = hasTeams
-        ? '\n\n${row.teamCount} team${row.teamCount == 1 ? '' : 's'} will be affected.'
+        ? '\n\n$totalTeamCount team${totalTeamCount == 1 ? '' : 's'} will be affected.'
         : '';
 
     return Container(
@@ -479,8 +515,8 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
             color: isDark
                 ? Colors.black.withValues(alpha: 0.25)
                 : (isComplete
-                    ? const Color(0xFF047857).withValues(alpha: 0.04)
-                    : Colors.black.withValues(alpha: 0.025)),
+                      ? const Color(0xFF047857).withValues(alpha: 0.04)
+                      : Colors.black.withValues(alpha: 0.025)),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -504,7 +540,9 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                       Text(
                         scope == 'all' ? row.title : row.label,
                         style: TextStyle(
-                          color: isDark ? DefensysTokens.mistTextPrimary : DefensysUi.textDark,
+                          color: isDark
+                              ? DefensysTokens.mistTextPrimary
+                              : DefensysUi.textDark,
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
                           letterSpacing: -0.2,
@@ -515,7 +553,9 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                         Text(
                           row.description,
                           style: TextStyle(
-                            color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085),
+                            color: isDark
+                                ? DefensysTokens.mistTextSecondary
+                                : const Color(0xFF667085),
                             fontSize: 12,
                             height: 1.35,
                           ),
@@ -558,21 +598,29 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                               : Icons.info_outline_rounded,
                           size: 14,
                           color: isComplete
-                              ? (isDark ? const Color(0xFF34D399) : const Color(0xFF047857))
-                              : (isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085)),
+                              ? (isDark
+                                    ? const Color(0xFF34D399)
+                                    : const Color(0xFF047857))
+                              : (isDark
+                                    ? DefensysTokens.mistTextSecondary
+                                    : const Color(0xFF667085)),
                         ),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
                             isComplete
                                 ? 'All faculty and panel evaluations are locked for this stage.'
-                                : (hasTeams
-                                    ? 'Complete all required evaluations before marking stage complete.'
-                                    : 'Schedule defenses in Defense Scheduler to begin collecting evaluations.'),
+                                : (closeBlocked
+                                      ? blockedReason
+                                      : 'All required evaluations are complete. Ready to mark ${isPitRow ? 'event' : 'stage'} complete.'),
                             style: TextStyle(
                               color: isComplete
-                                  ? (isDark ? const Color(0xFF34D399) : const Color(0xFF047857))
-                                  : (isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085)),
+                                  ? (isDark
+                                        ? const Color(0xFF34D399)
+                                        : const Color(0xFF047857))
+                                  : (isDark
+                                        ? DefensysTokens.mistTextSecondary
+                                        : const Color(0xFF667085)),
                               fontSize: 11.5,
                               fontWeight: isComplete
                                   ? FontWeight.w600
@@ -596,8 +644,13 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                           'Peer grading open',
                           style: TextStyle(
                             color: isComplete
-                                ? (isDark ? DefensysTokens.mistTextSecondary.withValues(alpha: 0.5) : const Color(0xFF98A2B3))
-                                : (isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF344054)),
+                                ? (isDark
+                                      ? DefensysTokens.mistTextSecondary
+                                            .withValues(alpha: 0.5)
+                                      : const Color(0xFF98A2B3))
+                                : (isDark
+                                      ? DefensysTokens.mistTextSecondary
+                                      : const Color(0xFF344054)),
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
@@ -630,17 +683,23 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                         width: 36,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: isDark ? DefensysTokens.mistInputFill : Colors.white,
+                          color: isDark
+                              ? DefensysTokens.mistInputFill
+                              : Colors.white,
                           borderRadius: BorderRadius.circular(7),
                           border: Border.all(
-                            color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD0D5DD),
+                            color: isDark
+                                ? DefensysTokens.mistBorder
+                                : const Color(0xFFD0D5DD),
                             width: 1,
                           ),
                         ),
                         child: Icon(
                           Icons.visibility_outlined,
                           size: 17,
-                          color: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF344054),
+                          color: isDark
+                              ? DefensysTokens.mistTextPrimary
+                              : const Color(0xFF344054),
                         ),
                       ),
                     ),
@@ -670,10 +729,16 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                       icon: const Icon(Icons.replay_rounded, size: 14),
                       label: const Text('Reopen Stage'),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: isDark ? DefensysTokens.mistTextPrimary : const Color(0xFF344054),
-                        backgroundColor: isDark ? DefensysTokens.mistInputFill : Colors.white,
+                        foregroundColor: isDark
+                            ? DefensysTokens.mistTextPrimary
+                            : const Color(0xFF344054),
+                        backgroundColor: isDark
+                            ? DefensysTokens.mistInputFill
+                            : Colors.white,
                         side: BorderSide(
-                          color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD0D5DD),
+                          color: isDark
+                              ? DefensysTokens.mistBorder
+                              : const Color(0xFFD0D5DD),
                           width: 1,
                         ),
                         shape: RoundedRectangleBorder(
@@ -690,42 +755,57 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                       ),
                     )
                   else
-                    ElevatedButton.icon(
-                      onPressed: !state.isSaving
-                          ? () async {
-                              final confirmed = await showConfirmDialog(
-                                context,
-                                title: 'Mark ${row.label} Complete?',
-                                message:
-                                    'Marking this stage officially complete will lock faculty and panel grades, finalize student scores, and make passed teams eligible for project archiving.$teamNotice$redefenseNotice\n\nAre you sure you want to mark ${row.label} officially complete?',
-                                confirmLabel: 'Mark Complete',
-                                cancelLabel: 'Cancel',
-                                destructive: false,
-                                icon: Icons.verified_rounded,
-                              );
-                              if (confirmed) {
-                                onOfficiallyCompleteChanged(row, true);
+                    Tooltip(
+                      message: closeBlocked
+                          ? blockedReason
+                          : 'Mark this ${isPitRow ? 'event' : 'stage'} officially complete and lock grades',
+                      child: ElevatedButton.icon(
+                        onPressed:
+                            !state.isSaving &&
+                                !state.isLoading &&
+                                !state.isCheckingCompletion
+                            ? () async {
+                                final confirmed =
+                                    await reviewGradeGroupCompletion(
+                                      context,
+                                      stageLabel: row.label,
+                                      isPit: isPitRow,
+                                      checkCompletion: () =>
+                                          onCheckCompletion != null
+                                          ? onCheckCompletion!(row)
+                                          : ref
+                                                .read(
+                                                  gradeCenterProvider.notifier,
+                                                )
+                                                .checkGroupCompletion(
+                                                  scope: rowScope,
+                                                  stageLabel: row.label,
+                                                ),
+                                    );
+                                if (confirmed) {
+                                  onOfficiallyCompleteChanged(row, true);
+                                }
                               }
-                            }
-                          : null,
-                      icon: const Icon(Icons.verified_outlined, size: 15),
-                      label: const Text('Mark Complete'),
-                      style: ElevatedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        backgroundColor: const Color(0xFF047857),
-                        disabledBackgroundColor: const Color(0xFFE2E8F0),
-                        disabledForegroundColor: const Color(0xFF94A3B8),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 9,
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
+                            : null,
+                        icon: const Icon(Icons.verified_outlined, size: 15),
+                        label: const Text('Mark Complete'),
+                        style: ElevatedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          backgroundColor: const Color(0xFF047857),
+                          disabledBackgroundColor: const Color(0xFFE2E8F0),
+                          disabledForegroundColor: const Color(0xFF94A3B8),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(7),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 9,
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ),
@@ -744,18 +824,27 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     final isComplete = row.isOfficiallyComplete;
     final hasTeams = row.teamCount > 0;
     final groupGrades = gradesForGroup(state, rowScope, row.label);
-    final readyCount =
-        groupGrades.where((g) => g['grading_ready'] == true).length;
-    final panelCompleteCount =
-        groupGrades.where((g) => g['panel_complete'] == true).length;
-    final adviserCompleteCount =
-        groupGrades.where((g) => g['adviser_complete'] == true).length;
-    final peerCompleteCount =
-        groupGrades.where((g) => g['peer_eval_complete'] == true).length;
-    final peerEnabled = row.peerGradingEnabled ||
+    final settings = groupSettingsForKey(state, row.groupKey);
+    final readyCount = groupGradingReadyTeamCount(
+      settings,
+      grades: groupGrades,
+    );
+    final totalTeamCount = groupGradingTeamCount(settings, grades: groupGrades);
+    final panelCompleteCount = groupGrades
+        .where((g) => g['panel_complete'] == true)
+        .length;
+    final adviserCompleteCount = groupGrades
+        .where((g) => g['adviser_complete'] == true)
+        .length;
+    final peerCompleteCount = groupGrades
+        .where((g) => g['peer_eval_complete'] == true)
+        .length;
+    final peerEnabled =
+        row.peerGradingEnabled ||
         (!isPitRow && capstoneTermPeerEvalEnabled(state));
-    final adviserEnabled =
-        isPitRow ? false : capstoneTermAdviserGradingEnabled(state);
+    final adviserEnabled = isPitRow
+        ? false
+        : capstoneTermAdviserGradingEnabled(state);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -764,11 +853,13 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
 
         final teamCard = _snapshotTile(
           icon: Icons.groups_outlined,
-          iconColor: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF475467),
+          iconColor: isDark
+              ? DefensysTokens.mistTextSecondary
+              : const Color(0xFF475467),
           label: 'ENROLLED TEAMS',
           value: '${row.teamCount} ${row.teamCount == 1 ? 'Team' : 'Teams'}',
-          subtitle: hasTeams
-              ? '$readyCount of ${row.teamCount} grading-ready'
+          subtitle: totalTeamCount > 0
+              ? '$readyCount of $totalTeamCount grading-ready'
               : 'No teams scheduled',
           isDark: isDark,
         );
@@ -781,31 +872,40 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
           label: 'EVALUATION READINESS',
           value: isComplete
               ? '100% Finalized'
-              : (hasTeams
-                  ? '$readyCount of ${row.teamCount} Ready'
-                  : 'Pending Schedules'),
+              : (totalTeamCount > 0
+                    ? '$readyCount of $totalTeamCount Ready'
+                    : 'Pending Schedules'),
           subtitle: isComplete
               ? 'Grades locked · Archive eligible'
-              : (hasTeams
-                  ? 'Grading in progress'
-                  : 'No active defense slots'),
+              : (totalTeamCount > 0
+                    ? (readyCount == totalTeamCount
+                          ? 'Ready to mark complete'
+                          : 'Grading in progress')
+                    : 'No active defense slots'),
           isDark: isDark,
         );
 
         final componentsCard = _snapshotComponentsTile(
-          panelText:
-              hasTeams ? '$panelCompleteCount/${row.teamCount} done' : 'Required',
+          panelText: hasTeams
+              ? '$panelCompleteCount/${row.teamCount} done'
+              : 'Required',
+          panelComplete: hasTeams && panelCompleteCount == row.teamCount,
           adviserText: adviserEnabled
               ? (hasTeams
-                  ? '$adviserCompleteCount/${row.teamCount} done'
-                  : 'Required')
+                    ? '$adviserCompleteCount/${row.teamCount} done'
+                    : 'Required')
               : 'Disabled',
+          adviserComplete:
+              adviserEnabled &&
+              hasTeams &&
+              adviserCompleteCount == row.teamCount,
           peerText: peerEnabled
               ? (hasTeams
-                  ? '$peerCompleteCount/${row.teamCount} done'
-                  : 'Active')
+                    ? '$peerCompleteCount/${row.teamCount} done'
+                    : 'Active')
               : 'Disabled',
-          isComplete: isComplete,
+          peerComplete:
+              peerEnabled && hasTeams && peerCompleteCount == row.teamCount,
           showAdviser: !isPitRow,
           isDark: isDark,
         );
@@ -864,7 +964,9 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
               Text(
                 label,
                 style: TextStyle(
-                  color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085),
+                  color: isDark
+                      ? DefensysTokens.mistTextSecondary
+                      : const Color(0xFF667085),
                   fontSize: 9.5,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.4,
@@ -876,7 +978,9 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
           Text(
             value,
             style: TextStyle(
-              color: isDark ? DefensysTokens.mistTextPrimary : DefensysUi.textDark,
+              color: isDark
+                  ? DefensysTokens.mistTextPrimary
+                  : DefensysUi.textDark,
               fontSize: 13,
               fontWeight: FontWeight.w800,
             ),
@@ -885,7 +989,9 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
           Text(
             subtitle,
             style: TextStyle(
-              color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085),
+              color: isDark
+                  ? DefensysTokens.mistTextSecondary
+                  : const Color(0xFF667085),
               fontSize: 11,
               height: 1.3,
             ),
@@ -899,9 +1005,11 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
 
   Widget _snapshotComponentsTile({
     required String panelText,
+    required bool panelComplete,
     String? adviserText,
+    required bool adviserComplete,
     required String peerText,
-    required bool isComplete,
+    required bool peerComplete,
     bool showAdviser = true,
     bool isDark = false,
   }) {
@@ -922,13 +1030,17 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
               Icon(
                 Icons.checklist_rounded,
                 size: 13.5,
-                color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF475467),
+                color: isDark
+                    ? DefensysTokens.mistTextSecondary
+                    : const Color(0xFF475467),
               ),
               const SizedBox(width: 5),
               Text(
                 'EVALUATION COMPONENTS',
                 style: TextStyle(
-                  color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085),
+                  color: isDark
+                      ? DefensysTokens.mistTextSecondary
+                      : const Color(0xFF667085),
                   fontSize: 9.5,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.4,
@@ -939,13 +1051,28 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
           const SizedBox(height: 5),
           Row(
             children: [
-              _componentMiniPill('Panel', panelText, isDark: isDark),
+              _componentMiniPill(
+                'Panel',
+                panelText,
+                isComplete: panelComplete,
+                isDark: isDark,
+              ),
               if (showAdviser && adviserText != null) ...[
                 const SizedBox(width: 4),
-                _componentMiniPill('Adviser', adviserText, isDark: isDark),
+                _componentMiniPill(
+                  'Adviser',
+                  adviserText,
+                  isComplete: adviserComplete,
+                  isDark: isDark,
+                ),
               ],
               const SizedBox(width: 4),
-              _componentMiniPill('Peer', peerText, isDark: isDark),
+              _componentMiniPill(
+                'Peer',
+                peerText,
+                isComplete: peerComplete,
+                isDark: isDark,
+              ),
             ],
           ),
         ],
@@ -953,20 +1080,28 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     );
   }
 
-  Widget _componentMiniPill(String name, String status, {bool isDark = false}) {
-    final isDone = status.contains('done') || status == 'Complete';
+  Widget _componentMiniPill(
+    String name,
+    String status, {
+    required bool isComplete,
+    bool isDark = false,
+  }) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
         decoration: BoxDecoration(
-          color: isDone
-              ? (isDark ? const Color(0xFF064E3B).withValues(alpha: 0.35) : const Color(0xFFECFDF5))
+          color: isComplete
+              ? (isDark
+                    ? const Color(0xFF064E3B).withValues(alpha: 0.35)
+                    : const Color(0xFFECFDF5))
               : (isDark ? DefensysTokens.mistSurface : Colors.white),
           borderRadius: BorderRadius.circular(4),
           border: Border.all(
-            color: isDone
+            color: isComplete
                 ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFA7F3D0))
-                : (isDark ? DefensysTokens.mistBorder : const Color(0xFFD0D5DD)),
+                : (isDark
+                      ? DefensysTokens.mistBorder
+                      : const Color(0xFFD0D5DD)),
             width: 0.8,
           ),
         ),
@@ -975,9 +1110,13 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
             Text(
               name,
               style: TextStyle(
-                color: isDone
-                    ? (isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857))
-                    : (isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF344054)),
+                color: isComplete
+                    ? (isDark
+                          ? const Color(0xFF6EE7B7)
+                          : const Color(0xFF047857))
+                    : (isDark
+                          ? DefensysTokens.mistTextSecondary
+                          : const Color(0xFF344054)),
                 fontSize: 9.5,
                 fontWeight: FontWeight.w700,
               ),
@@ -987,9 +1126,13 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
             Text(
               status,
               style: TextStyle(
-                color: isDone
-                    ? (isDark ? const Color(0xFFA7F3D0) : const Color(0xFF059669))
-                    : (isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF667085)),
+                color: isComplete
+                    ? (isDark
+                          ? const Color(0xFFA7F3D0)
+                          : const Color(0xFF059669))
+                    : (isDark
+                          ? DefensysTokens.mistTextSecondary
+                          : const Color(0xFF667085)),
                 fontSize: 8.5,
                 fontWeight: FontWeight.w600,
               ),
@@ -1052,11 +1195,7 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (icon != null) ...[
-                  Icon(
-                    icon,
-                    color: DefensysUi.primaryMaroon,
-                    size: 22,
-                  ),
+                  Icon(icon, color: DefensysUi.primaryMaroon, size: 22),
                   const SizedBox(width: 10),
                 ],
                 Expanded(
@@ -1068,7 +1207,9 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w800,
-                          color: isDark ? DefensysTokens.mistTextPrimary : DefensysUi.textDark,
+                          color: isDark
+                              ? DefensysTokens.mistTextPrimary
+                              : DefensysUi.textDark,
                         ),
                       ),
                       const SizedBox(height: 3),
@@ -1076,7 +1217,9 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
                         subtitle,
                         style: TextStyle(
                           fontSize: 12.5,
-                          color: isDark ? DefensysTokens.mistTextSecondary : DefensysUi.steelGrey,
+                          color: isDark
+                              ? DefensysTokens.mistTextSecondary
+                              : DefensysUi.steelGrey,
                           height: 1.35,
                         ),
                       ),
@@ -1086,7 +1229,10 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
               ],
             ),
           ),
-          Divider(height: 1, color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
+          Divider(
+            height: 1,
+            color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
             child: Row(
@@ -1146,16 +1292,22 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
                         enabled: !state.isSaving,
                         style: TextStyle(
                           fontSize: 13,
-                          color: isDark ? DefensysTokens.mistTextPrimary : DefensysUi.textDark,
+                          color: isDark
+                              ? DefensysTokens.mistTextPrimary
+                              : DefensysUi.textDark,
                         ),
                         decoration: InputDecoration(
                           hintText: 'Search teams...',
                           hintStyle: TextStyle(
-                            color: isDark ? DefensysTokens.mistTextSecondary : DefensysUi.steelGrey,
+                            color: isDark
+                                ? DefensysTokens.mistTextSecondary
+                                : DefensysUi.steelGrey,
                             fontSize: 12.5,
                           ),
                           filled: true,
-                          fillColor: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF9FAFB),
+                          fillColor: isDark
+                              ? DefensysTokens.mistInputFill
+                              : const Color(0xFFF9FAFB),
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 12,
                             vertical: 10,
@@ -1163,13 +1315,17 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(7),
                             borderSide: BorderSide(
-                              color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB),
+                              color: isDark
+                                  ? DefensysTokens.mistBorder
+                                  : const Color(0xFFD1D5DB),
                             ),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(7),
                             borderSide: BorderSide(
-                              color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB),
+                              color: isDark
+                                  ? DefensysTokens.mistBorder
+                                  : const Color(0xFFD1D5DB),
                             ),
                           ),
                           focusedBorder: OutlineInputBorder(
@@ -1195,14 +1351,19 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
             child: Text(
               'Open a stage to view teams, edit scores, and mark officially complete.',
               style: TextStyle(
-                color: isDark ? DefensysTokens.mistTextSecondary : const Color(0xFF98A2B3),
+                color: isDark
+                    ? DefensysTokens.mistTextSecondary
+                    : const Color(0xFF98A2B3),
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
                 height: 1.35,
               ),
             ),
           ),
-          Divider(height: 1, color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
+          Divider(
+            height: 1,
+            color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
             child: listContent,

@@ -93,6 +93,7 @@ def log_high_impact_action(
     request=None,
     actor=None,
     review_status=None,
+    strict=False,
 ):
     actor = actor or actor_from_request(request)
     reason = (reason or '').strip()
@@ -114,4 +115,7 @@ def log_high_impact_action(
         )
     except Exception:
         logger.exception('Failed to write high-impact audit log.')
+        if strict:
+            from rest_framework.exceptions import APIException
+            raise APIException('The audit record could not be saved. No change was applied; please retry.')
         return None
