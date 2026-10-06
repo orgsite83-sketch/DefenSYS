@@ -64,6 +64,8 @@ class DefenseSchedule(models.Model):
     batch_id = models.UUIDField(default=uuid.uuid4, editable=False, db_index=True)
     session_id = models.UUIDField(default=uuid.uuid4, editable=False, db_index=True)
     revision = models.PositiveIntegerField(default=1)
+    project_version = models.PositiveIntegerField(default=1)
+    project_title_snapshot = models.CharField(max_length=255, blank=True)
     operation_state = models.CharField(max_length=20, default='normal', choices=[
         ('normal', 'Normal'), ('paused', 'Interrupted'),
         ('postponed', 'Postponed'), ('no_show', 'No-show'),
@@ -187,6 +189,9 @@ class DefenseSchedule(models.Model):
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
+        if is_new:
+            self.project_version = self.team.project_version
+            self.project_title_snapshot = self.team.project_title
         old_status = None
         if not is_new:
             try:

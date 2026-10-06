@@ -385,8 +385,10 @@ def execute_operation(actor, data, request=None):
             if new_status == 'done':
                 from grading.grades.services import team_grading_readiness
                 grade = schedule.grade_records.first()
-                if not grade or not team_grading_readiness(grade, grade.semester, grade.scope)['ready']:
-                    raise ValidationError('Complete all required evaluations before marking this defense done.')
+                readiness = team_grading_readiness(grade, grade.semester, grade.scope) if grade else {}
+                assessed = bool(grade and readiness.get('panel_complete') and grade.verdict) if schedule.scope == 'capstone' else readiness.get('ready')
+                if not assessed:
+                    raise ValidationError('Submit all required panel evaluations and the verdict before marking this defense assessed.')
             schedule.status = new_status
         schedule.documenter_id = doc_id
         after_values[schedule.pk] = {**operation_values(schedule), 'panelist_ids': pids,

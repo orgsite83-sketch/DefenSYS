@@ -40,6 +40,8 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
   int _selectedTeamIndex = 0;
   bool _loading = true;
   bool _resultsLoading = false;
+  bool _navigating = false;
+  final _gradeSheetKey = GlobalKey<GradeSheetTabState>();
   String? _assignmentsError;
   String? _resultsError;
 
@@ -73,6 +75,10 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) _loadData(showLoading: false);
+    final gradeSheet = _gradeSheetKey.currentState;
+    if (state == AppLifecycleState.paused && gradeSheet != null) {
+      unawaited(gradeSheet.savePendingChanges());
+    }
   }
 
   Future<void> _loadResults() async {
@@ -261,6 +267,8 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
             verdictRemarks: team['verdict_remarks']?.toString(),
             verdictByName: team['verdict_by_name']?.toString(),
             revisionDeadline: team['revision_deadline']?.toString(),
+            redefenseVerificationRequired: team['redefense_verification_required'] == true,
+            workflowGrade: team['grade_record'] is Map ? Map<String, dynamic>.from(team['grade_record']) : null,
             attemptCount: (team['attempt_count'] as num?)?.toInt() ?? 1,
             gradeId: (team['grade_id'] as num?)?.toInt(),
           );
@@ -320,6 +328,34 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
     );
   }
 
+  Future<void> _openGradeSheet(int teamIndex) async {
+    if (_navigating || _loading) return;
+    _navigating = true;
+    try {
+      final opened = await _gradeSheetKey.currentState?.openTeam(teamIndex);
+      if (mounted && opened == true) setState(() => _selectedIndex = 1);
+    } finally {
+      _navigating = false;
+    }
+  }
+
+  Future<void> _selectDestination(int index) async {
+    if (_navigating || index == _selectedIndex) return;
+    _navigating = true;
+    try {
+      if (_selectedIndex == 1 &&
+          !await (_gradeSheetKey.currentState?.savePendingChanges() ??
+              Future.value(true))) {
+        return;
+      }
+      if (!mounted) return;
+      setState(() => _selectedIndex = index);
+      if (index == 2) await _loadResults();
+    } finally {
+      _navigating = false;
+    }
+  }
+
   Widget _buildBody() {
     if (_assignmentsError != null) {
       return _buildAssignmentsError();
@@ -330,13 +366,11 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
       children: [
         AssignmentsTab(
           teams: _teams,
-          onOpenGradeSheet: (i) => setState(() {
-            _selectedTeamIndex = i;
-            _selectedIndex = 1;
-          }),
+          onOpenGradeSheet: _openGradeSheet,
           onRefresh: _loadData,
         ),
         GradeSheetTab(
+          key: _gradeSheetKey,
           teams: _teams,
           selectedTeamIndex: _selectedTeamIndex,
           onTeamChanged: (i) => setState(() => _selectedTeamIndex = i),
@@ -414,12 +448,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
           ),
           bottomNavigationBar: NavigationBar(
             selectedIndex: _selectedIndex,
-            onDestinationSelected: (i) {
-              setState(() => _selectedIndex = i);
-              if (i == 2) {
-                _loadResults();
-              }
-            },
+            onDestinationSelected: _selectDestination,
             indicatorColor: DefensysTokens.maroon.withValues(alpha: 0.15),
             destinations: [
               NavigationDestination(

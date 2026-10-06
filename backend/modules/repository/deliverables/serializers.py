@@ -103,6 +103,7 @@ class DeliverableReviewSerializer(serializers.Serializer):
     deliverable_id = serializers.CharField(max_length=20)
     status = serializers.ChoiceField(choices=['accepted', 'rejected'])
     feedback = serializers.CharField(required=False, allow_blank=True, default='')
+    clear_defense_revisions = serializers.BooleanField(required=False, default=False)
 
     def validate(self, attrs):
         deliverable_id = attrs['deliverable_id'].strip()

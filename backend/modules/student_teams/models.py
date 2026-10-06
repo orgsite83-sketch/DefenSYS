@@ -4,6 +4,7 @@ from django.db import models
 
 from student_teams.documents.models import TeamDocument  # noqa: F401
 from student_teams.weekly_progress.models import WeeklyProgressReport  # noqa: F401
+from .project_versions import CurrentProjectManager
 
 
 class StudentTeam(models.Model):
@@ -43,6 +44,7 @@ class StudentTeam(models.Model):
 
     name = models.CharField(max_length=120)
     project_title = models.CharField(max_length=255)
+    project_version = models.PositiveIntegerField(default=1)
     level = models.CharField(max_length=30, choices=LEVEL_CHOICES)
     year_level = models.CharField(max_length=20)
     section = models.CharField(max_length=80, blank=True, default='')
@@ -176,6 +178,8 @@ class TeamStageProgress(models.Model):
     STATUS_PASSED = 'passed'
     STATUS_FAILED = 'failed'
     STATUS_ARCHIVED = 'archived'
+    STATUS_REVISIONS = 'revisions_pending'
+    STATUS_REDEFENSE = 'for_redefense'
 
     STATUS_CHOICES = (
         (STATUS_LOCKED, 'Locked'),
@@ -185,6 +189,8 @@ class TeamStageProgress(models.Model):
         (STATUS_PASSED, 'Passed'),
         (STATUS_FAILED, 'Failed'),
         (STATUS_ARCHIVED, 'Archived'),
+        (STATUS_REVISIONS, 'Revision clearance pending'),
+        (STATUS_REDEFENSE, 'For Re-defense'),
     )
 
     team = models.ForeignKey(
@@ -203,6 +209,9 @@ class TeamStageProgress(models.Model):
         on_delete=models.PROTECT,
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_LOCKED)
+    project_version = models.PositiveIntegerField(default=1)
+    objects = CurrentProjectManager()
+    all_objects = models.Manager()
     grade = models.ForeignKey(
         'grading.TeamGrade',
         related_name='stage_progress_records',
@@ -235,7 +244,7 @@ class TeamStageProgress(models.Model):
         ordering = ['team__name', 'defense_stage__display_order', 'defense_stage__label']
         constraints = [
             models.UniqueConstraint(
-                fields=['team', 'semester', 'defense_stage'],
+                fields=['team', 'semester', 'defense_stage', 'project_version'],
                 name='unique_team_stage_progress',
             ),
         ]
@@ -245,6 +254,31 @@ class TeamStageProgress(models.Model):
 
     def __str__(self):
         return f'{self.team} - {self.defense_stage}: {self.status}'
+
+    def save(self, *args, **kwargs):
+        if not self.pk:
+            self.project_version = self.team.project_version
+        super().save(*args, **kwargs)
+
+
+class TeamRecoveryAuthorization(models.Model):
+    ACTION_RETAKE = 'retake'
+    ACTION_NEW_CONCEPT = 'new_concept'
+    team = models.ForeignKey(StudentTeam, related_name='recovery_authorizations', on_delete=models.CASCADE)
+    defense_stage = models.ForeignKey('defense.DefenseStage', on_delete=models.PROTECT)
+    semester = models.ForeignKey('academic_period_management.Semester', on_delete=models.PROTECT)
+    project_version = models.PositiveIntegerField()
+    previous_project_title = models.CharField(max_length=255)
+    action = models.CharField(max_length=20, choices=[(ACTION_RETAKE, 'Another attempt'), (ACTION_NEW_CONCEPT, 'Replacement concept')])
+    reason = models.TextField()
+    authorized_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    authorized_at = models.DateTimeField(auto_now_add=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    replacement_project_version = models.PositiveIntegerField(null=True, blank=True)
+    replacement_project_title = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ['-authorized_at', '-id']
 
 
 class TeamAdviserAssignment(models.Model):

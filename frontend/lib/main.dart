@@ -5,7 +5,6 @@ import 'package:toastification/toastification.dart';
 
 import 'package:defensys/l10n/app_localizations.dart';
 import 'package:defensys/navigation/app_router.dart';
-import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/network/canonical_web_address.dart';
 import 'package:defensys/services/realtime_sync_service.dart';
 import 'package:defensys/services/session_keepalive_service.dart';
@@ -22,7 +21,6 @@ class DefenSYSApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(authProvider);
     final router = ref.watch(appRouterProvider);
     final themeMode = ref.watch(themeModeProvider);
 

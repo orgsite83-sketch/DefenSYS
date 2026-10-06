@@ -1,17 +1,40 @@
+from asgiref.sync import iscoroutinefunction, markcoroutinefunction
 from django.conf import settings
 from django.http import HttpResponse
 
 
 class LocalCorsMiddleware:
+    sync_capable = True
+    async_capable = True
+
     def __init__(self, get_response):
         self.get_response = get_response
+        self.async_mode = iscoroutinefunction(get_response)
+        if self.async_mode:
+            # Keep ASGI requests async so disconnects don't cross nested
+            # sync/async adapters and produce shielded-future errors.
+            markcoroutinefunction(self)
 
     def __call__(self, request):
+        if self.async_mode:
+            return self.__acall__(request)
+
         if request.method == 'OPTIONS':
             response = HttpResponse(status=204)
         else:
             response = self.get_response(request)
 
+        return self._add_headers(request, response)
+
+    async def __acall__(self, request):
+        if request.method == 'OPTIONS':
+            response = HttpResponse(status=204)
+        else:
+            response = await self.get_response(request)
+
+        return self._add_headers(request, response)
+
+    def _add_headers(self, request, response):
         origin = request.headers.get('Origin')
         if origin and _is_allowed_origin(origin):
             response['Access-Control-Allow-Origin'] = origin

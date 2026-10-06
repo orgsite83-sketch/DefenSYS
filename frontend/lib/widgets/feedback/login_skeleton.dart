@@ -48,7 +48,7 @@ class _DefensysShimmerState extends State<DefensysShimmer>
   @override
   Widget build(BuildContext context) {
     final palette = LoginPalette.of(context);
-    return AnimatedBuilder(
+    return RepaintBoundary(child: AnimatedBuilder(
       animation: _controller,
       builder: (context, child) {
         return ShaderMask(
@@ -72,7 +72,7 @@ class _DefensysShimmerState extends State<DefensysShimmer>
         );
       },
       child: widget.child,
-    );
+    ));
   }
 }
 

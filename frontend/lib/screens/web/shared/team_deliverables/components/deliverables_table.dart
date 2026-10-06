@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:defensys/models/defense_workflow_labels.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/services/adviser_grading_provider.dart';
 import 'package:defensys/services/reports_provider.dart';
@@ -14,6 +15,8 @@ import 'package:defensys/screens/web/faculty/adviser/adviser_defense_tab.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/dialogs/deliverable_submission_detail_modal.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/dialogs/grade_deliverable_modal.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/dialogs/wpr_management_dialogs.dart';
+import 'package:defensys/services/auth_provider.dart';
+import 'package:defensys/screens/web/admin/grade_center/defense_workflow_panel.dart';
 import '../deliverables_view_types.dart';
 
 int parseAsInt(dynamic value) {
@@ -432,72 +435,130 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final teamName = team['name']?.toString() ?? 'the team';
     final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
 
+    final stages = _stageList(team);
+    final stagePayload = _stagePayload(stages, stageLabel);
+    final grade = stagePayload['grade'] is Map
+        ? Map<String, dynamic>.from(stagePayload['grade'] as Map)
+        : (team['grade'] is Map ? Map<String, dynamic>.from(team['grade'] as Map) : <String, dynamic>{});
+    final workflow = grade['workflow'] is Map ? Map<String, dynamic>.from(grade['workflow'] as Map) : <String, dynamic>{};
+
+    final authUser = ref.read(authProvider).user ?? <String, dynamic>{};
+    final isAdmin = authUser['role'] == 'admin' || authUser['is_superuser'] == true;
+    final currentUserId = int.tryParse('${authUser['id']}');
+    final isChair = currentUserId != null && currentUserId == workflow['chair_id'];
+    final isAdviser = currentUserId != null && (
+        currentUserId == workflow['adviser_id'] ||
+        currentUserId == team['adviser_id'] ||
+        (team['adviser'] is Map && currentUserId == team['adviser']?['id'])
+    );
+    final canManageClearance = isAdmin || isChair || isAdviser;
+
+    final hasPendingRevisions = grade['verdict'] == 'approved_with_revisions' && grade['revisions_cleared_at'] == null;
+    final canClearRevisions = isPost && canManageClearance && hasPendingRevisions;
+    bool clearRevisions = canClearRevisions;
+
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (dialogCtx) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.check_circle_outline, color: AppColors.success, size: 22),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                isPost ? 'Approve for Archive' : 'Accept Pre-Defense Requirement',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              isPost
-                  ? 'Approve "$deliverableName" for $teamName and add it to the archive?'
-                  : 'Accept "$deliverableName" for $teamName? This clears a pre-defense requirement for endorsement.',
-              style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
-            ),
-            if (isPost) ...[
-              const SizedBox(height: 12),
-              Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppColors.gold.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
-              ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.info_outline, size: 16, color: AppColors.gold),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Approval makes this file available in the archive according to its access settings. Only a System Admin can reopen it for revision.',
-                      style: TextStyle(fontSize: 12, color: AppColors.textPrimary, height: 1.3),
-                    ),
-                  ),
-                ],
-              ),
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.check_circle_outline, color: AppColors.success, size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isPost ? 'Approve for Archive' : 'Accept Pre-Defense Requirement',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
               ),
             ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isPost
+                    ? 'Approve "$deliverableName" for $teamName and add it to the archive?'
+                    : 'Accept "$deliverableName" for $teamName? This clears a pre-defense requirement for endorsement.',
+                style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+              ),
+              if (canClearRevisions) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF86EFAC)),
+                  ),
+                  child: CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    value: clearRevisions,
+                    onChanged: (val) => setDialogState(() => clearRevisions = val ?? true),
+                    title: Text(
+                      isAdviser && !isAdmin && !isChair
+                          ? 'Approve & Clear Defense Revisions (as Adviser)'
+                          : 'Approve & Clear Defense Revisions',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF166534)),
+                    ),
+                    subtitle: Text(
+                      isAdviser && !isAdmin && !isChair
+                          ? 'Certifies that panel-required revisions were satisfied. Advances defense status to Passed.'
+                          : 'Clears pending revisions for this stage and advances defense status to Passed.',
+                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF15803D)),
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                  ),
+                ),
+              ],
+              if (isPost && !canClearRevisions) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.gold.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: AppColors.gold),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Approval makes this file available in the archive according to its access settings. Only a System Admin can reopen it for revision.',
+                          style: TextStyle(fontSize: 12, color: AppColors.textPrimary, height: 1.3),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(dialogCtx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.success,
+                foregroundColor: Colors.white,
+                elevation: 0,
+              ),
+              child: Text(
+                canClearRevisions && clearRevisions
+                    ? 'Approve & Clear Revisions'
+                    : (isPost ? 'Approve & Archive' : 'Accept Requirement'),
+              ),
+            ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogCtx, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(dialogCtx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.success,
-              foregroundColor: Colors.white,
-              elevation: 0,
-            ),
-            child: Text(isPost ? 'Approve & Archive' : 'Accept Requirement'),
-          ),
-        ],
       ),
     );
 
@@ -507,7 +568,11 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             stageLabel: stageLabel,
             deliverableId: item['id'].toString(),
             status: 'accepted',
+            clearDefenseRevisions: canClearRevisions && clearRevisions,
           );
+      if (canClearRevisions && clearRevisions && mounted) {
+        ref.read(capstoneDeliverablesProvider.notifier).fetchInitialData();
+      }
     }
   }
 
@@ -1238,6 +1303,12 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       };
     }
 
+    if (['failed', 'project_rejected', 'for_redefense', 'revisions_pending'].contains(statusDetail)) {
+      final color = statusDetail == 'revisions_pending' ? Colors.orange.shade700 : Colors.red.shade700;
+      return {'label': defenseProgressLabel(statusDetail!), 'color': color,
+        'bg': color.withValues(alpha: 0.1), 'border': color.withValues(alpha: 0.3),
+        'icon': Icons.warning_amber_rounded};
+    }
     if (statusDetail == 'passed') {
       return {
         'label': 'Passed',
@@ -2711,6 +2782,59 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
+  Widget _buildWorkflowActionBanner(
+    Map<String, dynamic> team,
+    String selectedStage,
+    Map<String, dynamic> stagePayload,
+    Map<String, dynamic> gradeRecord,
+  ) {
+    if (widget.state.scope != 'capstone') return const SizedBox.shrink();
+
+    final gradeData = gradeRecord.isNotEmpty
+        ? gradeRecord
+        : (stagePayload['grade'] is Map ? Map<String, dynamic>.from(stagePayload['grade'] as Map) : <String, dynamic>{});
+
+    final verdict = gradeData['verdict']?.toString() ?? '';
+    final workflow = gradeData['workflow'] is Map
+        ? Map<String, dynamic>.from(gradeData['workflow'] as Map)
+        : <String, dynamic>{};
+    final previousProjects = (workflow['previous_projects'] as List? ?? []);
+
+    final hasActiveWorkflow = verdict == 'for_redefense' ||
+        verdict == 'approved_with_revisions' ||
+        verdict == 'failed' ||
+        verdict == 'project_rejected' ||
+        previousProjects.isNotEmpty;
+
+    if (!hasActiveWorkflow) return const SizedBox.shrink();
+
+    final normalizedGrade = <String, dynamic>{
+      ...gradeData,
+      'scope': 'capstone',
+      'id': gradeData['id'] ?? team['grade']?['id'] ?? stagePayload['grade_id'],
+      'team_name': team['name']?.toString() ?? 'Team',
+      'stage_label': selectedStage,
+      'workflow': {
+        ...workflow,
+        if (workflow['adviser_id'] == null && team['adviser_id'] != null)
+          'adviser_id': team['adviser_id'],
+      },
+    };
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: DefenseWorkflowPanel(
+        grade: normalizedGrade,
+        onUpdated: () {
+          ref.read(capstoneDeliverablesProvider.notifier).fetchInitialData();
+        },
+        onProjectReplaced: () {
+          ref.read(capstoneDeliverablesProvider.notifier).fetchInitialData();
+        },
+      ),
+    );
+  }
+
   Widget _buildTeamDetailPane(Map<String, dynamic> team) {
     final teamId = parseAsInt(team['id']);
     final gradingState = ref.watch(adviserGradingProvider);
@@ -2749,6 +2873,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             gradeRecord: gradeRecord,
             currentStage: currentStage,
           ),
+          _buildWorkflowActionBanner(team, selectedStage, stagePayload, gradeRecord),
           const SizedBox(height: 16),
           const Divider(color: Color(0xFFE2E8F0), height: 1),
           const SizedBox(height: 16),

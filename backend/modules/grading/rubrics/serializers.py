@@ -353,24 +353,43 @@ class RubricWriteSerializer(serializers.Serializer):
         return instance
 
     def _sync_stage_grading_config(self, rubric):
-        if rubric.scope == Rubric.SCOPE_CAPSTONE and rubric.defense_stage:
+        if rubric.scope == Rubric.SCOPE_CAPSTONE:
             from defense.stages.models import StageGradingConfig
-            config, _ = StageGradingConfig.objects.get_or_create(
-                defense_stage=rubric.defense_stage,
-                semester=rubric.semester,
-            )
-            update_fields = []
-            if rubric.evaluation_type == Rubric.EVAL_PANEL and config.panel_rubric_id != rubric.id:
-                config.panel_rubric = rubric
-                update_fields.append('panel_rubric')
-            elif rubric.evaluation_type == Rubric.EVAL_ADVISER and config.adviser_rubric_id != rubric.id:
-                config.adviser_rubric = rubric
-                update_fields.append('adviser_rubric')
-            elif rubric.evaluation_type == Rubric.EVAL_PEER and config.peer_rubric_id != rubric.id:
-                config.peer_rubric = rubric
-                update_fields.append('peer_rubric')
-            if update_fields:
-                config.save(update_fields=update_fields + ['updated_at'])
+            if rubric.defense_stage:
+                for other in StageGradingConfig.objects.filter(semester=rubric.semester).exclude(defense_stage=rubric.defense_stage):
+                    changed = False
+                    if other.panel_rubric_id == rubric.id:
+                        other.panel_rubric = None
+                        changed = True
+                    if other.adviser_rubric_id == rubric.id:
+                        other.adviser_rubric = None
+                        changed = True
+                    if other.peer_rubric_id == rubric.id:
+                        other.peer_rubric = None
+                        changed = True
+                    if changed:
+                        other.save()
+
+                config, _ = StageGradingConfig.objects.get_or_create(
+                    defense_stage=rubric.defense_stage,
+                    semester=rubric.semester,
+                )
+                update_fields = []
+                if rubric.evaluation_type == Rubric.EVAL_PANEL and config.panel_rubric_id != rubric.id:
+                    config.panel_rubric = rubric
+                    update_fields.append('panel_rubric')
+                elif rubric.evaluation_type == Rubric.EVAL_ADVISER and config.adviser_rubric_id != rubric.id:
+                    config.adviser_rubric = rubric
+                    update_fields.append('adviser_rubric')
+                elif rubric.evaluation_type == Rubric.EVAL_PEER and config.peer_rubric_id != rubric.id:
+                    config.peer_rubric = rubric
+                    update_fields.append('peer_rubric')
+                if update_fields:
+                    config.save(update_fields=update_fields + ['updated_at'])
+            else:
+                StageGradingConfig.objects.filter(semester=rubric.semester, panel_rubric=rubric).update(panel_rubric=None)
+                StageGradingConfig.objects.filter(semester=rubric.semester, adviser_rubric=rubric).update(adviser_rubric=None)
+                StageGradingConfig.objects.filter(semester=rubric.semester, peer_rubric=rubric).update(peer_rubric=None)
 
     @staticmethod
     def _is_capstone_only_manager(user):

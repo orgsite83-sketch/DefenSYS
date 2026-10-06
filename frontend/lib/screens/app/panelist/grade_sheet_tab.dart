@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 import 'panelist_models.dart';
+import '../../../models/defense_workflow_labels.dart';
+import '../../web/admin/grade_center/defense_workflow_panel.dart';
 import '../../../utils/universal_file_viewer.dart';
 import '../../../config/api_config.dart';
 import '../../../services/auth_provider.dart';
@@ -14,6 +16,12 @@ import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../toasts/feedback_toast.dart';
 import '../../../widgets/tactile_button.dart';
+import '../../../widgets/shadcn/defensys_shadcn_scope.dart';
+import 'widgets/evaluation_score_picker.dart';
+import 'widgets/evaluation_review_screen.dart';
+import 'widgets/team_grade_chooser.dart';
+import 'widgets/defense_team_summary.dart';
+import 'widgets/defense_materials_card.dart';
 
 class GradeSheetTab extends ConsumerStatefulWidget {
   final List<TeamData> teams;
@@ -34,15 +42,25 @@ class GradeSheetTab extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<GradeSheetTab> createState() => _GradeSheetTabState();
+  ConsumerState<GradeSheetTab> createState() => GradeSheetTabState();
 }
 
-class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
+class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   List<Criterion> _criteria = [];
   TeamData? _lastTeam;
   int _formGeneration = 0;
   bool _isSavingDraft = false;
   bool _isSubmittingGrades = false;
+  bool _isReviewingGrades = false;
+  bool _isChoosingTeam = false;
+  bool _showIndividualCriteria = false;
+  String? _verifiedTeamIdentity;
+  String? _draftSaveError;
+  Timer? _autoSaveTimer;
+  Future<bool>? _draftSaveFuture;
+  final _scrollController = ScrollController();
+  final _evaluationKey = GlobalKey();
+  final _criterionKeys = <Criterion, GlobalKey>{};
 
   final Map<String, List<Criterion>> _studentCriteria = {};
   final Map<String, TextEditingController> _studentRemarksControllers = {};
@@ -50,24 +68,18 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   TextEditingController _verdictRemarksController = TextEditingController();
   String? _selectedVerdict;
   DateTime? _revisionDeadline;
+  bool _redefenseVerificationRequired = false;
   bool _isSubmittingVerdict = false;
   int _selectedStudentIndex = 0;
-  String _selectedStageKey = 'all';
+  String _identity(TeamData team) => json.encode([
+    team.scheduleId,
+    team.teamId,
+    team.evaluationContext.isNotEmpty
+        ? team.evaluationContext
+        : team.panelRubric,
+  ]);
 
-  String _teamStageEventKey(TeamData t) {
-    if (t.isCapstone) {
-      return t.displayStage.isNotEmpty ? t.displayStage : 'Capstone Defense';
-    } else {
-      if (t.displayEvent.isNotEmpty &&
-          t.displayStage.isNotEmpty &&
-          t.displayEvent != t.displayStage) {
-        return '${t.displayEvent} • ${t.displayStage}';
-      }
-      return t.displayStage.isNotEmpty
-          ? t.displayStage
-          : (t.displayEvent.isNotEmpty ? t.displayEvent : 'PIT Expo');
-    }
-  }
+  bool _isVerified(TeamData team) => _verifiedTeamIdentity == _identity(team);
 
   @override
   void initState() {
@@ -77,6 +89,8 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
   @override
   void dispose() {
+    _autoSaveTimer?.cancel();
+    _scrollController.dispose();
     for (var controller in _studentRemarksControllers.values) {
       controller.dispose();
     }
@@ -110,6 +124,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
             (c['name'] ?? 'Criterion').toString(),
             ((c['max_score'] as num?) ?? 10).toDouble(),
             id: int.tryParse(c['id']?.toString() ?? ''),
+            description: (c['description'] ?? '').toString(),
           );
         })
         .toList();
@@ -123,11 +138,15 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     final team = widget.teams[widget.selectedTeamIndex];
 
     if (!identical(_lastTeam, team)) {
+      _autoSaveTimer?.cancel();
       _lastTeam = team;
       _formGeneration++;
       _selectedStudentIndex = 0;
+      _draftSaveError = null;
+      _showIndividualCriteria = team.isIndividualTarget;
 
       _criteria = [];
+      _criterionKeys.clear();
       _studentCriteria.clear();
       for (var controller in _studentRemarksControllers.values) {
         controller.dispose();
@@ -140,6 +159,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         text: team.verdictRemarks ?? '',
       );
       _selectedVerdict = team.hasVerdict ? team.verdict : null;
+      _redefenseVerificationRequired = team.redefenseVerificationRequired;
       _revisionDeadline = team.revisionDeadline != null
           ? DateTime.tryParse(team.revisionDeadline!)
           : null;
@@ -175,6 +195,11 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       } else if (team.draftSubmissions.isNotEmpty) {
         _hydrateSubmissions(team.draftSubmissions);
       }
+      if (_criteria.isEmpty &&
+          _studentCriteria.values.any((criteria) => criteria.isNotEmpty)) {
+        _showIndividualCriteria = true;
+      }
+      if (team.hasUnsavedChanges) _scheduleAutoSave(team);
     }
   }
 
@@ -265,14 +290,66 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     if (team == null || !team.gradingAvailable) return;
     team.draftSubmissions = _evaluationSubmissions(team);
     team.hasUnsavedChanges = true;
+    _draftSaveError = null;
+    _scheduleAutoSave(team);
     widget.onEvaluationChanged?.call();
   }
 
-  Future<void> _saveDraft(TeamData team) async {
-    if (!team.gradingAvailable || _isSavingDraft || _isSubmittingGrades) return;
-    final submissions = _evaluationSubmissions(team);
-    if (!team.hasDraft && !team.hasUnsavedChanges) return;
-    setState(() => _isSavingDraft = true);
+  void _scheduleAutoSave(TeamData team) {
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = Timer(const Duration(milliseconds: 800), () {
+      if (mounted && team.hasUnsavedChanges && !_isSubmittingGrades) {
+        unawaited(_saveDraft(team));
+      }
+    });
+  }
+
+  TeamData _liveTeam(TeamData original) =>
+      widget.teams
+          .where((team) => _identity(team) == _identity(original))
+          .firstOrNull ??
+      original;
+
+  /// Used by both the chooser and dashboard navigation. A failed save keeps the
+  /// current sheet open; edits made during an in-flight save require another ACK.
+  Future<bool> savePendingChanges() async {
+    _autoSaveTimer?.cancel();
+    if (_isSubmittingGrades || _isSubmittingVerdict) return false;
+    final original = _lastTeam;
+    if (original == null) return true;
+    if (_draftSaveFuture != null && !await _draftSaveFuture!) return false;
+    while (mounted && _liveTeam(original).hasUnsavedChanges) {
+      if (!await _saveDraft(_liveTeam(original))) return false;
+    }
+    return mounted;
+  }
+
+  Future<bool> _saveDraft(TeamData team, {bool feedback = false}) async {
+    if (_draftSaveFuture != null) return _draftSaveFuture!;
+    if (!team.gradingAvailable || _isSubmittingGrades) {
+      return !team.hasUnsavedChanges;
+    }
+    if (!team.hasDraft && !team.hasUnsavedChanges) return true;
+    // Snapshot the draft owned by this schedule, not the currently displayed form.
+    final submissions = json.decode(json.encode(team.draftSubmissions));
+    final snapshot = json.encode(submissions);
+    setState(() {
+      _isSavingDraft = true;
+      _draftSaveError = null;
+    });
+    final future = _persistDraft(team, submissions, snapshot, feedback);
+    _draftSaveFuture = future;
+    return future;
+  }
+
+  Future<bool> _persistDraft(
+    TeamData team,
+    dynamic submissions,
+    String snapshot,
+    bool feedback,
+  ) async {
+    bool saved = false;
+    String? error;
     try {
       final isGuest = ref.read(authProvider).user?['role'] == 'guest_panelist';
       final path = isGuest ? 'guest-grade-draft/' : 'grade-draft/';
@@ -286,33 +363,104 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               'submissions': submissions,
             }),
           );
-      if (!mounted) return;
+      if (!mounted) return false;
       if (response.statusCode == 200) {
         final draft = json.decode(response.body)['draft'] as Map;
-        setState(() {
-          team.draftSavedAt = draft['saved_at']?.toString();
-          team.hasUnsavedChanges =
-              json.encode(team.draftSubmissions) != json.encode(submissions);
-        });
+        final current = _liveTeam(team);
+        if (!current.isPosted) {
+          setState(() {
+            current.draftSavedAt = draft['saved_at']?.toString();
+            current.hasUnsavedChanges =
+                json.encode(current.draftSubmissions) != snapshot;
+          });
+        }
+        saved = true;
         widget.onEvaluationChanged?.call();
-        showSuccessToast(context, 'Draft saved. You can continue later.');
+        if (feedback) {
+          showSuccessToast(context, 'Draft saved. You can continue later.');
+        }
       } else {
-        showErrorToast(
-          context,
-          friendlyHttpErrorMessage(response.statusCode, response.body),
-        );
+        error = friendlyHttpErrorMessage(response.statusCode, response.body);
       }
     } on SessionExpiredException {
-      // Session handling keeps the entered scores in memory.
-    } catch (e) {
-      if (mounted) {
-        showErrorToast(
-          context,
-          'Draft could not be saved. Your changes are still here.',
-        );
-      }
+      error = 'Sign in again to save your draft. Your changes are still here.';
+    } catch (_) {
+      error = 'Draft could not be saved. Your changes are still here.';
     } finally {
-      if (mounted) setState(() => _isSavingDraft = false);
+      _draftSaveFuture = null;
+      if (mounted) {
+        setState(() {
+          _isSavingDraft = false;
+          if (_lastTeam != null && _identity(_lastTeam!) == _identity(team)) {
+            _draftSaveError = error;
+          }
+        });
+        if (saved && _liveTeam(team).hasUnsavedChanges) {
+          _scheduleAutoSave(_liveTeam(team));
+        }
+      }
+    }
+    return saved;
+  }
+
+  /// Assignments uses this same verification flow rather than directly changing
+  /// the selected index. The final lookup uses schedule/context identity so a
+  /// refreshed or reordered assignment list cannot activate the wrong team.
+  Future<bool> openTeam(int index) async {
+    if (index < 0 || index >= widget.teams.length) return false;
+    final candidate = widget.teams[index];
+    if (_lastTeam != null &&
+        _identity(candidate) == _identity(_lastTeam!) &&
+        _isVerified(candidate)) {
+      return savePendingChanges();
+    }
+    return _chooseTeam(initialPreview: candidate);
+  }
+
+  Future<bool> _chooseTeam({TeamData? initialPreview}) async {
+    if (_isChoosingTeam ||
+        _isReviewingGrades ||
+        _isSubmittingGrades ||
+        _isSubmittingVerdict ||
+        widget.teams.isEmpty) {
+      return false;
+    }
+    final current = widget.teams[widget.selectedTeamIndex];
+    setState(() => _isChoosingTeam = true);
+    try {
+      final chosen = await Navigator.push<TeamData>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TeamGradeChooser(
+            teams: widget.teams,
+            current: current,
+            initialPreview: initialPreview,
+            onConfirm: (candidate) async {
+              if (!await savePendingChanges()) {
+                return 'Your current draft could not be saved. Your team has not changed. Check your connection and retry.';
+              }
+              if (!mounted ||
+                  !widget.teams.any(
+                    (team) => _identity(team) == _identity(candidate),
+                  )) {
+                return 'This assignment changed. Close the chooser and refresh before grading.';
+              }
+              return null;
+            },
+          ),
+        ),
+      );
+      if (!mounted || chosen == null) return false;
+      final index = widget.teams.indexWhere(
+        (team) => _identity(team) == _identity(chosen),
+      );
+      if (index < 0) return false;
+      setState(() => _verifiedTeamIdentity = _identity(widget.teams[index]));
+      widget.onTeamChanged(index);
+      if (_scrollController.hasClients) _scrollController.jumpTo(0);
+      return true;
+    } finally {
+      if (mounted) setState(() => _isChoosingTeam = false);
     }
   }
 
@@ -323,72 +471,66 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     }
     final team = widget.teams[widget.selectedTeamIndex];
     final complete = _isComplete(team);
-    final preview = !team.gradingAvailable && !team.isPosted;
-    final stageKeys = widget.teams.map(_teamStageEventKey).toSet();
-    final filteredIndices = [
-      for (int i = 0; i < widget.teams.length; i++)
-        if (_selectedStageKey == 'all' ||
-            !stageKeys.contains(_selectedStageKey) ||
-            _teamStageEventKey(widget.teams[i]) == _selectedStageKey)
-          i,
-    ];
-    final position = filteredIndices.indexOf(widget.selectedTeamIndex);
-    final selectedMember = team.memberDetails.isNotEmpty
-        ? team.memberDetails[_selectedStudentIndex.clamp(
-            0,
-            team.memberDetails.length - 1,
-          )]
-        : null;
-    final displayedCriteria = [
+    final unavailable = !team.gradingAvailable && !team.isPosted;
+    final canScore = team.isPosted || _isVerified(team);
+    final member = team.memberDetails.elementAtOrNull(_selectedStudentIndex);
+    final displayed = [
       ..._criteria,
-      if (selectedMember != null) ...?_studentCriteria[selectedMember.id],
+      if (member != null) ...?_studentCriteria[member.id],
     ];
-    final total = displayedCriteria.fold(0.0, (sum, c) => sum + (c.score ?? 0));
-    final maxTotal = displayedCriteria.fold(0.0, (sum, c) => sum + c.maxScore);
+    final total = displayed.fold(
+      0.0,
+      (sum, criterion) => sum + (criterion.score ?? 0),
+    );
+    final maximum = displayed.fold(
+      0.0,
+      (sum, criterion) => sum + criterion.maxScore,
+    );
     final scrollContent = SingleChildScrollView(
+      controller: _scrollController,
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildStageSelector(team, stageKeys),
-          _buildLineupStepper(
-            team,
-            filteredIndices,
-            position < 0 ? 0 : position,
+          DefenseTeamSummary(
+            key: const ValueKey('team-defense-brief'),
+            team: team,
           ),
-          const SizedBox(height: 12),
-          _buildAvailabilityNotice(team),
-          const SizedBox(height: 12),
-          _buildTeamDossier(team, team.isPosted, team.hasValidScope),
-          const SizedBox(height: 14),
-          _buildDefenseMaterialsCard(team),
-          const SizedBox(height: 14),
-          if (preview)
+          const SizedBox(height: 16),
+          DefenseMaterialsCard(
+            key: const ValueKey('defense-materials'),
+            materials: team.defenseMaterials,
+            onView: _viewDefenseMaterial,
+          ),
+          const SizedBox(height: 16),
+          if (unavailable || team.isPosted) ...[
+            _buildAvailabilityNotice(team),
+            const SizedBox(height: 16),
+          ],
+          if (unavailable)
             _buildRubricPreview(team)
-          else ...[
+          else if (!canScore)
+            _buildTeamEntry(team)
+          else
             _buildEvaluationCard(team),
-            if (complete) ...[
-              const SizedBox(height: 14),
-              if (selectedMember != null && team.targetType != 'team')
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Text(
-                    'Score summary for ${selectedMember.name}',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              _buildScoreHero(
-                total: total,
-                maxTotal: maxTotal,
-                panelPct: maxTotal > 0 ? total / maxTotal * 100 : 0,
-                panelWeight: team.panelWeight,
-                peerWeight: team.peerWeight,
-                showAdviser: team.isCapstone && team.adviserWeight > 0,
-                team: team,
-                hasValidScope: team.hasValidScope,
+          if (canScore && complete) ...[
+            const SizedBox(height: 14),
+            if (member != null && team.targetType != 'team')
+              Text(
+                'Score summary for ${member.name}',
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
-            ],
+            _buildScoreHero(
+              total: total,
+              maxTotal: maximum,
+              panelPct: maximum > 0 ? total / maximum * 100 : 0,
+              panelWeight: team.panelWeight,
+              peerWeight: team.peerWeight,
+              showAdviser: team.isCapstone && team.adviserWeight > 0,
+              team: team,
+              hasValidScope: team.hasValidScope,
+            ),
           ],
           if (team.isCapstone && !team.isLockedByDate) ...[
             const SizedBox(height: 14),
@@ -400,13 +542,332 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         ],
       ),
     );
-    return widget.onRefresh == null
-        ? scrollContent
-        : RefreshIndicator(
-            color: DefensysTokens.maroon,
-            onRefresh: widget.onRefresh!,
-            child: scrollContent,
-          );
+    return DefensysShadcnScope(
+      child: Column(
+        children: [
+          _buildGradingContext(team),
+          Expanded(
+            child: widget.onRefresh == null
+                ? scrollContent
+                : RefreshIndicator(
+                    color: DefensysTokens.maroonOf(context),
+                    onRefresh: () async {
+                      if (await savePendingChanges()) await widget.onRefresh!();
+                    },
+                    child: scrollContent,
+                  ),
+          ),
+          if (canScore && !unavailable) _buildEvaluationFooter(team),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGradingContext(TeamData team) {
+    final statusColor = team.isPosted
+        ? (DefensysTokens.isDark(context)
+              ? const Color(0xFF6EE7B7)
+              : DefensysTokens.successText)
+        : DefensysTokens.maroonTextOf(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+      decoration: BoxDecoration(
+        color: DefensysTokens.surfaceOf(context),
+        border: Border(
+          bottom: BorderSide(color: DefensysTokens.borderOf(context)),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .025),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: .08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  team.isPosted
+                      ? Icons.check_circle_outline_rounded
+                      : _isVerified(team)
+                      ? Icons.edit_outlined
+                      : Icons.groups_outlined,
+                  size: 15,
+                  color: statusColor,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  team.isPosted
+                      ? 'Submitted grades'
+                      : _isVerified(team)
+                      ? 'Currently grading'
+                      : 'Verify the presenting team',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: statusColor,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              ShadButton.outline(
+                height: 44,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                leading: Icon(
+                  Icons.swap_horiz_rounded,
+                  size: 16,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+                enabled:
+                    !_isSubmittingGrades &&
+                    !_isReviewingGrades &&
+                    !_isChoosingTeam &&
+                    !_isSubmittingVerdict,
+                onPressed: () => _chooseTeam(),
+                child: const Text(
+                  'Change team',
+                  style: TextStyle(fontSize: 11),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Text(
+            team.name,
+            style: TextStyle(
+              fontSize: 20,
+              height: 1.2,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -.4,
+              color: DefensysTokens.textPrimaryOf(context),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${team.displayStage} · ${team.formattedTime} · ${team.displayRoom}',
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.4,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+          if (_showIndividualCriteria &&
+              team.memberDetails.isNotEmpty &&
+              (team.isPosted || _isVerified(team))) ...[
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.person_outline_rounded,
+                  size: 16,
+                  color: DefensysTokens.maroonTextOf(context),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '${team.isPosted ? 'Viewing' : 'Scoring'} ${team.memberDetails[_selectedStudentIndex].name}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTeamEntry(TeamData team) => ShadCard(
+    backgroundColor: DefensysTokens.surfaceOf(context),
+    radius: BorderRadius.circular(16),
+    padding: const EdgeInsets.all(18),
+    width: double.infinity,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Ready to evaluate?',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Match the project and presenting members above before starting. These scores will belong to ${team.name}.',
+          style: TextStyle(
+            fontSize: 12,
+            height: 1.5,
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+        ),
+        const SizedBox(height: 16),
+        ShadButton(
+          key: const ValueKey('start-team-evaluation'),
+          height: 0,
+          expands: true,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          backgroundColor: DefensysTokens.maroonOf(context),
+          foregroundColor: Colors.white,
+          onPressed: () =>
+              setState(() => _verifiedTeamIdentity = _identity(team)),
+          child: Text(
+            '${team.hasDraft ? 'Resume grading' : 'Start grading'} ${team.name}',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _buildEvaluationFooter(TeamData team) {
+    final required = _requiredCriteria(team);
+    final entered = required.where((criterion) => criterion.isScored).length;
+    final complete = _isComplete(team);
+    final busy =
+        _isSubmittingGrades ||
+        _isReviewingGrades ||
+        _isChoosingTeam ||
+        _isSubmittingVerdict;
+    final saveLabel = team.isPosted
+        ? 'Submitted · Locked'
+        : _draftSaveError != null
+        ? 'Couldn’t save draft. Your changes are still here.'
+        : _isSavingDraft
+        ? 'Saving draft…'
+        : team.hasUnsavedChanges
+        ? 'Changes pending'
+        : team.draftSavedAt != null
+        ? 'Draft saved'
+        : 'No saved draft yet';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      decoration: BoxDecoration(
+        color: DefensysTokens.surfaceOf(context),
+        border: Border(
+          top: BorderSide(color: DefensysTokens.borderOf(context)),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '$entered of ${required.length} scores entered',
+              key: const ValueKey('evaluation-progress'),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            Semantics(
+              liveRegion: true,
+              child: Text(
+                saveLabel,
+                key: const ValueKey('draft-save-state'),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _draftSaveError == null
+                      ? DefensysTokens.textSecondaryOf(context)
+                      : Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (!team.isPosted)
+                  ShadButton.outline(
+                    key: const ValueKey('save-evaluation-draft'),
+                    height: 44,
+                    enabled:
+                        !busy &&
+                        !_isSavingDraft &&
+                        (team.hasDraft || team.hasUnsavedChanges),
+                    onPressed: () => _saveDraft(team, feedback: true),
+                    child: Text(
+                      _draftSaveError != null ? 'Retry save' : 'Save Draft',
+                    ),
+                  ),
+                ShadButton(
+                  key: const ValueKey('review-evaluation'),
+                  height: 44,
+                  enabled: !busy && required.isNotEmpty && team.hasValidScope,
+                  backgroundColor: DefensysTokens.maroonOf(context),
+                  foregroundColor: Colors.white,
+                  onPressed: () => _confirmPost(team),
+                  child: Text(
+                    _isSubmittingGrades
+                        ? 'Submitting…'
+                        : team.isPosted
+                        ? 'View scores'
+                        : complete
+                        ? 'Review & Submit'
+                        : 'Review grades',
+                  ),
+                ),
+                if (!team.isPosted && !complete)
+                  ShadButton.ghost(
+                    height: 44,
+                    enabled: !busy,
+                    onPressed: () => _goToNextUnscored(team),
+                    child: const Text('Next unscored'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _goToNextUnscored(TeamData team) {
+    Criterion? next;
+    setState(() {
+      if (_criteria.any((criterion) => !criterion.isScored)) {
+        _showIndividualCriteria = false;
+        next = _criteria.where((criterion) => !criterion.isScored).first;
+      } else {
+        final index = team.memberDetails.indexWhere(
+          (member) => (_studentCriteria[member.id] ?? []).any(
+            (criterion) => !criterion.isScored,
+          ),
+        );
+        if (index >= 0) {
+          _showIndividualCriteria = true;
+          _selectedStudentIndex = index;
+          next = _studentCriteria[team.memberDetails[index].id]!
+              .where((criterion) => !criterion.isScored)
+              .first;
+        }
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target =
+          _criterionKeys[next]?.currentContext ?? _evaluationKey.currentContext;
+      if (mounted && target != null) {
+        Scrollable.ensureVisible(
+          target,
+          duration: const Duration(milliseconds: 200),
+        );
+      }
+    });
   }
 
   Widget _buildAvailabilityNotice(TeamData team) {
@@ -431,9 +892,9 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: upcoming ? DefensysTokens.warningBg : DefensysTokens.background,
+        color: DefensysTokens.surfaceHigherOf(context),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-        border: Border.all(color: DefensysTokens.border),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -475,190 +936,269 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   );
 
   Widget _buildEvaluationCard(TeamData team) {
-    final required = _requiredCriteria(team);
-    final entered = required.where((c) => c.isScored).length;
-    final complete = _isComplete(team);
     final locked =
-        team.isPosted || !team.gradingAvailable || _isSubmittingGrades;
-    final member = team.memberDetails.isNotEmpty
-        ? team.memberDetails[_selectedStudentIndex.clamp(
-            0,
-            team.memberDetails.length - 1,
-          )]
-        : null;
-    final hasIndividualCriteria = _studentCriteria.values.any(
-      (cs) => cs.isNotEmpty,
+        team.isPosted ||
+        !team.gradingAvailable ||
+        !_isVerified(team) ||
+        _isSubmittingGrades ||
+        _isReviewingGrades ||
+        _isChoosingTeam;
+    final hasStudents = _studentCriteria.values.any(
+      (criteria) => criteria.isNotEmpty,
     );
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _panelRubricName(team) ?? 'Panel Rubric Criteria',
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '$entered of ${required.length} scores entered',
-              key: const ValueKey('evaluation-progress'),
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            if (!team.isPosted) ...[
-              const SizedBox(height: 4),
-              Text(
-                team.hasUnsavedChanges
-                    ? 'Unsaved changes'
-                    : team.draftSavedAt != null
-                    ? 'Draft saved'
-                    : 'Choose a score for every criterion. Zero is a valid score.',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: DefensysTokens.textSecondary,
+    final member = team.memberDetails.elementAtOrNull(_selectedStudentIndex);
+    final showStudents =
+        hasStudents && (_showIndividualCriteria || _criteria.isEmpty);
+    final visible = showStudents && member != null
+        ? _studentCriteria[member.id] ?? <Criterion>[]
+        : _criteria;
+    final entered = visible.where((criterion) => criterion.isScored).length;
+    return ShadCard(
+      key: _evaluationKey,
+      backgroundColor: DefensysTokens.surfaceOf(context),
+      width: double.infinity,
+      radius: BorderRadius.circular(16),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.maroonOf(
+                    context,
+                  ).withValues(alpha: .07),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.fact_check_outlined,
+                  size: 20,
+                  color: DefensysTokens.maroonTextOf(context),
                 ),
               ),
-            ],
-            if (required.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text(
-                  'No panel rubric criteria are configured. Ask the PIT lead or admin to configure this schedule.',
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _panelRubricName(team) ?? 'Panel rubric',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -.2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      team.targetType == 'team'
+                          ? 'Team evaluation'
+                          : team.targetType == 'individual'
+                          ? 'Individual evaluation'
+                          : 'Team & individual evaluation',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            if (_criteria.isNotEmpty) ...[
-              const Divider(height: 24),
-              if (team.targetType == 'both')
-                const Text(
-                  'Team criteria',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-              for (final c in _criteria) _criterionRow(c, locked),
-              TextField(
-                key: ValueKey('team-remarks-$_formGeneration'),
-                controller: _teamRemarksController,
-                readOnly: locked,
-                maxLines: 2,
-                onChanged: (_) => setState(_rememberDraft),
-                decoration: const InputDecoration(
-                  labelText: 'Team remarks / feedback',
-                ),
-              ),
-            ],
-            if (hasIndividualCriteria) ...[
-              const Divider(height: 24),
-              const Text(
-                'Individual student criteria',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 8),
-              _buildStudentSelector(team),
-              if (member != null) ...[
-                for (final c in _studentCriteria[member.id] ?? <Criterion>[])
-                  _criterionRow(c, locked),
-                TextField(
-                  key: ValueKey('member-remarks-$_formGeneration-${member.id}'),
-                  controller: _studentRemarksControllers[member.id],
-                  readOnly: locked,
-                  maxLines: 2,
-                  onChanged: (_) => setState(_rememberDraft),
-                  decoration: InputDecoration(
-                    labelText: 'Feedback for ${member.name}',
-                  ),
+              if (team.isPosted) ...[
+                const SizedBox(width: 8),
+                const ShadBadge.outline(
+                  child: Text('Read only', style: TextStyle(fontSize: 10)),
                 ),
               ],
             ],
-            if (!team.isPosted && required.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              if (!complete)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 12),
-                  child: Text(
-                    'Complete all team and student scores to calculate totals and submit.',
-                    style: TextStyle(fontSize: 12),
-                  ),
+          ),
+          const SizedBox(height: 18),
+          if (_criteria.isNotEmpty && hasStudents) ...[
+            LayoutBuilder(
+              builder: (context, constraints) => ShadTabs<String>(
+                value: showStudents ? 'students' : 'team',
+                onChanged: (value) => setState(
+                  () => _showIndividualCriteria = value == 'students',
                 ),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  TactileButton.secondary(
-                    label: _isSavingDraft ? 'Saving draft...' : 'Save Draft',
-                    onPressed:
-                        locked ||
-                            _isSavingDraft ||
-                            (!team.hasDraft && !team.hasUnsavedChanges)
-                        ? null
-                        : () => _saveDraft(team),
-                    icon: const Icon(Icons.save_outlined, size: 16),
+                tabs: [
+                  ShadTab(
+                    value: 'team',
+                    selectedBackgroundColor: DefensysTokens.surfaceOf(context),
+                    selectedForegroundColor: DefensysTokens.maroonTextOf(
+                      context,
+                    ),
+                    selectedDecoration: ShadDecoration(
+                      border: ShadBorder.all(
+                        color: DefensysTokens.maroonOf(
+                          context,
+                        ).withValues(alpha: .20),
+                        radius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    selectedShadows: const [],
+                    height: 52,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
+                    child: SizedBox(
+                      width: (constraints.maxWidth - 24) / 2 - 16,
+                      child: Text(
+                        'Team · ${_criteria.where((c) => c.isScored).length}/${_criteria.length}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
                   ),
-                  TactileButton.primary(
-                    label: _isSubmittingGrades
-                        ? 'Submitting...'
-                        : 'Review & Submit',
-                    onPressed:
-                        locked ||
-                            _isSavingDraft ||
-                            !complete ||
-                            !team.hasValidScope
-                        ? null
-                        : () => _confirmPost(team),
-                    icon: const Icon(
-                      Icons.lock_outline,
-                      size: 16,
-                      color: Colors.white,
+                  ShadTab(
+                    value: 'students',
+                    selectedBackgroundColor: DefensysTokens.surfaceOf(context),
+                    selectedForegroundColor: DefensysTokens.maroonTextOf(
+                      context,
+                    ),
+                    selectedDecoration: ShadDecoration(
+                      border: ShadBorder.all(
+                        color: DefensysTokens.maroonOf(
+                          context,
+                        ).withValues(alpha: .20),
+                        radius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    selectedShadows: const [],
+                    height: 52,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
+                    child: SizedBox(
+                      width: (constraints.maxWidth - 24) / 2 - 16,
+                      child: Text(
+                        'Students · ${_studentCriteria.values.where((cs) => cs.isNotEmpty && cs.every((c) => c.isScored)).length}/${team.memberDetails.length}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 12),
+                      ),
                     ),
                   ),
                 ],
               ),
-            ],
+            ),
+            const SizedBox(height: 14),
           ],
-        ),
+          if (showStudents) ...[
+            _buildStudentSelector(team),
+            const SizedBox(height: 16),
+          ],
+          Text(
+            showStudents && member != null ? member.name : 'Team criteria',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          Text(
+            '$entered/${visible.length} scored${visible.isNotEmpty && entered == visible.length ? ' · Scores complete' : ''}',
+            style: TextStyle(
+              fontSize: 12,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+          if (visible.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                'No panel rubric criteria are configured. Ask the PIT lead or admin to configure this schedule.',
+              ),
+            ),
+          for (final criterion in visible) _criterionRow(criterion, locked),
+          if (visible.isNotEmpty)
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text(
+                'Optional feedback',
+                style: TextStyle(fontSize: 13),
+              ),
+              children: [
+                TextField(
+                  key: ValueKey(
+                    'remarks-$_formGeneration-${showStudents ? member?.id : 'team'}',
+                  ),
+                  controller: showStudents && member != null
+                      ? _studentRemarksControllers[member.id]
+                      : _teamRemarksController,
+                  readOnly: locked,
+                  maxLines: 3,
+                  onChanged: (_) => setState(_rememberDraft),
+                  decoration: InputDecoration(
+                    labelText: showStudents && member != null
+                        ? 'Feedback for ${member.name}'
+                        : 'Team remarks / feedback',
+                  ),
+                ),
+              ],
+            ),
+          Text(
+            'Blank means unanswered. Zero is a valid score.',
+            style: TextStyle(
+              fontSize: 12,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  String _reviewSummary(TeamData team) {
-    String summary(String name, List<Criterion> criteria) {
-      final total = criteria.fold(0.0, (sum, c) => sum + (c.score ?? 0));
-      final maximum = criteria.fold(0.0, (sum, c) => sum + c.maxScore);
-      return '$name: ${total.toStringAsFixed(1)} / ${maximum.toStringAsFixed(1)}';
-    }
-
-    return [
-      team.name,
-      team.displayStage,
-      if (team.scheduledDate != null)
-        DateFormat('MMMM d, yyyy').format(team.scheduledDate!),
-      '',
-      if (team.targetType == 'team') summary('Team', _criteria),
-      if (team.targetType != 'team')
-        for (final member in team.memberDetails)
-          summary(member.name, [..._criteria, ...?_studentCriteria[member.id]]),
-      '',
-      'Submitting saves and locks your scores for this defense.',
-    ].join('\n');
-  }
-
   Future<void> _confirmPost(TeamData team) async {
-    if (!team.gradingAvailable ||
-        !team.hasValidScope ||
-        !_isComplete(team) ||
+    if (_isReviewingGrades ||
         _isSubmittingGrades ||
-        _isSavingDraft) {
+        _isSubmittingVerdict ||
+        _isChoosingTeam ||
+        (!team.isPosted && (!team.gradingAvailable || !_isVerified(team)))) {
       return;
     }
-    final submissions = _evaluationSubmissions(team);
-    final confirmed = await confirmLock(
-      context,
-      title: 'Review Panel Grades',
-      message: _reviewSummary(team),
-      confirmLabel: 'Submit Grades',
-      icon: Icons.save_rounded,
-      confirmColor: DefensysTokens.saveActionBg,
-    );
-    if (!confirmed || !mounted || !identical(_lastTeam, team)) return;
-    await _submitGrades(team, submissions);
+    final identity = _identity(team);
+    setState(() => _isReviewingGrades = true);
+    try {
+      if (!team.isPosted && !await savePendingChanges()) return;
+      if (!mounted || _lastTeam == null || _identity(_lastTeam!) != identity) {
+        return;
+      }
+      final submissions = _evaluationSubmissions(team);
+      final result = await Navigator.push<EvaluationReviewAction>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EvaluationReviewScreen(
+            team: team,
+            teamCriteria: _criteria,
+            studentCriteria: Map.of(_studentCriteria),
+            complete: _isComplete(team),
+          ),
+        ),
+      );
+      if (!mounted ||
+          result == null ||
+          _lastTeam == null ||
+          _identity(_lastTeam!) != identity) {
+        return;
+      }
+      if (result.submit) {
+        if (!team.hasValidScope || !_isComplete(team)) return;
+        await _submitGrades(team, submissions);
+      } else {
+        setState(() {
+          _showIndividualCriteria = result.studentId != null;
+          if (result.studentId != null) {
+            final index = team.memberDetails.indexWhere(
+              (member) => member.id == result.studentId,
+            );
+            if (index >= 0) _selectedStudentIndex = index;
+          }
+        });
+        if (_scrollController.hasClients) _scrollController.jumpTo(0);
+      }
+    } finally {
+      if (mounted) setState(() => _isReviewingGrades = false);
+    }
   }
 
   Future<void> _submitGrades(
@@ -687,6 +1227,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       if (response.statusCode == 201) {
         setState(() {
           team.isPosted = true;
+          team.submittedSubmissions = submissions;
           team.draftSubmissions = [];
           team.draftSavedAt = null;
           team.hasUnsavedChanges = false;
@@ -714,111 +1255,84 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     }
   }
 
-  Widget _criterionRow(Criterion c, bool locked) {
-    final isTeamCriterion = _criteria.contains(c);
-    final memberKey = isTeamCriterion
+  Widget _criterionRow(Criterion criterion, bool locked) {
+    final scope = _criteria.contains(criterion)
         ? 'team'
-        : _selectedStudentIndex.toString();
+        : _lastTeam!.memberDetails[_selectedStudentIndex].id;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      key: _criterionKeys.putIfAbsent(criterion, GlobalKey.new),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text(
-                  c.name,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      criterion.name,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      criterion.isScored ? 'Score entered' : 'Not scored',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 8),
               Text(
-                '${c.score?.toStringAsFixed(1) ?? '—'} / ${c.maxScore.toStringAsFixed(0)}',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: DefensysTokens.maroon,
-                ),
+                '${criterion.isScored ? formatEvaluationScore(criterion.score!) : '—'} / ${formatEvaluationScore(criterion.maxScore)}',
+                key: ValueKey('score-display-$scope-${criterion.id}'),
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ],
           ),
+          if (criterion.description.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                criterion.description,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+            ),
           if (!locked) ...[
-            const SizedBox(height: 8),
-            TextFormField(
-              key: ValueKey('score-$_formGeneration-$memberKey-${c.id}'),
-              initialValue: c.score?.toString() ?? '',
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}$')),
-              ],
-              autovalidateMode: AutovalidateMode.onUserInteraction,
-              decoration: InputDecoration(
-                labelText: 'Score for ${c.name}',
-                hintText: 'Enter a score',
-                suffixText: '/ ${c.maxScore.toStringAsFixed(0)}',
-                border: const OutlineInputBorder(),
-              ),
-              validator: (text) {
-                if (text == null || text.isEmpty) return null;
-                final score = double.tryParse(text);
-                return score == null ||
-                        !score.isFinite ||
-                        score < 0 ||
-                        score > c.maxScore
-                    ? 'Enter a score from 0 to ${c.maxScore.toStringAsFixed(0)}'
-                    : null;
+            const SizedBox(height: 10),
+            EvaluationScorePicker(
+              key: ValueKey('score-$_formGeneration-$scope-${criterion.id}'),
+              label: criterion.name,
+              maximum: criterion.maxScore,
+              value: criterion.score,
+              onChanged: (score) {
+                if (!mounted ||
+                    _lastTeam == null ||
+                    !_isVerified(_lastTeam!) ||
+                    !_lastTeam!.gradingAvailable ||
+                    _isReviewingGrades ||
+                    _isChoosingTeam) {
+                  return;
+                }
+                setState(() {
+                  criterion.score = score;
+                  _rememberDraft();
+                });
               },
-              onChanged: (text) => setState(() {
-                final score = double.tryParse(text);
-                c.score =
-                    score != null &&
-                        score.isFinite &&
-                        score >= 0 &&
-                        score <= c.maxScore
-                    ? score
-                    : null;
-                _rememberDraft();
-              }),
             ),
           ],
-        ],
-      ),
-    );
-  }
-
-  Widget _statusBadge(String label) {
-    final isPosted = label == 'Submitted';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: isPosted
-            ? Colors.red.withValues(alpha: 0.1)
-            : Colors.blue.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: isPosted ? Colors.red : Colors.blue),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            isPosted ? Icons.lock : Icons.edit,
-            size: 12,
-            color: isPosted ? Colors.red : Colors.blue,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: isPosted ? Colors.red : Colors.blue,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          const Divider(height: 20),
         ],
       ),
     );
@@ -884,1160 +1398,6 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       if (loadingOpen && Navigator.canPop(context)) Navigator.pop(context);
       showErrorToast(context, 'Error opening file: $e');
     }
-  }
-
-  Widget _buildDefenseMaterialsCard(TeamData team) {
-    final materials = team.defenseMaterials;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: DefensysTokens.maroon.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Icon(
-                  Icons.menu_book_rounded,
-                  size: 16,
-                  color: DefensysTokens.maroon,
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Defense Materials for Evaluation',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        color: Color(0xFF1E293B),
-                      ),
-                    ),
-                    Text(
-                      'Pre-defense manuscripts & pitch decks submitted for panel review',
-                      style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: materials.isEmpty
-                      ? Colors.grey.shade100
-                      : const Color(0xFFEFF6FF),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: materials.isEmpty
-                        ? Colors.grey.shade300
-                        : const Color(0xFFBFDBFE),
-                  ),
-                ),
-                child: Text(
-                  materials.isEmpty
-                      ? 'None uploaded'
-                      : '${materials.length} ${materials.length == 1 ? 'file' : 'files'}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: materials.isEmpty
-                        ? Colors.grey.shade600
-                        : const Color(0xFF1D4ED8),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (materials.isEmpty) ...[
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.info_outline, size: 16, color: Colors.grey),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'No defense manuscripts or pitch decks uploaded yet by this team.',
-                      style: TextStyle(fontSize: 12, color: Colors.black54),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ] else ...[
-            const SizedBox(height: 10),
-            ...materials.map((mat) {
-              final sub = mat['submission'] is Map
-                  ? mat['submission'] as Map
-                  : null;
-              final docName =
-                  (mat['label']?.toString().isNotEmpty == true
-                      ? mat['label']?.toString()
-                      : mat['name']?.toString()) ??
-                  'Defense Material';
-              final rawFileName =
-                  (mat['file_name']?.toString().isNotEmpty == true &&
-                          mat['file_name'] != 'File'
-                      ? mat['file_name']?.toString()
-                      : sub?['file_name']?.toString()) ??
-                  '';
-              final fileName = rawFileName.isNotEmpty
-                  ? rawFileName
-                  : (mat['suggested_file_name']?.toString().isNotEmpty == true
-                        ? mat['suggested_file_name']!.toString()
-                        : 'File');
-              final ext = fileName.split('.').last.toLowerCase();
-              final isPdf = ext == 'pdf';
-              final isDoc = ext == 'doc' || ext == 'docx';
-              final iconData = isPdf
-                  ? Icons.picture_as_pdf
-                  : (isDoc
-                        ? Icons.description_outlined
-                        : Icons.insert_drive_file_outlined);
-              final iconColor = isPdf
-                  ? const Color(0xFFDC2626)
-                  : (isDoc ? const Color(0xFF2563EB) : const Color(0xFF64748B));
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(iconData, color: iconColor, size: 24),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            docName,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 12.5,
-                              color: Color(0xFF0F172A),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            fileName,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: Color(0xFF64748B),
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton.icon(
-                      onPressed: () => _viewDefenseMaterial(mat),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: DefensysTokens.maroon,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        visualDensity: VisualDensity.compact,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                      ),
-                      icon: const Icon(Icons.visibility_outlined, size: 14),
-                      label: const Text(
-                        'View',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStageSelector(TeamData currentTeam, Set<String> stageKeys) {
-    if (stageKeys.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: DefensysTokens.border),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x06000000),
-            blurRadius: 4,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color:
-                  (currentTeam.isCapstone
-                          ? DefensysTokens.maroon
-                          : const Color(0xFF006666))
-                      .withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Icon(
-              Icons.tune_rounded,
-              size: 14,
-              color: currentTeam.isCapstone
-                  ? DefensysTokens.maroon
-                  : const Color(0xFF006666),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'Stage / Event:',
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-              color: Colors.grey.shade700,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _selectedStageKey,
-                isExpanded: true,
-                icon: const Icon(
-                  Icons.keyboard_arrow_down,
-                  size: 18,
-                  color: Colors.grey,
-                ),
-                style: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: DefensysTokens.textDark,
-                ),
-                items: [
-                  DropdownMenuItem<String>(
-                    value: 'all',
-                    child: Text(
-                      'All Sessions (${widget.teams.length})',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  ...stageKeys.map((k) {
-                    final count = widget.teams
-                        .where((t) => _teamStageEventKey(t) == k)
-                        .length;
-                    return DropdownMenuItem<String>(
-                      value: k,
-                      child: Text(
-                        '$k ($count)',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    );
-                  }),
-                ],
-                onChanged: (newKey) {
-                  if (newKey == null) return;
-                  setState(() {
-                    _selectedStageKey = newKey;
-                    if (newKey != 'all') {
-                      final matchingIdx = widget.teams.indexWhere(
-                        (t) => _teamStageEventKey(t) == newKey,
-                      );
-                      if (matchingIdx != -1 &&
-                          matchingIdx != widget.selectedTeamIndex) {
-                        _lastTeam = null;
-                        widget.onTeamChanged(matchingIdx);
-                        _syncRubricForCurrentTeam();
-                      }
-                    }
-                  });
-                },
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLineupStepper(
-    TeamData team,
-    List<int> filteredIndices,
-    int currentFilteredPos,
-  ) {
-    final canPrev = currentFilteredPos > 0;
-    final canNext = currentFilteredPos < filteredIndices.length - 1;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: DefensysTokens.border),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x06000000),
-            blurRadius: 4,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-        child: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.chevron_left),
-              tooltip: 'Previous Defense Team',
-              onPressed: canPrev
-                  ? () {
-                      _lastTeam = null;
-                      widget.onTeamChanged(
-                        filteredIndices[currentFilteredPos - 1],
-                      );
-                      _syncRubricForCurrentTeam();
-                    }
-                  : null,
-            ),
-            Expanded(
-              child: InkWell(
-                onTap: _showLineupSheet,
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 4,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              team.name,
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: DefensysTokens.textDark,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '(${currentFilteredPos + 1}/${filteredIndices.length})',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade600,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(width: 2),
-                          Icon(
-                            Icons.unfold_more,
-                            size: 14,
-                            color: Colors.grey.shade600,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 3),
-                      Wrap(
-                        alignment: WrapAlignment.center,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 6,
-                        runSpacing: 2,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 1.5,
-                            ),
-                            decoration: BoxDecoration(
-                              color:
-                                  (team.isCapstone
-                                          ? DefensysTokens.maroon
-                                          : const Color(0xFF006666))
-                                      .withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              team.displayStage,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: team.isCapstone
-                                    ? DefensysTokens.maroon
-                                    : const Color(0xFF006666),
-                              ),
-                            ),
-                          ),
-                          Text(
-                            '• ${team.formattedTime}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
-                          if (team.displayRoom.isNotEmpty &&
-                              team.displayRoom != 'Room TBD')
-                            Text(
-                              '• ${team.displayRoom}',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.chevron_right),
-              tooltip: 'Next Defense Team',
-              onPressed: canNext
-                  ? () {
-                      _lastTeam = null;
-                      widget.onTeamChanged(
-                        filteredIndices[currentFilteredPos + 1],
-                      );
-                      _syncRubricForCurrentTeam();
-                    }
-                  : null,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showLineupSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (modalCtx, setModalState) {
-            final stageKeys = <String>{};
-            for (final t in widget.teams) {
-              stageKeys.add(_teamStageEventKey(t));
-            }
-
-            final List<int> sheetFilteredIndices;
-            if (_selectedStageKey == 'all' ||
-                !stageKeys.contains(_selectedStageKey)) {
-              sheetFilteredIndices = List.generate(
-                widget.teams.length,
-                (i) => i,
-              );
-            } else {
-              sheetFilteredIndices = [];
-              for (int i = 0; i < widget.teams.length; i++) {
-                if (_teamStageEventKey(widget.teams[i]) == _selectedStageKey) {
-                  sheetFilteredIndices.add(i);
-                }
-              }
-            }
-
-            return Container(
-              color: Colors.white,
-              child: SafeArea(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.of(context).size.height * 0.8,
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Center(
-                          child: Container(
-                            width: 36,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade300,
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                              'Defense Schedule Lineup',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: DefensysTokens.textDark,
-                              ),
-                            ),
-                            Text(
-                              '${sheetFilteredIndices.length} ${sheetFilteredIndices.length == 1 ? 'Team' : 'Teams'}',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade600,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Select a team to load their evaluation rubric and scores:',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                        if (stageKeys.length > 1) ...[
-                          const SizedBox(height: 10),
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              children: [
-                                FilterChip(
-                                  label: Text('All (${widget.teams.length})'),
-                                  selected: _selectedStageKey == 'all',
-                                  onSelected: (_) {
-                                    setState(() => _selectedStageKey = 'all');
-                                    setModalState(() {});
-                                  },
-                                  selectedColor: DefensysTokens.maroon
-                                      .withValues(alpha: 0.15),
-                                  backgroundColor: Colors.grey.shade100,
-                                  labelStyle: TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: _selectedStageKey == 'all'
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                    color: _selectedStageKey == 'all'
-                                        ? DefensysTokens.maroon
-                                        : Colors.grey.shade800,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                ...stageKeys.map((k) {
-                                  final count = widget.teams
-                                      .where((t) => _teamStageEventKey(t) == k)
-                                      .length;
-                                  final isSel = _selectedStageKey == k;
-                                  return Padding(
-                                    padding: const EdgeInsets.only(right: 6),
-                                    child: FilterChip(
-                                      label: Text('$k ($count)'),
-                                      selected: isSel,
-                                      onSelected: (_) {
-                                        setState(() => _selectedStageKey = k);
-                                        setModalState(() {});
-                                      },
-                                      selectedColor: DefensysTokens.maroon
-                                          .withValues(alpha: 0.15),
-                                      backgroundColor: Colors.grey.shade100,
-                                      labelStyle: TextStyle(
-                                        fontSize: 11.5,
-                                        fontWeight: isSel
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                        color: isSel
-                                            ? DefensysTokens.maroon
-                                            : Colors.grey.shade800,
-                                      ),
-                                    ),
-                                  );
-                                }),
-                              ],
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 10),
-                        const Divider(height: 1),
-                        Expanded(
-                          child: ListView.separated(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            itemCount: sheetFilteredIndices.length,
-                            separatorBuilder: (_, __) =>
-                                const Divider(height: 1),
-                            itemBuilder: (context, idx) {
-                              final globalIndex = sheetFilteredIndices[idx];
-                              final t = widget.teams[globalIndex];
-                              final isSelected =
-                                  globalIndex == widget.selectedTeamIndex;
-                              final accentColor = t.isCapstone
-                                  ? DefensysTokens.maroon
-                                  : const Color(0xFF006666);
-
-                              return ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 4,
-                                ),
-                                selected: isSelected,
-                                selectedTileColor: accentColor.withValues(
-                                  alpha: 0.06,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                leading: CircleAvatar(
-                                  radius: 18,
-                                  backgroundColor: isSelected
-                                      ? accentColor
-                                      : Colors.grey.shade200,
-                                  foregroundColor: isSelected
-                                      ? Colors.white
-                                      : Colors.grey.shade800,
-                                  child: Text(
-                                    '${idx + 1}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                                title: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        t.name,
-                                        style: TextStyle(
-                                          fontWeight: isSelected
-                                              ? FontWeight.bold
-                                              : FontWeight.w600,
-                                          fontSize: 14,
-                                          color: isSelected
-                                              ? accentColor
-                                              : DefensysTokens.textDark,
-                                        ),
-                                      ),
-                                    ),
-                                    if (t.isChair) ...[
-                                      const SizedBox(width: 4),
-                                      _chairBadge(),
-                                    ],
-                                    const SizedBox(width: 6),
-                                    _statusBadge(t.evaluationStatus),
-                                  ],
-                                ),
-                                subtitle: Padding(
-                                  padding: const EdgeInsets.only(top: 3),
-                                  child: Row(
-                                    children: [
-                                      Text(
-                                        t.displayStage,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey.shade700,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                      Text(
-                                        ' • ${t.formattedTime}',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                      ),
-                                      if (t.displayRoom.isNotEmpty &&
-                                          t.displayRoom != 'Room TBD')
-                                        Text(
-                                          ' • ${t.displayRoom}',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.grey.shade600,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                trailing: isSelected
-                                    ? Icon(
-                                        Icons.check_circle,
-                                        size: 18,
-                                        color: accentColor,
-                                      )
-                                    : const Icon(
-                                        Icons.chevron_right,
-                                        size: 18,
-                                        color: Colors.grey,
-                                      ),
-                                onTap: () {
-                                  Navigator.pop(ctx);
-                                  if (globalIndex != widget.selectedTeamIndex) {
-                                    _lastTeam = null;
-                                    widget.onTeamChanged(globalIndex);
-                                    _syncRubricForCurrentTeam();
-                                  }
-                                },
-                              );
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildTeamDossier(TeamData team, bool isLocked, bool hasValidScope) {
-    final isCapstone = team.isCapstone;
-    final accentColor = isCapstone
-        ? DefensysTokens.maroon
-        : const Color(0xFF006666);
-
-    return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: DefensysTokens.border, width: 1),
-      ),
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Presiding Chair Banner
-            if (team.isChair) ...[
-              Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFEF3C7),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFF59E0B)),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(
-                      Icons.gavel_rounded,
-                      size: 16,
-                      color: Color(0xFF92400E),
-                    ),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'You are presiding as the Panel Chair for this defense hearing.',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF92400E),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            // Team Name, Project & Status
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        team.name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          color: DefensysTokens.textDark,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        team.project.isEmpty
-                            ? 'No project title specified'
-                            : team.project,
-                        style: TextStyle(
-                          color: Colors.grey.shade700,
-                          fontSize: 12.5,
-                          height: 1.25,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                _statusBadge(team.evaluationStatus),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-
-            // Badges wrap (Program, Stage, Attempt)
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: accentColor,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    team.scopeLabel.toUpperCase(),
-                    style: const TextStyle(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: accentColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: accentColor.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Text(
-                    team.displayStage,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: accentColor,
-                    ),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: Text(
-                    'Attempt #${team.attemptCount}',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-
-            // Schedule & Venue Container
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.access_time, size: 14, color: accentColor),
-                      const SizedBox(width: 6),
-                      Text(
-                        team.formattedTime,
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey.shade800,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Icon(Icons.room_outlined, size: 14, color: accentColor),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          team.displayRoom,
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey.shade800,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            team.isCapstone
-                                ? Icons.person_outline
-                                : Icons.badge_outlined,
-                            size: 14,
-                            color: Colors.grey.shade600,
-                          ),
-                          const SizedBox(width: 4),
-                          Flexible(
-                            child: Text(
-                              '${team.displaySupervisorLabel}: ${team.displaySupervisor}',
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                color: Colors.grey.shade700,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (team.section.isNotEmpty)
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.school_outlined,
-                              size: 14,
-                              color: Colors.grey.shade600,
-                            ),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                'Section: ${team.section}',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey.shade600,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            // Presenting Members Roster
-            Row(
-              children: [
-                Icon(
-                  Icons.groups_outlined,
-                  size: 14,
-                  color: Colors.grey.shade700,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'Presenting Members (${team.members.length}):',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.grey.shade800,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: team.memberDetails.map((m) {
-                final isLeader = m.isLeader || m.name == team.displayLeader;
-                return Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isLeader ? const Color(0xFFFEF3C7) : Colors.white,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: isLeader
-                          ? const Color(0xFFF59E0B)
-                          : Colors.grey.shade300,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (isLeader) ...[
-                        const Icon(
-                          Icons.star,
-                          size: 11,
-                          color: Color(0xFF92400E),
-                        ),
-                        const SizedBox(width: 3),
-                      ] else ...[
-                        Icon(
-                          Icons.person,
-                          size: 11,
-                          color: Colors.grey.shade600,
-                        ),
-                        const SizedBox(width: 3),
-                      ],
-                      Text(
-                        isLeader ? '${m.name} (Leader)' : m.name,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: isLeader
-                              ? FontWeight.bold
-                              : FontWeight.w500,
-                          color: isLeader
-                              ? const Color(0xFF92400E)
-                              : Colors.grey.shade800,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-
-            // Lock Banner (if posted)
-            if (isLocked) ...[
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.lock, size: 16, color: Colors.red),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Grades are permanently locked. Contact admin for corrections.',
-                        style: TextStyle(fontSize: 12, color: Colors.red),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            if (!hasValidScope) ...[
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.orange.shade200),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.error_outline,
-                      size: 16,
-                      color: Colors.orange,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'This assignment is missing its schedule scope. Ask an admin to repair the schedule before grading.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.orange.shade800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _buildScoreHero({
@@ -2193,89 +1553,62 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     );
   }
 
-  Widget _chairBadge() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFEF3C7),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: const Color(0xFFF59E0B)),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
+  Widget _buildStudentSelector(TeamData team) => LayoutBuilder(
+    builder: (context, constraints) {
+      final width = (constraints.maxWidth - 8) / 2;
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
         children: [
-          Icon(Icons.gavel_rounded, size: 10, color: Color(0xFF92400E)),
-          SizedBox(width: 2.5),
-          Text(
-            'CHAIR',
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF92400E),
-              letterSpacing: 0.4,
+          for (final entry in team.memberDetails.asMap().entries)
+            SizedBox(
+              width: width,
+              child: Semantics(
+                selected: entry.key == _selectedStudentIndex,
+                label:
+                    '${entry.value.name}, ${team.progressFor(entry.value.id).label}',
+                child: ShadButton.outline(
+                  key: ValueKey('student-selector-${entry.value.id}'),
+                  height: 0,
+                  expands: true,
+                  padding: const EdgeInsets.all(10),
+                  backgroundColor: entry.key == _selectedStudentIndex
+                      ? DefensysTokens.surfaceHigherOf(context)
+                      : null,
+                  onPressed: () =>
+                      setState(() => _selectedStudentIndex = entry.key),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        entry.value.name,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (entry.key == _selectedStudentIndex)
+                        const Text('Viewing', style: TextStyle(fontSize: 11)),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${(_studentCriteria[entry.value.id] ?? []).isNotEmpty && _studentCriteria[entry.value.id]!.every((c) => c.isScored) ? 'Complete · ' : ''}${(_studentCriteria[entry.value.id] ?? []).where((c) => c.isScored).length}/${(_studentCriteria[entry.value.id] ?? []).length} scored',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: DefensysTokens.textSecondaryOf(context),
+                        ),
+                      ),
+                      if (entry.value.isLeader)
+                        const Text('Leader', style: TextStyle(fontSize: 11)),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildStudentSelector(TeamData team) {
-    return SizedBox(
-      height: 42,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: team.memberDetails.length,
-        itemBuilder: (context, index) {
-          final member = team.memberDetails[index];
-          final isSelected = index == _selectedStudentIndex;
-          final isLeader = member.isLeader || member.name == team.displayLeader;
-
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: ChoiceChip(
-              avatar: isLeader
-                  ? Icon(
-                      Icons.star,
-                      size: 13,
-                      color: isSelected
-                          ? Colors.white
-                          : const Color(0xFF92400E),
-                    )
-                  : null,
-              label: Text(isLeader ? '${member.name} (Leader)' : member.name),
-              selected: isSelected,
-              selectedColor: DefensysTokens.maroon,
-              backgroundColor: isLeader
-                  ? const Color(0xFFFEF3C7)
-                  : Colors.grey.shade100,
-              labelStyle: TextStyle(
-                color: isSelected
-                    ? Colors.white
-                    : (isLeader ? const Color(0xFF92400E) : Colors.black87),
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                fontSize: 12,
-              ),
-              side: BorderSide(
-                color: isSelected
-                    ? DefensysTokens.maroon
-                    : (isLeader
-                          ? const Color(0xFFF59E0B)
-                          : Colors.grey.shade300),
-              ),
-              onSelected: (selected) {
-                if (selected) {
-                  setState(() {
-                    _selectedStudentIndex = index;
-                  });
-                }
-              },
-            ),
-          );
-        },
-      ),
-    );
-  }
+      );
+    },
+  );
 
   Widget _buildChairVerdictCard(TeamData team) {
     final hasVerdict = team.hasVerdict;
@@ -2295,12 +1628,12 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         borderRadius: BorderRadius.circular(14),
         side: BorderSide(
           color: hasVerdict
-              ? (team.isForRedefense
+              ? (['for_redefense', 'failed', 'project_rejected'].contains(team.verdict)
                     ? Colors.red.shade300
                     : team.isApprovedWithRevisions
                     ? Colors.amber.shade300
                     : Colors.green.shade300)
-              : DefensysTokens.gold.withValues(alpha: 0.5),
+              : DefensysTokens.borderOf(context),
           width: 1.5,
         ),
       ),
@@ -2321,13 +1654,13 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFEF3C7),
+                      color: DefensysTokens.surfaceHigherOf(context),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Icon(
                       Icons.gavel_rounded,
                       size: 20,
-                      color: Color(0xFF92400E),
+                      color: DefensysTokens.textSecondary,
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -2357,13 +1690,17 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                 ],
               ),
 
+              if (team.hasVerdict && team.workflowGrade != null) ...[
+                const SizedBox(height: 12),
+                DefenseWorkflowPanel(grade: team.workflowGrade!, onUpdated: widget.onGradesSubmitted),
+              ],
               if (!team.canIssueVerdict) ...[
                 const SizedBox(height: 12),
                 Container(
                   key: const ValueKey('chair-verdict-unavailable'),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: DefensysTokens.warningBg,
+                    color: DefensysTokens.surfaceHigherOf(context),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
@@ -2372,7 +1709,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                       const Icon(
                         Icons.lock_outline,
                         size: 18,
-                        color: Color(0xFF92400E),
+                        color: DefensysTokens.textSecondary,
                       ),
                       const SizedBox(width: 8),
                       Expanded(
@@ -2456,26 +1793,41 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                 value: 'for_redefense',
                 title: 'For Re-defense',
                 description:
-                    'Concept rejected, prototype unsatisfactory, or major deficiencies requiring re-presentation.',
+                    'A new panel assessment is required. Retain adviser and peer grades and the prior endorsement.',
                 icon: Icons.replay_rounded,
                 color: const Color(0xFFEF4444),
               ),
+
+              const SizedBox(height: 8),
+              _verdictRadioOption(enabled: canEditVerdict, value: 'failed',
+                title: 'Failed', description: 'No progression. Another attempt requires institution-authorized recovery recorded by the admin.',
+                icon: Icons.cancel_outlined, color: const Color(0xFFEF4444)),
+              const SizedBox(height: 8),
+              _verdictRadioOption(enabled: canEditVerdict, value: 'project_rejected',
+                title: 'Project Rejected', description: 'The concept must be replaced after an admin records authorization. Keep the team and adviser.',
+                icon: Icons.block_outlined, color: const Color(0xFFEF4444)),
+              if (isForRedefense)
+                CheckboxListTile(contentPadding: EdgeInsets.zero,
+                  title: const Text('Require adviser verification of corrections'),
+                  subtitle: const Text('Optional correction check before scheduling. No new adviser endorsement.'),
+                  value: _redefenseVerificationRequired,
+                  onChanged: canEditVerdict ? (value) => setState(() => _redefenseVerificationRequired = value ?? false) : null),
 
               if (isRevisions) ...[
                 const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.amber.shade50,
+                    color: DefensysTokens.surfaceHigherOf(context),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.amber.shade200),
+                    border: Border.all(color: DefensysTokens.borderOf(context)),
                   ),
                   child: Row(
                     children: [
                       const Icon(
                         Icons.event,
                         size: 18,
-                        color: Color(0xFF92400E),
+                        color: DefensysTokens.textSecondary,
                       ),
                       const SizedBox(width: 8),
                       Expanded(
@@ -2487,7 +1839,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF92400E),
+                                color: DefensysTokens.textSecondary,
                               ),
                             ),
                             Text(
@@ -2766,7 +2118,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   Widget _verdictStatusChip(String verdict) {
     final isApproved = verdict == 'approved';
     final isRevisions = verdict == 'approved_with_revisions';
-    final isForRedefense = verdict == 'for_redefense';
+    final isForRedefense = ['for_redefense', 'failed', 'project_rejected'].contains(verdict);
 
     final Color color = isApproved
         ? const Color(0xFF10B981)
@@ -2776,13 +2128,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         ? const Color(0xFFEF4444)
         : Colors.grey;
 
-    final String label = isApproved
-        ? 'APPROVED'
-        : isRevisions
-        ? 'APPROVED W/ REVISIONS'
-        : isForRedefense
-        ? 'FOR RE-DEFENSE'
-        : verdict.toUpperCase();
+    final String label = isRevisions ? 'APPROVED W/ REVISIONS' : defenseVerdictLabel(verdict).toUpperCase();
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
@@ -2810,10 +2156,10 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       return;
     }
     final directives = _verdictRemarksController.text.trim();
-    if (_selectedVerdict == 'for_redefense' && directives.isEmpty) {
+    if (['for_redefense', 'failed', 'project_rejected'].contains(_selectedVerdict) && directives.isEmpty) {
       showValidationToast(
         context,
-        'Please enter the reasons / directives for Re-defense so the team knows what to address.',
+        'Record the reason and required action for this outcome.',
       );
       return;
     }
@@ -2823,16 +2169,14 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         context,
         title: 'Issue Re-defense Verdict?',
         message:
-            'Marking this team for Re-defense will record Attempt #${team.attemptCount} into history and open the team for Attempt #${team.attemptCount + 1} re-scheduling in the Defense Scheduler.\n\nAre you sure you want to proceed?',
+            'This attempt requires a new panel assessment. When the next attempt is scheduled, panel grades and the verdict reset; adviser and peer grades stay. ${_redefenseVerificationRequired ? 'The adviser must verify corrections before scheduling.' : 'No new adviser endorsement is required.'}',
         confirmLabel: 'Issue Re-defense',
       );
       if (!confirmed || !mounted) return;
     }
 
     if (_selectedVerdict != 'for_redefense') {
-      final title = _selectedVerdict == 'approved'
-          ? 'Approved'
-          : 'Approved with Revisions';
+      final title = defenseVerdictLabel(_selectedVerdict);
       final confirmed = await confirmLock(
         context,
         title: 'Confirm Official Verdict',
@@ -2865,6 +2209,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       final payload = <String, dynamic>{
         'verdict': _selectedVerdict,
         'verdict_remarks': directives,
+        'redefense_verification_required': _redefenseVerificationRequired,
         if (_revisionDeadline != null &&
             _selectedVerdict == 'approved_with_revisions')
           'revision_deadline': DateFormat(
@@ -2885,6 +2230,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         setState(() {
           team.verdict = _selectedVerdict;
           team.verdictRemarks = directives;
+          team.redefenseVerificationRequired = _redefenseVerificationRequired;
           if (_revisionDeadline != null &&
               _selectedVerdict == 'approved_with_revisions') {
             team.revisionDeadline = DateFormat(
@@ -2898,7 +2244,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         if (_selectedVerdict == 'for_redefense') {
           showSuccessToast(
             context,
-            'Team marked for Re-defense. Eligible for Attempt #2 in Defense Scheduler.',
+            _redefenseVerificationRequired ? 'Re-defense recorded. Adviser verification is required before scheduling.' : 'Re-defense recorded. Ready to schedule the next panel attempt.',
           );
         } else if (_selectedVerdict == 'approved_with_revisions') {
           showSuccessToast(
@@ -2906,7 +2252,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
             'Verdict recorded: Approved with Revisions.',
           );
         } else {
-          showSuccessToast(context, 'Verdict recorded: Approved.');
+          showSuccessToast(context, 'Verdict recorded: ${defenseVerdictLabel(_selectedVerdict)}.');
         }
       } else {
         showErrorToast(

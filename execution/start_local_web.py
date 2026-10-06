@@ -15,6 +15,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 from urllib.error import URLError
 from urllib.parse import urlsplit
@@ -71,7 +72,9 @@ def listening(host: str, number: int) -> bool:
 
 def ready(url: str) -> bool:
     try:
-        with HTTP.open(url, timeout=1) as response:
+        # A cold database connection or a concurrent Flutter release build can
+        # take over a second. Don't disconnect healthy ASGI requests so early.
+        with HTTP.open(url, timeout=5) as response:
             return response.status == 200
     except (URLError, OSError):
         return False
@@ -154,11 +157,12 @@ def connected_android_device(requested: str | None = None) -> str | None:
     return None
 
 
-def android_command(device: str, host: str, api_port: int, web_port: int) -> list[str]:
+def android_command(device: str, host: str, api_port: int, web_port: int,
+                    *, debug: bool = False) -> list[str]:
     # Leave the installed app running after Flutter finishes deployment.
     # Only web startup owns the terminal's interactive hot-reload commands.
     return flutter_command() + [
-        'run', '-d', device, '--debug', '--no-resident',
+        'run', '-d', device, '--debug' if debug else '--release', '--no-resident',
         f'--dart-define=DEFENSYS_API_HOST={host}',
         f'--dart-define=DEFENSYS_API_PORT={api_port}',
         '--dart-define=DEFENSYS_API_SCHEME=http',
@@ -166,12 +170,38 @@ def android_command(device: str, host: str, api_port: int, web_port: int) -> lis
     ]
 
 
-def start(command: list[str], cwd: Path) -> subprocess.Popen:
-    return subprocess.Popen(
+def forward_web_output(process: subprocess.Popen, started: threading.Event) -> None:
+    """Forward Flutter logs and recognize its post-compilation server message."""
+    for line in process.stdout:
+        try:
+            print(line, end='', flush=True)
+        except UnicodeEncodeError:
+            # Redirected Windows terminals may still use a legacy code page.
+            encoding = sys.stdout.encoding or 'utf-8'
+            print(line.encode(encoding, errors='replace').decode(encoding),
+                  end='', flush=True)
+        # Flutter opens the HTTP port before building and may serve old files.
+        # WebServerDevice prints this only after the current build succeeds.
+        if ' is being served at http://' in line:
+            started.set()
+
+
+def start(command: list[str], cwd: Path,
+          *, web_started: threading.Event | None = None) -> subprocess.Popen:
+    output = {}
+    if web_started is not None:
+        output = dict(stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                      text=True, encoding='utf-8', errors='replace', bufsize=1)
+    process = subprocess.Popen(
         command, cwd=cwd,
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0,
         start_new_session=os.name != 'nt',
+        **output,
     )
+    if web_started is not None:
+        threading.Thread(target=forward_web_output, args=(process, web_started),
+                         daemon=True).start()
+    return process
 
 
 def stop(process: subprocess.Popen) -> None:
@@ -188,12 +218,13 @@ def stop(process: subprocess.Popen) -> None:
         process.wait()
 
 
-def wait_for(url: str, process: subprocess.Popen, timeout: int) -> None:
+def wait_for(url: str, process: subprocess.Popen, timeout: int,
+             *, web_started: threading.Event | None = None) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise RuntimeError(f'Server exited with code {process.returncode}. See its output above.')
-        if ready(url):
+        if (web_started is None or web_started.is_set()) and ready(url):
             return
         time.sleep(0.5)
     raise RuntimeError(f'Server did not become ready at {url}. See its output above.')
@@ -266,7 +297,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--api-port', type=port, default=8000)
     parser.add_argument('--check', action='store_true', help='Print addresses and check setup without starting anything.')
     parser.add_argument('--no-browser', action='store_true', help='Leave the PC browser closed.')
-    parser.add_argument('--debug', action='store_true', help='Use Flutter debug mode for development; default is a release preview for phone testing.')
+    parser.add_argument('--debug', action='store_true', help='Use Flutter debug mode for web and Android development; both default to release mode for phone testing.')
     parser.add_argument('--android-download-url', type=android_download_url,
                         help='Published HTTPS release APK URL shown in student/panelist web Settings.')
     android = parser.add_mutually_exclusive_group()
@@ -283,7 +314,8 @@ def main(argv: list[str] | None = None) -> int:
         origin = f'http://{host}:{args.web_port}'
         health = f'http://{host}:{args.api_port}/api/health/'
         device = None if args.no_android else connected_android_device(args.android_device)
-        mobile_command = android_command(device, host, args.api_port, args.web_port) if device else None
+        mobile_command = android_command(device, host, args.api_port, args.web_port,
+                                         debug=args.debug) if device else None
         command = flutter_command() + [
             'run', '-d', 'web-server', '--debug' if args.debug else '--release', '--web-hostname=0.0.0.0',
             f'--web-port={args.web_port}',
@@ -312,11 +344,13 @@ def main(argv: list[str] | None = None) -> int:
         if existing_web:
             print('Using the existing DefenSYS web session. It will stay running when this launcher stops.', flush=True)
         else:
-            frontend = start(command, ROOT / 'frontend')
+            web_started = threading.Event()
+            frontend = start(command, ROOT / 'frontend', web_started=web_started)
             owned.append(frontend)
-            # Flutter serves HTML before compilation finishes. Wait for the
-            # entry point so the browser cannot open a half-built preview.
-            wait_for(origin + '/main.dart.js', frontend, timeout=180)
+            # Cached entry points are reachable while Flutter recompiles.
+            # Require its post-build message as well as a reachable entry point.
+            wait_for(origin + '/main.dart.js', frontend, timeout=300,
+                     web_started=web_started)
         print(f'\nReady: {origin}/#/login\nKeep this terminal open. Press Ctrl+C to stop servers started here.', flush=True)
         mobile = None
         if mobile_command:

@@ -14,6 +14,8 @@ import '../models/schedule_import_models.dart';
 import '../dialogs/panelist_pool_dialog.dart';
 import '../../user_management/external_evaluators/external_evaluator_views.dart';
 import 'package:defensys/services/admin/external_evaluator_provider.dart';
+import 'package:go_router/go_router.dart';
+import 'package:defensys/navigation/admin_route_paths.dart';
 
 class ScheduleRunContainer extends ConsumerStatefulWidget {
   final DefenseSchedulerState state;
@@ -255,16 +257,32 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         );
     return activeScopeTeams.where((team) {
       final alreadyScheduled = state.schedules.any(
-        (schedule) =>
-            asInt(schedule['team_id'] ?? schedule['team']?['id']) ==
-                asInt(team['id']) &&
-            (widget.scope == 'capstone'
-                ? asInt(schedule['defense_stage_id']) == widget.stageId &&
-                      schedule['status'] == 'scheduled'
-                : (schedule['event_name']?.toString() ?? '').toLowerCase() ==
-                          activeStageOrEvent.toLowerCase() &&
-                      (schedule['status'] == 'scheduled' ||
-                          schedule['status'] == 'done')),
+        (schedule) {
+          if (asInt(schedule['team_id'] ?? schedule['team']?['id']) != asInt(team['id'])) {
+            return false;
+          }
+          if ((schedule['project_version'] ?? 1) != (team['project_version'] ?? 1)) {
+            return false;
+          }
+          final status = schedule['status']?.toString();
+          final displayStatus = schedule['display_status']?.toString().toLowerCase();
+          final hasVerdict = schedule['verdict'] != null ||
+              schedule['defense_verdict'] != null ||
+              schedule['is_defense_done'] == true ||
+              displayStatus == 'redefense_required' ||
+              displayStatus == 'completed' ||
+              displayStatus == 'failed' ||
+              displayStatus == 'assessed';
+          final isPendingScheduled = status == 'scheduled' && !hasVerdict;
+
+          if (widget.scope == 'capstone') {
+            return asInt(schedule['defense_stage_id']) == widget.stageId && isPendingScheduled;
+          } else {
+            return (schedule['event_name']?.toString() ?? '').toLowerCase() ==
+                    activeStageOrEvent.toLowerCase() &&
+                isPendingScheduled;
+          }
+        },
       );
       if (alreadyScheduled) return false;
       return hasPrerequisites
@@ -854,6 +872,88 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     );
   }
 
+  Widget _buildWarningBanner({
+    required IconData icon,
+    required bool isError,
+    required String message,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
+    final bgColor = isError
+        ? (_isDark
+            ? const Color(0xFF7F1D1D).withValues(alpha: 0.25)
+            : const Color(0xFFFEF3F2))
+        : (_isDark
+            ? const Color(0xFF78350F).withValues(alpha: 0.25)
+            : const Color(0xFFFFFAEB));
+    final borderColor = isError
+        ? (_isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFECDCA))
+        : (_isDark ? const Color(0xFF78350F) : const Color(0xFFFEDF89));
+    final iconColor = isError
+        ? (_isDark ? const Color(0xFFF87171) : const Color(0xFFD92D20))
+        : (_isDark ? const Color(0xFFFBBF24) : const Color(0xFFDC6803));
+    final textColor = isError
+        ? (_isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB42318))
+        : (_isDark ? const Color(0xFFFCD34D) : const Color(0xFFB54708));
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(icon, size: 16, color: iconColor),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (actionLabel != null && onAction != null) ...[
+            const SizedBox(width: 8),
+            InkWell(
+              borderRadius: BorderRadius.circular(4),
+              onTap: onAction,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      actionLabel,
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.open_in_new_rounded,
+                      size: 13,
+                      color: textColor,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildStageWarnings(DefenseSchedulerState state) {
     if (widget.scope != 'capstone' || widget.stageId == null) {
       return const SizedBox.shrink();
@@ -874,87 +974,132 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
 
     final isOfficiallyComplete = targetStage['is_officially_complete'] == true;
 
+    final missingCapstoneRubrics = <String>[];
+    if (_validCapstoneRubricId(widget.rubricId, 'panel') == null) {
+      missingCapstoneRubrics.add('Panel');
+    }
+    if (_validCapstoneRubricId(widget.adviserRubricId, 'adviser') == null) {
+      missingCapstoneRubrics.add('Adviser');
+    }
+    if (_validCapstoneRubricId(widget.capstonePeerRubricId, 'peer') == null) {
+      missingCapstoneRubrics.add('Peer');
+    }
+
+    final warnings = <Widget>[];
+
     if (isOfficiallyComplete) {
-      return Container(
-        margin: const EdgeInsets.only(top: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: _isDark
-              ? const Color(0xFF7F1D1D).withValues(alpha: 0.25)
-              : const Color(0xFFFEF3F2),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: _isDark ? const Color(0xFF7F1D1D) : const Color(0xFFFECDCA),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.info_outline,
-              size: 16,
-              color: _isDark
-                  ? const Color(0xFFF87171)
-                  : const Color(0xFFD92D20),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'This stage is marked officially complete. Scheduling new defenses for this stage is disabled.',
-                style: TextStyle(
-                  color: _isDark
-                      ? const Color(0xFFFCA5A5)
-                      : const Color(0xFFB42318),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
+      warnings.add(
+        _buildWarningBanner(
+          icon: Icons.info_outline,
+          isError: true,
+          message:
+              'This stage is marked officially complete. Scheduling new defenses for this stage is disabled.',
         ),
       );
-    }
-
-    if (readyTeamsCount == 0) {
-      return Container(
-        margin: const EdgeInsets.only(top: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: _isDark
-              ? const Color(0xFF78350F).withValues(alpha: 0.25)
-              : const Color(0xFFFFFAEB),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: _isDark ? const Color(0xFF78350F) : const Color(0xFFFEDF89),
+    } else {
+      if (missingCapstoneRubrics.isNotEmpty) {
+        final rubricSummary = missingCapstoneRubrics.length == 3
+            ? 'Panel, Adviser, and Peer rubrics'
+            : 'missing ${missingCapstoneRubrics.join(', ')} rubric${missingCapstoneRubrics.length > 1 ? 's' : ''}';
+        warnings.add(
+          _buildWarningBanner(
+            icon: Icons.warning_amber_rounded,
+            isError: false,
+            message:
+                'Rubrics need to be configured for this stage ($rubricSummary). Please configure stage rubrics in the Defense Stages Setup tab first.',
+            actionLabel: 'Configure stage rubrics',
+            onAction: () async {
+              await context.push(
+                AdminRoutes.defenseStageEdit(widget.stageId!, initialTab: 0),
+              );
+              if (mounted) {
+                ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
+                await widget.onPrefillCapstoneStageRubrics();
+              }
+            },
           ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.warning_amber_rounded,
-              size: 16,
-              color: _isDark
-                  ? const Color(0xFFFBBF24)
-                  : const Color(0xFFDC6803),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
+        );
+      }
+
+      if (readyTeamsCount == 0) {
+        warnings.add(
+          _buildWarningBanner(
+            icon: Icons.warning_amber_rounded,
+            isError: false,
+            message:
                 'No teams are currently ready for ${targetStage['label'] ?? 'this stage'}. Teams must have pre-defense deliverables approved by their instructor.',
-                style: TextStyle(
-                  color: _isDark
-                      ? const Color(0xFFFCD34D)
-                      : const Color(0xFFB54708),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
+          ),
+        );
+      }
+    }
+
+    if (warnings.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (int i = 0; i < warnings.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          warnings[i],
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPitWarnings(DefenseSchedulerState state) {
+    if (widget.scope != 'pit' || widget.eventController.text.trim().isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final missingPitRubrics = <String>[];
+    if (_validRubricId() == null) missingPitRubrics.add('Panel');
+    if (_validPeerRubricId() == null) missingPitRubrics.add('Peer');
+
+    final warnings = <Widget>[];
+
+    if (missingPitRubrics.isNotEmpty) {
+      final rubricSummary = missingPitRubrics.length == 2
+          ? 'Panel and Peer rubrics'
+          : 'missing ${missingPitRubrics.join(', ')} rubric';
+      warnings.add(
+        _buildWarningBanner(
+          icon: Icons.warning_amber_rounded,
+          isError: false,
+          message:
+              'Rubrics need to be configured for this event ($rubricSummary). Please configure event rubrics in the PIT Events Setup tab first.',
+          actionLabel: 'Configure event rubrics',
+          onAction: () async {
+            await context.push(FacultyRoutes.pitEvents);
+            if (mounted) {
+              ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
+              widget.onPrefillPitEventConfig();
+            }
+          },
         ),
       );
     }
 
-    return const SizedBox.shrink();
+    if (_pitWeightTotal() != 100) {
+      warnings.add(
+        _buildWarningBanner(
+          icon: Icons.warning_amber_rounded,
+          isError: true,
+          message:
+              'Panel and peer weights must total 100% (currently ${_pitWeightTotal()}%).',
+        ),
+      );
+    }
+
+    if (warnings.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (int i = 0; i < warnings.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          warnings[i],
+        ],
+      ],
+    );
   }
 
   Widget _setupHeading(String title, String description, {Widget? trailing}) {
@@ -1106,6 +1251,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
               ),
             ),
           ),
+          _buildPitWarnings(state),
         ],
         const SizedBox(height: 20),
         for (int i = 0; i < _sessions.length; i++)

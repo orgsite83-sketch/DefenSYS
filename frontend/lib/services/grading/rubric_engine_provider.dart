@@ -25,6 +25,7 @@ class RubricEngineState {
   final String search;
   final String scope;
   final String status;
+
   /// API query `evaluation_type`; empty means no filter (show all types).
   final String evaluationType;
   final String termContext;
@@ -43,7 +44,7 @@ class RubricEngineState {
     this.counts = const {},
     this.activeSemester,
     this.search = '',
-    this.scope = '',
+    this.scope = 'capstone',
     this.status = '',
     this.evaluationType = '',
     this.termContext = '',
@@ -98,7 +99,7 @@ class RubricEngineState {
 }
 
 class RubricEngineNotifier extends Notifier<RubricEngineState> {
-    static String get baseUrl => ApiConfig.rubricsUrl;
+  static String get baseUrl => ApiConfig.rubricsUrl;
 
   @override
   RubricEngineState build() {
@@ -114,7 +115,7 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
     String? successMessage,
   }) async {
     final nextSearch = search ?? state.search;
-    final nextScope = scope ?? state.scope;
+    final nextScope = scope ?? (state.scope.isEmpty ? 'capstone' : state.scope);
     final nextStatus = status ?? state.status;
     final nextEvaluationType = evaluationType ?? state.evaluationType;
     final nextTermContext = termContext ?? state.termContext;
@@ -139,8 +140,7 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
           if (nextStatus.isNotEmpty) 'status': nextStatus,
           if (nextEvaluationType.isNotEmpty)
             'evaluation_type': nextEvaluationType,
-          if (nextTermContext.isNotEmpty)
-            'term_context': nextTermContext,
+          if (nextTermContext.isNotEmpty) 'term_context': nextTermContext,
         },
       );
       final response = await _client.get(uri);
@@ -165,6 +165,37 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
     }
   }
 
+  Future<Map<String, dynamic>?> fetchSingleRubric(int rubricId) async {
+    try {
+      final uri = Uri.parse('$baseUrl/$rubricId/');
+      final response = await _client.get(uri);
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        if (payload['rubric'] != null) {
+          final rubric = Map<String, dynamic>.from(payload['rubric']);
+          final list = List<Map<String, dynamic>>.from(state.rubrics);
+          final idx = list.indexWhere((r) => r['id'] == rubric['id']);
+          if (idx >= 0) {
+            list[idx] = rubric;
+          } else {
+            list.insert(0, rubric);
+          }
+          state = state.copyWith(
+            rubrics: list,
+            semesters: payload['semesters'] != null
+                ? _readMapList(payload['semesters'])
+                : state.semesters,
+            defenseStages: payload['defense_stages'] != null
+                ? _readMapList(payload['defense_stages'])
+                : state.defenseStages,
+          );
+          return rubric;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Future<bool> addRubric(Map<String, dynamic> payload) async {
     state = state.copyWith(
       isSaving: true,
@@ -175,7 +206,7 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/'),
-        
+
         body: jsonEncode(payload),
       );
 
@@ -206,7 +237,7 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
     try {
       final response = await _client.patch(
         Uri.parse('$baseUrl/$rubricId/'),
-        
+
         body: jsonEncode(payload),
       );
 
@@ -235,10 +266,7 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
     );
 
     try {
-      final response = await _client.delete(
-        Uri.parse('$baseUrl/$rubricId/'),
-        
-      );
+      final response = await _client.delete(Uri.parse('$baseUrl/$rubricId/'));
 
       if (response.statusCode == 200) {
         await fetchRubrics(successMessage: 'Rubric deleted.');
@@ -267,7 +295,6 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/$rubricId/publish/'),
-        
       );
 
       if (response.statusCode == 200) {
@@ -297,7 +324,7 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
     try {
       final response = await _client.patch(
         Uri.parse('$baseUrl/$rubricId/weights/'),
-        
+
         body: jsonEncode(payload),
       );
 
@@ -340,8 +367,8 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
     return [];
   }
 
-  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
-
+  AuthenticatedHttpClient get _client =>
+      ref.read(authenticatedHttpClientProvider);
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     state = state.copyWith(

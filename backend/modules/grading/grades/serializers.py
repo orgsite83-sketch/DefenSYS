@@ -15,6 +15,10 @@ class GradeAttemptHistorySerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'attempt_number',
+            'project_version',
+            'project_title',
+            'revisions_cleared_at',
+            'clearance_remarks',
             'schedule_id',
             'scheduled_date',
             'room',
@@ -96,7 +100,8 @@ class TeamGradeSerializer(serializers.ModelSerializer):
     room = serializers.CharField(source='schedule.room', read_only=True, allow_null=True)
     team_id = serializers.IntegerField(source='team.id', read_only=True)
     team_name = serializers.CharField(source='team.name', read_only=True)
-    project_title = serializers.CharField(source='team.project_title', read_only=True)
+    project_title = serializers.SerializerMethodField()
+    workflow = serializers.SerializerMethodField()
     team_level = serializers.CharField(source='team.level', read_only=True)
     year_level = serializers.CharField(source='team.year_level', read_only=True)
     team_status = serializers.CharField(source='team.status', read_only=True)
@@ -144,6 +149,8 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             'team_id',
             'team_name',
             'project_title',
+            'project_version',
+            'workflow',
             'team_level',
             'year_level',
             'team_status',
@@ -164,6 +171,11 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             'verdict_by_name',
             'verdict_at',
             'revision_deadline',
+            'revisions_cleared_at',
+            'clearance_remarks',
+            'redefense_verification_required',
+            'redefense_verified_at',
+            'compliance_review_date',
             'attempt_history',
             'minutes_id',
             'minutes_status',
@@ -251,6 +263,13 @@ class TeamGradeSerializer(serializers.ModelSerializer):
 
     def get_published_by_name(self, obj):
         return display_name(obj.published_by)
+
+    def get_project_title(self, obj):
+        return obj.project_title_snapshot or obj.team.project_title
+
+    def get_workflow(self, obj):
+        from .defense_workflow import workflow_payload
+        return workflow_payload(obj)
 
     def get_verdict_by_name(self, obj):
         return display_name(obj.verdict_by) if obj.verdict_by else None

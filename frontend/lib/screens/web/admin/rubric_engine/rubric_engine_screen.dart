@@ -33,11 +33,16 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   static const _kRubricActionColumnWidth = 80.0;
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
-  Color get _surfaceColor => _isDark ? DefensysTokens.mistSurface : Colors.white;
-  Color get _borderColor => _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0);
-  Color get _textPrimaryColor => _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A);
-  Color get _textSecondaryColor => _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B);
-  Color get _subtleFillColor => _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9);
+  Color get _surfaceColor =>
+      _isDark ? DefensysTokens.mistSurface : Colors.white;
+  Color get _borderColor =>
+      _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0);
+  Color get _textPrimaryColor =>
+      _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A);
+  Color get _textSecondaryColor =>
+      _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B);
+  Color get _subtleFillColor =>
+      _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9);
 
   final _searchController = TextEditingController();
   final _tableHScrollController = ScrollController();
@@ -59,8 +64,10 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     _unsavedDraftNotifier = ref.read(unsavedChangesSaveDraftProvider.notifier);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = ref.read(authProvider).user;
-      ref.read(rubricEngineProvider.notifier).fetchRubrics(
-            scope: _isPitLeadOnly(user) ? 'pit' : null,
+      ref
+          .read(rubricEngineProvider.notifier)
+          .fetchRubrics(
+            scope: _isPitLeadOnly(user) ? 'pit' : 'capstone',
             status: '',
             termContext: 'active',
           );
@@ -169,19 +176,21 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
       }
     });
 
-    ref.listen<DefensysAdminSection>(
-      activeAdminSectionProvider,
-      (previous, next) {
-        if (next == DefensysAdminSection.rubrics) {
-          final user = ref.read(authProvider).user;
-          ref.read(rubricEngineProvider.notifier).fetchRubrics(
-                scope: _isPitLeadOnly(user) ? 'pit' : null,
-                status: '',
-                termContext: 'active',
-              );
-        }
-      },
-    );
+    ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (
+      previous,
+      next,
+    ) {
+      if (next == DefensysAdminSection.rubrics) {
+        final user = ref.read(authProvider).user;
+        ref
+            .read(rubricEngineProvider.notifier)
+            .fetchRubrics(
+              scope: _isPitLeadOnly(user) ? 'pit' : 'capstone',
+              status: '',
+              termContext: 'active',
+            );
+      }
+    });
 
     final onAdminList =
         GoRouterState.of(context).uri.path == AdminRoutes.rubrics;
@@ -200,11 +209,11 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
         onBack: _closeRubricEditor,
         onDelete: rubricId != null
             ? () => _confirmDelete(
-                  rubricId,
-                  target!['name']?.toString() ?? 'rubric',
-                  rubric: target,
-                  closeEditorOnSuccess: true,
-                )
+                rubricId,
+                target!['name']?.toString() ?? 'rubric',
+                rubric: target,
+                closeEditorOnSuccess: true,
+              )
             : null,
       );
     }
@@ -216,7 +225,10 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
         children: [
           _buildPageHeader(state, isPitLeadOnly: isPitLeadOnly),
           const SizedBox(height: 20),
-          _buildGuidanceNoticeCard(isPitLeadOnly: isPitLeadOnly, scope: state.scope),
+          _buildGuidanceNoticeCard(
+            isPitLeadOnly: isPitLeadOnly,
+            scope: state.scope,
+          ),
           const SizedBox(height: 20),
           _buildStats(state, isPitLeadOnly: isPitLeadOnly),
           const SizedBox(height: 24),
@@ -226,7 +238,10 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     );
   }
 
-  Widget _buildPageHeader(RubricEngineState state, {required bool isPitLeadOnly}) {
+  Widget _buildPageHeader(
+    RubricEngineState state, {
+    required bool isPitLeadOnly,
+  }) {
     return DefensysPageHeader(
       icon: Icons.auto_awesome_mosaic_rounded,
       title: 'Evaluation Rubrics',
@@ -242,15 +257,20 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
             onTap: state.isSaving
                 ? null
                 : () => _openRubricEditor(
-                      initialScope: isPitLeadOnly ? 'pit' : 'capstone',
-                    ),
+                    initialScope: isPitLeadOnly
+                        ? 'pit'
+                        : (state.scope == 'pit' ? 'pit' : 'capstone'),
+                  ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildGuidanceNoticeCard({required bool isPitLeadOnly, required String scope}) {
+  Widget _buildGuidanceNoticeCard({
+    required bool isPitLeadOnly,
+    required String scope,
+  }) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
@@ -271,7 +291,9 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: DefensysUi.primaryMaroon.withValues(alpha: _isDark ? 0.2 : 0.08),
+              color: DefensysUi.primaryMaroon.withValues(
+                alpha: _isDark ? 0.2 : 0.08,
+              ),
               shape: BoxShape.circle,
             ),
             child: const Icon(
@@ -473,7 +495,9 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: accent.withValues(alpha: _isDark ? 0.2 : 0.1),
+                              color: accent.withValues(
+                                alpha: _isDark ? 0.2 : 0.1,
+                              ),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
@@ -494,7 +518,11 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: selected ? accent : (_isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF334155)),
+                          color: selected
+                              ? accent
+                              : (_isDark
+                                    ? DefensysTokens.textPrimaryDark
+                                    : const Color(0xFF334155)),
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
                         ),
@@ -512,13 +540,17 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
-                              selected ? 'Filter active · Tap to clear' : 'Tap to filter table',
+                              selected
+                                  ? 'Filter active · Tap to clear'
+                                  : 'Tap to filter table',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: selected ? accent : _textSecondaryColor,
                                 fontSize: 11,
-                                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                                fontWeight: selected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
                               ),
                             ),
                           ),
@@ -558,14 +590,15 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
             DefensysSegmentItem(value: 'history', label: 'History'),
           ],
           onChanged: (val) {
-            ref.read(rubricEngineProvider.notifier).fetchRubrics(termContext: val);
+            ref
+                .read(rubricEngineProvider.notifier)
+                .fetchRubrics(termContext: val);
           },
         ),
         if (!isPitLeadOnly)
           DefensysSegmentedControl<String>(
-            value: state.scope,
+            value: state.scope == 'pit' ? 'pit' : 'capstone',
             items: const [
-              DefensysSegmentItem(value: '', label: 'All Scopes'),
               DefensysSegmentItem(value: 'capstone', label: 'Capstone'),
               DefensysSegmentItem(value: 'pit', label: 'PIT'),
             ],
@@ -626,7 +659,6 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     );
   }
 
-
   Widget _emptyRubricTable({required bool isPitLeadOnly}) {
     return DefensysEmptyState.table(
       icon: Icons.quiz_outlined,
@@ -640,8 +672,10 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
         isOutlined: true,
         onPressed: () {
           _searchController.clear();
-          ref.read(rubricEngineProvider.notifier).fetchRubrics(
-                scope: '',
+          ref
+              .read(rubricEngineProvider.notifier)
+              .fetchRubrics(
+                scope: isPitLeadOnly ? 'pit' : 'capstone',
                 evaluationType: '',
                 termContext: 'active',
                 search: '',
@@ -652,7 +686,11 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
         label: 'Create Standard Rubric',
         icon: Icons.add_rounded,
         onPressed: () => _openRubricEditor(
-          initialScope: isPitLeadOnly ? 'pit' : 'capstone',
+          initialScope: isPitLeadOnly
+              ? 'pit'
+              : (ref.read(rubricEngineProvider).scope == 'pit'
+                    ? 'pit'
+                    : 'capstone'),
         ),
       ),
     );
@@ -721,10 +759,16 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     final scope = rubric['scope']?.toString() ?? '';
     if (scope == 'pit') {
       final event = rubric['event_name']?.toString().trim();
-      return _stagePill(event != null && event.isNotEmpty ? event : 'Unassigned PIT Event', isPit: true);
+      return _stagePill(
+        event != null && event.isNotEmpty ? event : 'Unassigned PIT Event',
+        isPit: true,
+      );
     }
     final stage = rubric['defense_stage_label']?.toString().trim();
-    return _stagePill(stage != null && stage.isNotEmpty ? stage : 'Unassigned Stage', isPit: false);
+    return _stagePill(
+      stage != null && stage.isNotEmpty ? stage : 'Unassigned Stage',
+      isPit: false,
+    );
   }
 
   Widget _stagePill(String label, {required bool isPit}) {
@@ -740,7 +784,9 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF334155),
+          color: _isDark
+              ? DefensysTokens.textPrimaryDark
+              : const Color(0xFF334155),
           fontSize: 12,
           fontWeight: FontWeight.w600,
         ),
@@ -755,13 +801,21 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
       decoration: BoxDecoration(
         color: isPit
-            ? (_isDark ? const Color(0xFF064E3B).withValues(alpha: 0.35) : const Color(0xFFF0FDF4))
-            : (_isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.35) : const Color(0xFFEFF6FF)),
+            ? (_isDark
+                  ? const Color(0xFF064E3B).withValues(alpha: 0.35)
+                  : const Color(0xFFF0FDF4))
+            : (_isDark
+                  ? const Color(0xFF1E3A8A).withValues(alpha: 0.35)
+                  : const Color(0xFFEFF6FF)),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
           color: isPit
-              ? (_isDark ? const Color(0xFF064E3B).withValues(alpha: 0.7) : const Color(0xFFBBF2D0))
-              : (_isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.7) : const Color(0xFFBFDBFE)),
+              ? (_isDark
+                    ? const Color(0xFF064E3B).withValues(alpha: 0.7)
+                    : const Color(0xFFBBF2D0))
+              : (_isDark
+                    ? const Color(0xFF1E3A8A).withValues(alpha: 0.7)
+                    : const Color(0xFFBFDBFE)),
         ),
       ),
       child: Text(
@@ -786,22 +840,34 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     final (label, bg, border, fg, icon) = switch (type) {
       'adviser' => (
         'Adviser',
-        _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.35) : const Color(0xFFECFDF5),
-        _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.7) : const Color(0xFFA7F3D0),
+        _isDark
+            ? const Color(0xFF064E3B).withValues(alpha: 0.35)
+            : const Color(0xFFECFDF5),
+        _isDark
+            ? const Color(0xFF064E3B).withValues(alpha: 0.7)
+            : const Color(0xFFA7F3D0),
         _isDark ? const Color(0xFF34D399) : const Color(0xFF047857),
         Icons.school_outlined,
       ),
       'peer' => (
         'Peer',
-        _isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.35) : const Color(0xFFEFF6FF),
-        _isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.7) : const Color(0xFFBFDBFE),
+        _isDark
+            ? const Color(0xFF1E3A8A).withValues(alpha: 0.35)
+            : const Color(0xFFEFF6FF),
+        _isDark
+            ? const Color(0xFF1E3A8A).withValues(alpha: 0.7)
+            : const Color(0xFFBFDBFE),
         _isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
         Icons.people_outline,
       ),
       _ => (
         'Panel',
-        _isDark ? const Color(0xFF881337).withValues(alpha: 0.35) : const Color(0xFFFFF1F2),
-        _isDark ? const Color(0xFF881337).withValues(alpha: 0.7) : const Color(0xFFFECDD3),
+        _isDark
+            ? const Color(0xFF881337).withValues(alpha: 0.35)
+            : const Color(0xFFFFF1F2),
+        _isDark
+            ? const Color(0xFF881337).withValues(alpha: 0.7)
+            : const Color(0xFFFECDD3),
         _isDark ? const Color(0xFFFDA4AF) : const Color(0xFF9F1239),
         Icons.groups_outlined,
       ),
@@ -834,7 +900,8 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
 
   Widget _buildActions(RubricEngineState state, Map<String, dynamic> rubric) {
     final isHardLocked = rubric['is_locked'] == true;
-    final isSoftLocked = !isHardLocked &&
+    final isSoftLocked =
+        !isHardLocked &&
         (rubric['is_soft_locked'] == true || rubric['is_assigned'] == true);
     final assignedContext = rubric['assigned_context_name']?.toString();
     final canDelete = rubric['can_delete'] != false;
@@ -842,8 +909,11 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
 
     String tooltipMessage = 'More actions';
     if (isHardLocked) {
-      tooltipMessage = rubric['lock_reason']?.toString() ?? 'View locked rubric';
-    } else if (isSoftLocked && assignedContext != null && assignedContext.isNotEmpty) {
+      tooltipMessage =
+          rubric['lock_reason']?.toString() ?? 'View locked rubric';
+    } else if (isSoftLocked &&
+        assignedContext != null &&
+        assignedContext.isNotEmpty) {
       tooltipMessage = 'Rubric options (Assigned to $assignedContext)';
     }
 
@@ -905,7 +975,11 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
               height: 36,
               child: Row(
                 children: [
-                  const Icon(Icons.visibility_outlined, size: 15, color: Color(0xFF2563EB)),
+                  const Icon(
+                    Icons.visibility_outlined,
+                    size: 15,
+                    color: Color(0xFF2563EB),
+                  ),
                   const SizedBox(width: 9),
                   Text(
                     'View Details',
@@ -947,7 +1021,9 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
                     Icon(
                       Icons.delete_outline_rounded,
                       size: 15,
-                      color: canDelete ? AppColors.danger : const Color(0xFF94A3B8),
+                      color: canDelete
+                          ? AppColors.danger
+                          : const Color(0xFF94A3B8),
                     ),
                     const SizedBox(width: 9),
                     Text(
@@ -955,7 +1031,9 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w700,
-                        color: canDelete ? AppColors.danger : const Color(0xFF94A3B8),
+                        color: canDelete
+                            ? AppColors.danger
+                            : const Color(0xFF94A3B8),
                       ),
                     ),
                   ],
@@ -995,12 +1073,14 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     if (!canDelete) {
       showErrorToast(
         context,
-        lockReason ?? 'This rubric is assigned to active defenses or evaluations and cannot be deleted.',
+        lockReason ??
+            'This rubric is assigned to active defenses or evaluations and cannot be deleted.',
       );
       return;
     }
 
-    String dialogMessage = 'Delete $rubricName? This will permanently remove its criteria and score levels.';
+    String dialogMessage =
+        'Delete $rubricName? This will permanently remove its criteria and score levels.';
     if (isAssigned && assignedContext != null && assignedContext.isNotEmpty) {
       dialogMessage =
           'This rubric is currently assigned to Defense Stage "$assignedContext". '
@@ -1011,22 +1091,36 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Text('Delete Rubric', style: TextStyle(fontWeight: FontWeight.w800)),
-        content: Text(dialogMessage, style: const TextStyle(fontSize: 13.5, height: 1.45)),
+        title: const Text(
+          'Delete Rubric',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        content: Text(
+          dialogMessage,
+          style: const TextStyle(fontSize: 13.5, height: 1.45),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Color(0xFF64748B)),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.danger,
               foregroundColor: Colors.white,
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.w700)),
+            child: const Text(
+              'Delete',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),
@@ -1035,7 +1129,9 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     if (!mounted || confirmed != true) {
       return;
     }
-    final success = await ref.read(rubricEngineProvider.notifier).deleteRubric(rubricId);
+    final success = await ref
+        .read(rubricEngineProvider.notifier)
+        .deleteRubric(rubricId);
     if (!mounted) {
       return;
     }
@@ -1049,15 +1145,23 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     final (label, bg, border, fg, icon) = published
         ? (
             'Published',
-            _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.35) : const Color(0xFFF0FDF4),
-            _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.7) : const Color(0xFFBBF2D0),
+            _isDark
+                ? const Color(0xFF064E3B).withValues(alpha: 0.35)
+                : const Color(0xFFF0FDF4),
+            _isDark
+                ? const Color(0xFF064E3B).withValues(alpha: 0.7)
+                : const Color(0xFFBBF2D0),
             _isDark ? const Color(0xFF34D399) : const Color(0xFF15803D),
             Icons.check_circle_outline_rounded,
           )
         : (
             'Draft',
-            _isDark ? const Color(0xFF78350F).withValues(alpha: 0.35) : const Color(0xFFFFFBEB),
-            _isDark ? const Color(0xFF78350F).withValues(alpha: 0.7) : const Color(0xFFFDE68A),
+            _isDark
+                ? const Color(0xFF78350F).withValues(alpha: 0.35)
+                : const Color(0xFFFFFBEB),
+            _isDark
+                ? const Color(0xFF78350F).withValues(alpha: 0.7)
+                : const Color(0xFFFDE68A),
             _isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
             Icons.edit_note_rounded,
           );
@@ -1100,4 +1204,3 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     return int.tryParse(value?.toString() ?? '');
   }
 }
-

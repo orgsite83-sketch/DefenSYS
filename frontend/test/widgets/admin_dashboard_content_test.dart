@@ -221,4 +221,88 @@ void main() {
 
     expect(dashNotifier.fetchCallCount, greaterThan(initialCalls));
   });
+
+  testWidgets(
+    'AdminDashboardContent displays expanded action items and navigates correctly',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      DefensysAdminSection? navigatedSection;
+
+      final mockData = {
+        'active_semester': '1st Semester, A.Y. 2026-2027',
+        'stats': {
+          'total_students': 10,
+          'total_faculty': 2,
+          'total_teams': 3,
+          'upcoming_defenses': 0,
+        },
+        'team_pipeline': {},
+        'action_items': [
+          {
+            'id': 'stages_without_rubrics',
+            'title': 'Proposal Defense Stage Needs a Scoring Rubric',
+            'description': 'Assign and publish scoring rubrics in Defense Stages.',
+            'category_label': 'RUBRIC SETUP',
+            'severity': 'danger',
+            'target_section': 'defenseStages',
+            'button_label': 'Configure',
+          },
+          {
+            'id': 'stages_without_deliverables',
+            'title': 'Final Defense Stage Missing Deliverables',
+            'description': 'Configure pre-defense submission requirements.',
+            'category_label': 'STAGE SETUP',
+            'severity': 'warning',
+            'target_section': 'defenseStages',
+            'button_label': 'Configure',
+          },
+          {
+            'id': 'draft_rubrics',
+            'title': '2 Draft Rubrics need Publication',
+            'description': 'Draft rubrics cannot be used for defense grading.',
+            'category_label': 'DRAFT RUBRICS',
+            'severity': 'warning',
+            'target_section': 'rubrics',
+            'button_label': 'Review Drafts',
+          },
+        ],
+        'upcoming_defenses_list': [],
+        'recent_activity': [],
+      };
+
+      final dashNotifier = FakeAdminDashboardNotifier('admin', initialData: mockData);
+      final acadNotifier = FakeAcademicPeriodNotifier();
+
+      await pumpDefensysWidget(
+        tester,
+        AdminDashboardContent(
+          onNavigate: (section) {
+            navigatedSection = section;
+          },
+        ),
+        overrides: [
+          dashboardProvider('admin').overrideWith(() => dashNotifier),
+          academicPeriodProvider.overrideWith(() => acadNotifier),
+        ],
+      );
+
+      expect(find.text('Proposal Defense Stage Needs a Scoring Rubric'), findsOneWidget);
+      expect(find.text('RUBRIC SETUP'), findsOneWidget);
+      expect(find.text('Final Defense Stage Missing Deliverables'), findsOneWidget);
+      expect(find.text('STAGE SETUP'), findsOneWidget);
+      expect(find.text('2 Draft Rubrics need Publication'), findsOneWidget);
+      expect(find.text('DRAFT RUBRICS'), findsOneWidget);
+
+      final reviewDraftsBtn = find.text('Review Drafts');
+      expect(reviewDraftsBtn, findsOneWidget);
+      await tester.tap(reviewDraftsBtn);
+      await tester.pumpAndSettle();
+
+      expect(navigatedSection, equals(DefensysAdminSection.rubrics));
+    },
+  );
+
 }

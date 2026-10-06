@@ -199,30 +199,153 @@ class _GradeCenterRouteError extends StatelessWidget {
   }
 }
 
-class AdminRubricEditorRoute extends ConsumerWidget {
+class AdminRubricEditorRoute extends ConsumerStatefulWidget {
   const AdminRubricEditorRoute({super.key, required this.rubricIdParam});
 
   final String rubricIdParam;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isNew = rubricIdParam == 'new';
-    Map<String, dynamic>? rubric;
-    if (!isNew) {
-      final id = int.tryParse(rubricIdParam);
-      final rubrics = ref.watch(rubricEngineProvider).rubrics;
-      for (final item in rubrics) {
-        if (int.tryParse(item['id']?.toString() ?? '') == id) {
-          rubric = Map<String, dynamic>.from(item);
-          break;
+  ConsumerState<AdminRubricEditorRoute> createState() => _AdminRubricEditorRouteState();
+}
+
+class _AdminRubricEditorRouteState extends ConsumerState<AdminRubricEditorRoute> {
+  bool _isFetching = false;
+  bool _fetchAttempted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAndFetch();
+  }
+
+  @override
+  void didUpdateWidget(AdminRubricEditorRoute oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.rubricIdParam != oldWidget.rubricIdParam) {
+      _fetchAttempted = false;
+      _checkAndFetch();
+    }
+  }
+
+  void _checkAndFetch() {
+    if (widget.rubricIdParam == 'new') return;
+    final id = int.tryParse(widget.rubricIdParam);
+    if (id == null) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final rubrics = ref.read(rubricEngineProvider).rubrics;
+      final exists = rubrics.any((item) => int.tryParse(item['id']?.toString() ?? '') == id);
+      if (!exists && !_isFetching) {
+        setState(() => _isFetching = true);
+        await ref.read(rubricEngineProvider.notifier).fetchSingleRubric(id);
+        if (mounted) {
+          setState(() {
+            _isFetching = false;
+            _fetchAttempted = true;
+          });
         }
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isNew = widget.rubricIdParam == 'new';
+    if (isNew) {
+      return RubricFullPageEditor(
+        key: const ValueKey('rubric-new'),
+        rubric: null,
+        readOnly: false,
+        onBack: () {
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go(AdminRoutes.rubrics);
+          }
+        },
+      );
+    }
+
+    final id = int.tryParse(widget.rubricIdParam);
+    if (id == null) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: Color(0xFFEF4444)),
+              const SizedBox(height: 16),
+              const Text('Invalid Rubric ID'),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () {
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go(AdminRoutes.rubrics);
+                  }
+                },
+                child: const Text('Back to Rubrics'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final rubrics = ref.watch(rubricEngineProvider).rubrics;
+    Map<String, dynamic>? rubric;
+    for (final item in rubrics) {
+      if (int.tryParse(item['id']?.toString() ?? '') == id) {
+        rubric = Map<String, dynamic>.from(item);
+        break;
       }
     }
 
-    final rubricId = rubric != null ? int.tryParse(rubric['id']?.toString() ?? '') : null;
+    if (rubric == null) {
+      if (_isFetching || !_fetchAttempted) {
+        return const Scaffold(
+          backgroundColor: Colors.white,
+          body: Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+      }
+
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.search_off_rounded, size: 48, color: Color(0xFF94A3B8)),
+              const SizedBox(height: 16),
+              Text(
+                'Rubric #$id not found',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () {
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go(AdminRoutes.rubrics);
+                  }
+                },
+                child: const Text('Back to Rubrics'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final rubricId = id;
 
     Future<void> handleDelete() async {
-      if (rubricId == null) return;
       final rubricName = rubric?['name']?.toString() ?? 'rubric';
       final canDelete = rubric?['can_delete'] != false;
       final lockReason = rubric?['lock_reason']?.toString();
@@ -283,8 +406,9 @@ class AdminRubricEditorRoute extends ConsumerWidget {
     }
 
     return RubricFullPageEditor(
+      key: ValueKey('rubric-$rubricId'),
       rubric: rubric,
-      readOnly: rubric?['is_locked'] == true,
+      readOnly: rubric['is_locked'] == true,
       onBack: () {
         if (context.canPop()) {
           context.pop();
@@ -292,7 +416,7 @@ class AdminRubricEditorRoute extends ConsumerWidget {
           context.go(AdminRoutes.rubrics);
         }
       },
-      onDelete: rubricId != null ? handleDelete : null,
+      onDelete: handleDelete,
     );
   }
 }

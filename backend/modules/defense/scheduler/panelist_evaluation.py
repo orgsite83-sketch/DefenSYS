@@ -12,6 +12,8 @@ from .models import DefenseSchedule, PanelistEvaluationDraft
 
 
 def grading_unavailable_reason(schedule, grade=None):
+    if schedule.project_version != schedule.team.project_version:
+        return 'This defense belongs to a previous project and is read-only.'
     if schedule.status != DefenseSchedule.STATUS_SCHEDULED:
         return 'This defense is closed or cancelled.'
     if schedule.operation_state != 'normal':
@@ -33,11 +35,18 @@ def grading_unavailable_reason(schedule, grade=None):
 
 def verdict_unavailable_reason(schedule, grade=None):
     """Shared verdict readiness for assignment display and the submit endpoint."""
+    if grade and grade.schedule_id != schedule.pk:
+        return 'This is a previous defense attempt and is read-only.'
     reason = grading_unavailable_reason(schedule)
+    if schedule.status == DefenseSchedule.STATUS_DONE and grade and grade.verdict and grade.project_version == grade.team.project_version and grade.status != TeamGrade.STATUS_PUBLISHED:
+        reason = ''
     if reason:
         return reason
     if grade is None or grade.panel_score is None:
         return 'Panel grading must be submitted before issuing a verdict.'
+    from grading.grades.services import team_grading_readiness
+    if not team_grading_readiness(grade, grade.semester, grade.scope)['panel_complete']:
+        return 'Every required faculty and external panel evaluation must be submitted before issuing a verdict.'
     return ''
 
 

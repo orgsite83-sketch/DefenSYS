@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:defensys/models/defense_workflow_labels.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -254,7 +255,10 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                         String label = endorsed ? 'Endorsed' : (isPresentationOnly ? 'Oral / Demo' : 'Awaiting Endorsement');
                         Color bg = endorsed ? Colors.green.shade600 : (isPresentationOnly ? const Color(0xFF2563EB) : Colors.orange.shade600);
 
-                        if (detail == 'passed') {
+                        if (['failed', 'project_rejected', 'for_redefense', 'revisions_pending'].contains(detail)) {
+                          label = defenseProgressLabel(detail!);
+                          bg = detail == 'revisions_pending' ? Colors.orange.shade700 : Colors.red.shade700;
+                        } else if (detail == 'passed') {
                           label = 'Completed';
                           bg = Colors.green.shade600;
                         } else if (detail == 'pending_post_defense') {

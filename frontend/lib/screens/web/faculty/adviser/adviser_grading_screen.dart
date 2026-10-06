@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../services/adviser_grading_provider.dart';
+import '../../admin/grade_center/defense_workflow_panel.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/widgets.dart';
@@ -405,7 +406,7 @@ Map<String, dynamic>? _assignedRubricFromGrade(Map<String, dynamic> grade) {
   };
 }
 
-class _GradeForm extends StatefulWidget {
+class _GradeForm extends ConsumerStatefulWidget {
   final Map<String, dynamic> grade;
   final bool isSaving;
   final _OnSubmit onSubmit;
@@ -418,10 +419,10 @@ class _GradeForm extends StatefulWidget {
   });
 
   @override
-  State<_GradeForm> createState() => _GradeFormState();
+  ConsumerState<_GradeForm> createState() => _GradeFormState();
 }
 
-class _GradeFormState extends State<_GradeForm> {
+class _GradeFormState extends ConsumerState<_GradeForm> {
   Map<String, dynamic>? _selectedRubric;
 
   // Controllers
@@ -717,7 +718,8 @@ class _GradeFormState extends State<_GradeForm> {
 
     final isOfficiallyComplete = grade['is_officially_complete'] == true;
     final isPublished = grade['status']?.toString() == 'published';
-    final isGradingLocked = isOfficiallyComplete || isPublished;
+    final isRecovery = (grade['attempt_count'] as num? ?? 1) > 1 || (grade['project_version'] as num? ?? 1) > 1;
+    final isGradingLocked = (isOfficiallyComplete && !isRecovery) || isPublished;
 
     final targetType = _selectedRubric?['target_type']?.toString() ?? 'team';
     final teamCrits = _getTeamCriteria();
@@ -783,6 +785,9 @@ class _GradeFormState extends State<_GradeForm> {
           ),
           const SizedBox(height: 20),
 
+          DefenseWorkflowPanel(grade: grade,
+            onUpdated: () => ref.read(adviserGradingProvider.notifier).fetchAll()),
+          const SizedBox(height: 20),
           if (isGradingLocked) ...[
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

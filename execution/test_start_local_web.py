@@ -3,6 +3,7 @@
 import argparse
 from contextlib import ExitStack, redirect_stderr, redirect_stdout
 import io
+import threading
 import unittest
 from unittest.mock import Mock, call, patch
 
@@ -19,6 +20,11 @@ class LocalWebLauncherTests(unittest.TestCase):
         self.listening = stack.enter_context(patch.object(launcher, 'listening', return_value=False))
         self.ready = stack.enter_context(patch.object(launcher, 'ready', return_value=True))
         self.start = stack.enter_context(patch.object(launcher, 'start'))
+        def started(command, cwd, **kwargs):
+            if kwargs.get('web_started') is not None:
+                kwargs['web_started'].set()
+            return self.start.return_value
+        self.start.side_effect = started
         self.stop = stack.enter_context(patch.object(launcher, 'stop'))
         self.browser = stack.enter_context(patch.object(launcher.webbrowser, 'open'))
         self.is_web = stack.enter_context(patch.object(launcher, 'is_defensys_web', return_value=False))
@@ -133,10 +139,23 @@ class LocalWebLauncherTests(unittest.TestCase):
             self.start.assert_called_once()
             command = self.start.call_args.args[0]
             self.assertIn('demo-phone', command)
+            self.assertIn('--release', command)
+            self.assertNotIn('--debug', command)
             self.assertIn('--dart-define=DEFENSYS_API_HOST=192.168.1.3', command)
             self.assertIn('--dart-define=DEFENSYS_API_PORT=8000', command)
             self.assertIn('--dart-define=GUEST_PORTAL_URL=http://192.168.1.3:57583/#/guest/evaluate', command)
             self.assertIs(self.monitor.call_args.kwargs['mobile'], phone)
+
+    def test_debug_flag_keeps_android_development_mode_available(self):
+        with ExitStack() as stack:
+            self.setup_runtime(stack)
+            self.listening.return_value = True
+            self.is_web.return_value = True
+            self.android.return_value = 'demo-phone'
+            self.assertEqual(launcher.main(['--debug', '--no-browser']), 0)
+            command = self.start.call_args.args[0]
+            self.assertIn('--debug', command)
+            self.assertNotIn('--release', command)
 
     def test_check_mode_does_not_deploy_a_connected_phone(self):
         with ExitStack() as stack:
@@ -153,6 +172,56 @@ class LocalWebLauncherTests(unittest.TestCase):
             self.android.assert_not_called()
             self.start.assert_not_called()
 
+
+class StartupReadinessTests(unittest.TestCase):
+    def test_cached_entry_point_cannot_complete_startup_before_compilation(self):
+        process = Mock()
+        process.poll.return_value = None
+        started = threading.Event()
+        with patch.object(launcher, 'ready', return_value=True) as ready, \
+                patch.object(launcher.time, 'monotonic', side_effect=[0, 0, 1]), \
+                patch.object(launcher.time, 'sleep'), \
+                self.assertRaisesRegex(RuntimeError, 'did not become ready'):
+            launcher.wait_for('http://localhost/main.dart.js', process, 1,
+                              web_started=started)
+        ready.assert_not_called()
+
+    def test_served_message_completes_startup_after_current_build(self):
+        process = Mock()
+        process.poll.return_value = None
+        process.stdout = io.StringIO(
+            'Compiling lib/main.dart for the Web...\n'
+            'lib/main.dart is being served at http://0.0.0.0:57583\n'
+        )
+        started = threading.Event()
+        with redirect_stdout(io.StringIO()), \
+                patch.object(launcher, 'ready', return_value=True) as ready:
+            launcher.forward_web_output(process, started)
+            launcher.wait_for('http://localhost/main.dart.js', process, 1,
+                              web_started=started)
+        ready.assert_called_once()
+
+    def test_build_failure_exits_without_accepting_cached_files(self):
+        process = Mock()
+        process.poll.return_value = 1
+        process.returncode = 1
+        with patch.object(launcher, 'ready', return_value=True) as ready, \
+                self.assertRaisesRegex(RuntimeError, 'exited with code 1'):
+            launcher.wait_for('http://localhost/main.dart.js', process, 1,
+                              web_started=threading.Event())
+        ready.assert_not_called()
+
+    def test_flutter_symbols_do_not_break_readiness_on_legacy_terminals(self):
+        process = Mock(stdout=io.StringIO(
+            '\u2713 Built build/web\n'
+            'lib/main.dart is being served at http://0.0.0.0:57583\n'
+        ))
+        started = threading.Event()
+        output = io.BytesIO()
+        with io.TextIOWrapper(output, encoding='ascii') as terminal, \
+                redirect_stdout(terminal):
+            launcher.forward_web_output(process, started)
+            self.assertTrue(started.is_set())
 
 class AndroidSelectionTests(unittest.TestCase):
     def select(self, output, requested=None):

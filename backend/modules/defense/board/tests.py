@@ -107,7 +107,8 @@ class DefenseBoardApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['counts']['all'], 2)
         self.assertEqual(response.data['counts']['scheduled'], 1)
-        self.assertEqual(response.data['counts']['done'], 1)
+        self.assertEqual(response.data['counts']['done'], 0)
+        self.assertEqual(response.data['counts']['assessed'], 1)
         self.assertIn('Project Proposal', response.data['stage_options'])
         self.assertIn('PIT Expo', response.data['stage_options'])
 

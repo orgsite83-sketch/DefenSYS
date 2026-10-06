@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 
 from academic_period_management.serializers import SemesterSerializer
 from defense.scheduler.models import DefenseSchedule
+from defense.scheduler.progress import DISPLAY_STATUSES
 from defense.scheduler.serializers import (
     DefenseScheduleSerializer,
     DefenseScheduleStatusSerializer,
@@ -23,28 +24,12 @@ def board_queryset_for_user(user):
 
 def counts_payload(base_queryset, current_queryset=None):
     current = current_queryset if current_queryset is not None else base_queryset
-    from django.utils import timezone
-    now = timezone.localtime()
-
-    scheduled_qs = current.filter(status=DefenseSchedule.STATUS_SCHEDULED, operation_state='normal')
-    ongoing_qs = scheduled_qs.filter(
-        Q(scheduled_date__lt=now.date())
-        | Q(scheduled_date=now.date(), start_time__lte=now.time())
-    )
-    upcoming_qs = scheduled_qs.exclude(pk__in=ongoing_qs)
-
-    return {
-        'all': base_queryset.count(),
-        'filtered': current.count(),
-        'scheduled': upcoming_qs.count(),
-        'ongoing': ongoing_qs.count(),
-        'done': current.filter(status=DefenseSchedule.STATUS_DONE).count(),
-        'cancelled': current.filter(status=DefenseSchedule.STATUS_CANCELLED).count(),
-        'archived': current.filter(status=DefenseSchedule.STATUS_ARCHIVED).count(),
-        'paused': current.filter(status='scheduled', operation_state='paused').count(),
-        'postponed': current.filter(status='scheduled', operation_state='postponed').count(),
-        'no_show': current.filter(status='scheduled', operation_state='no_show').count(),
-    }
+    from collections import Counter
+    from defense.scheduler.progress import schedule_progress, DISPLAY_STATUSES
+    counts = Counter(schedule_progress(s)['display_status'] for s in current)
+    return {'all': base_queryset.count(), 'filtered': len(current),
+            **{key: counts[key] for key in DISPLAY_STATUSES},
+            'ongoing': counts['evaluating'], 'done': counts['completed']}
 
 
 def stage_options(queryset):
@@ -145,24 +130,11 @@ def filter_board_queryset(request, queryset):
             )
     if section:
         queryset = queryset.filter(team__section__iexact=section)
-    if status_filter == 'ongoing':
-        from django.utils import timezone
-        now = timezone.localtime()
-        queryset = queryset.filter(status=DefenseSchedule.STATUS_SCHEDULED, operation_state='normal').filter(
-            Q(scheduled_date__lt=now.date())
-            | Q(scheduled_date=now.date(), start_time__lte=now.time())
-        )
-    elif status_filter == 'scheduled':
-        from django.utils import timezone
-        now = timezone.localtime()
-        queryset = queryset.filter(status=DefenseSchedule.STATUS_SCHEDULED, operation_state='normal').exclude(
-            Q(scheduled_date__lt=now.date())
-            | Q(scheduled_date=now.date(), start_time__lte=now.time())
-        )
-    elif status_filter in ('paused', 'postponed', 'no_show'):
-        queryset = queryset.filter(status='scheduled', operation_state=status_filter)
-    elif status_filter:
-        queryset = queryset.filter(status=status_filter)
+    if status_filter:
+        from defense.scheduler.progress import schedule_progress
+        expected = {'ongoing': 'evaluating', 'done': 'completed'}.get(status_filter, status_filter)
+        ids = [s.pk for s in queryset if schedule_progress(s)['display_status'] == expected]
+        queryset = queryset.filter(pk__in=ids)
     if scope:
         queryset = queryset.filter(scope=scope)
     return queryset
@@ -196,16 +168,7 @@ def board_payload(request, queryset=None):
         'stage_options': stage_options(base),
         'advisers': adviser_options(base),
         'sections': section_options(base),
-        'statuses': [
-            DefenseSchedule.STATUS_SCHEDULED,
-            'ongoing',
-            'paused',
-            'postponed',
-            'no_show',
-            DefenseSchedule.STATUS_DONE,
-            DefenseSchedule.STATUS_CANCELLED,
-            DefenseSchedule.STATUS_ARCHIVED,
-        ],
+        'statuses': DISPLAY_STATUSES,
         'scopes': [
             {'value': key, 'label': label}
             for key, label in DefenseSchedule.SCOPE_CHOICES

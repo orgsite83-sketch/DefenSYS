@@ -104,13 +104,7 @@ flutter:
     - assets/logo-login-mark.png
     - assets/logo-web-mark.png
     - assets/logo-web-mark-smooth.png
-    - assets/login_hero_1.png
-    - assets/login_hero_2.png
-    - assets/login_hero_3.png
-    - assets/login_hero_4.png
-    - assets/login_hero_5.png
-    - assets/login_hero_6.png
-    - assets/login_hero_7.png
+    - assets/login/
     - assets/ustp_header_banner.png
     - assets/ustp_sidebar.png
     - assets/ustp_footer_badge.png

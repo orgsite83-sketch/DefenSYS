@@ -4,6 +4,7 @@ import 'package:defensys/screens/app/panelist/panelist_models.dart';
 import 'package:defensys/screens/app/panelist/grade_sheet_tab.dart';
 import 'package:defensys/screens/app/panelist/assignments_tab.dart';
 import 'package:defensys/widgets/tactile_button.dart';
+import 'package:defensys/screens/app/panelist/widgets/evaluation_score_picker.dart';
 
 import '../helpers/pump_app.dart';
 import '../helpers/capture_preview.dart';
@@ -85,12 +86,7 @@ void main() {
             ),
           );
           await show(team);
-          expect(
-            find.text(
-              'You are presiding as the Panel Chair for this defense hearing.',
-            ),
-            findsOneWidget,
-          );
+          expect(find.text('Panel Chair'), findsWidgets);
           expect(find.text('Panel Chair Official Verdict'), findsOneWidget);
           expect(
             find.text(
@@ -120,9 +116,17 @@ void main() {
             expect(radio.enabled, isFalse);
           }
           // A locally completed score still needs backend submission before a verdict is available.
-          final score = find.widgetWithText(TextFormField, 'Score for Clarity');
+          await tester.ensureVisible(
+            find.byKey(const ValueKey('start-team-evaluation')),
+          );
+          await tester.tap(find.byKey(const ValueKey('start-team-evaluation')));
+          await tester.pumpAndSettle();
+          final score = find.descendant(
+            of: find.byType(EvaluationScorePicker),
+            matching: find.byKey(const ValueKey('score-value-8')),
+          );
           await tester.ensureVisible(score);
-          await tester.enterText(score, '8');
+          await tester.tap(score);
           await tester.pumpAndSettle();
           expect(_verdictSubmit(tester).onPressed, isNull);
           await show(_chairAssignment(ready: true, posted: true));
@@ -251,13 +255,10 @@ void main() {
           ),
         );
 
-        // Verify Chair presiding banner
-        expect(
-          find.text(
-            'You are presiding as the Panel Chair for this defense hearing.',
-          ),
-          findsOneWidget,
-        );
+        await tester.ensureVisible(find.text('Presenting members'));
+        await tester.tap(find.text('Presenting members'));
+        await tester.pumpAndSettle();
+        expect(find.text('Panel Chair'), findsWidgets);
 
         // Verify Chair Verdict section
         expect(find.text('Panel Chair Official Verdict'), findsOneWidget);
@@ -265,12 +266,18 @@ void main() {
         expect(find.text('Approved'), findsOneWidget);
         expect(find.text('Approved with Revisions'), findsOneWidget);
         expect(find.text('For Re-defense'), findsOneWidget);
+        expect(find.text('Failed'), findsOneWidget);
+        expect(find.text('Project Rejected'), findsOneWidget);
         expect(find.text('Submit Verdict'), findsOneWidget);
 
         // Tap on For Re-defense option
+        await tester.ensureVisible(find.text('For Re-defense'));
+        await tester.pumpAndSettle();
         await tester.tap(find.text('For Re-defense'));
         await tester.pumpAndSettle();
         expect(find.text('For Re-defense'), findsOneWidget);
+        expect(find.text('Require adviser verification of corrections'), findsOneWidget);
+        expect(tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value, isFalse);
       },
     );
 
@@ -310,13 +317,7 @@ void main() {
           ),
         );
 
-        // Should NOT have presiding banner
-        expect(
-          find.text(
-            'You are presiding as the Panel Chair for this defense hearing.',
-          ),
-          findsNothing,
-        );
+        expect(find.text('Panel Chair'), findsNothing);
 
         // Should have read-only verdict card
         expect(find.text('Official Stage Verdict'), findsOneWidget);

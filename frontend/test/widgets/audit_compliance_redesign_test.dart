@@ -243,54 +243,44 @@ void main() {
     );
 
     // 1. Executive Tab Bar
-    expect(find.text('Audit Trail Register'), findsWidgets);
-    expect(find.text('Report Export Center'), findsOneWidget);
+    expect(find.text('Audit Trail'), findsWidgets);
+    expect(find.text('Report Center'), findsOneWidget);
     expect(find.text('Live Logs'), findsOneWidget);
     expect(find.text('PDF Center'), findsOneWidget);
 
-    // 2. Compact KPI Ribbon
-    expect(find.text('ISO 9001 Readiness'), findsOneWidget);
-    expect(find.text('Open Findings'), findsOneWidget);
-    expect(find.text('Verified Evidence'), findsOneWidget);
-    expect(find.text('Pending Action'), findsOneWidget);
-    expect(find.text('Reviewed Ratio'), findsOneWidget);
+    // 2. Clean KPI Metrics
+    expect(find.text('Total Events'), findsOneWidget);
+    expect(find.text('Needs Review'), findsWidgets);
+    expect(find.text('Reviewed'), findsWidgets);
+    expect(find.text('Review Progress'), findsOneWidget);
 
-    // 3. Compact Filter Toolbar
-    expect(find.text('Filters'), findsOneWidget);
-    expect(find.text('Export PDF'), findsOneWidget);
-
-    // Tap "Filters" button to open modal
-    await tester.tap(find.text('Filters'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Filter Audit Register'), findsOneWidget);
-    expect(find.text('Academic Scope'), findsOneWidget);
-    expect(find.text('Process Area (Category)'), findsOneWidget);
-    expect(find.text('Review & Compliance Status'), findsOneWidget);
+    // 3. Search & Filter Toolbar
+    expect(find.text('Export'), findsOneWidget);
+    expect(find.text('All Process Areas'), findsOneWidget);
+    expect(find.text('All Actions'), findsOneWidget);
     expect(find.text('Date Range'), findsOneWidget);
-    expect(find.text('Apply Filters'), findsOneWidget);
+    expect(find.text('More Filters'), findsOneWidget);
 
-    // Tap "Cancel" to dismiss modal
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
+    // 4. Status Tabs
+    expect(find.text('All Events'), findsOneWidget);
 
-    // 4. Primary Hero Table
-    expect(find.text('45 entries'), findsOneWidget);
+    // 5. Master Table Columns (Original Layout)
     expect(find.text('DATE / TIME'), findsOneWidget);
     expect(find.text('PROCESS AREA'), findsOneWidget);
     expect(find.text('CONTROL ACTIVITY'), findsOneWidget);
     expect(find.text('RESPONSIBLE USER'), findsOneWidget);
     expect(find.text('REVIEW STATUS'), findsOneWidget);
 
-    // 5. Rich Evidence Preview Card for Repository Upload
-    expect(find.text('Evidence Packet Review'), findsOneWidget);
-    expect(find.text('#45'), findsOneWidget);
-    expect(find.text('3rdYear.CAP301.ProjectAlpha.1stSemester.pdf'), findsWidgets);
-    expect(find.text('Visual Change Diff'), findsOneWidget);
-    expect(find.text('Raw Audit JSON'), findsOneWidget);
+    // 6. Master-Detail Inspector Panel
+    expect(find.text('Event Details'), findsOneWidget);
+    expect(find.text('Actor'), findsOneWidget);
+    expect(find.text('Date & Time'), findsOneWidget);
+    expect(find.text('Process Area'), findsOneWidget);
+    expect(find.text('Target Resource'), findsOneWidget);
+    expect(find.text('Mark as reviewed'), findsWidgets);
   });
 
-  testWidgets('AuditComplianceScreen switches to Raw Audit JSON view and verifies status', (
+  testWidgets('AuditComplianceScreen opens and tests raw JSON modal dialog', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1400, 900);
@@ -319,23 +309,101 @@ void main() {
       ],
     );
 
-    // Click "Raw Audit JSON" tab
-    final rawJsonTab = find.text('Raw Audit JSON');
-    expect(rawJsonTab, findsOneWidget);
-    await tester.tap(rawJsonTab);
+    // Open "More options" popup menu
+    final moreOptionsBtn = find.byTooltip('More options');
+    expect(moreOptionsBtn, findsOneWidget);
+    await tester.ensureVisible(moreOptionsBtn);
+    await tester.tap(moreOptionsBtn);
     await tester.pumpAndSettle();
 
+    // Click "View Raw JSON" menu item
+    final viewJsonItem = find.text('View Raw JSON');
+    expect(viewJsonItem, findsOneWidget);
+    await tester.tap(viewJsonItem);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Raw Audit Log Payload'), findsOneWidget);
     expect(find.text('Copy JSON'), findsOneWidget);
-    expect(find.text('Audit Event Payload (JSON)'), findsOneWidget);
+    expect(find.text('Close'), findsOneWidget);
 
-    // Click "Verify & Mark as Reviewed" button
-    final verifyBtn = find.text('Verify & Mark as Reviewed');
-    expect(verifyBtn, findsOneWidget);
-    await tester.tap(verifyBtn);
+    // Dismiss modal
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('AuditComplianceScreen displays diff and status correctly across create, update, and delete', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final rubricCreateLog = mockAuditLogs[1]; // rubric.create
+    final rubricDeleteLog = {
+      'id': 99,
+      'actor': 1,
+      'actor_name': 'Admin User',
+      'action': 'rubric.delete',
+      'category': 'grade_center',
+      'category_label': 'Grade & Rubrics',
+      'target_type': 'Rubric',
+      'target_id': '9',
+      'old_values': {'name': 'Deleted Proposal Rubric'},
+      'new_values': {'deleted': true},
+      'reason': 'Deprecated criteria',
+      'review_status': 'needs_review',
+      'review_status_label': 'Needs Review',
+      'created_at': '2026-08-30T08:00:00Z',
+    };
+
+    final rubricAuditState = mockAuditState.copyWith(
+      logs: [rubricCreateLog, rubricDeleteLog],
+      selectedLog: rubricCreateLog,
+    );
+
+    await pumpDefensysWidget(
+      tester,
+      const AuditComplianceScreen(),
+      overrides: [
+        authProvider.overrideWith(
+          () => FakeAuthNotifier({
+            'id': 1,
+            'username': 'admin',
+            'role': 'admin',
+            'is_superuser': true,
+          }),
+        ),
+        systemAuditProvider.overrideWith(
+          () => FakeSystemAuditNotifier(rubricAuditState),
+        ),
+        academicPeriodProvider.overrideWith(() => FakeAcademicPeriodNotifier()),
+        studentTeamsProvider.overrideWith(() => FakeStudentTeamsNotifier()),
+        defenseStagesProvider.overrideWith(() => FakeDefenseStagesNotifier()),
+        gradeCenterProvider.overrideWith(() => FakeGradeCenterNotifier()),
+      ],
+    );
+
+    // When rubric.create is selected:
+    expect(find.text('Rubric created'), findsOneWidget);
+    expect(find.text('Resource Details'), findsOneWidget);
+
+    // Verify "Open Rubric" is present in More options menu
+    final moreOptionsBtn = find.byTooltip('More options');
+    await tester.tap(moreOptionsBtn);
+    await tester.pumpAndSettle();
+    expect(find.text('Open Rubric'), findsOneWidget);
+
+    // Dismiss menu by tapping outside
+    await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
 
-    // Verify it updated to "Revert to Needs Review"
-    expect(find.text('Revert to Needs Review'), findsOneWidget);
-    await tester.pump(const Duration(seconds: 5));
+    // Now select the rubric.delete entry in the table
+    await tester.tap(find.text('rubric.delete'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('This resource has been deleted'), findsOneWidget);
+    expect(find.text('Last Known State'), findsOneWidget);
   });
 }
+
+

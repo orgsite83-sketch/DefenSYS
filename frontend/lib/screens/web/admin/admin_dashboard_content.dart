@@ -1237,6 +1237,10 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
                           item['target_section']?.toString() ?? '';
                       final buttonLabel =
                           item['button_label']?.toString() ?? 'Action';
+                      final severity =
+                          item['severity']?.toString() ?? 'warning';
+                      final categoryRaw =
+                          item['category_label']?.toString();
 
                       // Determine action-specific styling (Task categories instead of passive warnings)
                       IconData actionIcon;
@@ -1247,9 +1251,85 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
                       Color badgeTextColor;
                       String categoryLabel;
 
-                      if (itemId == 'unscheduled_ready_teams' ||
+                      if (itemId == 'stages_without_rubrics' ||
+                          categoryRaw == 'RUBRIC SETUP') {
+                        actionIcon = Icons.rule_folder_rounded;
+                        iconColor = _isDark
+                            ? const Color(0xFFF87171)
+                            : const Color(0xFFDC2626);
+                        iconBg = _isDark
+                            ? const Color(0xFF7F1D1D).withValues(alpha: 0.3)
+                            : const Color(0xFFFEE2E2);
+                        badgeBg = _isDark
+                            ? const Color(0xFF7F1D1D).withValues(alpha: 0.2)
+                            : const Color(0xFFFEF2F2);
+                        badgeBorder = _isDark
+                            ? const Color(0xFFB91C1C)
+                            : const Color(0xFFFECACA);
+                        badgeTextColor = _isDark
+                            ? const Color(0xFFFCA5A5)
+                            : const Color(0xFFB91C1C);
+                        categoryLabel = categoryRaw ?? 'RUBRIC SETUP';
+                      } else if (itemId == 'no_active_period' ||
+                          categoryRaw == 'PERIOD SETUP') {
+                        actionIcon = Icons.calendar_today_rounded;
+                        iconColor = _isDark
+                            ? const Color(0xFFF87171)
+                            : const Color(0xFFDC2626);
+                        iconBg = _isDark
+                            ? const Color(0xFF7F1D1D).withValues(alpha: 0.3)
+                            : const Color(0xFFFEE2E2);
+                        badgeBg = _isDark
+                            ? const Color(0xFF7F1D1D).withValues(alpha: 0.2)
+                            : const Color(0xFFFEF2F2);
+                        badgeBorder = _isDark
+                            ? const Color(0xFFB91C1C)
+                            : const Color(0xFFFECACA);
+                        badgeTextColor = _isDark
+                            ? const Color(0xFFFCA5A5)
+                            : const Color(0xFFB91C1C);
+                        categoryLabel = categoryRaw ?? 'PERIOD SETUP';
+                      } else if (itemId == 'stages_without_deliverables' ||
+                          categoryRaw == 'STAGE SETUP') {
+                        actionIcon = Icons.folder_open_rounded;
+                        iconColor = _isDark
+                            ? const Color(0xFFFBBF24)
+                            : const Color(0xFFD97706);
+                        iconBg = _isDark
+                            ? const Color(0xFF78350F).withValues(alpha: 0.3)
+                            : const Color(0xFFFEF3C7);
+                        badgeBg = _isDark
+                            ? const Color(0xFF78350F).withValues(alpha: 0.2)
+                            : const Color(0xFFFFFBEB);
+                        badgeBorder = _isDark
+                            ? const Color(0xFFB45309)
+                            : const Color(0xFFFDE68A);
+                        badgeTextColor = _isDark
+                            ? const Color(0xFFFCD34D)
+                            : const Color(0xFFB45309);
+                        categoryLabel = categoryRaw ?? 'STAGE SETUP';
+                      } else if (itemId == 'draft_rubrics' ||
+                          categoryRaw == 'DRAFT RUBRICS') {
+                        actionIcon = Icons.edit_note_rounded;
+                        iconColor = _isDark
+                            ? const Color(0xFFA78BFA)
+                            : const Color(0xFF7C3AED);
+                        iconBg = _isDark
+                            ? const Color(0xFF4C1D95).withValues(alpha: 0.3)
+                            : const Color(0xFFEDE9FE);
+                        badgeBg = _isDark
+                            ? const Color(0xFF4C1D95).withValues(alpha: 0.2)
+                            : const Color(0xFFF5F3FF);
+                        badgeBorder = _isDark
+                            ? const Color(0xFF6D28D9)
+                            : const Color(0xFFDDD6FE);
+                        badgeTextColor = _isDark
+                            ? const Color(0xFFC4B5FD)
+                            : const Color(0xFF6D28D9);
+                        categoryLabel = categoryRaw ?? 'DRAFT RUBRICS';
+                      } else if (itemId == 'unscheduled_ready_teams' ||
                           targetSectionKey == 'defenseBoardReadiness' ||
-                          targetSectionKey == 'scheduling') {
+                          categoryRaw == 'READY TO SCHEDULE') {
                         actionIcon = Icons.event_available_rounded;
                         iconColor = _isDark
                             ? const Color(0xFF34D399)
@@ -1266,9 +1346,10 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
                         badgeTextColor = _isDark
                             ? const Color(0xFF34D399)
                             : const Color(0xFF047857);
-                        categoryLabel = 'READY TO SCHEDULE';
+                        categoryLabel = categoryRaw ?? 'READY TO SCHEDULE';
                       } else if (itemId == 'unassigned_advisers' ||
-                          targetSectionKey == 'studentTeams') {
+                          targetSectionKey == 'studentTeams' ||
+                          categoryRaw == 'ADVISER ASSIGNMENT') {
                         actionIcon = Icons.person_add_alt_1_rounded;
                         iconColor = _isDark
                             ? const Color(0xFF818CF8)
@@ -1285,9 +1366,10 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
                         badgeTextColor = _isDark
                             ? const Color(0xFFA5B4FC)
                             : const Color(0xFF4338CA);
-                        categoryLabel = 'ADVISER ASSIGNMENT';
+                        categoryLabel = categoryRaw ?? 'ADVISER ASSIGNMENT';
                       } else if (itemId == 'pending_grades' ||
-                          targetSectionKey == 'gradeCenter') {
+                          targetSectionKey == 'gradeCenter' ||
+                          categoryRaw == 'GRADE REVIEW') {
                         actionIcon = Icons.grading_rounded;
                         iconColor = _isDark
                             ? const Color(0xFFFBBF24)
@@ -1304,9 +1386,9 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
                         badgeTextColor = _isDark
                             ? const Color(0xFFFCD34D)
                             : const Color(0xFFB45309);
-                        categoryLabel = 'GRADE REVIEW';
-                      } else {
-                        actionIcon = Icons.tune_rounded;
+                        categoryLabel = categoryRaw ?? 'GRADE REVIEW';
+                      } else if (severity == 'danger') {
+                        actionIcon = Icons.error_outline_rounded;
                         iconColor = _isDark
                             ? const Color(0xFFF87171)
                             : const Color(0xFFDC2626);
@@ -1322,7 +1404,43 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
                         badgeTextColor = _isDark
                             ? const Color(0xFFFCA5A5)
                             : const Color(0xFFB91C1C);
-                        categoryLabel = 'SETUP REQUIRED';
+                        categoryLabel = categoryRaw ?? 'SETUP REQUIRED';
+                      } else if (severity == 'action') {
+                        actionIcon = Icons.task_alt_rounded;
+                        iconColor = _isDark
+                            ? const Color(0xFF34D399)
+                            : const Color(0xFF059669);
+                        iconBg = _isDark
+                            ? const Color(0xFF064E3B).withValues(alpha: 0.3)
+                            : const Color(0xFFD1FAE5);
+                        badgeBg = _isDark
+                            ? const Color(0xFF064E3B).withValues(alpha: 0.2)
+                            : const Color(0xFFECFDF5);
+                        badgeBorder = _isDark
+                            ? const Color(0xFF047857)
+                            : const Color(0xFFA7F3D0);
+                        badgeTextColor = _isDark
+                            ? const Color(0xFF34D399)
+                            : const Color(0xFF047857);
+                        categoryLabel = categoryRaw ?? 'ACTION REQUIRED';
+                      } else {
+                        actionIcon = Icons.tune_rounded;
+                        iconColor = _isDark
+                            ? const Color(0xFFFBBF24)
+                            : const Color(0xFFD97706);
+                        iconBg = _isDark
+                            ? const Color(0xFF78350F).withValues(alpha: 0.3)
+                            : const Color(0xFFFEF3C7);
+                        badgeBg = _isDark
+                            ? const Color(0xFF78350F).withValues(alpha: 0.2)
+                            : const Color(0xFFFFFBEB);
+                        badgeBorder = _isDark
+                            ? const Color(0xFFB45309)
+                            : const Color(0xFFFDE68A);
+                        badgeTextColor = _isDark
+                            ? const Color(0xFFFCD34D)
+                            : const Color(0xFFB45309);
+                        categoryLabel = categoryRaw ?? 'WARNING';
                       }
 
                       return InkWell(

@@ -161,6 +161,7 @@ def current_stage_for_team(team):
         sched = (
             DefenseSchedule.objects.filter(
                 team=team,
+        project_version=team.project_version,
                 scope=DefenseSchedule.SCOPE_CAPSTONE,
                 status=DefenseSchedule.STATUS_SCHEDULED,
             )
@@ -173,15 +174,6 @@ def current_stage_for_team(team):
         # 2. Check completion for each stage in order
         completed_stage_ids = set()
         for stg in stages:
-            # Check if stage is marked officially complete for this semester
-            if team.semester_id and StageGradingConfig.objects.filter(
-                semester=team.semester,
-                defense_stage=stg,
-                is_officially_complete=True,
-            ).exists():
-                completed_stage_ids.add(stg.id)
-                continue
-
             # Check if team has passed/archived progress for this stage
             if TeamStageProgress.objects.filter(
                 team=team,
@@ -214,6 +206,7 @@ def current_stage_for_team(team):
         sched = (
             DefenseSchedule.objects.filter(
                 team=team,
+        project_version=team.project_version,
                 scope=DefenseSchedule.SCOPE_PIT,
                 status=DefenseSchedule.STATUS_SCHEDULED,
             )
@@ -247,6 +240,7 @@ def current_stage_for_team(team):
 
                 has_done_sched = DefenseSchedule.objects.filter(
                     team=team,
+        project_version=team.project_version,
                     scope=DefenseSchedule.SCOPE_PIT,
                     event_name__iexact=config.event_name,
                     status=DefenseSchedule.STATUS_DONE,
@@ -278,6 +272,7 @@ def current_stage_for_team(team):
         sched_any = (
             DefenseSchedule.objects.filter(
                 team=team,
+        project_version=team.project_version,
                 scope=DefenseSchedule.SCOPE_PIT,
             )
             .order_by('-scheduled_date', '-start_time')
@@ -422,7 +417,12 @@ def archive_unlocked(team, stage_label, deliverable_type='post'):
             return False
         if getattr(stage_grade, 'result', '') == 'failed':
             return False
-        if stage_grade.status == TeamGrade.STATUS_PUBLISHED and stage_grade.final_grade is not None and stage_grade.final_grade < 75.0:
+        if (
+            stage_grade.status == TeamGrade.STATUS_PUBLISHED
+            and stage_grade.final_grade is not None
+            and stage_grade.final_grade < 75.0
+            and getattr(stage_grade, 'verdict', '') not in TeamGrade.PASSING_VERDICTS
+        ):
             return False
 
     # Oral/panel defense is completed once panel scores are recorded
@@ -433,6 +433,7 @@ def archive_unlocked(team, stage_label, deliverable_type='post'):
         return True
     return DefenseSchedule.objects.filter(
         team=team,
+        project_version=team.project_version,
         status=DefenseSchedule.STATUS_DONE,
     ).filter(Q(defense_stage__label=stage_label) | Q(event_name=stage_label)).exists()
 
@@ -496,6 +497,37 @@ def required_complete(team, stage_label):
     )
 
 
+def post_deliverables_complete(team, stage_label):
+    if is_presentation_stage(team, stage_label):
+        return True
+    definitions = get_deliverable_definitions_for_team(team, stage_label)
+    if not definitions:
+        return True
+    post_required = [
+        item for item in definitions
+        if item['type'] == DeliverableSubmission.TYPE_POST and item['required']
+    ]
+    if not post_required:
+        return True
+
+    from grading.grades.models import TeamGrade
+    stage_grade = TeamGrade.objects.filter(
+        Q(defense_stage__label=stage_label) | Q(stage_label=stage_label),
+        team=team,
+        semester=team.semester,
+    ).order_by('-updated_at', '-id').first()
+
+    submitted = submissions_for(team, stage_label)
+    for item in post_required:
+        verdict_cond = item.get('verdict_condition', 'all_pass')
+        if verdict_cond == 'revisions_only' and stage_grade and getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_APPROVED:
+            continue
+        sub = submitted.get(item['id'])
+        if not sub or sub.status != DeliverableSubmission.STATUS_ACCEPTED:
+            return False
+    return True
+
+
 def team_stage_status(team, stage_label):
     configured = stage_deliverables_configured(team, stage_label)
     if not configured:
@@ -547,6 +579,7 @@ def compute_stage_status_detail(team, stage_label, configured, archive_required_
     active_schedules = DefenseSchedule.objects.filter(
         scope=DefenseSchedule.SCOPE_CAPSTONE if is_capstone else DefenseSchedule.SCOPE_PIT,
         team=team,
+        project_version=team.project_version,
         status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE]
     )
     if stage_obj:
@@ -584,6 +617,15 @@ def compute_stage_status_detail(team, stage_label, configured, archive_required_
     ).order_by('-updated_at', '-id').first()
     has_panel_scored = bool(stage_grade and stage_grade.panel_score is not None)
 
+    if is_capstone and stage_grade:
+        if stage_grade.verdict in ('failed', 'project_rejected'):
+            return stage_grade.verdict
+        if stage_grade.verdict == 'for_redefense':
+            return 'for_redefense'
+        if stage_grade.verdict == 'approved_with_revisions' and not stage_grade.revisions_cleared_at:
+            return 'revisions_pending'
+        is_officially_complete = is_officially_complete and stage_grade.status == TeamGrade.STATUS_PUBLISHED
+
     if (
         is_officially_complete
         or progress_status in [TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_GRADING]
@@ -619,6 +661,7 @@ def is_stage_defense_done(team, stage_label):
     active_schedules = DefenseSchedule.objects.filter(
         scope=DefenseSchedule.SCOPE_CAPSTONE if is_capstone else DefenseSchedule.SCOPE_PIT,
         team=team,
+        project_version=team.project_version,
         status=DefenseSchedule.STATUS_DONE,
     )
     if stage_obj:
@@ -653,11 +696,18 @@ def is_stage_defense_done(team, stage_label):
         semester=team.semester,
     ).order_by('-updated_at', '-id').first()
     if stage_grade:
+        if is_capstone:
+            is_officially_complete = is_officially_complete and stage_grade.status == TeamGrade.STATUS_PUBLISHED
         if getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
             return False
         if getattr(stage_grade, 'result', '') == 'failed':
             return False
-        if stage_grade.status == TeamGrade.STATUS_PUBLISHED and stage_grade.final_grade is not None and stage_grade.final_grade < 75.0:
+        if (
+            stage_grade.status == TeamGrade.STATUS_PUBLISHED
+            and stage_grade.final_grade is not None
+            and stage_grade.final_grade < 75.0
+            and getattr(stage_grade, 'verdict', '') not in TeamGrade.PASSING_VERDICTS
+        ):
             return False
 
     has_panel_scored = bool(stage_grade and stage_grade.panel_score is not None)
@@ -683,10 +733,19 @@ def is_stage_unlocked_by_admin(team, stage_label, deliverable_type=None):
 
 def ensure_submission_editable(team, stage_label, deliverable_type, submission=None):
     """Keep upload and removal rules aligned with the review state."""
+    from grading.grades.models import TeamGrade
+    stage_grade = TeamGrade.objects.filter(
+        Q(defense_stage__label=stage_label) | Q(stage_label=stage_label),
+        team=team,
+        semester=team.semester,
+    ).order_by('-updated_at', '-id').first()
+    is_redefense = bool(stage_grade and getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE)
+
     if submission and submission.status == DeliverableSubmission.STATUS_ACCEPTED:
-        raise PermissionError(
-            'Accepted deliverables are locked. Reopen the submission for revision before changing its file.'
-        )
+        if not (is_redefense and deliverable_type == DeliverableSubmission.TYPE_PRE):
+            raise PermissionError(
+                'Accepted deliverables are locked. Reopen the submission for revision before changing its file.'
+            )
 
     if deliverable_type == DeliverableSubmission.TYPE_POST:
         if not archive_unlocked(team, stage_label):
@@ -695,7 +754,7 @@ def ensure_submission_editable(team, stage_label, deliverable_type, submission=N
 
     stage = defense_stage_for_label(stage_label) if team.is_capstone else None
     endorsed = was_stage_endorsed(team, stage) if stage else team.ready_for_stage == stage_label
-    if (endorsed or is_stage_defense_done(team, stage_label)) and not is_stage_unlocked_by_admin(
+    if not is_redefense and (endorsed or is_stage_defense_done(team, stage_label)) and not is_stage_unlocked_by_admin(
         team, stage_label, deliverable_type='pre'
     ):
         raise PermissionError('Pre-defense submissions are locked after endorsement or defense completion.')
@@ -839,6 +898,7 @@ def stage_payload(team, stage_label, evaluator=None):
     active_schedules = DefenseSchedule.objects.filter(
         scope=DefenseSchedule.SCOPE_CAPSTONE if is_capstone else DefenseSchedule.SCOPE_PIT,
         team=team,
+        project_version=team.project_version,
         status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE]
     )
     if stage_obj:
@@ -900,7 +960,12 @@ def stage_payload(team, stage_label, evaluator=None):
         ).order_by('-updated_at', '-id').first()
 
     grade_data = None
+    if is_capstone and stage_grade and stage_grade.status != TeamGrade.STATUS_PUBLISHED and (
+        team.project_version > 1 or stage_grade.attempt_count > 1
+    ):
+        is_stage_officially_complete = False
     if stage_grade:
+        from grading.grades.defense_workflow import workflow_payload
         grade_data = {
             'id': stage_grade.id,
             'schedule_id': stage_grade.schedule_id,
@@ -914,8 +979,14 @@ def stage_payload(team, stage_label, evaluator=None):
             'verdict': stage_grade.verdict or '',
             'verdict_remarks': stage_grade.verdict_remarks or '',
             'revision_deadline': stage_grade.revision_deadline.isoformat() if stage_grade.revision_deadline else None,
+            'revisions_cleared_at': stage_grade.revisions_cleared_at.isoformat() if stage_grade.revisions_cleared_at else None,
+            'clearance_remarks': stage_grade.clearance_remarks or '',
+            'redefense_verification_required': stage_grade.redefense_verification_required,
+            'redefense_verified_at': stage_grade.redefense_verified_at.isoformat() if stage_grade.redefense_verified_at else None,
+            'compliance_review_date': stage_grade.compliance_review_date.isoformat() if stage_grade.compliance_review_date else None,
             'attempt_count': stage_grade.attempt_count or 1,
             'is_officially_complete': is_stage_officially_complete,
+            'workflow': workflow_payload(stage_grade) if is_capstone else {},
         }
 
     used_vault_names = set()
@@ -1198,6 +1269,7 @@ def team_payload(team, selected_stage=None, evaluator=None):
                 for sg in student_grades
             ]
 
+            from grading.grades.defense_workflow import workflow_payload
             grade_payload = {
                 'id': grade_obj.id,
                 'schedule_id': grade_obj.schedule_id,
@@ -1209,7 +1281,17 @@ def team_payload(team, selected_stage=None, evaluator=None):
                 'final_grade': float(grade_obj.final_grade) if grade_obj.final_grade is not None else None,
                 'status': grade_obj.status,
                 'result': grade_obj.result,
+                'verdict': grade_obj.verdict or '',
+                'verdict_remarks': grade_obj.verdict_remarks or '',
+                'revision_deadline': grade_obj.revision_deadline.isoformat() if grade_obj.revision_deadline else None,
+                'revisions_cleared_at': grade_obj.revisions_cleared_at.isoformat() if grade_obj.revisions_cleared_at else None,
+                'clearance_remarks': grade_obj.clearance_remarks or '',
+                'redefense_verification_required': grade_obj.redefense_verification_required,
+                'redefense_verified_at': grade_obj.redefense_verified_at.isoformat() if grade_obj.redefense_verified_at else None,
+                'compliance_review_date': grade_obj.compliance_review_date.isoformat() if grade_obj.compliance_review_date else None,
+                'attempt_count': grade_obj.attempt_count or 1,
                 'is_officially_complete': bool(selected_payload.get('is_officially_complete', False)),
+                'workflow': workflow_payload(grade_obj) if team.is_capstone else {},
                 'peer_per_student': peer_per_student,
             }
 
@@ -1458,7 +1540,10 @@ def endorse_team(team, stage_label):
         stage = defense_stage_for_label(stage_label)
         if stage is None:
             raise ValueError('Defense stage does not exist.')
-        mark_stage_ready(team, stage)
+        try:
+            mark_stage_ready(team, stage)
+        except ValidationError as exc:
+            raise ValueError(' '.join(exc.messages)) from exc
     else:
         team.ready_for_stage = stage_label
         team.save(update_fields=['ready_for_stage', 'updated_at'])
@@ -1475,6 +1560,7 @@ def unendorse_team(team, stage_label):
 
         has_schedule = DefenseSchedule.objects.filter(
             team=team,
+        project_version=team.project_version,
             defense_stage=stage,
             scope=DefenseSchedule.SCOPE_CAPSTONE,
             status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE],
@@ -1486,6 +1572,7 @@ def unendorse_team(team, stage_label):
     else:
         has_schedule = DefenseSchedule.objects.filter(
             team=team,
+        project_version=team.project_version,
             event_name__iexact=stage_label,
             scope=DefenseSchedule.SCOPE_PIT,
             status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE],
@@ -1500,7 +1587,7 @@ def unendorse_team(team, stage_label):
 
 
 @transaction.atomic
-def review_submission(team, stage_label, deliverable_id, status_val, feedback_val, reviewer_user):
+def review_submission(team, stage_label, deliverable_id, status_val, feedback_val, reviewer_user, clear_defense_revisions=False):
     from django.utils import timezone
 
     try:
@@ -1543,6 +1630,22 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
     submission.reviewed_by = reviewer_user
     submission.reviewed_at = timezone.now()
     submission.save()
+
+    if is_post and status_val == DeliverableSubmission.STATUS_ACCEPTED:
+        from grading.grades.models import TeamGrade
+        stage_grade = TeamGrade.objects.filter(
+            Q(defense_stage__label=stage_label) | Q(stage_label=stage_label),
+            team=team,
+            semester=team.semester,
+        ).order_by('-updated_at', '-id').first()
+        if stage_grade and stage_grade.verdict == 'approved_with_revisions' and not stage_grade.revisions_cleared_at:
+            if clear_defense_revisions:
+                from grading.grades.defense_workflow import apply_workflow_action
+                reason = (feedback_val or '').strip() or f"Post-defense deliverable '{submission.label or deliverable_id}' approved."
+                apply_workflow_action(stage_grade, actor=reviewer_user, action='clear_revisions', reason=reason)
+        elif stage_grade and stage_grade.verdict in ('approved', 'approved_with_revisions'):
+            from grading.grades.services import maybe_auto_finalize_passed_grade
+            maybe_auto_finalize_passed_grade(stage_grade, user=reviewer_user)
 
     # Re-evaluate team readiness if we are rejecting a required pre-defense deliverable
     if status_val == DeliverableSubmission.STATUS_REJECTED:

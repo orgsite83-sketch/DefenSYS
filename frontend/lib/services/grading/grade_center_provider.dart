@@ -20,7 +20,16 @@ class GradeGroupCompletionReadiness {
     this.isComplete = false,
     this.incompleteTeams = const [],
     this.redefenseTeams = const [],
+    this.revisionTeams = const [],
     this.failingTeams = const [],
+    this.cohortTeams = const [],
+    this.panelCompleteCount,
+    this.adviserCompleteCount,
+    this.adviserEnabled,
+    this.peerCompleteCount,
+    this.peerEnabled,
+    this.verdictCompleteCount,
+    this.postDeliverablesCompleteCount,
   });
 
   final int totalTeams;
@@ -28,7 +37,16 @@ class GradeGroupCompletionReadiness {
   final bool canComplete, isComplete;
   final List<Map<String, dynamic>> incompleteTeams,
       redefenseTeams,
-      failingTeams;
+      revisionTeams,
+      failingTeams,
+      cohortTeams;
+  final int? panelCompleteCount;
+  final int? adviserCompleteCount;
+  final bool? adviserEnabled;
+  final int? peerCompleteCount;
+  final bool? peerEnabled;
+  final int? verdictCompleteCount;
+  final int? postDeliverablesCompleteCount;
 }
 
 class GradeCenterState {
@@ -379,6 +397,11 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
           .whereType<Map>()
           .map((row) => Map<String, dynamic>.from(row))
           .toList();
+      int? optInt(String key) =>
+          payload[key] is num ? (payload[key] as num).toInt() : null;
+      bool? optBool(String key) =>
+          payload[key] is bool ? payload[key] as bool : null;
+
       return GradeGroupCompletionReadiness(
         totalTeams: (payload['grading_total_team_count'] as num).toInt(),
         readyTeams: (payload['grading_ready_team_count'] as num).toInt(),
@@ -386,7 +409,21 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
         isComplete: payload['is_officially_complete'] == true,
         incompleteTeams: teams('incomplete_teams'),
         redefenseTeams: teams('redefense_teams'),
+        revisionTeams: payload.containsKey('revision_teams')
+            ? teams('revision_teams')
+            : const [],
         failingTeams: teams('failing_teams'),
+        cohortTeams: payload.containsKey('cohort_teams')
+            ? teams('cohort_teams')
+            : const [],
+        panelCompleteCount: optInt('panel_complete_count'),
+        adviserCompleteCount: optInt('adviser_complete_count'),
+        adviserEnabled: optBool('adviser_enabled'),
+        peerCompleteCount: optInt('peer_complete_count'),
+        peerEnabled: optBool('peer_enabled'),
+        verdictCompleteCount: optInt('verdict_complete_count'),
+        postDeliverablesCompleteCount:
+            optInt('post_deliverables_complete_count'),
       );
     } finally {
       state = state.copyWith(isCheckingCompletion: false);
@@ -554,12 +591,13 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     }
   }
 
-  /// Submit defense verdict (approved, approved_with_revisions, for_redefense)
+  /// Submit the official outcome independently of numeric grading.
   Future<bool> submitVerdict(
     int gradeId, {
     required String verdict,
     String? remarks,
     String? revisionDeadline,
+    bool redefenseVerificationRequired = false,
   }) async {
     state = state.copyWith(
       isSaving: true,
@@ -569,6 +607,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     try {
       final body = <String, dynamic>{
         'verdict': verdict,
+        'redefense_verification_required': redefenseVerificationRequired,
         if (remarks != null) 'verdict_remarks': remarks,
         if (revisionDeadline != null) 'revision_deadline': revisionDeadline,
       };
@@ -614,6 +653,37 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     try {
       await ref.read(curriculumAnalyticsProvider.notifier).fetchAnalytics();
     } catch (_) {}
+  }
+
+  Future<bool> applyDefenseWorkflow(int gradeId, Map<String, dynamic> action) async {
+    state = state.copyWith(isSaving: true, clearError: true, clearMessage: true);
+    try {
+      final response = await _client.post(
+        Uri.parse('$baseUrl/$gradeId/workflow/'), body: jsonEncode(action),
+      );
+      if (response.statusCode != 200) {
+        state = state.copyWith(isSaving: false, error: _errorFromResponse(response));
+        return false;
+      }
+      _applyPayload(Map<String, dynamic>.from(jsonDecode(response.body)),
+          successMessage: 'Defense workflow updated.');
+      await _refreshDependentProviders();
+      return true;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> readHistoricalGrade(int gradeId) async {
+    try {
+      final response = await _client.get(Uri.parse('$baseUrl/$gradeId/'));
+      if (response.statusCode != 200) return null;
+      final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+      return payload['grade'] is Map ? Map<String, dynamic>.from(payload['grade']) : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   AuthenticatedHttpClient get _client =>

@@ -243,7 +243,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: _HeroCarousel(height: double.infinity)),
+                  child: _HeroCarousel(
+                    height: double.infinity,
+                    autoPlay: !authState.isLoading,
+                  )),
                 Positioned.fill(
                   child: IgnorePointer(
                     child: DecoratedBox(
@@ -837,24 +840,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 _openGettingStarted();
               }
             },
-            child: TweenAnimationBuilder<double>(
-              duration: const Duration(milliseconds: 380),
-              curve: Curves.easeInOutCubic,
-              tween: Tween<double>(end: targetHeaderH),
-              builder: (context, headerH, _) {
-                return Stack(
+            child: Stack(
                   children: [
                     // 1. Top Section: Hero Header (Collage Carousel vs Single Hero Carousel)
-                    Positioned(
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 380),
+                      curve: Curves.easeInOutCubic,
                       top: 0,
                       left: 0,
                       right: 0,
-                      height: headerH,
-                      child: _buildMobileHeroHeader(headerH),
+                      height: targetHeaderH,
+                      child: _buildMobileHeroHeader(
+                        autoPlay: !authState.isLoading,
+                      ),
                     ),
                     // 2. Bottom Section: Tactile Curved Bottom Sheet
-                    Positioned(
-                      top: (headerH - 24.0).clamp(0.0, totalH),
+                    AnimatedPositioned(
+                      duration: const Duration(milliseconds: 380),
+                      curve: Curves.easeInOutCubic,
+                      top: (targetHeaderH - 24.0).clamp(0.0, totalH),
                       left: 0,
                       right: 0,
                       bottom: 0,
@@ -920,8 +924,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                     ),
                   ],
-                );
-              },
             ),
           );
         },
@@ -929,7 +931,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  Widget _buildMobileHeroHeader(double headerH) {
+  Widget _buildMobileHeroHeader({required bool autoPlay}) {
     final topPadding = MediaQuery.of(context).padding.top;
 
     return Stack(
@@ -939,8 +941,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         Positioned.fill(
           child: _HeroCarousel(
             key: const ValueKey('mobile_hero_carousel'),
-            height: headerH,
+            height: double.infinity,
             isMobile: true,
+            autoPlay: autoPlay,
           ),
         ),
         // Top dark gradient scrim for status bar and branding legibility
@@ -1483,41 +1486,46 @@ class _HeroCarousel extends StatefulWidget {
   const _HeroCarousel({
     super.key,
     required this.height,
-    this.isMobile = false});
+    this.isMobile = false,
+    this.autoPlay = true,
+  });
 
   final double height;
   final bool isMobile;
+  final bool autoPlay;
 
   @override
   State<_HeroCarousel> createState() => _HeroCarouselState();
 }
 
-class _HeroCarouselState extends State<_HeroCarousel> {
+class _HeroCarouselState extends State<_HeroCarousel>
+    with WidgetsBindingObserver {
   late final PageController _pageController;
   Timer? _timer;
   int _currentPage = 0;
 
-  final List<String> _images = [
-    'assets/login_hero_1.png',
-    'assets/login_hero_2.png',
-    'assets/login_hero_3.png',
-    'assets/login_hero_4.png',
-    'assets/login_hero_5.png',
-    'assets/login_hero_6.png',
-    'assets/login_hero_7.png',
-  ];
+  static const _imageCount = 7;
+  bool _isForeground = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pageController = PageController(initialPage: 0);
-    _startTimer();
   }
 
   void _startTimer() {
+    _timer?.cancel();
+    // Scaffold removes keyboard insets from the MediaQuery around its body.
+    // Read the view directly so typing still pauses the header carousel.
+    if (!widget.autoPlay || !_isForeground ||
+        (widget.isMobile && View.of(context).viewInsets.bottom > 0) ||
+        MediaQuery.disableAnimationsOf(context)) {
+      return;
+    }
     _timer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      if (!mounted) return;
-      final nextPage = (_currentPage + 1) % _images.length;
+      if (!mounted || !_pageController.hasClients || !TickerMode.of(context)) return;
+      final nextPage = (_currentPage + 1) % _imageCount;
       _pageController.animateToPage(
         nextPage,
         duration: const Duration(milliseconds: 800),
@@ -1526,10 +1534,33 @@ class _HeroCarouselState extends State<_HeroCarousel> {
     });
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _startTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _HeroCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.autoPlay != widget.autoPlay) _startTimer();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _isForeground = state == AppLifecycleState.resumed;
+    _startTimer();
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (mounted && widget.isMobile) _startTimer();
+  }
+
   void _goToNextPage() {
-    if (!mounted) return;
+    if (!mounted || !_pageController.hasClients) return;
     _timer?.cancel();
-    final nextPage = (_currentPage + 1) % _images.length;
+    final nextPage = (_currentPage + 1) % _imageCount;
     _pageController.animateToPage(
       nextPage,
       duration: const Duration(milliseconds: 800),
@@ -1541,13 +1572,14 @@ class _HeroCarouselState extends State<_HeroCarousel> {
   @override
   void dispose() {
     _timer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    return RepaintBoundary(child: SizedBox(
       height: widget.height,
       width: double.infinity,
       child: Stack(
@@ -1559,7 +1591,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                 _currentPage = index;
               });
             },
-            itemCount: _images.length,
+            itemCount: _imageCount,
             itemBuilder: (context, index) {
               return MouseRegion(
                 cursor: SystemMouseCursors.click,
@@ -1567,7 +1599,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                   onTap: _goToNextPage,
                   behavior: HitTestBehavior.opaque,
                   child: Image.asset(
-                    _images[index],
+                    'assets/login/hero_${widget.isMobile ? 'mobile' : 'desktop'}_${index + 1}.webp',
                     fit: BoxFit.cover,
                     alignment: Alignment.center,
                   ),
@@ -1582,7 +1614,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: List.generate(
-                _images.length,
+                _imageCount,
                 (index) => AnimatedContainer(
                   duration: const Duration(milliseconds: 300),
                   margin: const EdgeInsets.symmetric(horizontal: 4),
@@ -1602,7 +1634,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
           ),
         ],
       ),
-    );
+    ));
   }
 }
 

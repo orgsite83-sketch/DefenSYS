@@ -1499,6 +1499,9 @@ class CapstoneDeliverablesApiTests(APITestCase):
         )
 
         # Team previously passed Stage 1 (so team.status == 'Approved')
+        from student_teams.models import TeamStageProgress
+        TeamStageProgress.objects.update_or_create(team=self.team, semester=self.semester,
+            defense_stage=self.stage, defaults={'status': TeamStageProgress.STATUS_PASSED})
         self.team.status = StudentTeam.STATUS_APPROVED
         self.team.save(update_fields=['status', 'updated_at'])
 
@@ -1761,6 +1764,125 @@ class CapstoneDeliverablesApiTests(APITestCase):
         )
         self.assertEqual(team_grade.result, 'failed')
         self.assertFalse(archive_unlocked(pit_team, '2nd Year PIT Showcase', deliverable_type='post'))
+
+    def test_post_deliverables_unlock_when_verdict_approved_even_if_grade_under_75(self):
+        from decimal import Decimal
+        from defense.scheduler.models import DefenseSchedule
+        from grading.grades.models import TeamGrade
+        from repository.deliverables.services import archive_unlocked
+
+        sched = DefenseSchedule.objects.create(
+            semester=self.semester,
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            team=self.team,
+            defense_stage=self.stage,
+            scheduled_date=timezone.now().date(),
+            start_time='10:00:00',
+            room='Room 101',
+            status=DefenseSchedule.STATUS_DONE,
+        )
+        grade = TeamGrade.objects.create(
+            team=self.team,
+            schedule=sched,
+            defense_stage=self.stage,
+            stage_label=self.stage.label,
+            semester=self.semester,
+            scope=TeamGrade.SCOPE_CAPSTONE,
+            panel_score=Decimal('55.00'),
+            peer_score=Decimal('55.00'),
+            adviser_score=Decimal('55.00'),
+            final_grade=Decimal('55.00'),
+            verdict=TeamGrade.VERDICT_APPROVED,
+            status=TeamGrade.STATUS_PUBLISHED,
+        )
+        self.assertTrue(archive_unlocked(self.team, self.stage.label, deliverable_type='post'))
+
+    def test_post_deliverable_approval_can_clear_defense_revisions(self):
+        from defense.scheduler.models import DefenseSchedule
+        from grading.grades.models import TeamGrade
+
+        # Set up a team with verdict approved_with_revisions
+        sched = DefenseSchedule.objects.create(
+            semester=self.semester,
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            team=self.team,
+            defense_stage=self.stage,
+            scheduled_date=timezone.now().date(),
+            start_time='10:00:00',
+            room='Room 101',
+            status=DefenseSchedule.STATUS_DONE,
+        )
+        grade = TeamGrade.objects.create(
+            team=self.team,
+            schedule=sched,
+            defense_stage=self.stage,
+            stage_label=self.stage.label,
+            semester=self.semester,
+            scope=TeamGrade.SCOPE_CAPSTONE,
+            verdict='approved_with_revisions',
+            status=TeamGrade.STATUS_PENDING,
+        )
+
+        # Upload post-defense deliverable
+        self.client.force_authenticate(user=self.admin)
+        up_res = self.client.post('/api/repository/deliverables/upload/', {
+            'team_id': self.team.id,
+            'stage_label': self.stage.label,
+            'deliverable_id': 'D4.1',
+            'file_name': 'revised_manuscript.pdf',
+        })
+        self.assertEqual(up_res.status_code, 200)
+
+        # Review and accept with clear_defense_revisions=True
+        rev_res = self.client.post('/api/repository/deliverables/review/', {
+            'team_id': self.team.id,
+            'stage_label': self.stage.label,
+            'deliverable_id': 'D4.1',
+            'status': 'accepted',
+            'feedback': 'All revisions confirmed.',
+            'clear_defense_revisions': True,
+        })
+        self.assertEqual(rev_res.status_code, 200)
+
+        grade.refresh_from_db()
+        self.assertIsNotNone(grade.revisions_cleared_at)
+        self.assertEqual(grade.clearance_remarks, 'All revisions confirmed.')
+
+    def test_redefense_allows_pre_defense_resubmission(self):
+        from defense.scheduler.models import DefenseSchedule
+        from grading.grades.models import TeamGrade
+
+        # Deliverable pre-defense initially accepted
+        sched = DefenseSchedule.objects.create(
+            semester=self.semester,
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            team=self.team,
+            defense_stage=self.stage,
+            scheduled_date=timezone.now().date(),
+            start_time='09:00:00',
+            room='Room 101',
+            status=DefenseSchedule.STATUS_DONE,
+        )
+        grade = TeamGrade.objects.create(
+            team=self.team,
+            schedule=sched,
+            defense_stage=self.stage,
+            stage_label=self.stage.label,
+            semester=self.semester,
+            scope=TeamGrade.SCOPE_CAPSTONE,
+            verdict='for_redefense',
+            status=TeamGrade.STATUS_PENDING,
+        )
+
+        # Student uploads revised pre-defense paper for Attempt 2
+        self.client.force_authenticate(user=self.student)
+        res = self.client.post('/api/repository/deliverables/upload/', {
+            'team_id': self.team.id,
+            'stage_label': self.stage.label,
+            'deliverable_id': 'D4',
+            'file_name': 'concept_paper_attempt2.pdf',
+        })
+        self.assertEqual(res.status_code, 200)
 
 
 

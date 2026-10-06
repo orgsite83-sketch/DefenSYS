@@ -41,6 +41,8 @@ Future<void> _openDialog(
   List<Map<String, dynamic>>? teams,
   double textScale = 1,
   GradeGroupCompletionReadiness? completion,
+  ValueChanged<bool>? onCompletionResult,
+  bool isPit = false,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -57,16 +59,22 @@ Future<void> _openDialog(
       home: Scaffold(
         body: Builder(
           builder: (context) => TextButton(
-            onPressed: () => completion != null
-                ? reviewGradeGroupCompletion(
-                    context,
-                    stageLabel: 'Concept Proposal',
-                    checkCompletion: () async => completion,
-                  )
-                : showIncompleteGradingTeamsDialog(
-                    context,
-                    teams: teams ?? _teams,
-                  ),
+            onPressed: () async {
+              if (completion != null) {
+                final result = await reviewGradeGroupCompletion(
+                  context,
+                  stageLabel: 'Concept Proposal',
+                  checkCompletion: () async => completion,
+                  isPit: isPit,
+                );
+                onCompletionResult?.call(result);
+              } else {
+                await showIncompleteGradingTeamsDialog(
+                  context,
+                  teams: teams ?? _teams,
+                );
+              }
+            },
             child: const Text('Open readiness'),
           ),
         ),
@@ -81,53 +89,61 @@ void main() {
   setUpAll(() => loadPreviewFonts(force: true));
 
   for (final dark in [false, true]) {
-    for (final width in [1100.0, 390.0]) {
+    for (final size in [const Size(1100, 844), const Size(390, 640)]) {
       testWidgets(
-        'completion confirmation distinguishes full grades from outcomes at $width ($dark)',
+        'unresolved re-defense and revisions block completion at $size ($dark)',
         (tester) async {
-          tester.view.physicalSize = Size(width, 844);
+          tester.view.physicalSize = size;
           tester.view.devicePixelRatio = 1;
           addTearDown(tester.view.resetPhysicalSize);
           addTearDown(tester.view.resetDevicePixelRatio);
+          bool? result;
           await _openDialog(
             tester,
             dark: dark,
+            onCompletionResult: (value) => result = value,
             completion: const GradeGroupCompletionReadiness(
-              totalTeams: 16,
-              readyTeams: 16,
+              totalTeams: 2,
+              readyTeams: 2,
               canComplete: true,
               redefenseTeams: [
-                {'team_name': 'Team BioPulse'},
+                {'team_name': 'Team Retry'},
+              ],
+              revisionTeams: [
+                {'team_name': 'Team Revise'},
               ],
             ),
           );
+          expect(find.text('Grading not ready'), findsOneWidget);
+          expect(find.text('Re-defense required: 1 missing'), findsOneWidget);
+          expect(find.text('Revision clearance: 1 missing'), findsOneWidget);
+          expect(find.text('Mark Complete'), findsNothing);
           expect(tester.takeException(), isNull);
-          expect(find.text('16 of 16 teams grading-ready'), findsOneWidget);
-          expect(
-            find.text('Every team has all required grades.'),
-            findsOneWidget,
-          );
-          expect(find.textContaining('For Re-defense verdict'), findsOneWidget);
-          expect(find.textContaining('will not advance'), findsOneWidget);
-          expect(
-            find.widgetWithText(ElevatedButton, 'Mark Complete').hitTestable(),
-            findsOneWidget,
-          );
-          await capturePreview(
-            tester,
-            find.byKey(const ValueKey('readiness-preview')),
-            'grade-completion-confirmation-${width.toInt()}-${dark ? 'dark' : 'light'}',
-          );
-          await tester.tap(find.text('Cancel'));
+          await tester.tap(find.widgetWithText(OutlinedButton, 'Close'));
           await tester.pumpAndSettle();
-          expect(
-            find.text('Every team has all required grades.'),
-            findsNothing,
-          );
+          expect(result, isFalse);
         },
       );
     }
   }
+
+  testWidgets('cleared teams can confirm stage completion', (tester) async {
+    bool? result;
+    await _openDialog(
+      tester,
+      onCompletionResult: (value) => result = value,
+      completion: const GradeGroupCompletionReadiness(
+        totalTeams: 1,
+        readyTeams: 1,
+        canComplete: true,
+      ),
+    );
+    expect(find.text('Mark Complete'), findsOneWidget);
+    expect(find.byType(CheckboxListTile), findsNothing);
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Mark Complete'));
+    await tester.pumpAndSettle();
+    expect(result, isTrue);
+  });
 
   for (final dark in [false, true]) {
     for (final size in [
@@ -258,4 +274,100 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Grading not ready'), findsNothing);
   });
+
+  testWidgets(
+    'smart tab switches to deliverables tab when only post-defense is missing',
+    (tester) async {
+      await _openDialog(
+        tester,
+        teams: [
+          {
+            'team_name': 'Team CyberGuard',
+            'missing_components': ['post_defense'],
+            'panel_complete': true,
+            'adviser_complete': true,
+            'peer_complete': true,
+            'post_defense_complete': false,
+          },
+        ],
+      );
+      expect(find.text('Post-defense deliverables: 1 missing'), findsOneWidget);
+      // Auto-selected Tab 1: Deliverables & Clearance
+      expect(find.text('Post-defense deliverable'), findsOneWidget);
+      expect(find.text('Verdict & clearance'), findsOneWidget);
+      expect(find.text('Awaiting Adviser Approval'), findsOneWidget);
+      expect(find.text('Cleared'), findsOneWidget);
+
+      // Tap Tab 0: Evaluator Grades
+      await tester.tap(find.byKey(const ValueKey('tab-evaluator-grades')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Panel'), findsOneWidget);
+      expect(find.text('Adviser'), findsOneWidget);
+      expect(find.text('Peer evaluation'), findsOneWidget);
+      expect(find.text('Ready'), findsNWidgets(3));
+
+      // Tap Tab 1: Deliverables & Clearance
+      await tester.tap(find.byKey(const ValueKey('tab-deliverables-clearance')));
+      await tester.pumpAndSettle();
+      expect(find.text('Awaiting Adviser Approval'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'confirmation dialog displays evaluator grades and deliverables readiness breakdown',
+    (tester) async {
+      await _openDialog(
+        tester,
+        completion: const GradeGroupCompletionReadiness(
+          totalTeams: 16,
+          readyTeams: 16,
+          canComplete: true,
+          panelCompleteCount: 16,
+          adviserCompleteCount: 16,
+          adviserEnabled: true,
+          peerCompleteCount: 16,
+          peerEnabled: true,
+          verdictCompleteCount: 16,
+          postDeliverablesCompleteCount: 16,
+        ),
+      );
+
+      expect(find.text('Mark Concept Proposal Complete?'), findsOneWidget);
+      expect(find.text('All 16 teams are ready'), findsOneWidget);
+      expect(find.text('Evaluator Grades'), findsOneWidget);
+      expect(find.text('Deliverables & Clearance'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
+      expect(find.text('Mark Complete'), findsOneWidget);
+      expect(find.text('Ready'), findsWidgets);
+    },
+  );
+
+  testWidgets(
+    'confirmation dialog handles PIT scope with disabled adviser',
+    (tester) async {
+      await _openDialog(
+        tester,
+        isPit: true,
+        completion: const GradeGroupCompletionReadiness(
+          totalTeams: 8,
+          readyTeams: 8,
+          canComplete: true,
+          panelCompleteCount: 8,
+          peerCompleteCount: 8,
+          peerEnabled: true,
+          postDeliverablesCompleteCount: 8,
+        ),
+      );
+
+      expect(find.text('Mark Concept Proposal Complete?'), findsOneWidget);
+      expect(find.text('All 8 teams are ready'), findsOneWidget);
+      expect(find.text('Evaluator Grades'), findsOneWidget);
+      expect(find.text('Adviser'), findsNothing);
+      expect(find.text('Deliverables & Clearance'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
+      expect(find.text('Mark Complete'), findsOneWidget);
+    },
+  );
 }
+

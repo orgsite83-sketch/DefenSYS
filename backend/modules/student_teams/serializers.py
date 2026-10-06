@@ -114,6 +114,7 @@ class StudentTeamSerializer(serializers.ModelSerializer):
     system_name = serializers.SerializerMethodField()
     project_manager_name = serializers.SerializerMethodField()
     pit_event_name = serializers.SerializerMethodField()
+    project_version = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = StudentTeam
@@ -121,6 +122,7 @@ class StudentTeamSerializer(serializers.ModelSerializer):
             'id',
             'name',
             'project_title',
+            'project_version',
             'level',
             'year_level',
             'section',

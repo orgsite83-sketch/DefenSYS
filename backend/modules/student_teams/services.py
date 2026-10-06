@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from grading.constants import PASS_GRADE_THRESHOLD
@@ -6,60 +7,21 @@ from .models import StudentTeam, TeamStageProgress
 
 
 def get_ready_teams(semester, stage):
-    from defense.scheduler.models import DefenseSchedule
-    from grading.grades.models import TeamGrade
+    ids = [team.pk for team in StudentTeam.objects.filter(semester=semester) if is_stage_ready(team, stage)]
+    return StudentTeam.objects.filter(pk__in=ids)
 
-    scheduled_progress = TeamStageProgress.objects.filter(
-        semester=semester,
-        defense_stage=stage,
-        status=TeamStageProgress.STATUS_SCHEDULED,
-    )
-    if scheduled_progress.exists():
-        active_scheduled_team_ids = set(
-            DefenseSchedule.objects.filter(
-                scope=DefenseSchedule.SCOPE_CAPSTONE,
-                semester=semester,
-                defense_stage=stage,
-                status=DefenseSchedule.STATUS_SCHEDULED,
-            ).values_list('team_id', flat=True)
-        )
-        for progress in scheduled_progress:
-            if progress.team_id not in active_scheduled_team_ids:
-                grade = TeamGrade.objects.filter(
-                    team=progress.team,
-                    semester=semester,
-                    defense_stage=stage,
-                ).first()
-                if not (grade and grade.result == 'passed'):
-                    progress.status = TeamStageProgress.STATUS_READY
-                    progress.save(update_fields=['status', 'updated_at'])
 
-    ready_ids = set(
-        TeamStageProgress.objects.filter(
-            semester=semester,
-            defense_stage=stage,
-            status=TeamStageProgress.STATUS_READY,
-        ).values_list('team_id', flat=True)
-    )
-
-    active_scheduled_ids = set(
-        DefenseSchedule.objects.filter(
-            scope=DefenseSchedule.SCOPE_CAPSTONE,
-            semester=semester,
-            defense_stage=stage,
-            status=DefenseSchedule.STATUS_SCHEDULED,
-        ).values_list('team_id', flat=True)
-    )
-    redefense_team_ids = set(
-        TeamGrade.objects.filter(
-            semester=semester,
-            defense_stage=stage,
-            verdict=TeamGrade.VERDICT_FOR_REDEFENSE,
-        ).exclude(team_id__in=active_scheduled_ids)
-        .values_list('team_id', flat=True)
-    )
-    all_ready_ids = ready_ids | redefense_team_ids
-    return StudentTeam.objects.filter(pk__in=all_ready_ids)
+def stage_progression_blocker(team, stage):
+    """Require prior stages to be officially passed and cleared on this project."""
+    from defense.stages.models import DefenseStage
+    for previous in DefenseStage.objects.filter(is_active=True, display_order__lt=stage.display_order):
+        progress = get_stage_progress(team, previous)
+        if not progress or progress.status not in (TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_ARCHIVED):
+            return f'{previous.label} must be completed, passed, and cleared before {stage.label}.'
+        from repository.deliverables.services import post_deliverables_complete
+        if not post_deliverables_complete(team, previous.label):
+            return f'Post-defense deliverables for {previous.label} must be approved by the adviser before proceeding to {stage.label}.'
+    return ''
 
 
 def get_stage_progress(team, stage):
@@ -79,19 +41,37 @@ def is_stage_ready(team, stage):
     from grading.grades.models import TeamGrade
     from defense.scheduler.models import DefenseSchedule
 
+    if stage_progression_blocker(team, stage):
+        return False
+    active_scheds = DefenseSchedule.objects.filter(
+        scope='capstone', team=team, semester=team.semester, defense_stage=stage,
+        project_version=team.project_version, status='scheduled',
+    )
+    has_active = False
+    for sched in active_scheds:
+        sched_grade = sched.grade_records.first()
+        if sched_grade and sched_grade.verdict:
+            sched.status = DefenseSchedule.STATUS_DONE
+            sched.save(update_fields=['status', 'updated_at'])
+        else:
+            has_active = True
+    if has_active:
+        return False
+    from grading.grades.defense_workflow import recovery_for, replacement_for
     grade = TeamGrade.objects.filter(
         team=team,
         semester=team.semester,
         defense_stage=stage,
     ).first()
     if grade and getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
-        has_active = DefenseSchedule.objects.filter(
-            scope=DefenseSchedule.SCOPE_CAPSTONE,
-            team=team,
-            defense_stage=stage,
-            status=DefenseSchedule.STATUS_SCHEDULED,
-        ).exists()
-        return not has_active
+        return not grade.redefense_verification_required or bool(grade.redefense_verified_at)
+    if grade and grade.verdict in ('failed', 'project_rejected'):
+        return bool(recovery_for(team, stage))
+    if grade and grade.verdict in TeamGrade.PASSING_VERDICTS:
+        return False
+    if replacement_for(team, stage):
+        from repository.deliverables.services import required_complete
+        return required_complete(team, stage.label)
 
     progress = get_stage_progress(team, stage)
     if not progress:
@@ -100,18 +80,7 @@ def is_stage_ready(team, stage):
         return True
 
     if progress.status == TeamStageProgress.STATUS_SCHEDULED:
-        has_active = DefenseSchedule.objects.filter(
-            scope=DefenseSchedule.SCOPE_CAPSTONE,
-            team=team,
-            defense_stage=stage,
-            status=DefenseSchedule.STATUS_SCHEDULED,
-        ).exists()
-        if not has_active:
-            if grade and grade.result == 'passed':
-                return False
-            progress.status = TeamStageProgress.STATUS_READY
-            progress.save(update_fields=['status', 'updated_at'])
-            return True
+        return not (grade and grade.result == 'passed')
     return False
 
 
@@ -122,6 +91,8 @@ _ENDORSED_STATUSES = frozenset({
     TeamStageProgress.STATUS_GRADING,
     TeamStageProgress.STATUS_PASSED,
     TeamStageProgress.STATUS_ARCHIVED,
+    TeamStageProgress.STATUS_REVISIONS,
+    TeamStageProgress.STATUS_REDEFENSE,
 })
 
 
@@ -132,7 +103,8 @@ def was_stage_endorsed(team, stage):
     later lifecycle statuses such as 'scheduled', 'passed', etc.
     """
     progress = get_stage_progress(team, stage)
-    return bool(progress and progress.status in _ENDORSED_STATUSES)
+    return bool(progress and (progress.status in _ENDORSED_STATUSES or (
+        progress.status == TeamStageProgress.STATUS_FAILED and progress.ready_at)))
 
 
 def _progress_for(team, stage, user=None):
@@ -161,6 +133,16 @@ def _mirror_team_status(team, status):
 
 @transaction.atomic
 def mark_stage_ready(team, stage, user=None):
+    blocker = stage_progression_blocker(team, stage)
+    if blocker:
+        raise ValidationError(blocker)
+    from grading.grades.models import TeamGrade
+    from grading.grades.defense_workflow import recovery_for
+    grade = TeamGrade.objects.filter(team=team, defense_stage=stage, semester=team.semester).first()
+    if grade and grade.verdict in ('failed', 'project_rejected') and not recovery_for(team, stage):
+        raise ValidationError('An authorized recovery decision is required before scheduling another attempt.')
+    if grade and grade.verdict in TeamGrade.PASSING_VERDICTS:
+        raise ValidationError('This defense is approved. Complete its required grading and revision clearance instead of re-endorsing it.')
     progress, _ = _progress_for(team, stage, user=user)
     progress.status = TeamStageProgress.STATUS_READY
     progress.ready_at = progress.ready_at or timezone.now()
@@ -200,10 +182,11 @@ def mark_stage_result(grade, user=None):
 
     progress, _ = _progress_for(grade.team, grade.defense_stage, user=user)
     verdict = getattr(grade, 'verdict', '')
-    if verdict:
-        is_passed = verdict in ('approved', 'approved_with_revisions')
-    else:
-        is_passed = grade.final_grade is not None and grade.final_grade >= PASS_GRADE_THRESHOLD
+    from grading.grades.defense_workflow import passed_and_cleared
+    from repository.deliverables.services import post_deliverables_complete
+    lbl = grade.defense_stage.label if grade.defense_stage_id else grade.stage_label
+    post_done = post_deliverables_complete(grade.team, lbl)
+    is_passed = grade.status == grade.STATUS_PUBLISHED and passed_and_cleared(grade) and post_done
 
     if is_passed:
         progress.status = TeamStageProgress.STATUS_PASSED
@@ -215,11 +198,18 @@ def mark_stage_result(grade, user=None):
             team_update_fields.append('ready_for_stage')
         grade.team.save(update_fields=team_update_fields)
     else:
-        progress.status = TeamStageProgress.STATUS_FAILED
         if verdict == 'for_redefense':
+            progress.status = TeamStageProgress.STATUS_REDEFENSE
             team_status = grade.team.status or StudentTeam.STATUS_APPROVED
-        else:
+        elif verdict == 'approved_with_revisions' and not grade.revisions_cleared_at:
+            progress.status = TeamStageProgress.STATUS_REVISIONS
+            team_status = grade.team.status
+        elif verdict in ('failed', 'project_rejected'):
+            progress.status = TeamStageProgress.STATUS_FAILED
             team_status = StudentTeam.STATUS_FAILED
+        else:
+            progress.status = TeamStageProgress.STATUS_GRADING
+            team_status = grade.team.status
 
     progress.grade = grade
     progress.graded_at = progress.graded_at or timezone.now()

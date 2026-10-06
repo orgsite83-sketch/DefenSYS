@@ -66,8 +66,8 @@ def snapshot(grade):
                            'criterion': row.criterion_name_snapshot, 'student_id': row.submission.student_id,
                            'student_name': (row.submission.student.get_full_name() or row.submission.student.username) if row.submission.student else 'Team',
                            'evaluator': (row.submission.panelist.get_full_name() or row.submission.panelist.username) if row.submission.panelist else row.submission.guest_name}
-                          for row in PanelistCriterionScore.objects.filter(submission__team_grade=grade).select_related('submission__panelist', 'submission__student').order_by('pk')]
-    values['submissions'] = list(grade.panelist_submissions.order_by('pk').values('id', 'is_void'))
+                          for row in PanelistCriterionScore.objects.filter(submission__team_grade=grade, submission__schedule_id=grade.schedule_id).select_related('submission__panelist', 'submission__student').order_by('pk')]
+    values['submissions'] = list(grade.panelist_submissions.filter(schedule_id=grade.schedule_id).order_by('pk').values('id', 'is_void'))
     values['students'] = [{'id': row.pk, 'student_name': row.student.get_full_name() or row.student.username, 'panel_score': str(row.panel_score) if row.panel_score is not None else None,
                           'adviser_score': str(row.adviser_score) if row.adviser_score is not None else None,
                           'peer_score': str(row.peer_score) if row.peer_score is not None else None,
@@ -89,7 +89,7 @@ def correction_payload(item):
 def correction_details(grade):
     rows = []
     guest_references = {str(i['id']): i['email'] for i in grade.schedule.guest_invitations.values('id', 'email')} if grade.schedule_id else {}
-    for submission in grade.panelist_submissions.select_related('panelist', 'student').prefetch_related('criterion_scores').order_by('pk'):
+    for submission in grade.panelist_submissions.filter(schedule_id=grade.schedule_id).select_related('panelist', 'student').prefetch_related('criterion_scores').order_by('pk'):
         evaluator = (submission.panelist.get_full_name() or submission.panelist.username) if submission.panelist else submission.guest_name
         for score in submission.criterion_scores.all():
             rows.append({'id': score.pk, 'submission_id': submission.pk, 'evaluator': evaluator,
@@ -137,7 +137,8 @@ def _perform_change(grade, changes):
         if not isinstance(item, dict) or set(item) != {'id', 'score'}:
             raise ValidationError('Select a criterion score and its corrected value.')
         row_id = serializers.IntegerField(min_value=1).run_validation(item['id'])
-        row = PanelistCriterionScore.objects.select_related('submission__panelist').filter(pk=row_id, submission__team_grade=grade).first()
+        row = PanelistCriterionScore.objects.select_related('submission__panelist').filter(
+            pk=row_id, submission__team_grade=grade, submission__schedule_id=grade.schedule_id).first()
         if not row or row.submission.is_void:
             raise ValidationError('This score is missing or belongs to a voided evaluation.')
         if grade.panel_score_is_override:
@@ -151,7 +152,7 @@ def _perform_change(grade, changes):
         recompute_panel_score(grade)
     elif 'void_submission' in changes:
         submission_id = serializers.IntegerField(min_value=1).run_validation(changes['void_submission'])
-        submission = grade.panelist_submissions.filter(pk=submission_id, is_void=False).first()
+        submission = grade.panelist_submissions.filter(pk=submission_id, schedule_id=grade.schedule_id, is_void=False).first()
         if not submission:
             raise ValidationError('Select an active evaluation belonging to this grade.')
         if grade.status == 'published':

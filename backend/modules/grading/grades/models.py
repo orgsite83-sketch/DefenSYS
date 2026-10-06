@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import Q
 from django.utils import timezone
+from student_teams.project_versions import CurrentProjectManager
 
 logger = logging.getLogger(__name__)
 
@@ -66,11 +67,15 @@ class TeamGrade(models.Model):
     VERDICT_APPROVED = 'approved'
     VERDICT_APPROVED_WITH_REVISIONS = 'approved_with_revisions'
     VERDICT_FOR_REDEFENSE = 'for_redefense'
+    VERDICT_FAILED = 'failed'
+    VERDICT_PROJECT_REJECTED = 'project_rejected'
 
     VERDICT_CHOICES = (
         (VERDICT_APPROVED, 'Approved'),
         (VERDICT_APPROVED_WITH_REVISIONS, 'Approved with Revisions'),
         (VERDICT_FOR_REDEFENSE, 'For Re-defense'),
+        (VERDICT_FAILED, 'Failed'),
+        (VERDICT_PROJECT_REJECTED, 'Project Rejected'),
     )
 
     PASSING_VERDICTS = frozenset({VERDICT_APPROVED, VERDICT_APPROVED_WITH_REVISIONS})
@@ -94,6 +99,8 @@ class TeamGrade(models.Model):
     )
     scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, default=SCOPE_CAPSTONE)
     stage_label = models.CharField(max_length=120, default='Unscheduled')
+    project_version = models.PositiveIntegerField(default=1)
+    project_title_snapshot = models.CharField(max_length=255, blank=True)
     defense_stage = models.ForeignKey(
         'defense.DefenseStage',
         related_name='grade_records',
@@ -130,6 +137,13 @@ class TeamGrade(models.Model):
     )
     verdict_at = models.DateTimeField(null=True, blank=True)
     revision_deadline = models.DateField(null=True, blank=True)
+    revisions_cleared_at = models.DateTimeField(null=True, blank=True)
+    revisions_cleared_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='cleared_defense_revisions')
+    clearance_remarks = models.TextField(blank=True)
+    redefense_verification_required = models.BooleanField(default=False)
+    redefense_verified_at = models.DateTimeField(null=True, blank=True)
+    redefense_verified_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='verified_redefense_readiness')
+    compliance_review_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
     published_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -142,7 +156,8 @@ class TeamGrade(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    objects = TeamGradeQuerySet.as_manager()
+    objects = CurrentProjectManager.from_queryset(TeamGradeQuerySet)()
+    all_objects = TeamGradeQuerySet.as_manager()
 
     class Meta:
         app_label = 'grading'
@@ -150,12 +165,12 @@ class TeamGrade(models.Model):
         ordering = ['team__level', 'team__name', 'stage_label']
         constraints = [
             models.UniqueConstraint(
-                fields=['team', 'semester', 'scope', 'defense_stage'],
+                fields=['team', 'semester', 'scope', 'defense_stage', 'project_version'],
                 condition=Q(scope='capstone', defense_stage__isnull=False),
                 name='unique_capstone_grade_per_team_stage',
             ),
             models.UniqueConstraint(
-                fields=['team', 'semester', 'scope', 'pit_event_config'],
+                fields=['team', 'semester', 'scope', 'pit_event_config', 'project_version'],
                 condition=Q(scope='pit', pit_event_config__isnull=False),
                 name='unique_pit_grade_per_team_event',
             ),
@@ -203,6 +218,10 @@ class TeamGrade(models.Model):
     @property
     def result(self):
         if self.verdict:
+            if self.verdict in (self.VERDICT_FAILED, self.VERDICT_PROJECT_REJECTED):
+                return 'failed'
+            if self.verdict == self.VERDICT_APPROVED_WITH_REVISIONS and not self.revisions_cleared_at:
+                return 'revisions_pending'
             if self.verdict in self.PASSING_VERDICTS:
                 return 'passed'
             if self.verdict == self.VERDICT_FOR_REDEFENSE:
@@ -266,6 +285,9 @@ class TeamGrade(models.Model):
 
     @transaction.atomic
     def save(self, *args, clean=True, **kwargs):
+        if not self.pk:
+            self.project_version = self.team.project_version
+            self.project_title_snapshot = self.team.project_title
         if self.scope == self.SCOPE_PIT:
             self.adviser_weight = 0
             self.defense_stage = None
@@ -289,7 +311,7 @@ class TeamGrade(models.Model):
             memberships = list(self.team.memberships.select_related('student').all())
             for membership in memberships:
                 sg, _ = StudentStageGrade.objects.get_or_create(team_grade=self, student=membership.student)
-                if not adviser_is_individual:
+                if not adviser_is_individual and (self.attempt_count <= 1 or sg.adviser_score is None):
                     sg.adviser_score = self.adviser_score
                 is_student_specific = False
                 if self.schedule and self.schedule.rubric:
@@ -594,6 +616,10 @@ class GradeAttemptHistory(models.Model):
         on_delete=models.CASCADE,
     )
     attempt_number = models.PositiveSmallIntegerField()
+    project_version = models.PositiveIntegerField(default=1)
+    project_title = models.CharField(max_length=255, blank=True)
+    revisions_cleared_at = models.DateTimeField(null=True, blank=True)
+    clearance_remarks = models.TextField(blank=True)
     schedule = models.ForeignKey(
         'defense.DefenseSchedule',
         null=True,

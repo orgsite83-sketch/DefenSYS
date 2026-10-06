@@ -242,6 +242,8 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     return const CapstoneDeliverablesState();
   }
 
+  Future<void> fetchInitialData() => fetchDeliverables();
+
   Future<void> fetchDeliverables({
     String? search,
     String? selectedStage,
@@ -342,6 +344,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     required String deliverableId,
     required String status,
     String? feedback,
+    bool clearDefenseRevisions = false,
   }) async {
     return _postAction('review', {
       'team_id': teamId,
@@ -349,7 +352,10 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
       'deliverable_id': deliverableId,
       'status': status,
       if (feedback != null) 'feedback': feedback,
-    }, successMessage: 'Deliverable review status updated.');
+      if (clearDefenseRevisions) 'clear_defense_revisions': true,
+    }, successMessage: clearDefenseRevisions
+        ? 'Deliverable approved & defense revisions cleared.'
+        : 'Deliverable review status updated.');
   }
 
   Future<bool> unlockDeliverables({

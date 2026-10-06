@@ -10,12 +10,13 @@ Future<void> pumpDefensysWidget(
   WidgetTester tester,
   Widget child, {
   List<Override> overrides = const [],
+  ThemeData? theme,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: overrides,
       child: MaterialApp(
-        theme: AppTheme.theme,
+        theme: theme ?? AppTheme.theme,
         localizationsDelegates: const [
           AppLocalizations.delegate,
           GlobalMaterialLocalizations.delegate,

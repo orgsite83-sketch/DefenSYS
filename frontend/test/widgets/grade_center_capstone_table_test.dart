@@ -154,7 +154,7 @@ void main() {
           }
           if (scenario.enabled) {
             expect(
-              find.textContaining('2 teams will be affected.'),
+              find.text('All 2 teams are ready'),
               findsOneWidget,
             );
             await tester.tap(

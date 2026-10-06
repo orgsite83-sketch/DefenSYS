@@ -1,5 +1,5 @@
 from django.contrib.auth import get_user_model
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -24,7 +24,7 @@ from curriculum_analytics.services import (
     analytics_top_tech,
 )
 from defense.scheduler.models import DefenseSchedule
-from defense.stages.models import DefenseStage
+from defense.stages.models import DefenseStage, StageDeliverable, StageGradingConfig
 from repository.archive.services import restricted_archive_entries_count, visible_archive_entries_count
 from grading.grades.models import TeamGrade
 from grading.grades.services import default_weights, weights_for_schedule
@@ -926,7 +926,31 @@ class AdminDashboardView(APIView):
         ]
 
         # Stage readiness & pipeline distribution
-        active_stages = list(DefenseStage.objects.filter(is_active=True).order_by('display_order', 'id'))
+        active_stage_prefetch = [
+            Prefetch(
+                'deliverables',
+                queryset=StageDeliverable.objects.filter(
+                    deliverable_type=StageDeliverable.TYPE_PRE,
+                    required=True,
+                ),
+                to_attr='required_pre_deliverables',
+            ),
+        ]
+        if active_sem is not None:
+            active_stage_prefetch.append(
+                Prefetch(
+                    'grading_configs',
+                    queryset=StageGradingConfig.objects.filter(semester=active_sem).select_related(
+                        'panel_rubric', 'adviser_rubric'
+                    ),
+                    to_attr='active_configs',
+                )
+            )
+        active_stages = list(
+            DefenseStage.objects.filter(is_active=True)
+            .prefetch_related(*active_stage_prefetch)
+            .order_by('display_order', 'id')
+        )
         stage_distribution = []
         for stage in active_stages:
             count = StudentTeam.objects.filter(
@@ -954,13 +978,101 @@ class AdminDashboardView(APIView):
             'stage_distribution': stage_distribution,
         }
 
+        # Check stage configurations (rubrics and pre-defense deliverables)
+        stages_missing_rubrics = []
+        stages_missing_deliverables = []
+        draft_rubric_count = 0
+
+        if period_configured and active_sem is not None:
+            for stage in active_stages:
+                cfg = stage.active_configs[0] if getattr(stage, 'active_configs', None) else None
+                has_panel_rubric = bool(
+                    cfg and cfg.panel_rubric and cfg.panel_rubric.status == Rubric.STATUS_PUBLISHED
+                )
+                adviser_weight = cfg.adviser_weight if cfg else 30
+                has_adviser_rubric = bool(
+                    cfg and cfg.adviser_rubric and cfg.adviser_rubric.status == Rubric.STATUS_PUBLISHED
+                ) if adviser_weight > 0 else True
+
+                if not has_panel_rubric or not has_adviser_rubric:
+                    stages_missing_rubrics.append(stage.label)
+
+                if not stage.is_presentation_only:
+                    has_pre = len(getattr(stage, 'required_pre_deliverables', [])) > 0
+                    if not has_pre:
+                        stages_missing_deliverables.append(stage.label)
+
+            draft_rubric_count = Rubric.objects.filter(
+                semester=active_sem,
+                status=Rubric.STATUS_DRAFT,
+            ).count()
+
         # Action items for Admin
         action_items = []
+
+        if not period_configured:
+            action_items.append({
+                'id': 'no_active_period',
+                'title': 'No Active Academic Period',
+                'description': 'Activate an academic period in Academic Periods.',
+                'category_label': 'PERIOD SETUP',
+                'severity': 'danger',
+                'target_section': 'academicPeriods',
+                'button_label': 'Configure',
+            })
+
+        if stages_missing_rubrics:
+            count = len(stages_missing_rubrics)
+            if count == 1:
+                title = f'{stages_missing_rubrics[0]} Stage Needs a Scoring Rubric'
+                desc = f'Assign and publish scoring rubrics for {stages_missing_rubrics[0]} in Defense Stages.'
+            else:
+                title = f'{count} Active Stages Need Scoring Rubrics'
+                desc = f'{", ".join(stages_missing_rubrics)} require published scoring rubrics for defense evaluations.'
+            action_items.append({
+                'id': 'stages_without_rubrics',
+                'title': title,
+                'description': desc,
+                'category_label': 'RUBRIC SETUP',
+                'severity': 'danger',
+                'target_section': 'defenseStages',
+                'button_label': 'Configure',
+            })
+
+        if stages_missing_deliverables:
+            count = len(stages_missing_deliverables)
+            if count == 1:
+                title = f'{stages_missing_deliverables[0]} Stage Missing Deliverables'
+                desc = f'Configure pre-defense submission requirements for {stages_missing_deliverables[0]} in Defense Stages.'
+            else:
+                title = f'{count} Active Stages Missing Deliverables'
+                desc = f'{", ".join(stages_missing_deliverables)} have no required pre-defense submission templates.'
+            action_items.append({
+                'id': 'stages_without_deliverables',
+                'title': title,
+                'description': desc,
+                'category_label': 'STAGE SETUP',
+                'severity': 'warning',
+                'target_section': 'defenseStages',
+                'button_label': 'Configure',
+            })
+
+        if draft_rubric_count > 0:
+            action_items.append({
+                'id': 'draft_rubrics',
+                'title': f'{draft_rubric_count} Draft {"Rubric needs" if draft_rubric_count == 1 else "Rubrics need"} Publication',
+                'description': 'Draft rubrics cannot be used for defense grading until published.',
+                'category_label': 'DRAFT RUBRICS',
+                'severity': 'warning',
+                'target_section': 'rubrics',
+                'button_label': 'Review Drafts',
+            })
         if teams_without_adviser > 0:
             action_items.append({
                 'id': 'unassigned_advisers',
                 'title': f'{teams_without_adviser} Capstone {"Team needs" if teams_without_adviser == 1 else "Teams need"} an Adviser',
                 'description': 'Assign project advisers in Student Teams.',
+                'category_label': 'ADVISER ASSIGNMENT',
                 'severity': 'warning',
                 'target_section': 'studentTeams',
                 'button_label': 'Assign',
@@ -980,6 +1092,7 @@ class AdminDashboardView(APIView):
                 'id': 'unscheduled_ready_teams',
                 'title': f'{unscheduled_ready_count} Capstone {"Team" if unscheduled_ready_count == 1 else "Teams"} Ready for Defense',
                 'description': 'Deliverables verified. Review readiness queue to schedule.',
+                'category_label': 'READY TO SCHEDULE',
                 'severity': 'action',
                 'target_section': 'defenseBoardReadiness',
                 'button_label': 'Review Queue',
@@ -990,20 +1103,15 @@ class AdminDashboardView(APIView):
                 'id': 'pending_grades',
                 'title': f'{pending_grade_count} Unpublished Capstone Defense {"Grade" if pending_grade_count == 1 else "Grades"}',
                 'description': 'Review and publish panel scores in Grade Center.',
+                'category_label': 'GRADE REVIEW',
                 'severity': 'warning',
                 'target_section': 'gradeCenter',
                 'button_label': 'Review',
             })
 
-        if not period_configured:
-            action_items.append({
-                'id': 'no_active_period',
-                'title': 'No Active Academic Period',
-                'description': 'Activate an academic period in Academic Periods.',
-                'severity': 'danger',
-                'target_section': 'academicPeriods',
-                'button_label': 'Configure',
-            })
+        severity_priority = {'danger': 0, 'action': 1, 'warning': 2, 'info': 3}
+        action_items.sort(key=lambda item: severity_priority.get(item.get('severity'), 99))
+
 
         # Recent audit logs (last 8)
         recent_logs = (

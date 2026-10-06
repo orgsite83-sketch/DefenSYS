@@ -206,6 +206,9 @@ bool isTeamStageCompleted(Map<String, dynamic> team, String stageLabel) {
 }
 
 bool isTeamStageReady(Map<String, dynamic> team, String stageLabel) {
+  if (team['eligible_stages'] is List && (team['level']?.toString().contains('Capstone') ?? false)) {
+    return (team['eligible_stages'] as List).contains(stageLabel);
+  }
   return getTeamStageStatus(team, stageLabel) == 'ready';
 }
 

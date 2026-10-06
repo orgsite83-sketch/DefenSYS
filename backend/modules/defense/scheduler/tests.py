@@ -77,6 +77,7 @@ class DefenseSchedulerApiTests(APITestCase):
             ready_for_stage=self.stage.label,
         )
         TeamMembership.objects.create(team=self.team, student=self.student, is_leader=True, order=0)
+        self._complete_prior_stages(self.team)
         mark_stage_ready(self.team, self.stage, user=self.adviser)
         self.rubric = Rubric.objects.create(
             name='Project Proposal Panel Rubric',
@@ -160,8 +161,14 @@ class DefenseSchedulerApiTests(APITestCase):
             ready_for_stage=self.stage.label,
         )
         TeamMembership.objects.create(team=team, student=student, is_leader=True, order=0)
+        self._complete_prior_stages(team)
         mark_stage_ready(team, self.stage, user=self.adviser)
         return team
+
+    def _complete_prior_stages(self, team):
+        for stage in DefenseStage.objects.filter(is_active=True, display_order__lt=self.stage.display_order):
+            TeamStageProgress.objects.create(team=team, semester=self.semester,
+                defense_stage=stage, status=TeamStageProgress.STATUS_PASSED)
 
     def criteria_scores(self, first_score, second_score=None, **first_overrides):
         second_score = first_score if second_score is None else second_score
@@ -1255,7 +1262,7 @@ class DefenseSchedulerApiTests(APITestCase):
         )
         response = self.client.post('/api/defense/schedules/', payload, format='json')
         self.assertEqual(response.status_code, 400)
-        self.assertIn('already completed and passed this stage', str(response.data))
+        self.assertIn('not endorsed for this stage', str(response.data))
 
     def test_panelist_assignments_includes_is_chair_and_verdict(self):
         from decimal import Decimal
@@ -1322,6 +1329,9 @@ class DefenseSchedulerApiTests(APITestCase):
         self.assertEqual(res_fail.status_code, 403)
 
         # Chair submits verdict -> 200
+        from grading.grades.services import submit_panelist_grade
+        for panelist in [self.panelist, self.second_panelist]:
+            submit_panelist_grade(schedule, grade, self.criteria_scores(6), panelist=panelist)
         self.client.force_authenticate(user=self.panelist)
         res_ok = self.client.patch(f'/api/defense/schedules/{schedule.id}/verdict/', {
             'verdict': 'for_redefense',

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../models/defense_workflow_labels.dart';
 
 import '../../../theme/defensys_tokens.dart';
 
@@ -464,7 +465,7 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
     final verdictByName = result['verdict_by_name']?.toString() ?? '';
     final attemptCount = result['attempt_count'] ?? 1;
     final hasVerdict = verdict.isNotEmpty;
-    final isForRedefense = verdict == 'for_redefense';
+    final isForRedefense = ['for_redefense', 'failed', 'project_rejected'].contains(verdict);
     final isRevisions = verdict == 'approved_with_revisions';
 
     // Separate shared vs member criteria
@@ -641,11 +642,7 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            isForRedefense
-                                ? 'VERDICT: FOR RE-DEFENSE (Attempt #$attemptCount)'
-                                : isRevisions
-                                    ? 'VERDICT: APPROVED WITH REVISIONS'
-                                    : 'VERDICT: APPROVED',
+                            'VERDICT: ${defenseVerdictLabel(verdict).toUpperCase()} (Attempt #$attemptCount)',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,

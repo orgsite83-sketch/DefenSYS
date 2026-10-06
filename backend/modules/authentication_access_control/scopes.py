@@ -158,10 +158,10 @@ def visible_schedules_for(user):
     return base.none()
 
 
-def grade_records_for(user):
+def grade_records_for(user, *, include_previous_projects=False):
     from grading.grades.models import TeamGrade
 
-    base = TeamGrade.objects.with_relations()
+    base = (TeamGrade.all_objects if include_previous_projects else TeamGrade.objects).with_relations()
     if not user or not getattr(user, 'is_authenticated', False):
         return base.none()
     if is_admin_user(user):

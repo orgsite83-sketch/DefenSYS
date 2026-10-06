@@ -5,7 +5,8 @@ from rest_framework.test import APITestCase
 
 from academic_period_management.models import SchoolYear, Semester
 from defense.scheduler.models import DefenseSchedule, SchedulePanelist
-from defense.stages.models import DefenseStage
+from defense.stages.models import DefenseStage, StageDeliverable, StageGradingConfig
+from grading.rubrics.models import Rubric
 from grading.grades.models import TeamGrade
 from student_teams.models import StudentTeam, TeamMembership
 from user_management.academic_records.models import StudentAcademicRecord
@@ -40,6 +41,97 @@ class DashboardApiTests(APITestCase):
         self.assertEqual(response.data['team_pipeline']['teams_with_adviser'], 0)
         self.assertEqual(response.data['team_pipeline']['teams_without_adviser'], 0)
         self.assertNotEqual(response.data['stats']['total_students'], 150)
+
+    def test_admin_dashboard_generates_stage_rubrics_and_deliverables_action_items(self):
+        admin = User.objects.create_user(
+            username='admin-user-action-items',
+            password='pass12345',
+            role='admin',
+        )
+        sy = SchoolYear.objects.create(label='2026-2027')
+        sem = Semester.objects.create(
+            school_year=sy,
+            label='1st Semester',
+            is_active=True,
+        )
+        stage = DefenseStage.objects.create(
+            label='Proposal Defense',
+            code='proposal-defense',
+            is_active=True,
+            is_presentation_only=False,
+        )
+        DefenseStage.objects.exclude(pk=stage.pk).update(is_active=False)
+
+        self.client.force_authenticate(user=admin)
+        response = self.client.get('/api/dashboards/admin/')
+        self.assertEqual(response.status_code, 200)
+
+        item_ids = [item['id'] for item in response.data['action_items']]
+        self.assertIn('stages_without_rubrics', item_ids)
+        self.assertIn('stages_without_deliverables', item_ids)
+
+        rubric_item = next(i for i in response.data['action_items'] if i['id'] == 'stages_without_rubrics')
+        self.assertEqual(rubric_item['severity'], 'danger')
+        self.assertEqual(rubric_item['category_label'], 'RUBRIC SETUP')
+
+        deliv_item = next(i for i in response.data['action_items'] if i['id'] == 'stages_without_deliverables')
+        self.assertEqual(deliv_item['severity'], 'warning')
+        self.assertEqual(deliv_item['category_label'], 'STAGE SETUP')
+
+        self.assertLess(item_ids.index('stages_without_rubrics'), item_ids.index('stages_without_deliverables'))
+
+        StageDeliverable.objects.create(
+            defense_stage=stage,
+            deliverable_id='D-1',
+            label='Proposal Document',
+            deliverable_type=StageDeliverable.TYPE_PRE,
+            required=True,
+        )
+        panel_rubric = Rubric.objects.create(
+            name='Proposal Panel Rubric',
+            scope=Rubric.SCOPE_CAPSTONE,
+            semester=sem,
+            defense_stage=stage,
+            evaluation_type=Rubric.EVAL_PANEL,
+            status=Rubric.STATUS_PUBLISHED,
+        )
+        adviser_rubric = Rubric.objects.create(
+            name='Proposal Adviser Rubric',
+            scope=Rubric.SCOPE_CAPSTONE,
+            semester=sem,
+            defense_stage=stage,
+            evaluation_type=Rubric.EVAL_ADVISER,
+            status=Rubric.STATUS_PUBLISHED,
+        )
+        StageGradingConfig.objects.create(
+            defense_stage=stage,
+            semester=sem,
+            panel_rubric=panel_rubric,
+            adviser_rubric=adviser_rubric,
+            panel_weight=50,
+            adviser_weight=30,
+            peer_weight=20,
+        )
+
+        response2 = self.client.get('/api/dashboards/admin/')
+        item_ids2 = [item['id'] for item in response2.data['action_items']]
+        self.assertNotIn('stages_without_rubrics', item_ids2)
+        self.assertNotIn('stages_without_deliverables', item_ids2)
+
+        # Create a draft rubric and verify draft_rubrics action item is generated
+        Rubric.objects.create(
+            name='Draft Criteria Rubric',
+            scope=Rubric.SCOPE_CAPSTONE,
+            semester=sem,
+            evaluation_type=Rubric.EVAL_PANEL,
+            status=Rubric.STATUS_DRAFT,
+        )
+        response3 = self.client.get('/api/dashboards/admin/')
+        item_ids3 = [item['id'] for item in response3.data['action_items']]
+        self.assertIn('draft_rubrics', item_ids3)
+        draft_item = next(i for i in response3.data['action_items'] if i['id'] == 'draft_rubrics')
+        self.assertEqual(draft_item['severity'], 'warning')
+        self.assertEqual(draft_item['category_label'], 'DRAFT RUBRICS')
 
     def test_faculty_dashboard_reflects_request_user_roles(self):
         faculty = User.objects.create_user(

@@ -93,6 +93,7 @@ class ArchiveEntry(models.Model):
     semester_label = models.CharField(max_length=30, blank=True)
     academic_year = models.CharField(max_length=9, blank=True)
     stage_label = models.CharField(max_length=80, blank=True)
+    project_version = models.PositiveIntegerField(default=1)
     defense_stage = models.ForeignKey(
         'defense.DefenseStage',
         related_name='archive_entries',
@@ -127,7 +128,7 @@ class ArchiveEntry(models.Model):
         ordering = ['-uploaded_at', 'file_name']
         constraints = [
             models.UniqueConstraint(
-                fields=['entry_type', 'file_name', 'academic_year'],
+                fields=['entry_type', 'file_name', 'academic_year', 'project_version'],
                 name='unique_archive_entry_per_academic_year',
             ),
         ]
@@ -136,6 +137,9 @@ class ArchiveEntry(models.Model):
         ]
 
     def save(self, *args, **kwargs):
+        if not self.pk and self.team_id:
+            self.project_version = self.team.project_version
+            self.metadata = {**self.metadata, 'project_title': self.team.project_title, 'project_version': self.project_version}
         if self.entry_type == self.TYPE_PIT:
             self._hydrate_pit_metadata()
             self.defense_stage = None

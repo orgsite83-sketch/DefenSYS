@@ -43,6 +43,7 @@ class DefensysTokens {
   static const textPrimaryDark = mistTextPrimary;
   static const textSecondaryDark = mistTextSecondary;
   static const mistMaroon = Color(0xFFC0392B);
+  static const mistMaroonText = Color(0xFFF4A69C);
   static const mistGold = Color(0xFFF59E0B);
 
   // Context-aware token helpers
@@ -69,6 +70,10 @@ class DefensysTokens {
 
   static Color maroonOf(BuildContext context) =>
       isDark(context) ? mistMaroon : maroon;
+
+  /// Readable brand text on neutral surfaces; maroonOf remains the action fill.
+  static Color maroonTextOf(BuildContext context) =>
+      isDark(context) ? mistMaroonText : maroon;
 
   static Color goldOf(BuildContext context) =>
       isDark(context) ? mistGold : darkGold;

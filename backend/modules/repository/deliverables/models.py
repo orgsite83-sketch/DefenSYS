@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from student_teams.project_versions import CurrentProjectManager
 import logging
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,9 @@ class DeliverableSubmission(models.Model):
         on_delete=models.CASCADE,
     )
     stage_label = models.CharField(max_length=80)
+    project_version = models.PositiveIntegerField(default=1)
+    objects = CurrentProjectManager()
+    all_objects = models.Manager()
     deliverable_id = models.CharField(max_length=20)
     label = models.CharField(max_length=180)
     deliverable_type = models.CharField(max_length=20, choices=TYPE_CHOICES)
@@ -117,7 +121,7 @@ class DeliverableSubmission(models.Model):
         ordering = ['stage_label', 'deliverable_id']
         constraints = [
             models.UniqueConstraint(
-                fields=['team', 'stage_label', 'deliverable_id'],
+                fields=['team', 'stage_label', 'deliverable_id', 'project_version'],
                 name='unique_deliverable_submission_per_team_stage',
             ),
         ]
@@ -132,6 +136,8 @@ class DeliverableSubmission(models.Model):
             raise ValidationError({'team': 'Only Capstone or PIT teams can submit deliverables.'})
 
     def save(self, *args, **kwargs):
+        if not self.pk:
+            self.project_version = self.team.project_version
         self.full_clean()
         
         # Extract PDF content if file exists and hasn't been extracted yet

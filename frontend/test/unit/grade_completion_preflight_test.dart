@@ -47,7 +47,12 @@ void main() {
                       'missing_components': ['panel'],
                     },
                   ],
-                  'redefense_teams': [],
+                  'redefense_teams': [
+                    {'team_id': 2, 'team_name': 'Team Retry'},
+                  ],
+                  'revision_teams': [
+                    {'team_id': 3, 'team_name': 'Team Revise'},
+                  ],
                   'failing_teams': [],
                 }),
                 200,
@@ -69,10 +74,43 @@ void main() {
       expect(readiness.totalTeams, 16);
       expect(readiness.canComplete, isFalse);
       expect(readiness.incompleteTeams.single['team_name'], 'Hidden team');
+      expect(readiness.redefenseTeams.single['team_name'], 'Team Retry');
+      expect(readiness.revisionTeams.single['team_name'], 'Team Revise');
+      expect(readiness.failingTeams, isEmpty);
       expect(container.read(gradeCenterProvider).isCheckingCompletion, isFalse);
       expect(container.read(gradeCenterProvider).incompleteTeams, isEmpty);
     },
   );
+
+  test('older readiness responses can omit revision teams', () async {
+    final container = ProviderContainer(
+      overrides: [
+        authenticatedHttpClientProvider.overrideWith(
+          (ref) => _ReadinessClient(
+            ref,
+            http.Response(
+              jsonEncode({
+                'grading_total_team_count': 1,
+                'grading_ready_team_count': 1,
+                'can_complete': true,
+                'is_officially_complete': false,
+                'incomplete_teams': [],
+                'redefense_teams': [],
+                'failing_teams': [],
+              }),
+              200,
+            ),
+          ),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final readiness = await container
+        .read(gradeCenterProvider.notifier)
+        .checkGroupCompletion(scope: 'pit', stageLabel: 'PIT Expo');
+    expect(readiness.canComplete, isTrue);
+    expect(readiness.revisionTeams, isEmpty);
+  });
 
   test(
     'failed preflight releases its busy state and returns no confirmation',

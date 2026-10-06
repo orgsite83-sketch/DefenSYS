@@ -60,7 +60,13 @@ def transition_schedule_status(schedule, new_status, *, actor=None, reason='', r
     if new_status == DefenseSchedule.STATUS_DONE:
         from grading.grades.services import team_grading_readiness
         grade = schedule.grade_records.first()
-        if not grade or not team_grading_readiness(grade, grade.semester, grade.scope)['ready']:
+        if not grade:
+            raise ValidationError('Submit the required panel evaluations before closing this defense.')
+        ready = team_grading_readiness(grade, grade.semester, grade.scope)
+        if schedule.scope == 'capstone':
+            if not ready['panel_complete'] or not grade.verdict:
+                raise ValidationError('Complete every required panel evaluation and record the chair verdict before closing this attempt.')
+        elif not ready['ready']:
             raise ValidationError('Complete all required evaluators and grading components before closing this defense.')
     schedule.status = new_status
     schedule.revision += 1

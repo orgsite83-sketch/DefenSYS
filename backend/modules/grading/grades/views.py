@@ -209,7 +209,7 @@ class GradeCenterDetailView(APIView):
         return get_object_or_404(grade_records_for(request.user), pk=grade_id)
 
     def get(self, request, grade_id):
-        grade = self.get_object(request, grade_id)
+        grade = get_object_or_404(grade_records_for(request.user, include_previous_projects=True), pk=grade_id)
         return Response({'grade': TeamGradeSerializer(grade).data})
 
     def patch(self, request, grade_id):
@@ -274,6 +274,8 @@ class GradeCenterPublishView(APIView):
             grade = publish_grade_record(grade, user=request.user)
         except DjangoValidationError as exc:
             return Response({'detail': ' '.join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+        except PermissionError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
         log_high_impact_action(
             category=SystemAuditLog.CATEGORY_GRADE_CENTER,
             action='grade.publish',
@@ -473,18 +475,6 @@ class TeamGradeVerdictView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if grade.panel_score is None:
-            return Response(
-                {'detail': 'Panel grading must be submitted before issuing a verdict.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if grade.schedule:
-            from defense.scheduler.panelist_evaluation import grading_unavailable_reason
-            reason = grading_unavailable_reason(grade.schedule)
-            if reason:
-                return Response({'detail': reason}, status=status.HTTP_400_BAD_REQUEST)
-
         verdict_remarks = (request.data.get('verdict_remarks') or '').strip()
         revision_deadline = request.data.get('revision_deadline')
         parsed_deadline = None
@@ -497,41 +487,15 @@ class TeamGradeVerdictView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        grade.verdict = verdict
-        grade.verdict_remarks = verdict_remarks
-        grade.verdict_by = request.user
-        grade.verdict_at = timezone.now()
-        grade.revision_deadline = parsed_deadline
-        grade.save(update_fields=[
-            'verdict',
-            'verdict_remarks',
-            'verdict_by',
-            'verdict_at',
-            'revision_deadline',
-            'updated_at',
-        ])
+        from .defense_workflow import record_verdict
+        try:
+            grade = record_verdict(grade, actor=request.user, verdict=verdict,
+                remarks=verdict_remarks, deadline=parsed_deadline,
+                verification_required=drf_serializers.BooleanField().run_validation(request.data.get('redefense_verification_required', False)))
+        except DjangoValidationError as exc:
+            return Response({'detail': ' '.join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
 
-        _apply_team_result_from_grade(grade)
 
-        from authentication_access_control.models import SystemAuditLog
-        from authentication_access_control.audit import log_high_impact_action
-        log_high_impact_action(
-            category=SystemAuditLog.CATEGORY_GRADE_CENTER,
-            action='defense.verdict_submitted',
-            target=grade,
-            target_type='TeamGrade',
-            target_id=grade.pk,
-            actor=request.user,
-            new_values={
-                'grade_id': grade.id,
-                'team_id': grade.team_id,
-                'team_name': getattr(grade.team, 'name', '') or getattr(grade, 'team_name', ''),
-                'stage_label': getattr(grade, 'stage_label', ''),
-                'verdict': verdict,
-                'verdict_remarks': verdict_remarks,
-                'revision_deadline': str(parsed_deadline) if parsed_deadline else None,
-            },
-        )
 
         grade = grade_records_for(request.user).get(pk=grade.pk)
         return Response({
@@ -540,4 +504,31 @@ class TeamGradeVerdictView(APIView):
             'grade': TeamGradeSerializer(grade).data,
             **grade_center_payload(request),
         })
+
+
+class TeamGradeWorkflowView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, grade_id):
+        grade = get_object_or_404(grade_records_for(request.user), pk=grade_id)
+        from .defense_workflow import workflow_payload
+        return Response({'workflow': workflow_payload(grade)})
+
+    def post(self, request, grade_id):
+        grade = get_object_or_404(grade_records_for(request.user), pk=grade_id)
+        from .defense_workflow import apply_workflow_action
+        review_date = drf_serializers.DateField(allow_null=True).run_validation(request.data.get('review_date'))
+        action = request.data.get('action', '')
+        reason = drf_serializers.CharField(allow_blank=True).run_validation(request.data.get('reason', ''))
+        title = drf_serializers.CharField(allow_blank=True, max_length=255).run_validation(request.data.get('project_title', ''))
+        try:
+            team = apply_workflow_action(grade, actor=request.user, action=action,
+                reason=reason, project_title=title, review_date=review_date)
+        except PermissionError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except DjangoValidationError as exc:
+            return Response({'detail': ' '.join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'success': True, 'team_id': team.pk,
+            'project_version': team.project_version, 'message': 'Defense workflow updated.',
+            **grade_center_payload(request)})
 

@@ -105,6 +105,9 @@ class GradeCenterApiTests(APITestCase):
         )
         TeamMembership.objects.create(team=self.capstone_team, student=self.student, is_leader=True, order=0)
         TeamMembership.objects.create(team=self.capstone_team, student=self.second_student, order=1)
+        for previous in DefenseStage.objects.filter(is_active=True, display_order__lt=self.stage.display_order):
+            TeamStageProgress.objects.create(team=self.capstone_team, semester=self.semester,
+                defense_stage=previous, status=TeamStageProgress.STATUS_PASSED)
         self.pit_team = StudentTeam.objects.create(
             name='Team Circuit',
             project_title='Circuit Trainer',
@@ -235,6 +238,8 @@ class GradeCenterApiTests(APITestCase):
                 })
 
     def _make_capstone_grade_ready_for_close(self, grade):
+        grade.verdict = TeamGrade.VERDICT_APPROVED
+        grade.save(update_fields=['verdict'])
         self._enable_capstone_peer_grading()
         self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
@@ -711,6 +716,8 @@ class GradeCenterApiTests(APITestCase):
 
     def test_publish_sets_team_result_and_schedule_done(self):
         grade = self._capstone_grade()
+        grade.verdict = TeamGrade.VERDICT_FAILED
+        grade.save(update_fields=['verdict'])
         self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
             {'panel_score': '70.00', 'adviser_score': '70.00', 'peer_score': '70.00'},
@@ -742,6 +749,8 @@ class GradeCenterApiTests(APITestCase):
 
     def test_admin_dashboard_counts_grades_and_reports_phase_eleven(self):
         grade = self._capstone_grade()
+        grade.verdict = TeamGrade.VERDICT_APPROVED
+        grade.save(update_fields=['verdict'])
         self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
             {'panel_score': '88.00', 'adviser_score': '90.00', 'peer_score': '87.00'},
@@ -791,10 +800,11 @@ class GradeCenterApiTests(APITestCase):
         grade.save(update_fields=['verdict'])
         ready = self.client.get('/api/grading/grades/group-settings/', params)
         self.assertEqual(ready.status_code, 200)
-        self.assertTrue(ready.data['can_complete'])
+        self.assertFalse(ready.data['can_complete'])
         self.assertEqual(ready.data['grading_ready_team_count'], 1)
-        self.assertEqual(ready.data['incomplete_teams'], [])
+        self.assertIn('redefense', ready.data['incomplete_teams'][0]['missing_components'])
         self.assertEqual(ready.data['redefense_teams'][0]['team_id'], grade.team_id)
+        self.assertEqual(ready.data['revision_teams'], [])
         grade.refresh_from_db()
         self.capstone_schedule.refresh_from_db()
         self.assertEqual(grade.verdict, TeamGrade.VERDICT_FOR_REDEFENSE)
@@ -810,10 +820,30 @@ class GradeCenterApiTests(APITestCase):
         self.assertEqual(blocked.status_code, 200)
         self.assertFalse(blocked.data['can_complete'])
         self.assertIn('panel', blocked.data['incomplete_teams'][0]['missing_components'])
+        self.assertEqual(blocked.data['revision_team_count'], 1)
+        self.assertEqual(blocked.data['revision_teams'], [
+            {'team_id': grade.team_id, 'team_name': self.capstone_team.name},
+        ])
         self._make_capstone_grade_ready_for_close(grade)
-        ready = self.client.get('/api/grading/grades/group-settings/', params)
-        self.assertTrue(ready.data['can_complete'])
+        grade.refresh_from_db()
+        grade.verdict = TeamGrade.VERDICT_APPROVED_WITH_REVISIONS
+        grade.save(update_fields=['verdict'])
+        before = TeamGrade.objects.filter(pk=grade.pk).values().get()
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as queries:
+            ready = self.client.get('/api/grading/grades/group-settings/', {
+                **params, 'search': 'hidden by filter', 'status': 'published',
+            })
+        self.assertFalse(ready.data['can_complete'])
+        self.assertIn('clearance', ready.data['incomplete_teams'][0]['missing_components'])
         self.assertEqual(ready.data['redefense_teams'], [])
+        self.assertEqual(ready.data['revision_team_count'], 1)
+        self.assertEqual(ready.data['revision_teams'][0]['team_id'], grade.team_id)
+        self.assertEqual(ready.data['failing_teams'], [])
+        self.assertEqual(before, TeamGrade.objects.filter(pk=grade.pk).values().get())
+        self.assertFalse(any(q['sql'].lstrip().upper().startswith(('INSERT', 'UPDATE', 'DELETE')) for q in queries))
         grade.refresh_from_db()
         self.assertEqual(grade.verdict, TeamGrade.VERDICT_APPROVED_WITH_REVISIONS)
 
@@ -1330,6 +1360,8 @@ class GradeCenterApiTests(APITestCase):
 
     def test_capstone_official_complete_skips_below_threshold(self):
         grade = self._capstone_grade()
+        grade.verdict = TeamGrade.VERDICT_FAILED
+        grade.save(update_fields=['verdict'])
         self._disable_capstone_peer_grading()
         self.patch_grade(
             f'/api/grading/grades/{grade.id}/',
@@ -2440,8 +2472,8 @@ class GradeCenterApiTests(APITestCase):
 
         # Attempt 1 scores must be reset on the active grade for a clean slate
         self.assertIsNone(grade_2.panel_score)
-        self.assertIsNone(grade_2.adviser_score)
-        self.assertIsNone(grade_2.peer_score)
+        self.assertEqual(grade_2.adviser_score, Decimal('70.00'))
+        self.assertEqual(grade_2.peer_score, Decimal('70.00'))
         self.assertIsNone(grade_2.final_grade)
         self.assertEqual(grade_2.verdict, '')
         self.assertEqual(grade_2.verdict_remarks, '')
@@ -2483,6 +2515,7 @@ class GradeCenterApiTests(APITestCase):
         grade, _, _ = GradeContextService.get_or_create_for_schedule(schedule)
         grade.panel_score = Decimal('82.50')
         grade.save(update_fields=['panel_score'])
+        self._record_panel_evaluations(grade)
 
         # Panel chair submits verdict
         self.client.force_authenticate(user=self.panelist)
@@ -2497,7 +2530,7 @@ class GradeCenterApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['team_grade']['verdict'], 'approved_with_revisions')
-        self.assertEqual(response.data['team_grade']['result'], 'passed')
+        self.assertEqual(response.data['team_grade']['result'], 'revisions_pending')
         self.assertEqual(response.data['team_grade']['revision_deadline'], '2026-10-15')
 
         grade.refresh_from_db()

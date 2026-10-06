@@ -1,4 +1,5 @@
 import 'grade_correction_dialog.dart';
+import 'grade_group_completion_summary.dart';
 import 'incomplete_grading_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -187,6 +188,8 @@ String statusLabel(String status) {
     'approved' => 'Approved',
     'approved_with_revisions' => 'Approved w/ Revisions',
     'for_redefense' => 'For Re-defense',
+    'project_rejected' => 'Project Rejected',
+    'revisions_pending' => 'Revisions pending',
     'passed' => 'Passed',
     'failed' => 'Failed',
     'pending' => 'Pending',
@@ -376,18 +379,22 @@ Widget verdictBadgeWidget(String? verdict, {String? deadline}) {
     'approved' => const Color(0xFF16A34A),
     'approved_with_revisions' => const Color(0xFFD97706),
     'for_redefense' => const Color(0xFFDC2626),
+    'failed' || 'project_rejected' => const Color(0xFFDC2626),
     _ => const Color(0xFF64748B),
   };
   final label = switch (verdict) {
     'approved' => 'Approved',
     'approved_with_revisions' => 'Approved with Revisions',
     'for_redefense' => 'For Re-defense',
+    'failed' => 'Failed',
+    'project_rejected' => 'Project Rejected',
     _ => verdict.replaceAll('_', ' ').toUpperCase(),
   };
   final icon = switch (verdict) {
     'approved' => Icons.check_circle_outline,
     'approved_with_revisions' => Icons.assignment_late_outlined,
     'for_redefense' => Icons.replay_outlined,
+    'failed' || 'project_rejected' => Icons.block_outlined,
     _ => Icons.info_outline,
   };
 
@@ -3345,13 +3352,21 @@ Widget peerEvalFormsStatusWidget(Map<String, dynamic> grade) {
   );
 }
 
-Future<void> showIncompleteGradingTeamsDialog(
+Future<bool?> showIncompleteGradingTeamsDialog(
   BuildContext context, {
   required List<Map<String, dynamic>> teams,
+  String? stageLabel,
+  bool isPit = false,
+  bool canComplete = false,
 }) {
-  return showDialog<void>(
+  return showDialog<bool>(
     context: context,
-    builder: (_) => IncompleteGradingTeamsDialog(teams: teams),
+    builder: (_) => IncompleteGradingTeamsDialog(
+      teams: teams,
+      stageLabel: stageLabel,
+      isPit: isPit,
+      canComplete: canComplete,
+    ),
   );
 }
 
@@ -3383,10 +3398,22 @@ Future<bool> reviewGradeGroupCompletion(
     return false;
   }
   if (!context.mounted) return false;
-  if (readiness.incompleteTeams.isNotEmpty) {
+  final unresolved = <Map<String, dynamic>>[
+    ...readiness.incompleteTeams,
+    for (final team in readiness.redefenseTeams)
+      if (!readiness.incompleteTeams.any((item) => item['team_id'] == team['team_id'] && item['team_name'] == team['team_name']))
+        {...team, 'missing_components': ['redefense']},
+    for (final team in readiness.revisionTeams)
+      if (!readiness.incompleteTeams.any((item) => item['team_id'] == team['team_id'] && item['team_name'] == team['team_name']))
+        {...team, 'missing_components': ['clearance']},
+  ];
+  if (unresolved.isNotEmpty) {
     await showIncompleteGradingTeamsDialog(
       context,
-      teams: readiness.incompleteTeams,
+      teams: unresolved,
+      stageLabel: stageLabel,
+      isPit: isPit,
+      canComplete: false,
     );
     return false;
   }
@@ -3419,98 +3446,31 @@ Future<bool> reviewGradeGroupCompletion(
     return false;
   }
 
-  String names(List<Map<String, dynamic>> teams) =>
-      teams
-          .take(3)
-          .map((team) => team['team_name']?.toString() ?? 'Team')
-          .join(', ') +
-      (teams.length > 3 ? ' and ${teams.length - 3} more' : '');
-  final target = isPit ? 'event' : 'stage';
-  final redefense = readiness.redefenseTeams;
-  final failing = readiness.failingTeams;
-  final warnings = [
-    if (redefense.isNotEmpty)
-      '${redefense.length} team${redefense.length == 1 ? '' : 's'} still '
-          '${redefense.length == 1 ? 'has' : 'have'} a For Re-defense verdict '
-          '(${names(redefense)}). Marking complete finalizes this milestone: '
-          'these teams will fail this stage and will not advance or qualify for archiving.',
-    if (failing.isNotEmpty)
-      '${failing.length} team${failing.length == 1 ? '' : 's'} '
-          '(${names(failing)}) have failing grades and will not qualify for archiving.',
-  ];
-  final warningMessage = warnings.isEmpty ? '' : '\n\n${warnings.join('\n\n')}';
-  return showConfirmDialog(
+  final displayTeams = readiness.cohortTeams.isNotEmpty
+      ? readiness.cohortTeams
+      : (readiness.incompleteTeams.isNotEmpty
+          ? readiness.incompleteTeams
+          : [
+              for (int i = 0; i < readiness.totalTeams; i++)
+                {
+                  'team_name': 'Team ${i + 1}',
+                  'missing_components': <String>[],
+                  'panel_complete': true,
+                  'adviser_complete': true,
+                  'peer_complete': true,
+                  'post_defense_complete': true,
+                },
+            ]);
+
+  final confirmed = await showIncompleteGradingTeamsDialog(
     context,
-    title: 'Mark $stageLabel Complete?',
-    message:
-        'Marking this $target officially complete will lock faculty and panel '
-        'grades, finalize student scores, and make passed teams eligible for '
-        'project archiving.\n\n${readiness.totalTeams} teams will be affected.'
-        '$warningMessage',
-    confirmLabel: 'Mark Complete',
-    destructive: false,
-    icon: Icons.verified_rounded,
-    contentPrefix: Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: DefensysTokens.isDark(context)
-            ? DefensysTokens.successText.withValues(alpha: 0.16)
-            : DefensysTokens.successBg,
-        border: Border.all(
-          color: DefensysTokens.isDark(context)
-              ? DefensysTokens.successText
-              : DefensysTokens.successBorder,
-        ),
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.check_circle_outline_rounded,
-            size: 24,
-            color: DefensysTokens.isDark(context)
-                ? const Color(0xFF6EE7B7)
-                : DefensysTokens.successText,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${readiness.readyTeams} of ${readiness.totalTeams} teams grading-ready',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: DefensysTokens.textPrimaryOf(context),
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  'Every team has all required grades.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: DefensysTokens.textPrimaryOf(context),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'All required panel, adviser and peer evaluations are complete.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.5,
-                    color: DefensysTokens.textSecondaryOf(context),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    ),
+    teams: displayTeams,
+    stageLabel: stageLabel,
+    isPit: isPit,
+    canComplete: true,
   );
+
+  return confirmed == true;
 }
 
 @Deprecated('Use showIncompleteGradingTeamsDialog')
@@ -4639,6 +4599,7 @@ class GradeCenterActions {
 
     String selectedVerdict = grade['verdict']?.toString() ?? 'approved';
     if (selectedVerdict.isEmpty) selectedVerdict = 'approved';
+    bool verificationRequired = grade['redefense_verification_required'] == true;
     final remarksController = TextEditingController(
       text: grade['verdict_remarks']?.toString() ?? '',
     );
@@ -4733,7 +4694,7 @@ class GradeCenterActions {
                     _verdictRadioOption(
                       title: 'For Re-defense',
                       subtitle:
-                          'Concept rejected, prototype unsatisfactory, or major deficiencies requiring re-presentation.',
+                          'Another graded presentation is needed before defense approval. Adviser and peer grades are retained.',
                       value: 'for_redefense',
                       groupValue: selectedVerdict,
                       color: const Color(0xFFDC2626),
@@ -4780,6 +4741,26 @@ class GradeCenterActions {
                         ),
                       ),
                     ],
+                    const SizedBox(height: 8),
+                    _verdictRadioOption(
+                      title: 'Failed', subtitle: 'The team failed this stage. Another attempt requires an admin authorization.',
+                      value: 'failed', groupValue: selectedVerdict, color: DefensysTokens.dangerText,
+                      onChanged: (val) => setState(() => selectedVerdict = val!),
+                    ),
+                    const SizedBox(height: 8),
+                    _verdictRadioOption(
+                      title: 'Project Rejected', subtitle: 'The concept cannot continue. An authorized replacement concept starts with fresh requirements and grades.',
+                      value: 'project_rejected', groupValue: selectedVerdict, color: DefensysTokens.dangerText,
+                      onChanged: (val) => setState(() => selectedVerdict = val!),
+                    ),
+                    if (selectedVerdict == 'for_redefense')
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Require adviser verification of corrections'),
+                        subtitle: const Text('Optional panel condition. Existing adviser assignment and endorsement are retained.'),
+                        value: verificationRequired,
+                        onChanged: (value) => setState(() => verificationRequired = value ?? false),
+                      ),
                     const SizedBox(height: 16),
                     const Text(
                       'PANEL INSTRUCTIONS & DIRECTIVES FOR TEAM',
@@ -4847,6 +4828,7 @@ class GradeCenterActions {
           verdict: selectedVerdict,
           remarks: remarks,
           revisionDeadline: deadlineStr,
+          redefenseVerificationRequired: verificationRequired,
         );
   }
 

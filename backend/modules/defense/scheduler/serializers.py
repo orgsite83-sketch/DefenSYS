@@ -130,6 +130,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
     scheduled_stages = serializers.SerializerMethodField()
     redefense_stages = serializers.SerializerMethodField()
     stage_progress = serializers.SerializerMethodField()
+    eligible_stages = serializers.SerializerMethodField()
 
     class Meta:
         model = StudentTeam
@@ -152,6 +153,8 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             'scheduled_stages',
             'redefense_stages',
             'stage_progress',
+            'eligible_stages',
+            'project_version',
         ]
 
     def get_leader_name(self, obj):
@@ -183,7 +186,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
                 if prog.defense_stage:
                     completed.add(prog.defense_stage.label)
         for grade in TeamGrade.objects.filter(team=obj, semester=obj.semester):
-            if grade.result == 'passed' and grade.defense_stage:
+            if grade.status == TeamGrade.STATUS_PUBLISHED and grade.result == 'passed' and grade.defense_stage:
                 completed.add(grade.defense_stage.label)
             elif grade.scope == TeamGrade.SCOPE_PIT and grade.result == 'passed' and grade.stage_label:
                 completed.add(grade.stage_label)
@@ -192,7 +195,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
     def get_scheduled_stages(self, obj):
         scheduled = set()
         for sched in obj.defense_schedules.all():
-            if sched.status == DefenseSchedule.STATUS_SCHEDULED:
+            if sched.status == DefenseSchedule.STATUS_SCHEDULED and sched.project_version == obj.project_version:
                 stage_label = sched.stage_label
                 if stage_label:
                     scheduled.add(stage_label)
@@ -226,6 +229,11 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             result[obj.ready_for_stage] = 'ready'
         return result
 
+    def get_eligible_stages(self, obj):
+        if not obj.is_capstone:
+            return []
+        return [stage.label for stage in DefenseStage.objects.filter(is_active=True) if is_stage_ready(obj, stage)]
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         completed = set(data.get('completed_stages') or [])
@@ -234,6 +242,8 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             data['ready_for_stage'] = None
         if not data.get('ready_for_stage') and redefense:
             data['ready_for_stage'] = next(iter(redefense))
+        if instance.is_capstone:
+            data['ready_for_stage'] = next(iter(data['eligible_stages']), None)
         return data
 
 
@@ -261,7 +271,8 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
     display_semester = serializers.CharField(source='semester.display_name', read_only=True)
     team_id = serializers.IntegerField(source='team.id', read_only=True)
     team_name = serializers.CharField(source='team.name', read_only=True)
-    project_title = serializers.CharField(source='team.project_title', read_only=True)
+    project_title = serializers.SerializerMethodField()
+    assessment = serializers.SerializerMethodField()
     team_level = serializers.CharField(source='team.level', read_only=True)
     section = serializers.CharField(source='team.section', read_only=True, allow_null=True)
     adviser_id = serializers.IntegerField(source='team.adviser.id', read_only=True, allow_null=True)
@@ -305,6 +316,8 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
             'team_id',
             'team_name',
             'project_title',
+            'project_version',
+            'assessment',
             'team_level',
             'section',
             'adviser_id',
@@ -352,24 +365,27 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
         from grading.grades.models import TeamGrade
         try:
             if obj.scope == DefenseSchedule.SCOPE_CAPSTONE and obj.defense_stage_id:
-                grade = TeamGrade.objects.filter(
+                grade = TeamGrade.all_objects.filter(
                     team_id=obj.team_id,
+                    project_version=obj.project_version,
                     semester_id=obj.semester_id,
                     defense_stage_id=obj.defense_stage_id,
                 ).order_by('-updated_at', '-id').first()
                 if grade:
                     return grade.id
             elif obj.scope == DefenseSchedule.SCOPE_PIT and obj.event_name:
-                grade = TeamGrade.objects.filter(
+                grade = TeamGrade.all_objects.filter(
                     team_id=obj.team_id,
+                    project_version=obj.project_version,
                     semester_id=obj.semester_id,
                     stage_label=obj.event_name,
                 ).order_by('-updated_at', '-id').first()
                 if grade:
                     return grade.id
             elif obj.stage_label:
-                grade = TeamGrade.objects.filter(
+                grade = TeamGrade.all_objects.filter(
                     team_id=obj.team_id,
+                    project_version=obj.project_version,
                     semester_id=obj.semester_id,
                     stage_label=obj.stage_label,
                 ).order_by('-updated_at', '-id').first()
@@ -406,16 +422,18 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
         from grading.grades.models import TeamGrade
         try:
             if obj.scope == DefenseSchedule.SCOPE_CAPSTONE and obj.defense_stage_id:
-                grade = TeamGrade.objects.filter(
+                grade = TeamGrade.all_objects.filter(
                     team_id=obj.team_id,
+                    project_version=obj.project_version,
                     semester_id=obj.semester_id,
                     defense_stage_id=obj.defense_stage_id,
                 ).order_by('-updated_at', '-id').first()
                 if grade:
                     return grade.status
             elif obj.scope == DefenseSchedule.SCOPE_PIT and obj.event_name:
-                grade = TeamGrade.objects.filter(
+                grade = TeamGrade.all_objects.filter(
                     team_id=obj.team_id,
+                    project_version=obj.project_version,
                     semester_id=obj.semester_id,
                     stage_label=obj.event_name,
                 ).order_by('-updated_at', '-id').first()
@@ -426,19 +444,15 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
         return None
 
     def get_display_status(self, obj):
-        if obj.operation_state != 'normal' and obj.status == DefenseSchedule.STATUS_SCHEDULED:
-            return obj.operation_state
-        if obj.status == DefenseSchedule.STATUS_SCHEDULED:
-            from django.utils import timezone
-            from datetime import datetime
-            now = timezone.localtime()
-            scheduled_start = timezone.make_aware(
-                datetime.combine(obj.scheduled_date, obj.start_time),
-                timezone.get_current_timezone(),
-            )
-            if now >= scheduled_start:
-                return 'ongoing'
-        return obj.status
+        from .progress import schedule_progress
+        return schedule_progress(obj)['display_status']
+
+    def get_assessment(self, obj):
+        from .progress import schedule_progress
+        return schedule_progress(obj)
+
+    def get_project_title(self, obj):
+        return obj.project_title_snapshot or obj.team.project_title
 
 
     def get_panelist_ids(self, obj):
@@ -952,6 +966,7 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
             scope=attrs['scope'],
             semester=attrs['semester'],
             team=attrs['team'],
+            project_version=attrs['team'].project_version,
             status=DefenseSchedule.STATUS_SCHEDULED,
         )
         if attrs['scope'] == DefenseSchedule.SCOPE_PIT:
@@ -1237,6 +1252,7 @@ class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
                 scope=attrs['scope'],
                 semester=attrs['semester'],
                 team=team,
+                project_version=team.project_version,
                 status=DefenseSchedule.STATUS_SCHEDULED,
             )
             if attrs['scope'] == DefenseSchedule.SCOPE_PIT:

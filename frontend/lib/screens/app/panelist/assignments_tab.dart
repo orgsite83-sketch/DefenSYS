@@ -359,27 +359,25 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: const Color(0xFFFEF3C7).withValues(alpha: 0.6),
+                color: DefensysTokens.surfaceHigherOf(context),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: const Color(0xFFF59E0B).withValues(alpha: 0.5),
-                ),
+                border: Border.all(color: DefensysTokens.borderOf(context)),
               ),
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.gavel_rounded,
                     size: 14,
-                    color: Color(0xFF92400E),
+                    color: DefensysTokens.textSecondaryOf(context),
                   ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       'You are presiding as Panel Chair for $chairCount ${chairCount == 1 ? 'team' : 'teams'}.',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF92400E),
+                        color: DefensysTokens.textSecondaryOf(context),
                       ),
                     ),
                   ),
@@ -740,7 +738,9 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     // Top Badge Row
-                    Row(
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
                       children: [
                         // Program Pill
                         Container(
@@ -773,8 +773,6 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                           _verdictBadge(t.verdict),
                         ],
 
-                        const Spacer(),
-
                         // Status Pill (Draft vs Posted vs Scheduled)
                         _statusBadge(t.evaluationStatus),
                       ],
@@ -793,8 +791,6 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                             fontWeight: FontWeight.w700,
                             color: DefensysTokens.textDark,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 2),
                         Text(
@@ -815,13 +811,17 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                     const SizedBox(height: 10),
 
                     // Bottom Row: Members Chip + Grade Action Button
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         // Roster button (opens modal)
                         InkWell(
                           onTap: () => _showMembersSheet(t),
                           borderRadius: BorderRadius.circular(6),
                           child: Container(
+                            constraints: const BoxConstraints(minHeight: 44),
                             padding: const EdgeInsets.symmetric(
                               horizontal: 6,
                               vertical: 3,
@@ -852,8 +852,6 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                             ),
                           ),
                         ),
-
-                        const Spacer(),
 
                         // Primary Action Button
                         if (!t.gradingAvailable && !isPosted)
@@ -1095,21 +1093,25 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
       decoration: BoxDecoration(
-        color: const Color(0xFFFEF3C7),
+        color: DefensysTokens.surfaceHigherOf(context),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: const Color(0xFFF59E0B)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
-      child: const Row(
+      child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.gavel_rounded, size: 10, color: Color(0xFF92400E)),
-          SizedBox(width: 2.5),
+          Icon(
+            Icons.gavel_rounded,
+            size: 10,
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+          const SizedBox(width: 2.5),
           Text(
             'CHAIR',
             style: TextStyle(
               fontSize: 9,
               fontWeight: FontWeight.w800,
-              color: Color(0xFF92400E),
+              color: DefensysTokens.textSecondaryOf(context),
               letterSpacing: 0.4,
             ),
           ),
@@ -1122,7 +1124,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     if (verdict == null || verdict.isEmpty) return const SizedBox.shrink();
     final isApproved = verdict == 'approved';
     final isRevisions = verdict == 'approved_with_revisions';
-    final isForRedefense = verdict == 'for_redefense';
+    final isForRedefense = ['for_redefense', 'failed', 'project_rejected'].contains(verdict);
 
     final Color color = isApproved
         ? const Color(0xFF10B981)
@@ -1137,7 +1139,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
         : isRevisions
         ? 'REVISIONS'
         : isForRedefense
-        ? 'RE-DEFENSE'
+        ? (verdict == 'for_redefense' ? 'RE-DEFENSE' : verdict.replaceAll('_', ' ').toUpperCase())
         : verdict.toUpperCase();
 
     final IconData icon = isApproved

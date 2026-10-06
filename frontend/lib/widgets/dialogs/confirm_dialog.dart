@@ -16,6 +16,7 @@ Future<bool> showConfirmDialog(
   Color? iconColor,
   Color? iconBgColor,
   Widget? contentPrefix,
+  String? acknowledgementLabel,
 }) async {
   final effectiveIconColor =
       iconColor ??
@@ -28,92 +29,118 @@ Future<bool> showConfirmDialog(
       confirmColor ??
       (destructive ? DefensysTokens.danger : DefensysTokens.maroon);
 
+  var acknowledged = false;
   final confirmed = await showDialog<bool>(
     context: context,
-    builder: (dialogContext) => AlertDialog(
-      surfaceTintColor: Colors.transparent,
-      titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
-      contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-      actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
-      title: icon != null
-          ? Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: effectiveIconBgColor,
-                    borderRadius: BorderRadius.circular(
-                      DefensysTokens.radiusSm,
-                    ),
-                  ),
-                  child: Icon(icon, size: 20, color: effectiveIconColor),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: DefensysTokens.dialogTitle.copyWith(
-                      color: DefensysTokens.textPrimaryOf(context),
-                    ),
-                  ),
-                ),
-              ],
-            )
-          : Text(
-              title,
-              style: DefensysTokens.dialogTitle.copyWith(
-                color: DefensysTokens.textPrimaryOf(context),
-              ),
-            ),
-      content: contentPrefix == null
-          ? Text(
-              message,
-              style: DefensysTokens.dialogContent.copyWith(
-                color: DefensysTokens.textSecondaryOf(context),
-              ),
-            )
-          : SizedBox(
-              width: 620,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    contentPrefix,
-                    const SizedBox(height: 18),
-                    Text(
-                      message,
-                      style: DefensysTokens.dialogContent.copyWith(
-                        color: DefensysTokens.textSecondaryOf(context),
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, setDialogState) => AlertDialog(
+        surfaceTintColor: Colors.transparent,
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+        contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+        title: icon != null
+            ? Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: effectiveIconBgColor,
+                      borderRadius: BorderRadius.circular(
+                        DefensysTokens.radiusSm,
                       ),
                     ),
-                  ],
+                    child: Icon(icon, size: 20, color: effectiveIconColor),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: DefensysTokens.dialogTitle.copyWith(
+                        color: DefensysTokens.textPrimaryOf(context),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : Text(
+                title,
+                style: DefensysTokens.dialogTitle.copyWith(
+                  color: DefensysTokens.textPrimaryOf(context),
                 ),
               ),
+        content: contentPrefix == null && acknowledgementLabel == null
+            ? Text(
+                message,
+                style: DefensysTokens.dialogContent.copyWith(
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              )
+            : SizedBox(
+                width: 620,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (contentPrefix != null) ...[
+                        contentPrefix,
+                        const SizedBox(height: 18),
+                      ],
+                      Text(
+                        message,
+                        style: DefensysTokens.dialogContent.copyWith(
+                          color: DefensysTokens.textSecondaryOf(context),
+                        ),
+                      ),
+                      if (acknowledgementLabel != null) ...[
+                        const SizedBox(height: 16),
+                        CheckboxListTile(
+                          key: const ValueKey('confirmation-acknowledgement'),
+                          value: acknowledged,
+                          onChanged: (value) => setDialogState(() {
+                            acknowledged = value == true;
+                          }),
+                          controlAffinity: ListTileControlAffinity.leading,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            acknowledgementLabel,
+                            style: DefensysTokens.dialogContent.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: DefensysTokens.textPrimaryOf(context),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+        actions: [
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: DefensysTokens.textSecondaryOf(context),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             ),
-      actions: [
-        TextButton(
-          style: TextButton.styleFrom(
-            foregroundColor: DefensysTokens.textSecondaryOf(context),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(cancelLabel),
           ),
-          onPressed: () => Navigator.pop(dialogContext, false),
-          child: Text(cancelLabel),
-        ),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: effectiveConfirmColor,
-            foregroundColor: Colors.white,
-            elevation: 0,
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: effectiveConfirmColor,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+              ),
             ),
+            onPressed: acknowledgementLabel == null || acknowledged
+                ? () => Navigator.pop(dialogContext, true)
+                : null,
+            child: Text(confirmLabel),
           ),
-          onPressed: () => Navigator.pop(dialogContext, true),
-          child: Text(confirmLabel),
-        ),
-      ],
+        ],
+      ),
     ),
   );
   return confirmed == true;

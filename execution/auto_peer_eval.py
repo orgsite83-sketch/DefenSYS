@@ -41,7 +41,7 @@ if BACKEND_PATH not in sys.path:
 
 def init_django():
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "defensys_backend.settings")
-    import django
+    import django  # type: ignore
     django.setup()
 
 
@@ -119,8 +119,8 @@ def fetch_student_records(team_id: Optional[int] = None, specific_usernames: Opt
     Student passwords default to their username in DefenSYS.
     """
     init_django()
-    from django.contrib.auth import get_user_model
-    from student_teams.models import TeamMembership
+    from django.contrib.auth import get_user_model  # type: ignore
+    from student_teams.models import TeamMembership  # type: ignore
 
     User = get_user_model()
 
@@ -144,8 +144,8 @@ def fetch_student_records(team_id: Optional[int] = None, specific_usernames: Opt
 def get_jwt_token_for_user(username: str) -> Optional[str]:
     """Generates a valid signed JWT access token directly using Django SimpleJWT."""
     init_django()
-    from django.contrib.auth import get_user_model
-    from authentication_access_control.tokens import DefensysRefreshToken
+    from django.contrib.auth import get_user_model  # type: ignore
+    from authentication_access_control.tokens import DefensysRefreshToken  # type: ignore
 
     User = get_user_model()
     try:
@@ -153,7 +153,7 @@ def get_jwt_token_for_user(username: str) -> Optional[str]:
         refresh = DefensysRefreshToken.for_user(user)
         return str(refresh.access_token)
     except Exception as e:
-        print(f"  [✗] Failed to generate token for {username}: {e}")
+        print(f"  [FAIL] Failed to generate token for {username}: {e}")
         return None
 
 
@@ -195,10 +195,10 @@ class StudentClient:
                 time.sleep(5)
                 return self.authenticate(use_http_login=True)
             else:
-                print(f"  [✗] Login failed for '{self.username}' (HTTP {resp.status_code}): {resp.text}")
+                print(f"  [FAIL] Login failed for '{self.username}' (HTTP {resp.status_code}): {resp.text}")
                 return False
         except Exception as e:
-            print(f"  [✗] Network error logging in as '{self.username}': {e}")
+            print(f"  [FAIL] Network error logging in as '{self.username}': {e}")
             return False
 
     def get_dashboard(self) -> Optional[Dict]:
@@ -208,10 +208,10 @@ class StudentClient:
             if resp.status_code == 200:
                 return resp.json()
             else:
-                print(f"  [✗] Failed to fetch dashboard (HTTP {resp.status_code}): {resp.text}")
+                print(f"  [FAIL] Failed to fetch dashboard (HTTP {resp.status_code}): {resp.text}")
                 return None
         except Exception as e:
-            print(f"  [✗] Network error fetching dashboard: {e}")
+            print(f"  [FAIL] Network error fetching dashboard: {e}")
             return None
 
     def submit_evaluation(self, payload: Dict, dry_run: bool = False) -> bool:
@@ -224,10 +224,10 @@ class StudentClient:
             if resp.status_code == 200:
                 return True
             else:
-                print(f"  [✗] Failed to submit evaluation (HTTP {resp.status_code}): {resp.text}")
+                print(f"  [FAIL] Failed to submit evaluation (HTTP {resp.status_code}): {resp.text}")
                 return False
         except Exception as e:
-            print(f"  [✗] Network error submitting evaluation: {e}")
+            print(f"  [FAIL] Network error submitting evaluation: {e}")
             return False
 
 
@@ -364,10 +364,10 @@ def run():
             success = client.submit_evaluation(payload, dry_run=args.dry_run)
             if success:
                 total_evals_submitted += 1
-                prefix = "[DRY-RUN]" if args.dry_run else "✓"
+                prefix = "[DRY-RUN]" if args.dry_run else "[OK]"
                 print(f"    {prefix} Rated {teammate_name}: {total_score:.0f}/{max_score:.0f} [{scores_desc}]")
             else:
-                print(f"    ✗ Failed to rate {teammate_name}")
+                print(f"    [FAIL] Failed to rate {teammate_name}")
 
             time.sleep(args.delay)
 
@@ -382,7 +382,7 @@ def run():
     if args.dry_run:
         print("[!] Dry-run complete. Run without --dry-run to apply to the database.")
     elif total_evals_submitted > 0:
-        print("[✓] All peer evaluations successfully submitted!")
+        print("[OK] All peer evaluations successfully submitted!")
         print("    Refresh your browser (F5) to see the completed progress and locked cards.")
 
 

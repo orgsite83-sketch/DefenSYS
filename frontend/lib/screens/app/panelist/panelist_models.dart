@@ -50,7 +50,7 @@ class TeamData {
   String? draftSavedAt;
   bool hasUnsavedChanges = false;
   bool isPosted;
-  final List<Map<String, dynamic>> submittedSubmissions;
+  List<Map<String, dynamic>> submittedSubmissions;
   final List<Map<String, dynamic>> defenseMaterials;
 
   final bool isChair;
@@ -58,6 +58,8 @@ class TeamData {
   String? verdictRemarks;
   String? verdictByName;
   String? revisionDeadline;
+  bool redefenseVerificationRequired;
+  Map<String, dynamic>? workflowGrade;
   int attemptCount;
   int? gradeId;
 
@@ -102,6 +104,8 @@ class TeamData {
     this.verdictRemarks,
     this.verdictByName,
     this.revisionDeadline,
+    this.redefenseVerificationRequired = false,
+    this.workflowGrade,
     this.attemptCount = 1,
     this.gradeId,
   }) : scheduledDate =
@@ -153,6 +157,49 @@ class TeamData {
 
   String get targetType => panelRubric?['target_type']?.toString() ?? 'team';
   bool get isIndividualTarget => targetType == 'individual';
+
+  /// Counts valid answers for the configured target, including deliberate zero.
+  /// Team criteria are counted once; individual criteria once per member.
+  EvaluationProgress progressFor(String? studentId) {
+    final definitions = (panelRubric?['criteria'] as List? ?? [])
+        .whereType<Map>()
+        .where((criterion) {
+          final target = targetType == 'both'
+              ? criterion['target_type']?.toString() ?? 'team'
+              : targetType;
+          return target == (studentId == null ? 'team' : 'individual');
+        })
+        .toList();
+    final answers = isPosted ? submittedSubmissions : draftSubmissions;
+    final scores = <String, num>{};
+    for (final submission in answers) {
+      if (submission['student_id']?.toString() != studentId) continue;
+      for (final item
+          in (submission['criteria_scores'] as List? ?? []).whereType<Map>()) {
+        final score = item['score'];
+        if (score is num) scores[item['criterion_id'].toString()] = score;
+      }
+    }
+    final entered = definitions.where((criterion) {
+      final score = scores[criterion['id'].toString()];
+      final maximum = criterion['max_score'] as num? ?? 10;
+      return score != null && score.isFinite && score >= 0 && score <= maximum;
+    }).length;
+    return EvaluationProgress(entered, definitions.length);
+  }
+
+  EvaluationProgress get evaluationProgress {
+    final team = progressFor(null);
+    final individuals = targetType == 'team'
+        ? <EvaluationProgress>[]
+        : memberDetails.map((member) => progressFor(member.id));
+    return EvaluationProgress(
+      team.entered +
+          individuals.fold(0, (sum, progress) => sum + progress.entered),
+      team.required +
+          individuals.fold(0, (sum, progress) => sum + progress.required),
+    );
+  }
 
   String get displayStage {
     if (stageName.isNotEmpty && stageName != 'No stage') return stageName;
@@ -228,10 +275,24 @@ class Criterion {
   final int? id;
   final String name;
   final double maxScore;
+  final String description;
   double? score;
-  Criterion(this.name, this.maxScore, {this.id, this.score});
+  Criterion(
+    this.name,
+    this.maxScore, {
+    this.id,
+    this.score,
+    this.description = '',
+  });
   bool get isScored =>
       score != null && score!.isFinite && score! >= 0 && score! <= maxScore;
+}
+
+class EvaluationProgress {
+  const EvaluationProgress(this.entered, this.required);
+  final int entered, required;
+  bool get complete => required > 0 && entered == required;
+  String get label => '$entered/$required scored';
 }
 
 class Award {

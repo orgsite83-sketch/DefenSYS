@@ -11,6 +11,7 @@ import '../../../../widgets/error_banner.dart';
 import '../../../../widgets/table/defensys_segmented_control.dart';
 import '../widgets/defensys_admin_shell.dart';
 import 'grade_center_shared.dart';
+import 'defense_workflow_panel.dart';
 
 class GradeCenterTeamDetailScreen extends ConsumerStatefulWidget {
   const GradeCenterTeamDetailScreen({
@@ -131,7 +132,8 @@ class _GradeCenterTeamDetailScreenState
         !widget.isLocked &&
         gradeIdValue != null &&
         grade['status'] != 'published' &&
-        grade['grading_ready'] == true;
+        grade['grading_ready'] == true &&
+        (grade['workflow'] as Map?)?['passed_and_cleared'] == true;
     final user = ref.watch(authProvider).user;
     final canCorrect = gradeIdValue != null && (user?['role'] == 'admin' || user?['is_superuser'] == true);
     final canEdit = !widget.isLocked && gradeIdValue != null;
@@ -405,6 +407,10 @@ class _GradeCenterTeamDetailScreenState
 
           // Executive Hero Summary Header
           gradeCenterHeroSummaryCard(grade: grade),
+          if (!isPit) ...[
+            const SizedBox(height: 16),
+            DefenseWorkflowPanel(grade: grade, onProjectReplaced: widget.onBack),
+          ],
 
           if (grade['attempt_history'] is List && (grade['attempt_history'] as List).isNotEmpty) ...[
             const SizedBox(height: 16),

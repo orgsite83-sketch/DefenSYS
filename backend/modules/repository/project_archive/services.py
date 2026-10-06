@@ -10,7 +10,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, F
 
 from academic_period_management.models import Semester, SchoolYear
 from authentication_access_control.audit import log_high_impact_action
@@ -173,7 +173,10 @@ def _complete_passing_grades(scope):
         final_grade__gte=PASS_GRADE_THRESHOLD,
     )
     if scope == TeamGrade.SCOPE_CAPSTONE:
-        grades = grades.filter(Q(adviser_weight=0) | Q(adviser_score__isnull=False))
+        grades = grades.filter(status=TeamGrade.STATUS_PUBLISHED).filter(
+            Q(verdict=TeamGrade.VERDICT_APPROVED) | Q(
+                verdict=TeamGrade.VERDICT_APPROVED_WITH_REVISIONS, revisions_cleared_at__isnull=False)
+        ).filter(Q(adviser_weight=0) | Q(adviser_score__isnull=False))
     return grades
 
 
@@ -526,6 +529,7 @@ def capstone_archive_upload_queue(semester=None):
             ArchiveEntry.objects.filter(
                 entry_type=ArchiveEntry.TYPE_CAPSTONE,
                 team_id__isnull=False,
+                project_version=F('team__project_version'),
             ).values_list('team_id', 'defense_stage_id', 'stage_label')
         )
     }
@@ -533,6 +537,7 @@ def capstone_archive_upload_queue(semester=None):
         ArchiveEntry.objects.filter(
             entry_type=ArchiveEntry.TYPE_CAPSTONE,
             team_id__isnull=False,
+            project_version=F('team__project_version'),
         ).values_list('team_id', 'stage_label')
     )
     
@@ -546,9 +551,6 @@ def capstone_archive_upload_queue(semester=None):
 
     grades = (
         _complete_passing_grades(TeamGrade.SCOPE_CAPSTONE)
-        .filter(
-            team__status=StudentTeam.STATUS_APPROVED,
-        )
         .filter(
             Q(defense_stage_id__in=stage_ids)
             | Q(defense_stage__isnull=True, stage_label__in=stage_labels)
@@ -1413,6 +1415,7 @@ def _save_capstone_archive_entry(
         entry_type=ArchiveEntry.TYPE_CAPSTONE,
         file_name=file_name,
         academic_year=academic_year,
+        project_version=team.project_version,
         defaults={
             'team': team,
             'team_name': team.name if team else 'Unmatched',

@@ -6,6 +6,7 @@ import 'components/schedule_group_actions.dart';
 import 'components/schedule_manager_dialog.dart';
 import '../grade_center/grade_correction_dialog.dart';
 import 'package:flutter/material.dart';
+import '../../../../models/defense_workflow_labels.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -1102,7 +1103,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               _buildSummaryCard(
                 icon: Icons.play_circle_fill_rounded,
                 iconColor: const Color(0xFFD97706),
-                label: 'Ongoing',
+                label: 'Evaluating',
                 value: _count(state, 'ongoing'),
               ),
               const SizedBox(height: 14),
@@ -1140,7 +1141,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               child: _buildSummaryCard(
                 icon: Icons.play_circle_fill_rounded,
                 iconColor: const Color(0xFFD97706),
-                label: 'Ongoing',
+                label: 'Evaluating',
                 value: _count(state, 'ongoing'),
               ),
             ),
@@ -2976,13 +2977,15 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         text = normalized == 'paused' ? 'Interrupted' : normalized == 'postponed' ? 'Postponed' : 'No-show';
         break;
       case 'ongoing':
+      case 'evaluating':
+      case 'revisions_pending':
+      case 'grading_incomplete':
         bg = _isDark ? const Color(0xFF78350F).withValues(alpha: 0.3) : DefensysTokens.warningBg;
         fg = _isDark ? const Color(0xFFFDE68A) : DefensysTokens.warningText;
         border = _isDark ? const Color(0xFFB45309).withValues(alpha: 0.5) : DefensysTokens.warningBorder;
         iconData = Icons.play_circle_rounded;
-        text = 'Ongoing';
+        text = _statusLabel(normalized);
         break;
-      case 'done':
       case 'completed':
         bg = _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.3) : DefensysTokens.successBg;
         fg = _isDark ? const Color(0xFF6EE7B7) : DefensysTokens.successText;
@@ -2991,11 +2994,14 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         text = 'Completed';
         break;
       case 'cancelled':
+      case 'failed':
+      case 'project_rejected':
+      case 'redefense_required':
         bg = _isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.3) : DefensysTokens.dangerBg;
         fg = _isDark ? const Color(0xFFFCA5A5) : DefensysTokens.dangerText;
         border = _isDark ? const Color(0xFFDC2626).withValues(alpha: 0.5) : DefensysTokens.dangerBorder;
         iconData = Icons.cancel_rounded;
-        text = 'Cancelled';
+        text = _statusLabel(normalized);
         break;
       case 'archived':
         bg = _isDark ? DefensysTokens.mistInputFill : DefensysTokens.archivedBg;
@@ -3009,7 +3015,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         fg = _isDark ? const Color(0xFF93C5FD) : DefensysTokens.infoText;
         border = _isDark ? const Color(0xFF2563EB).withValues(alpha: 0.5) : DefensysTokens.infoBorder;
         iconData = Icons.schedule_rounded;
-        text = 'Scheduled';
+        text = _statusLabel(normalized);
     }
 
     return Container(
@@ -3199,8 +3205,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   }
 
   String _statusLabel(String status) {
-    if (status.isEmpty) return '';
-    return status[0].toUpperCase() + status.substring(1);
+    return defenseProgressLabel(status);
   }
 
   int _count(DefenseBoardState state, String key) {

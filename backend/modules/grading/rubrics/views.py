@@ -222,7 +222,7 @@ class RubricListCreateView(APIView):
         from authentication_access_control.audit import log_high_impact_action
         from authentication_access_control.models import SystemAuditLog
         log_high_impact_action(
-            category=SystemAuditLog.CATEGORY_GRADE_CENTER,
+            category=SystemAuditLog.CATEGORY_RUBRICS,
             action='rubric.create',
             target=rubric,
             new_values={
@@ -252,6 +252,13 @@ class RubricDetailView(APIView):
             pk=rubric_id,
         )
 
+    def get(self, request, rubric_id):
+        rubric = self.get_object(request, rubric_id)
+        return Response({
+            'rubric': RubricSerializer(rubric).data,
+            **options_payload(request.user),
+        })
+
     def patch(self, request, rubric_id):
         rubric = self.get_object(request, rubric_id)
         old_values = {
@@ -272,7 +279,7 @@ class RubricDetailView(APIView):
         from authentication_access_control.audit import log_high_impact_action
         from authentication_access_control.models import SystemAuditLog
         log_high_impact_action(
-            category=SystemAuditLog.CATEGORY_GRADE_CENTER,
+            category=SystemAuditLog.CATEGORY_RUBRICS,
             action='rubric.update',
             target=rubric,
             old_values=old_values,
@@ -329,7 +336,7 @@ class RubricDetailView(APIView):
         from authentication_access_control.audit import log_high_impact_action
         from authentication_access_control.models import SystemAuditLog
         log_high_impact_action(
-            category=SystemAuditLog.CATEGORY_GRADE_CENTER,
+            category=SystemAuditLog.CATEGORY_RUBRICS,
             action='rubric.delete',
             target=rubric,
             target_type='Rubric',
@@ -363,7 +370,7 @@ class RubricPublishView(APIView):
         from authentication_access_control.audit import log_high_impact_action
         from authentication_access_control.models import SystemAuditLog
         log_high_impact_action(
-            category=SystemAuditLog.CATEGORY_GRADE_CENTER,
+            category=SystemAuditLog.CATEGORY_RUBRICS,
             action='rubric.publish',
             target=rubric,
             old_values={'status': old_status},

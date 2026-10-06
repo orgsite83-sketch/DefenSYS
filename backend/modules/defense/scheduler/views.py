@@ -2,7 +2,7 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import status
+from rest_framework import status, serializers as drf_serializers
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -856,6 +856,7 @@ class PanelistGradeSubmissionView(APIView):
 
 
 def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_chair=False, team_grade=None):
+    from grading.grades.serializers import TeamGradeSerializer
     team = schedule.team
     unavailable_reason = grading_unavailable_reason(schedule, team_grade)
     verdict_reason = verdict_unavailable_reason(schedule, team_grade)
@@ -971,6 +972,8 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
         'verdict_remarks': verdict_remarks,
         'verdict_by_name': verdict_by_name,
         'revision_deadline': revision_deadline,
+        'redefense_verification_required': team_grade.redefense_verification_required if team_grade else False,
+        'grade_record': TeamGradeSerializer(team_grade).data if team_grade and team_grade.schedule_id == schedule.pk else None,
         'attempt_count': attempt_count,
         'grade_id': grade_id,
         'members': [
@@ -1346,9 +1349,6 @@ class DefenseScheduleVerdictView(APIView):
         from grading.grades.serializers import TeamGradeSerializer
 
         team_grade = schedule.grade_records.first()
-        reason = grading_unavailable_reason(schedule)
-        if reason:
-            return Response({'detail': reason}, status=status.HTTP_400_BAD_REQUEST)
         if not team_grade:
             team_grade, _created, _changed = GradeContextService.get_or_create_for_schedule(schedule)
 
@@ -1371,41 +1371,17 @@ class DefenseScheduleVerdictView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        team_grade.verdict = verdict
-        team_grade.verdict_remarks = verdict_remarks
-        team_grade.verdict_by = request.user
-        team_grade.verdict_at = timezone.now()
-        team_grade.revision_deadline = parsed_deadline
-        team_grade.save(update_fields=[
-            'verdict',
-            'verdict_remarks',
-            'verdict_by',
-            'verdict_at',
-            'revision_deadline',
-            'updated_at',
-        ])
+        from grading.grades.defense_workflow import record_verdict
+        try:
+            team_grade = record_verdict(team_grade, actor=request.user, verdict=verdict,
+                remarks=verdict_remarks, deadline=parsed_deadline,
+                verification_required=drf_serializers.BooleanField().run_validation(request.data.get('redefense_verification_required', False)))
+        except ValidationError as exc:
+            return Response({'detail': ' '.join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+        except PermissionError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
 
-        _apply_team_result_from_grade(team_grade)
 
-        from authentication_access_control.models import SystemAuditLog
-        from authentication_access_control.audit import log_high_impact_action
-        log_high_impact_action(
-            category=SystemAuditLog.CATEGORY_GRADE_CENTER,
-            action='defense.verdict_submitted',
-            target=team_grade,
-            target_type='TeamGrade',
-            target_id=team_grade.pk,
-            actor=request.user,
-            new_values={
-                'schedule_id': schedule.id,
-                'team_id': schedule.team_id,
-                'team_name': getattr(schedule.team, 'name', '') or getattr(team_grade.team, 'name', ''),
-                'stage_label': getattr(team_grade, 'stage_label', ''),
-                'verdict': verdict,
-                'verdict_remarks': verdict_remarks,
-                'revision_deadline': str(parsed_deadline) if parsed_deadline else None,
-            },
-        )
 
         return Response({
             'success': True,
