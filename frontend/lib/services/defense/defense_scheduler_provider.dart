@@ -159,6 +159,116 @@ class DefenseSchedulerState {
   bool isEligiblePanelist(int id) =>
       panelists.any((p) => p['id'] == id) ||
       faculty.any((p) => p['id'] == id && p['is_panelist'] == true);
+
+  int? get currentCapstoneStageId {
+    final stages = defenseStages.where((s) => s['is_active'] != false).toList();
+    if (stages.isEmpty) return null;
+
+    // 1. Explicit flag if present (from backend serializer or override)
+    for (final stage in stages) {
+      if (stage['is_current'] == true || stage['is_current_stage'] == true) {
+        final id = _parseId(stage['id']);
+        if (id != null) return id;
+      }
+    }
+
+    final incompleteStages =
+        stages.where((s) => s['is_officially_complete'] != true).toList();
+    if (incompleteStages.isEmpty) {
+      return _parseId(stages.first['id']);
+    }
+
+    // 2. Count active/ready capstone teams per incomplete stage
+    int maxCount = 0;
+    int? bestStageId;
+
+    for (final stage in incompleteStages) {
+      final stageLabel = stage['label']?.toString().trim() ?? '';
+      if (stageLabel.isEmpty) continue;
+
+      int count = 0;
+      for (final team in teams) {
+        final level = team['level']?.toString().toLowerCase() ?? '';
+        final isCapstone =
+            level.contains('capstone') || team['is_capstone'] == true;
+        if (!isCapstone) continue;
+
+        final readyFor = team['ready_for_stage']?.toString().trim();
+        final currentDefense = team['current_defense_stage']?.toString().trim();
+        final currentStage = team['current_stage']?.toString().trim();
+        final scheduledStages = team['scheduled_stages'] is List
+            ? (team['scheduled_stages'] as List)
+                .map((e) => e?.toString().trim())
+                .toList()
+            : const [];
+
+        if (readyFor == stageLabel ||
+            currentDefense == stageLabel ||
+            currentStage == stageLabel ||
+            scheduledStages.contains(stageLabel)) {
+          count++;
+        }
+      }
+
+      final endorsedCount = _parseId(stage['endorsed_teams_count']) ?? 0;
+      if (count < endorsedCount) {
+        count = endorsedCount;
+      }
+
+      final hasActiveSchedules = schedules.any((s) {
+        if (_parseId(s['defense_stage_id']) != _parseId(stage['id'])) {
+          return false;
+        }
+        final status = s['status']?.toString().toLowerCase();
+        return status == 'scheduled' || status == 'in_progress';
+      });
+      if (hasActiveSchedules && count == 0) {
+        count = 1;
+      }
+
+      if (count > maxCount) {
+        maxCount = count;
+        bestStageId = _parseId(stage['id']);
+      } else if (count > 0 && count == maxCount) {
+        // Later stage in sequence takes priority if tied with active teams
+        bestStageId = _parseId(stage['id']);
+      }
+    }
+
+    if (bestStageId != null && maxCount > 0) {
+      return bestStageId;
+    }
+
+    // 3. Fallback: First incomplete stage in sequence
+    return _parseId(incompleteStages.first['id']);
+  }
+
+  bool isCurrentCapstoneStage(dynamic stage) {
+    final currentId = currentCapstoneStageId;
+    if (currentId == null) return false;
+    if (stage is Map) {
+      return _parseId(stage['id']) == currentId;
+    }
+    if (stage is int) {
+      return stage == currentId;
+    }
+    return false;
+  }
+
+  String formatStageLabel(Map<String, dynamic> stage) {
+    final label = stage['label']?.toString() ?? '';
+    if (isCurrentCapstoneStage(stage)) {
+      return '$label (current stage)';
+    }
+    return label;
+  }
+
+  static int? _parseId(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
 }
 
 class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {

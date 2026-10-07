@@ -65,6 +65,18 @@ class SessionStorageImpl extends SessionStorageBase {
   }
 
   @override
+  Future<String?> readAccess() async => _session[AuthStorageKeys.access];
+
+  @override
+  Future<void> writeAccess(String? value) async {
+    if (value == null) {
+      _session.remove(AuthStorageKeys.access);
+    } else {
+      _session[AuthStorageKeys.access] = value;
+    }
+  }
+
+  @override
   Future<String?> readUserJson() async => _session[AuthStorageKeys.user];
 
   @override
@@ -84,6 +96,7 @@ class SessionStorageImpl extends SessionStorageBase {
   Future<void> clearAuth() async {
     // Clear sessionStorage (primary)
     _session.remove(AuthStorageKeys.refresh);
+    _session.remove(AuthStorageKeys.access);
     _session.remove(AuthStorageKeys.user);
 
     // Clear tab-scoped localStorage (remember-me backup)
@@ -92,8 +105,10 @@ class SessionStorageImpl extends SessionStorageBase {
 
     // Clear legacy global keys (one-time migration cleanup)
     html.window.localStorage.remove(AuthStorageKeys.refresh);
+    html.window.localStorage.remove(AuthStorageKeys.access);
     html.window.localStorage.remove(AuthStorageKeys.user);
     html.window.sessionStorage.remove(AuthStorageKeys.refresh);
+    html.window.sessionStorage.remove(AuthStorageKeys.access);
     html.window.sessionStorage.remove(AuthStorageKeys.user);
   }
 

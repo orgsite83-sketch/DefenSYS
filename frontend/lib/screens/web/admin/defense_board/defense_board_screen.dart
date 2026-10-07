@@ -26,7 +26,6 @@ import '../defense_scheduler/dialogs/manual_slot_editor_dialog.dart';
 import '../defense_scheduler/dialogs/team_deliverables_review_dialog.dart';
 import '../defense_scheduler/models/schedule_import_models.dart';
 import '../grade_center/grade_center_screen.dart';
-import '../admin_shell.dart';
 import '../grade_center/grade_center_team_detail_screen.dart';
 import '../../../../services/grading/grade_center_provider.dart';
 import '../widgets/defensys_admin_shell.dart';
@@ -34,6 +33,7 @@ import '../../../../widgets/feedback/empty_state.dart';
 import '../../../../widgets/table/defensys_segmented_control.dart';
 import '../../faculty/minutes_form_screen.dart';
 import '../../../../utils/import/schedule_import_draft.dart';
+import '../../../../utils/scheduler/defense_scheduler_draft.dart';
 import 'components/defense_schedule_bulk_import_view.dart';
 
 class DefenseBoardScreen extends ConsumerStatefulWidget {
@@ -66,6 +66,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   final Set<String> _collapsedSessions = {};
   final Map<String, int> _sessionPages = {};
   bool _hasImportDraft = false;
+  bool _hasSchedulerDraft = false;
   ScheduleImportDraft? _savedImportDraft;
   bool _showScheduleBulkImport = false;
 
@@ -88,6 +89,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           );
       ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
       _checkImportDraft();
+      _checkSchedulerDraft();
     });
   }
 
@@ -110,6 +112,23 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       setState(() {
         _savedImportDraft = (draft != null && draft.parsed.rows.isNotEmpty) ? draft : null;
         _hasImportDraft = _savedImportDraft != null;
+      });
+    }
+  }
+
+  Future<void> _checkSchedulerDraft() async {
+    final user = ref.read(authProvider).user;
+    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isPitLead = user?['is_pit_lead'] == true;
+    if (!isAdmin && !isPitLead) return;
+    final scope = isAdmin ? 'capstone' : 'pit';
+    final draft = await loadDefenseSchedulerDraft(
+      scope: scope,
+      semesterId: asInt(ref.read(defenseSchedulerProvider).activeSemester?['id']),
+    );
+    if (mounted) {
+      setState(() {
+        _hasSchedulerDraft = draft != null && draft.hasContent;
       });
     }
   }
@@ -198,6 +217,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             _schedulerStageId = null;
             _schedulerEventName = null;
           });
+          _checkSchedulerDraft();
           ref.read(defenseBoardProvider.notifier).fetchBoard();
           ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
         },
@@ -205,17 +225,6 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     }
 
     final state = ref.watch(defenseBoardProvider);
-    ref.listen<DefensysAdminSection>(
-      activeAdminSectionProvider,
-      (previous, next) {
-        if (next == DefensysAdminSection.defenseBoard) {
-          ref.read(defenseBoardProvider.notifier).fetchBoard(
-                scope: _effectiveBoardScope(ref.read(defenseBoardProvider)),
-              );
-          ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
-        }
-      },
-    );
     final schedState = ref.watch(defenseSchedulerProvider);
     final currentView = ref.watch(defenseBoardActiveViewProvider);
     final user = ref.watch(authProvider).user;
@@ -403,7 +412,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                                     ),
                                   ),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.maroon,
+                                    backgroundColor: _isDark ? DefensysTokens.mistMaroon : AppColors.maroon,
                                     foregroundColor: Colors.white,
                                     elevation: 1,
                                     padding: const EdgeInsets.symmetric(
@@ -1065,10 +1074,39 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 },
                 style: DefensysButtonStyles.primary(context),
                 icon: const Icon(Icons.auto_awesome_rounded),
-                label: Text(
-                  currentView == DefenseOperationsView.readiness && readyCount > 0
-                      ? 'Schedule $readyCount Ready ${readyCount == 1 ? 'Team' : 'Teams'}'
-                      : 'Generate Schedule',
+                label: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      currentView == DefenseOperationsView.readiness && readyCount > 0
+                          ? 'Schedule $readyCount Ready ${readyCount == 1 ? 'Team' : 'Teams'}'
+                          : (_hasSchedulerDraft ? 'Resume Schedule Draft' : 'Generate Schedule'),
+                    ),
+                    if (_hasSchedulerDraft && !(currentView == DefenseOperationsView.readiness && readyCount > 0)) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1.5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _isDark
+                              ? const Color(0xFFD97706)
+                              : const Color(0xFFB45309),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'DRAFT',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],

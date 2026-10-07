@@ -37,8 +37,21 @@ class SessionStorageImpl implements SessionStorageBase {
   }
 
   @override
+  Future<String?> readAccess() async => _memory[AuthStorageKeys.access];
+
+  @override
+  Future<void> writeAccess(String? value) async {
+    if (value == null) {
+      _memory.remove(AuthStorageKeys.access);
+    } else {
+      _memory[AuthStorageKeys.access] = value;
+    }
+  }
+
+  @override
   Future<void> clearAuth() async {
     _memory.remove(AuthStorageKeys.refresh);
+    _memory.remove(AuthStorageKeys.access);
     _memory.remove(AuthStorageKeys.user);
   }
 
@@ -54,6 +67,8 @@ void broadcastAuthToTabs(Map<String, dynamic> payload) {}
 abstract class SessionStorageBase {
   Future<String?> readRefresh();
   Future<void> writeRefresh(String? value);
+  Future<String?> readAccess();
+  Future<void> writeAccess(String? value);
   Future<String?> readUserJson();
   Future<void> writeUserJson(String? value);
   Future<void> clearAuth();

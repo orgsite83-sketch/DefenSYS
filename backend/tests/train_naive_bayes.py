@@ -1,107 +1,81 @@
-"""
-Train Naive Bayes classifier for document categorization
-"""
+"""Train explicitly, or evaluate on reviewed projects without updating the model.
 
+Dataset JSON: [{project_id, text, label, split: train|test, reviewed: true}].
+All files from one project must stay in a single split. Generated examples and
+smoke tests are never reported as measured real-project accuracy.
+"""
+import argparse
+import json
 import os
-import django
+import sys
+from collections import defaultdict
+from pathlib import Path
 
-# Setup Django
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'defensys_backend.settings')
+import django
 django.setup()
 
-from repository.deliverables.naive_bayes_classifier import train_and_save_model, classify_document
+from sklearn.metrics import classification_report
+from repository.deliverables.naive_bayes_classifier import NaiveBayesClassifier, get_classifier, train_and_save_model
 
 
-def main():
-    print('\n' + '='*80)
-    print('TRAINING NAIVE BAYES CLASSIFIER')
-    print('='*80 + '\n')
-    
-    # Train and save model
-    classifier = train_and_save_model()
-    
-    print('\n' + '='*80)
-    print('TESTING CLASSIFIER')
-    print('='*80 + '\n')
-    
-    # Test with sample documents
-    test_documents = [
-        {
-            'text': 'This project focuses on developing a secure authentication system using encryption and firewall technologies to protect against SQL injection attacks and XSS vulnerabilities. We implemented password hashing and SSL/TLS protocols.',
-            'expected': 'Cybersecurity'
-        },
-        {
-            'text': 'We built a responsive web application using React, Node.js, Express, and MongoDB. The frontend uses Bootstrap for responsive design and the backend provides REST API endpoints with JWT authentication.',
-            'expected': 'Web Development'
-        },
-        {
-            'text': 'The mobile application was developed using Flutter for cross-platform deployment on Android and iOS. We implemented push notifications, touch gestures, and integrated with Firebase for backend services.',
-            'expected': 'Mobile Development'
-        },
-        {
-            'text': 'Our machine learning model uses TensorFlow and neural networks for image classification. We trained a deep learning model using convolutional neural networks with backpropagation and gradient descent optimization.',
-            'expected': 'Machine Learning'
-        },
-        {
-            'text': 'The data analysis project uses Python with Pandas, NumPy, and Matplotlib for data visualization. We performed statistical analysis and created interactive dashboards using Jupyter notebooks.',
-            'expected': 'Data Science'
-        },
-        {
-            'text': 'We deployed the application on AWS using EC2 instances, S3 for storage, and Lambda for serverless functions. The infrastructure uses Docker containers orchestrated with Kubernetes for scalability.',
-            'expected': 'Cloud Computing'
-        },
-        {
-            'text': 'The IoT system uses Arduino and Raspberry Pi with MQTT protocol for communication between sensors and the cloud. We implemented home automation with smart devices and edge computing.',
-            'expected': 'IoT'
-        },
-        {
-            'text': 'The game was developed using Unity game engine with C# scripting. We implemented 3D modeling, animation, game physics, and multiplayer networking with real-time synchronization.',
-            'expected': 'Game Development'
-        },
-        {
-            'text': 'We designed a relational database using PostgreSQL with proper normalization and indexing. The system includes stored procedures, triggers, and transaction management with ACID properties.',
-            'expected': 'Database Systems'
-        },
-        {
-            'text': 'The network infrastructure includes routing, switching, and VPN configuration. We implemented network security with firewalls, intrusion detection systems, and network monitoring tools.',
-            'expected': 'Network Systems'
-        }
-    ]
-    
-    correct = 0
-    total = len(test_documents)
-    
-    for i, doc in enumerate(test_documents, 1):
-        print(f'\n[{i}/{total}] Testing document:')
-        print(f'Text: "{doc["text"][:80]}..."')
-        print(f'Expected: {doc["expected"]}')
-        
-        result = classify_document(doc['text'])
-        
-        print(f'Predicted: {result["predicted_category"]} ({result["confidence"]})')
-        print(f'Top 3: {[f"{p["category"]} ({p["confidence"]})" for p in result["top_3"]]}')
-        
-        if result['predicted_category'] == doc['expected']:
-            print(f'CORRECT')
-            correct += 1
+def reviewed_dataset(path):
+    records = json.loads(Path(path).read_text(encoding='utf-8'))
+    if not isinstance(records, list) or not records:
+        raise ValueError('Dataset must contain reviewed, labelled project records.')
+    groups = defaultdict(set)
+    for record in records:
+        if record.get('reviewed') is not True or not record.get('project_id') or not record.get('text') or not record.get('label'):
+            raise ValueError('Every record needs project_id, text, label and reviewed=true.')
+        if record.get('split') not in ('train', 'test'):
+            raise ValueError('Every record needs an explicit train or test split.')
+        groups[record['project_id']].add(record['split'])
+    if any(len(splits) != 1 for splits in groups.values()):
+        raise ValueError('Documents from one project cannot appear in both training and testing.')
+    return records
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--dataset', help='Reviewed JSON dataset with project-level train/test splits.')
+    parser.add_argument('--train', action='store_true', help='Explicitly replace the application model after evaluation.')
+    options = parser.parse_args(argv)
+    if not options.dataset:
+        model = train_and_save_model() if options.train else get_classifier()
+        print(json.dumps({'model_version': model.model_version, 'training_source': model.training_source,
+                          'accuracy': None, 'note': 'No faculty-reviewed test dataset supplied.'}, indent=2))
+        return
+    records = reviewed_dataset(options.dataset)
+    training = defaultdict(list)
+    tests = []
+    for record in records:
+        if record['split'] == 'train':
+            training[record['label']].append(record['text'])
         else:
-            print(f'INCORRECT')
-    
-    accuracy = (correct / total) * 100
-    
-    print('\n' + '='*80)
-    print('TRAINING COMPLETE')
-    print('='*80)
-    print(f'\n Accuracy: {correct}/{total} ({accuracy:.1f}%)')
-    print(f'Correct predictions: {correct}')
-    print(f'Incorrect predictions: {total - correct}')
-    
-    if accuracy >= 80:
-        print(f'\n Excellent! Classifier is ready for production use.')
-    elif accuracy >= 60:
-        print(f'\nWarning: Good, but could be improved with more training data.')
-    else:
-        print(f'\n Poor accuracy. Consider adding more training data or adjusting parameters.')
+            tests.append(record)
+    if not tests or not training:
+        raise ValueError('Separate reviewed training and test projects are required.')
+    model = NaiveBayesClassifier()
+    model.train_from_examples(dict(training), training_source='Supplied reviewed project descriptions')
+    # Report one result per test project. Multiple files cannot inflate accuracy.
+    grouped = defaultdict(list)
+    for record in tests:
+        grouped[record['project_id']].append(record)
+    actual, predicted = [], []
+    for project_records in grouped.values():
+        labels = {r['label'] for r in project_records}
+        if len(labels) != 1:
+            raise ValueError('A project must have one reviewed primary computing focus.')
+        result = model.predict('\n'.join(dict.fromkeys(r['text'] for r in project_records)))
+        actual.append(next(iter(labels)))
+        predicted.append(result['predicted_category'])
+    print(json.dumps({'test_projects': len(actual), 'report': classification_report(actual, predicted, output_dict=True, zero_division=0),
+                      'note': 'Model scores are uncalibrated. Assess per-category precision, recall and unresolved coverage.'}, indent=2))
+    if options.train:
+        model.save_model(ROOT / 'modules/repository/deliverables/naive_bayes_model.pkl')
+        print('Saved reviewed model. Reclassify cached documents with the management command.')
 
 
 if __name__ == '__main__':

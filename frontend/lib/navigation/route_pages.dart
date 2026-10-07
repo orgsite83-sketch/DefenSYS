@@ -84,13 +84,19 @@ class AdminGradeEventTeamsRoute extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final params = GoRouterState.of(context).uri.queryParameters;
+    final isFaculty = GoRouterState.of(
+      context,
+    ).uri.path.startsWith('/faculty/');
+    final rootPath = isFaculty
+        ? FacultyRoutes.gradeCenter
+        : AdminRoutes.gradeCenter;
     final routeScope = _validGradeScope(params['scope']);
     final groupScope = _validGradeScope(_scopeFromGroupKey(groupKey));
     if (routeScope != null && groupScope != null && routeScope != groupScope) {
       return _GradeCenterRouteError(
         message:
             'This Evaluation & Grades link has conflicting scope values. Open it again from Evaluation & Grades.',
-        onBack: () => context.go(AdminRoutes.gradeCenter),
+        onBack: () => context.go(rootPath),
       );
     }
 
@@ -99,7 +105,7 @@ class AdminGradeEventTeamsRoute extends StatelessWidget {
       return _GradeCenterRouteError(
         message:
             'This Evaluation & Grades link is missing a valid scope. Open it again from Evaluation & Grades.',
-        onBack: () => context.go(AdminRoutes.gradeCenter),
+        onBack: () => context.go(rootPath),
       );
     }
 
@@ -112,10 +118,13 @@ class AdminGradeEventTeamsRoute extends StatelessWidget {
       scope: scope,
       stageLabel: stageLabel,
       title: title,
-      onBack: () => context.pop(),
+      onBack: () => context.canPop() ? context.pop() : context.go(rootPath),
       onOpenTeamDetail: (gradeId, isLocked) {
         final locked = isLocked ? '1' : '0';
-        context.push('${AdminRoutes.gradeDetail(gradeId)}?locked=$locked');
+        final path = isFaculty
+            ? FacultyRoutes.gradeDetail(gradeId)
+            : AdminRoutes.gradeDetail(gradeId);
+        context.push('$path?locked=$locked');
       },
     );
   }

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -16,6 +17,7 @@ import '../../user_management/external_evaluators/external_evaluator_views.dart'
 import 'package:defensys/services/admin/external_evaluator_provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:defensys/navigation/admin_route_paths.dart';
+import 'package:defensys/utils/scheduler/defense_scheduler_draft.dart';
 
 class ScheduleRunContainer extends ConsumerStatefulWidget {
   final DefenseSchedulerState state;
@@ -52,6 +54,15 @@ class ScheduleRunContainer extends ConsumerStatefulWidget {
   final ValueChanged<bool> onShowFinalPreviewChanged;
   final Future<void> Function() onPrefillCapstoneStageRubrics;
   final Future<void> Function() onPrefillPitEventConfig;
+  final List<Map<String, dynamic>>? initialSessions;
+  final ValueChanged<List<Map<String, dynamic>>>? onSessionsChanged;
+  final int? initialChairId;
+  final ValueChanged<int?>? onChairChanged;
+  final Set<int>? initialExternalIds;
+  final ValueChanged<Set<int>>? onExternalIdsChanged;
+  final VoidCallback? onSuccess;
+  final int? currentStep;
+  final ValueChanged<int>? onStepChanged;
 
   const ScheduleRunContainer({
     super.key,
@@ -88,6 +99,15 @@ class ScheduleRunContainer extends ConsumerStatefulWidget {
     required this.onShowFinalPreviewChanged,
     required this.onPrefillCapstoneStageRubrics,
     required this.onPrefillPitEventConfig,
+    this.initialSessions,
+    this.onSessionsChanged,
+    this.initialChairId,
+    this.onChairChanged,
+    this.initialExternalIds,
+    this.onExternalIdsChanged,
+    this.onSuccess,
+    this.currentStep,
+    this.onStepChanged,
   });
 
   @override
@@ -98,6 +118,7 @@ class ScheduleRunContainer extends ConsumerStatefulWidget {
 class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   bool _isGenerating = false;
   bool _isConfirming = false;
+  String? _lastGeneratedConfigSignature;
   int? _selectedChairId;
   Set<int> _externalIds = {};
   DateTime? _guestExpiry;
@@ -107,16 +128,63 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   @override
   void initState() {
     super.initState();
-    _sessions = [
-      ScheduleSessionDraft(
-        key: 'session-1',
-        date: widget.dateController,
-        start: widget.timeController,
-        duration: widget.durationController,
-        room: widget.roomController,
-        ownsFields: false,
-      ),
-    ];
+    if (widget.initialChairId != null) {
+      _selectedChairId = widget.initialChairId;
+    }
+    if (widget.initialExternalIds != null) {
+      _externalIds = Set.of(widget.initialExternalIds!);
+    }
+    if (widget.initialSessions != null && widget.initialSessions!.isNotEmpty) {
+      _sessions = [];
+      for (int i = 0; i < widget.initialSessions!.length; i++) {
+        final map = widget.initialSessions![i];
+        if (i == 0) {
+          _sessions.add(
+            deserializeSessionDraft(
+              map,
+              sharedDate: widget.dateController,
+              sharedStart: widget.timeController,
+              sharedDuration: widget.durationController,
+              sharedRoom: widget.roomController,
+              ownsFields: false,
+            ),
+          );
+        } else {
+          _sessions.add(deserializeSessionDraft(map, ownsFields: true));
+        }
+      }
+      _nextSession = _sessions.length + 1;
+    } else {
+      _sessions = [
+        ScheduleSessionDraft(
+          key: 'session-1',
+          date: widget.dateController,
+          start: widget.timeController,
+          duration: widget.durationController,
+          room: widget.roomController,
+          ownsFields: false,
+        ),
+      ];
+    }
+    if (widget.planSlots.isNotEmpty) {
+      _lastGeneratedConfigSignature = _generateConfigSignature();
+    }
+  }
+
+  String? _generateConfigSignature() {
+    try {
+      final payload = _basePayload();
+      if (payload == null) return null;
+      return jsonEncode(payload);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _notifySessionsChanged() {
+    widget.onSessionsChanged?.call(
+      _sessions.map(serializeSessionDraft).toList(),
+    );
   }
 
   @override
@@ -157,6 +225,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           ),
     );
     setState(() => _sessions.add(draft));
+    _notifySessionsChanged();
   }
 
   void _addTimeBlock(ScheduleSessionDraft session) {
@@ -180,6 +249,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         ),
       ),
     );
+    _notifySessionsChanged();
   }
 
   int get _unassignedCount =>
@@ -197,6 +267,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     }
     _recalculatePlanSlots(slots);
     widget.onPlanSlotsChanged(slots);
+    _notifySessionsChanged();
   }
 
   int? get _effectiveChairId {
@@ -310,7 +381,10 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       },
       sessionNumber: number,
     );
-    if (chosen != null && mounted) setState(() => session.teamIds = chosen);
+    if (chosen != null && mounted) {
+      setState(() => session.teamIds = chosen);
+      _notifySessionsChanged();
+    }
   }
 
   Widget _sessionTeamSelection(ScheduleSessionDraft session, int number) {
@@ -542,6 +616,16 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       return;
     }
 
+    final currentSig = _generateConfigSignature();
+    if (widget.planSlots.isNotEmpty &&
+        currentSig != null &&
+        _lastGeneratedConfigSignature != null &&
+        currentSig == _lastGeneratedConfigSignature) {
+      // Configuration unchanged: advance directly to Step 2 with 0 delay and keep arrangements
+      widget.onStepChanged?.call(2);
+      return;
+    }
+
     final payload = _basePayload();
     if (payload == null) return;
 
@@ -559,8 +643,11 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           .toList();
 
       _recalculatePlanSlots(generated);
+      _lastGeneratedConfigSignature = currentSig ?? _generateConfigSignature();
       widget.onPlanSlotsChanged(generated);
       widget.onShowFinalPreviewChanged(false);
+      widget.onStepChanged?.call(2);
+      _notifySessionsChanged();
       showSuccessToast(
         context,
         '${generated.where((slot) => slot['session_key'] != null).length} teams assigned · ${generated.where((slot) => slot['session_key'] == null).length} remaining.',
@@ -608,6 +695,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         context,
         ref.read(defenseSchedulerProvider).createdInvitations,
       );
+      if (mounted) {
+        widget.onSuccess?.call();
+      }
     } finally {
       if (mounted) setState(() => _isConfirming = false);
     }
@@ -1182,18 +1272,19 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                     if (asInt(stage['id']) != null)
                       ShadOption<int>(
                         value: asInt(stage['id'])!,
-                        child: Text(stage['label']?.toString() ?? ''),
+                        child: Text(state.formatStageLabel(stage)),
                       ),
                 ],
-                selectedOptionBuilder: (_, id) => Text(
-                  stages
-                          .firstWhere(
-                            (stage) => asInt(stage['id']) == id,
-                          )['label']
-                          ?.toString() ??
-                      '',
-                  overflow: TextOverflow.ellipsis,
-                ),
+                selectedOptionBuilder: (_, id) {
+                  final stage = stages.firstWhere(
+                    (stage) => asInt(stage['id']) == id,
+                    orElse: () => <String, dynamic>{},
+                  );
+                  return Text(
+                    stage.isNotEmpty ? state.formatStageLabel(stage) : '',
+                    overflow: TextOverflow.ellipsis,
+                  );
+                },
                 onChanged: (value) async {
                   for (final session in _sessions) {
                     session.teamIds.clear();
@@ -1273,16 +1364,21 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             onRemoveBlock: (index) {
               final removed = _sessions[i].blocks.removeAt(index);
               setState(() {});
+              _notifySessionsChanged();
               WidgetsBinding.instance.addPostFrameCallback(
                 (_) => removed.dispose(),
               );
             },
-            onChanged: () => setState(() {}),
+            onChanged: () {
+              setState(() {});
+              _notifySessionsChanged();
+            },
             onRemove: i == 0
                 ? null
                 : () {
                     final removed = _sessions.removeAt(i);
                     setState(() {});
+                    _notifySessionsChanged();
                     WidgetsBinding.instance.addPostFrameCallback(
                       (_) => removed.dispose(),
                     );
@@ -1298,6 +1394,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                     ? widget.documenterId
                     : null;
               }
+              _notifySessionsChanged();
             }),
           ),
         Align(
@@ -1380,7 +1477,10 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
-                onChanged: (id) => setState(() => _selectedChairId = id),
+                onChanged: (id) => setState(() {
+                  _selectedChairId = id;
+                  widget.onChairChanged?.call(id);
+                }),
               ),
             ),
           ),
@@ -1393,7 +1493,10 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         ExternalEvaluatorSelector(
           compact: true,
           selected: _externalIds,
-          onChanged: (ids) => setState(() => _externalIds = ids),
+          onChanged: (ids) => setState(() {
+            _externalIds = ids;
+            widget.onExternalIdsChanged?.call(ids);
+          }),
           expiry: _guestExpiry,
           onExpiryChanged: (expiry) => setState(() => _guestExpiry = expiry),
           enabled: !busy,
@@ -1653,7 +1756,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           ),
           Expanded(
             child: Text(
-              '$date $time',
+              time,
               style: TextStyle(
                 color: _textSecondary,
                 fontSize: 13,
@@ -1754,7 +1857,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           ),
           Expanded(
             child: Text(
-              '$date $time',
+              time,
               style: TextStyle(
                 color: _textSecondary,
                 fontSize: 13,
@@ -1887,8 +1990,17 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     final docName = documenters.isEmpty
         ? 'Unassigned'
         : schedulerPersonName(documenters.first);
+    final roomRaw = session?.room.text.trim() ?? '';
+    final roomDisplay = roomRaw.replaceFirst(
+      RegExp(r'^room\s+', caseSensitive: false),
+      '',
+    );
+    final isFull = session != null &&
+        session.capacity > 0 &&
+        indices.length >= session.capacity;
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.only(bottom: 28),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1902,31 +2014,195 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                 session == null ? 'Unassigned teams' : 'Session $number',
                 style: TextStyle(
                   color: _textPrimary,
-                  fontSize: 15,
+                  fontSize: 16,
                   fontWeight: FontWeight.w700,
+                  letterSpacing: -0.2,
                 ),
               ),
-              Text(
-                session == null
-                    ? '${indices.length} ${indices.length == 1 ? 'team needs' : 'teams need'} a session'
-                    : '${indices.length} / ${session.capacity} slots',
-                style: TextStyle(color: _textSecondary, fontSize: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 3,
+                ),
+                decoration: BoxDecoration(
+                  color: _isDark
+                      ? (session == null
+                          ? const Color(0xFF7F1D1D).withValues(alpha: 0.25)
+                          : (isFull
+                              ? const Color(0xFF064E3B).withValues(alpha: 0.35)
+                              : DefensysTokens.mistInputFill))
+                      : (session == null
+                          ? const Color(0xFFFEF3F2)
+                          : (isFull
+                              ? const Color(0xFFECFDF3)
+                              : const Color(0xFFF1F5F9))),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: _isDark
+                        ? (session == null
+                            ? const Color(0xFF7F1D1D)
+                            : (isFull
+                                ? const Color(0xFF065F46)
+                                : DefensysTokens.mistBorder))
+                        : (session == null
+                            ? const Color(0xFFFECDCA)
+                            : (isFull
+                                ? const Color(0xFFA6F4C5)
+                                : const Color(0xFFE2E8F0))),
+                  ),
+                ),
+                child: Text(
+                  session == null
+                      ? '${indices.length} ${indices.length == 1 ? 'team needs session' : 'teams need session'}'
+                      : '${indices.length} / ${session.capacity} slots',
+                  style: TextStyle(
+                    color: _isDark
+                        ? (session == null
+                            ? const Color(0xFFFCA5A5)
+                            : (isFull
+                                ? const Color(0xFF6EE7B7)
+                                : DefensysTokens.mistTextPrimary))
+                        : (session == null
+                            ? const Color(0xFFB42318)
+                            : (isFull
+                                ? const Color(0xFF027A48)
+                                : const Color(0xFF334155))),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
           if (session != null) ...[
-            Text(
-              '${session.date.text} · ${session.timeWindowLabel} · ${session.room.text}',
-              style: TextStyle(color: _textSecondary, fontSize: 13),
+            const SizedBox(height: 8),
+            Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: 'Date: ',
+                    style: TextStyle(
+                      color: _textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  TextSpan(
+                    text: session.date.text.isEmpty
+                        ? 'Unassigned'
+                        : session.date.text,
+                    style: TextStyle(
+                      color: _textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  TextSpan(
+                    text: '   ·   ',
+                    style: TextStyle(
+                      color: _textSecondary.withValues(alpha: 0.4),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  TextSpan(
+                    text: 'Time: ',
+                    style: TextStyle(
+                      color: _textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  TextSpan(
+                    text: session.timeWindowLabel.isEmpty
+                        ? 'Unassigned'
+                        : session.timeWindowLabel,
+                    style: TextStyle(
+                      color: _textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  TextSpan(
+                    text: '   ·   ',
+                    style: TextStyle(
+                      color: _textSecondary.withValues(alpha: 0.4),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  TextSpan(
+                    text: 'Room: ',
+                    style: TextStyle(
+                      color: _textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  TextSpan(
+                    text: roomDisplay.isEmpty
+                        ? (roomRaw.isEmpty ? 'Unassigned' : roomRaw)
+                        : roomDisplay,
+                    style: TextStyle(
+                      color: _textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              '$panel${widget.scope == 'capstone' ? ' · Documenter: $docName' : ''}',
-              style: TextStyle(color: _textSecondary, fontSize: 12),
+            const SizedBox(height: 6),
+            Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: 'Assigned Panel: ',
+                    style: TextStyle(
+                      color: _textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  TextSpan(
+                    text: panel.isEmpty ? 'Unassigned' : panel,
+                    style: TextStyle(
+                      color: _textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (widget.scope == 'capstone') ...[
+                    TextSpan(
+                      text: '   ·   ',
+                      style: TextStyle(
+                        color: _textSecondary.withValues(alpha: 0.4),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    TextSpan(
+                      text: 'Documenter: ',
+                      style: TextStyle(
+                        color: _textSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    TextSpan(
+                      text: docName,
+                      style: TextStyle(
+                        color: _textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ],
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           LayoutBuilder(
             builder: (_, constraints) {
               final wide = constraints.maxWidth >= 800;
@@ -2042,7 +2318,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                       '#',
                       'Team Name',
                       'Stage / Event',
-                      'Date & Time',
+                      'Time',
                       'Room',
                       'Assigned Panel',
                       if (!preview) 'Actions',
@@ -2176,65 +2452,73 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           for (final session in _sessions) _sessionPlanGroup(state, session),
           _sessionPlanGroup(state, null),
           const SizedBox(height: 24),
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 14,
-            runSpacing: 12,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () {
-                  widget.onPlanSlotsChanged([]);
-                  widget.onShowFinalPreviewChanged(false);
-                },
-                style: OutlinedButton.styleFrom(
-                  backgroundColor: _isDark
-                      ? DefensysTokens.mistInputFill
-                      : Colors.white,
-                  foregroundColor: _isDark
-                      ? DefensysTokens.mistTextPrimary
-                      : AppColors.textPrimary,
-                  side: BorderSide(
-                    color: _isDark
-                        ? DefensysTokens.mistBorder
-                        : const Color(0xFFCBD5E1),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 14,
+              runSpacing: 12,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () {
+                    widget.onStepChanged?.call(1);
+                    widget.onShowFinalPreviewChanged(false);
+                  },
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: _isDark
+                        ? DefensysTokens.mistInputFill
+                        : Colors.white,
+                    foregroundColor: _isDark
+                        ? DefensysTokens.mistTextPrimary
+                        : AppColors.textPrimary,
+                    side: BorderSide(
+                      color: _isDark
+                          ? DefensysTokens.mistBorder
+                          : const Color(0xFFCBD5E1),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 14,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 14,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                  icon: const Icon(Icons.arrow_back, size: 18),
+                  label: const Text(
+                    'Back to Step 1',
+                    style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
-                icon: const Icon(Icons.arrow_back, size: 18),
-                label: const Text(
-                  'Back to Step 1',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-              ElevatedButton.icon(
-                onPressed: _unassignedCount > 0
-                    ? null
-                    : () => widget.onShowFinalPreviewChanged(true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.maroon,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 14,
+                ElevatedButton.icon(
+                  onPressed: _unassignedCount > 0
+                      ? null
+                      : () {
+                          widget.onStepChanged?.call(3);
+                          widget.onShowFinalPreviewChanged(true);
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _isDark
+                        ? DefensysTokens.saveActionBg
+                        : const Color(0xFF0F172A),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 14,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    elevation: 0,
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                  icon: const Icon(Icons.arrow_forward, size: 18),
+                  label: const Text(
+                    'Proceed to Final Preview',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
                   ),
-                  elevation: 0,
                 ),
-                icon: const Icon(Icons.arrow_forward, size: 18),
-                label: const Text(
-                  'Proceed to Final Preview',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -2268,76 +2552,84 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           for (final session in _sessions)
             _sessionPlanGroup(state, session, preview: true),
           const SizedBox(height: 24),
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 14,
-            runSpacing: 12,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () => widget.onShowFinalPreviewChanged(false),
-                style: OutlinedButton.styleFrom(
-                  backgroundColor: _isDark
-                      ? DefensysTokens.mistInputFill
-                      : Colors.white,
-                  foregroundColor: _isDark
-                      ? DefensysTokens.mistTextPrimary
-                      : AppColors.textPrimary,
-                  side: BorderSide(
-                    color: _isDark
-                        ? DefensysTokens.mistBorder
-                        : const Color(0xFFCBD5E1),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 14,
+              runSpacing: 12,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () {
+                    widget.onStepChanged?.call(2);
+                    widget.onShowFinalPreviewChanged(false);
+                  },
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: _isDark
+                        ? DefensysTokens.mistInputFill
+                        : Colors.white,
+                    foregroundColor: _isDark
+                        ? DefensysTokens.mistTextPrimary
+                        : AppColors.textPrimary,
+                    side: BorderSide(
+                      color: _isDark
+                          ? DefensysTokens.mistBorder
+                          : const Color(0xFFCBD5E1),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 14,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 14,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                  icon: const Icon(Icons.arrow_back, size: 18),
+                  label: const Text(
+                    'Back to Step 2',
+                    style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
-                icon: const Icon(Icons.arrow_back, size: 18),
-                label: const Text(
-                  'Back to Step 2',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-              ElevatedButton.icon(
-                onPressed: _isConfirming ? null : _confirmPlan,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.maroon,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 14,
+                ElevatedButton.icon(
+                  onPressed: _isConfirming ? null : _confirmPlan,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _isDark
+                        ? DefensysTokens.saveActionBg
+                        : const Color(0xFF0F172A),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 14,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    elevation: 0,
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  elevation: 0,
-                ),
-                icon: _isConfirming
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white,
+                  icon: _isConfirming
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
                           ),
-                        ),
-                      )
-                    : const Icon(Icons.check_circle_outline, size: 18),
-                label: Text(
-                  _isConfirming
-                      ? 'Saving Schedule...'
-                      : 'Publish & Save Schedule',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
+                        )
+                      : const Icon(Icons.check_circle_outline, size: 18),
+                  label: Text(
+                    _isConfirming
+                        ? 'Saving Schedule...'
+                        : 'Publish & Save Schedule',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -2346,9 +2638,10 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
 
   @override
   Widget build(BuildContext context) {
-    final currentStep = widget.planSlots.isEmpty
-        ? 1
-        : (widget.showFinalPreview ? 3 : 2);
+    final currentStep = widget.currentStep ??
+        (widget.planSlots.isEmpty
+            ? 1
+            : (widget.showFinalPreview ? 3 : 2));
 
     if (currentStep == 1) {
       return SchedulerShadcnScope(child: _buildStepOne(widget.state));

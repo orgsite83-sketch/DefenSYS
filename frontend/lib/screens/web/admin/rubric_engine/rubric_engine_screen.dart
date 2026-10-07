@@ -15,7 +15,6 @@ import '../../../../widgets/feedback/empty_state.dart';
 import '../../../../widgets/table/table.dart';
 import 'rubric_full_page_editor.dart';
 import '../widgets/defensys_admin_shell.dart';
-import '../admin_shell.dart';
 
 class RubricEngineScreen extends ConsumerStatefulWidget {
   const RubricEngineScreen({super.key});
@@ -100,8 +99,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     _tableHScrollController.removeListener(_updateTableScrollHint);
     _tableHScrollController.dispose();
     _searchController.dispose();
-    _unsavedDraftNotifier?.setCallback(null);
-    _unsavedNotifier?.setDirty(false);
+    releaseUnsavedChangesAfterFrame(_unsavedNotifier, _unsavedDraftNotifier);
     super.dispose();
   }
 
@@ -173,22 +171,6 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
             _updateTableScrollHint();
           }
         });
-      }
-    });
-
-    ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (
-      previous,
-      next,
-    ) {
-      if (next == DefensysAdminSection.rubrics) {
-        final user = ref.read(authProvider).user;
-        ref
-            .read(rubricEngineProvider.notifier)
-            .fetchRubrics(
-              scope: _isPitLeadOnly(user) ? 'pit' : 'capstone',
-              status: '',
-              termContext: 'active',
-            );
       }
     });
 

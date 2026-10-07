@@ -146,26 +146,43 @@ class _SchedulerTeamPickerState extends State<SchedulerTeamPicker> {
                     ),
                   ),
                 ],
+                const SizedBox(height: 10),
                 Wrap(
-                  spacing: 12,
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    TextButton(
+                    ShadButton.outline(
+                      key: const ValueKey('session-select-shown-teams'),
+                      size: ShadButtonSize.sm,
+                      enabled: available.isNotEmpty,
                       onPressed: available.isEmpty
                           ? null
-                          : () => setState(() => _selected.addAll(available)),
+                          : () {
+                              setState(() => _selected.addAll(available));
+                            },
+                      leading: const Icon(LucideIcons.listChecks, size: 14),
                       child: Text(
                         _adviser > 0 && _query.trim().isEmpty
                             ? 'Select adviser’s teams'
                             : 'Select shown teams',
                       ),
                     ),
-                    TextButton(
-                      onPressed: () =>
-                          setState(() => _selected.removeAll(available)),
+                    ShadButton.outline(
+                      key: const ValueKey('session-clear-shown-teams'),
+                      size: ShadButtonSize.sm,
+                      enabled: available.any(_selected.contains),
+                      onPressed: available.any(_selected.contains)
+                          ? () {
+                              setState(() => _selected.removeAll(available));
+                            }
+                          : null,
+                      leading: const Icon(LucideIcons.x, size: 14),
                       child: const Text('Clear shown teams'),
                     ),
                   ],
                 ),
+                const SizedBox(height: 6),
                 Divider(color: DefensysTokens.borderOf(context)),
                 Expanded(
                   child: shown.isEmpty

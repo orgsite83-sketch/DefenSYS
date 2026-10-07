@@ -341,8 +341,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       draft.displayOrder.removeListener(_markDirty);
     }
     _disposeCriteriaList(_criteria);
-    _unsavedNotifier?.setDirty(false);
-    _unsavedDraftNotifier?.setCallback(null);
+    releaseUnsavedChangesAfterFrame(_unsavedNotifier, _unsavedDraftNotifier);
     super.dispose();
   }
 

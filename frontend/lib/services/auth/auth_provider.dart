@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -107,6 +108,33 @@ class AuthNotifier extends Notifier<AuthState> {
       return;
     }
     _sessionStorage = storage;
+
+    // Fast-path: When access token is still valid in storage (e.g. in-tab refresh),
+    // restore the session immediately in 0ms without blocking initial screen data fetches.
+    final savedAccess = await storage.readAccess();
+    final savedUserJson = await storage.readUserJson();
+    if (savedAccess != null &&
+        savedAccess.isNotEmpty &&
+        !shouldRefreshAccess(savedAccess, withinSeconds: 30) &&
+        savedUserJson != null &&
+        savedUserJson.isNotEmpty) {
+      try {
+        final user = Map<String, dynamic>.from(jsonDecode(savedUserJson) as Map);
+        final requiresTerms = !await TermsAcceptance.hasAcceptedCurrentTerms();
+        state = state.copyWith(
+          isRestoring: false,
+          sessionRestored: true,
+          token: savedAccess,
+          user: user,
+          requiresTerms: requiresTerms,
+        );
+        unawaited(fetchCurrentUser(savedAccess));
+        return;
+      } catch (_) {
+        // Fall back to refreshTokens if saved user json parsing failed
+      }
+    }
+
     final ok = await refreshTokens(silent: true);
     final requiresTerms = ok && !await TermsAcceptance.hasAcceptedCurrentTerms();
     state = state.copyWith(
@@ -225,6 +253,7 @@ class AuthNotifier extends Notifier<AuthState> {
       _sessionStorage = await SessionStorage.create(rememberMe: rememberMe);
       await _sessionStorage!.clearOtherWebStores();
       await _sessionStorage!.writeRefresh(refresh);
+      await _sessionStorage!.writeAccess(access);
       await _sessionStorage!.writeUserJson(jsonEncode(user));
       final requiresTerms = !await TermsAcceptance.hasAcceptedCurrentTerms();
 
@@ -307,18 +336,28 @@ class AuthNotifier extends Notifier<AuthState> {
       }
 
       await storage.writeRefresh(newRefresh);
-      state = state.copyWith(token: access);
+      await storage.writeAccess(access);
+
+      final userJson = await storage.readUserJson();
+      if (userJson != null) {
+        try {
+          final user = Map<String, dynamic>.from(jsonDecode(userJson) as Map);
+          state = state.copyWith(token: access, user: user);
+        } catch (_) {
+          state = state.copyWith(token: access);
+        }
+      } else {
+        state = state.copyWith(token: access);
+      }
 
       final meOk = await fetchCurrentUser(access);
-      if (!meOk) {
-        final userJson = await storage.readUserJson();
-        if (userJson != null) {
+      if (!meOk && state.user == null) {
+        final fallbackJson = await storage.readUserJson();
+        if (fallbackJson != null) {
           try {
-            final user = Map<String, dynamic>.from(jsonDecode(userJson) as Map);
+            final user = Map<String, dynamic>.from(jsonDecode(fallbackJson) as Map);
             state = state.copyWith(user: user);
-          } catch (_) {
-            // Stale userJson fallback after failed /me/.
-          }
+          } catch (_) {}
         }
       }
 

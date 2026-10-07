@@ -55,6 +55,13 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
         color: _isDark ? DefensysTokens.mistSurface : Colors.white,
         borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
         border: Border.all(color: DefensysTokens.borderOf(context)),
+        boxShadow: [
+          BoxShadow(
+            color: _isDark ? const Color(0x33000000) : const Color(0x0A000000),
+            blurRadius: 3,
+            offset: const Offset(0, 1),
+          ),
+        ],
       ),
       padding: const EdgeInsets.all(24),
       child: child,
@@ -72,6 +79,46 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
           color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF6B7280),
           letterSpacing: 0.5,
         ),
+      ),
+    );
+  }
+
+  Widget _buildSectionStatusBadge({
+    required IconData icon,
+    required String label,
+    required bool isSuccess,
+  }) {
+    final bgColor = isSuccess
+        ? (_isDark ? const Color(0xFF064E3B).withValues(alpha: 0.38) : const Color(0xFFDEF7EC))
+        : (_isDark ? const Color(0xFF78350F).withValues(alpha: 0.38) : const Color(0xFFFEF3C7));
+    final borderColor = isSuccess
+        ? (_isDark ? const Color(0xFF059669).withValues(alpha: 0.45) : const Color(0xFFB9F1D6))
+        : (_isDark ? const Color(0xFFD97706).withValues(alpha: 0.45) : const Color(0xFFFDE68A));
+    final fgColor = isSuccess
+        ? (_isDark ? const Color(0xFF34D399) : const Color(0xFF03543F))
+        : (_isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309));
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: fgColor, size: 13),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10.5,
+              color: fgColor,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -107,18 +154,28 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.checklist_rtl_rounded,
-                color: AppColors.maroon,
-                size: 22,
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: _isDark
+                      ? DefensysTokens.mistMaroon.withValues(alpha: 0.18)
+                      : AppColors.maroon.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.checklist_rtl_rounded,
+                  color: _isDark ? DefensysTokens.mistMaroonText : AppColors.maroon,
+                  size: 20,
+                ),
               ),
               const SizedBox(width: 10),
               Text(
                 widget.title ?? 'Team Readiness Tracker',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w900,
-                  color: AppColors.textPrimary,
+                  color: _isDark ? DefensysTokens.textPrimaryDark : AppColors.textPrimary,
+                  letterSpacing: -0.2,
                 ),
               ),
               const Spacer(),
@@ -142,6 +199,10 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                           ? _selectedPitYearLevel
                           : 'all',
                       isDense: true,
+                      icon: Icon(
+                        Icons.arrow_drop_down,
+                        color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
+                      ),
                       style: TextStyle(
                         fontSize: 13,
                         color: _isDark ? DefensysTokens.textPrimaryDark : AppColors.textPrimary,
@@ -184,7 +245,12 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                         controller: _trackerSearchController,
                         decoration: InputDecoration(
                           hintText: 'Search teams...',
-                          hintStyle: TextStyle(fontSize: 13, color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary),
+                          hintStyle: TextStyle(
+                            fontSize: 13,
+                            color: _isDark
+                                ? DefensysTokens.textSecondaryDark.withValues(alpha: 0.7)
+                                : AppColors.textSecondary.withValues(alpha: 0.8),
+                          ),
                           border: InputBorder.none,
                           isDense: true,
                           contentPadding: EdgeInsets.zero,
@@ -202,7 +268,11 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                           _trackerSearchController.clear();
                           setState(() {});
                         },
-                        child: const Icon(Icons.close, size: 16, color: AppColors.textSecondary),
+                        child: Icon(
+                          Icons.close,
+                          size: 16,
+                          color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
+                        ),
                       ),
                   ],
                 ),
@@ -217,10 +287,10 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
           Text(
             widget.subtitle ??
                 'Monitor team deliverable completeness. Teams must have all required pre-defense deliverables accepted by their instructor before they are ready for scheduling.',
-            style: const TextStyle(
-              color: AppColors.textSecondary,
+            style: TextStyle(
+              color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
               fontSize: 13.5,
-              height: 1.4,
+              height: 1.45,
             ),
           ),
           const SizedBox(height: 18),
@@ -292,7 +362,7 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       decoration: BoxDecoration(
-                        color: _isDark ? DefensysTokens.mistSurface : Colors.white,
+                        color: _isDark ? DefensysTokens.mistPanel : Colors.white,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
                       ),
@@ -302,10 +372,21 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                         ),
                         child: ExpansionTile(
                           initiallyExpanded: false,
-                          leading: const Icon(
-                            Icons.class_rounded,
-                            color: AppColors.maroon,
-                            size: 20,
+                          collapsedIconColor: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
+                          iconColor: _isDark ? DefensysTokens.mistMaroonText : AppColors.maroon,
+                          leading: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: _isDark
+                                  ? DefensysTokens.mistMaroon.withValues(alpha: 0.16)
+                                  : AppColors.maroon.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Icon(
+                              Icons.class_rounded,
+                              color: _isDark ? DefensysTokens.mistMaroonText : AppColors.maroon,
+                              size: 18,
+                            ),
                           ),
                           title: Row(
                             children: [
@@ -323,6 +404,9 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                 decoration: BoxDecoration(
                                   color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6),
                                   borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
+                                  ),
                                 ),
                                 child: Text(
                                   '${sectionTeams.length} ${sectionTeams.length == 1 ? 'team' : 'teams'}',
@@ -335,115 +419,31 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                               ),
                               if (isSectionCompleted) ...[
                                 const SizedBox(width: 10),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFDEF7EC),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: const [
-                                      Icon(
-                                        Icons.check_circle_rounded,
-                                        color: Color(0xFF03543F),
-                                        size: 13,
-                                      ),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        'Completed',
-                                        style: TextStyle(
-                                          fontSize: 10.5,
-                                          color: Color(0xFF03543F),
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                _buildSectionStatusBadge(
+                                  icon: Icons.check_circle_rounded,
+                                  label: 'Completed',
+                                  isSuccess: true,
                                 ),
                               ] else if (isSectionReady) ...[
                                 const SizedBox(width: 10),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFDEF7EC),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: const [
-                                      Icon(
-                                        Icons.auto_awesome_rounded,
-                                        color: Color(0xFF03543F),
-                                        size: 13,
-                                      ),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        'Ready',
-                                        style: TextStyle(
-                                          fontSize: 10.5,
-                                          color: Color(0xFF03543F),
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                _buildSectionStatusBadge(
+                                  icon: Icons.auto_awesome_rounded,
+                                  label: 'Ready',
+                                  isSuccess: true,
                                 ),
                               ] else if (sectionReadyCount > 0) ...[
                                 const SizedBox(width: 10),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFDEF7EC),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(
-                                        Icons.auto_awesome_rounded,
-                                        color: Color(0xFF03543F),
-                                        size: 13,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '$sectionReadyCount Ready',
-                                        style: const TextStyle(
-                                          fontSize: 10.5,
-                                          color: Color(0xFF03543F),
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                _buildSectionStatusBadge(
+                                  icon: Icons.auto_awesome_rounded,
+                                  label: '$sectionReadyCount Ready',
+                                  isSuccess: true,
                                 ),
                               ] else ...[
                                 const SizedBox(width: 10),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFEF3C7),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: const [
-                                      Icon(
-                                        Icons.warning_amber_rounded,
-                                        color: Color(0xFFB45309),
-                                        size: 13,
-                                      ),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        'Needs Endorsement',
-                                        style: TextStyle(
-                                          fontSize: 10.5,
-                                          color: Color(0xFFB45309),
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                _buildSectionStatusBadge(
+                                  icon: Icons.warning_amber_rounded,
+                                  label: 'Needs Endorsement',
+                                  isSuccess: false,
                                 ),
                               ],
                             ],
@@ -460,18 +460,18 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                     padding: const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 4),
                                     child: Row(
                                       children: [
-                                        const Icon(
+                                        Icon(
                                           Icons.person_outline_rounded,
                                           size: 16,
-                                          color: AppColors.textSecondary,
+                                          color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
                                         ),
                                         const SizedBox(width: 6),
-                                        const Text(
+                                        Text(
                                           'Section Instructor: ',
                                           style: TextStyle(
                                             fontSize: 12,
                                             fontWeight: FontWeight.bold,
-                                            color: AppColors.textSecondary,
+                                            color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
                                           ),
                                         ),
                                         Text(
@@ -479,7 +479,9 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                           style: TextStyle(
                                             fontSize: 12,
                                             fontWeight: FontWeight.w600,
-                                            color: instructorName.isEmpty ? AppColors.textSecondary : AppColors.textPrimary,
+                                            color: instructorName.isEmpty
+                                                ? (_isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary)
+                                                : (_isDark ? DefensysTokens.textPrimaryDark : AppColors.textPrimary),
                                             fontStyle: instructorName.isEmpty ? FontStyle.italic : FontStyle.normal,
                                           ),
                                         ),
@@ -506,20 +508,20 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                   child: Row(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      const Icon(
+                                      Icon(
                                         Icons.people_outline_rounded,
                                         size: 16,
-                                        color: AppColors.textSecondary,
+                                        color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
                                       ),
                                       const SizedBox(width: 6),
-                                      const Padding(
-                                        padding: EdgeInsets.only(top: 2.0),
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2.0),
                                         child: Text(
                                           'Section Advisers:',
                                           style: TextStyle(
                                             fontSize: 12,
                                             fontWeight: FontWeight.bold,
-                                            color: AppColors.textSecondary,
+                                            color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
                                           ),
                                         ),
                                       ),
@@ -541,10 +543,14 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                   duration: const Duration(milliseconds: 150),
                                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                                   decoration: BoxDecoration(
-                                                    color: isAllSelected ? AppColors.maroon : const Color(0xFFF3F4F6),
+                                                    color: isAllSelected
+                                                        ? (_isDark ? DefensysTokens.mistMaroon : AppColors.maroon)
+                                                        : (_isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6)),
                                                     borderRadius: BorderRadius.circular(6),
                                                     border: Border.all(
-                                                      color: isAllSelected ? AppColors.maroon : const Color(0xFFE5E7EB),
+                                                      color: isAllSelected
+                                                          ? (_isDark ? DefensysTokens.mistMaroon : AppColors.maroon)
+                                                          : (_isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
                                                     ),
                                                   ),
                                                   child: Text(
@@ -552,7 +558,9 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                     style: TextStyle(
                                                       fontSize: 11,
                                                       fontWeight: FontWeight.bold,
-                                                      color: isAllSelected ? Colors.white : AppColors.textPrimary,
+                                                      color: isAllSelected
+                                                          ? Colors.white
+                                                          : (_isDark ? DefensysTokens.textSecondaryDark : AppColors.textPrimary),
                                                     ),
                                                   ),
                                                 ),
@@ -569,15 +577,19 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                               Color countColor;
 
                                               if (isSelected) {
-                                                bgColor = AppColors.maroon;
-                                                borderColor = AppColors.maroon;
+                                                bgColor = _isDark ? DefensysTokens.mistMaroon : AppColors.maroon;
+                                                borderColor = _isDark ? DefensysTokens.mistMaroon : AppColors.maroon;
                                                 textColor = Colors.white;
-                                                countColor = Colors.white.withValues(alpha: 0.8);
+                                                countColor = Colors.white.withValues(alpha: 0.85);
                                               } else if (isOverloaded) {
-                                                bgColor = const Color(0xFFFDE8E8);
-                                                borderColor = const Color(0xFFF8B4B4);
-                                                textColor = const Color(0xFF9B1C1C);
-                                                countColor = const Color(0xFFC81E1E);
+                                                bgColor = _isDark
+                                                    ? const Color(0xFF7F1D1D).withValues(alpha: 0.35)
+                                                    : const Color(0xFFFDE8E8);
+                                                borderColor = _isDark
+                                                    ? const Color(0xFFDC2626).withValues(alpha: 0.45)
+                                                    : const Color(0xFFF8B4B4);
+                                                textColor = _isDark ? const Color(0xFFFCA5A5) : const Color(0xFF9B1C1C);
+                                                countColor = _isDark ? const Color(0xFFF87171) : const Color(0xFFC81E1E);
                                               } else {
                                                 bgColor = _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6);
                                                 borderColor = _isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB);
@@ -626,7 +638,9 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                           Icon(
                                                             Icons.warning_amber_rounded,
                                                             size: 12,
-                                                            color: isSelected ? Colors.white : const Color(0xFFC81E1E),
+                                                            color: isSelected
+                                                                ? Colors.white
+                                                                : (_isDark ? const Color(0xFFF87171) : const Color(0xFFC81E1E)),
                                                           ),
                                                         ],
                                                       ],
@@ -676,23 +690,23 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                     IconData statusIcon;
 
                                     if (isCompleted) {
-                                      dotColor = const Color(0xFF059669);
-                                      statusTextColor = const Color(0xFF047857);
+                                      dotColor = _isDark ? const Color(0xFF34D399) : const Color(0xFF059669);
+                                      statusTextColor = _isDark ? const Color(0xFF34D399) : const Color(0xFF047857);
                                       statusText = 'Completed (Passed)';
                                       statusIcon = Icons.check_circle_rounded;
                                     } else if (isScheduled) {
-                                      dotColor = const Color(0xFF2563EB);
-                                      statusTextColor = const Color(0xFF1D4ED8);
+                                      dotColor = _isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB);
+                                      statusTextColor = _isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8);
                                       statusText = 'Defense Scheduled';
                                       statusIcon = Icons.event_available_rounded;
                                     } else if (isReady) {
-                                      dotColor = const Color(0xFF10B981);
-                                      statusTextColor = const Color(0xFF065F46);
+                                      dotColor = _isDark ? const Color(0xFF34D399) : const Color(0xFF10B981);
+                                      statusTextColor = _isDark ? const Color(0xFF34D399) : const Color(0xFF065F46);
                                       statusText = 'Ready for Defense';
                                       statusIcon = Icons.auto_awesome_rounded;
                                     } else {
-                                      dotColor = const Color(0xFFF59E0B);
-                                      statusTextColor = const Color(0xFFB45309);
+                                      dotColor = _isDark ? const Color(0xFFFBBF24) : const Color(0xFFF59E0B);
+                                      statusTextColor = _isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309);
                                       statusText = 'Awaiting Endorsement';
                                       statusIcon = Icons.hourglass_top_rounded;
                                     }
@@ -733,13 +747,13 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                     final instructorName = team['instructor_name']?.toString().trim() ?? '';
                                                     return Row(
                                                       children: [
-                                                        const Icon(Icons.person_outline_rounded, size: 13, color: AppColors.textSecondary),
+                                                        Icon(Icons.person_outline_rounded, size: 13, color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary),
                                                         const SizedBox(width: 4),
                                                         Text(
                                                           instructorName.isEmpty ? 'Instructor: Unassigned' : 'Instructor: $instructorName',
                                                           style: TextStyle(
                                                             fontSize: 12,
-                                                            color: AppColors.textSecondary,
+                                                            color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
                                                             fontWeight: FontWeight.w500,
                                                             fontStyle: instructorName.isEmpty ? FontStyle.italic : FontStyle.normal,
                                                           ),
@@ -750,14 +764,14 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                   final adviserName = team['adviser_name']?.toString().trim() ?? '';
                                                   if (adviserName.isEmpty) {
                                                     return Row(
-                                                      children: const [
-                                                        Icon(Icons.person_outline_rounded, size: 13, color: AppColors.textSecondary),
-                                                        SizedBox(width: 4),
+                                                      children: [
+                                                        Icon(Icons.person_outline_rounded, size: 13, color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary),
+                                                        const SizedBox(width: 4),
                                                         Text(
                                                           'Adviser: Unassigned',
                                                           style: TextStyle(
                                                             fontSize: 12,
-                                                            color: AppColors.textSecondary,
+                                                            color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
                                                             fontWeight: FontWeight.w500,
                                                             fontStyle: FontStyle.italic,
                                                           ),
@@ -769,13 +783,13 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                   final isOverloaded = load > 4;
                                                   return Row(
                                                     children: [
-                                                      const Icon(Icons.person_outline_rounded, size: 13, color: AppColors.textSecondary),
+                                                      Icon(Icons.person_outline_rounded, size: 13, color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary),
                                                       const SizedBox(width: 4),
                                                       Text(
                                                         'Adviser: $adviserName',
-                                                        style: const TextStyle(
+                                                        style: TextStyle(
                                                           fontSize: 12,
-                                                          color: AppColors.textSecondary,
+                                                          color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
                                                           fontWeight: FontWeight.w500,
                                                         ),
                                                       ),
@@ -783,15 +797,24 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                       Container(
                                                         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                                         decoration: BoxDecoration(
-                                                          color: isOverloaded ? const Color(0xFFFDE8E8) : const Color(0xFFF3F4F6),
+                                                          color: isOverloaded
+                                                              ? (_isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.35) : const Color(0xFFFDE8E8))
+                                                              : (_isDark ? DefensysTokens.mistSurface : const Color(0xFFF3F4F6)),
                                                           borderRadius: BorderRadius.circular(4),
+                                                          border: Border.all(
+                                                            color: isOverloaded
+                                                                ? (_isDark ? const Color(0xFFDC2626).withValues(alpha: 0.45) : const Color(0xFFF8B4B4))
+                                                                : (_isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
+                                                          ),
                                                         ),
                                                         child: Text(
                                                           '$load/4 teams',
                                                           style: TextStyle(
                                                             fontSize: 10,
                                                             fontWeight: FontWeight.bold,
-                                                            color: isOverloaded ? const Color(0xFF9B1C1C) : AppColors.textSecondary,
+                                                            color: isOverloaded
+                                                                ? (_isDark ? const Color(0xFFFCA5A5) : const Color(0xFF9B1C1C))
+                                                                : (_isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary),
                                                           ),
                                                         ),
                                                       ),
@@ -837,7 +860,8 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                 icon: const Icon(Icons.folder_open_rounded, size: 16),
                                                 label: const Text('Review Files'),
                                                 style: TextButton.styleFrom(
-                                                  foregroundColor: AppColors.maroon,
+                                                  foregroundColor: _isDark ? DefensysTokens.mistMaroonText : AppColors.maroon,
+                                                  disabledForegroundColor: _isDark ? DefensysTokens.textSecondaryDark.withValues(alpha: 0.4) : null,
                                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                                   textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                                                 ),
@@ -851,7 +875,8 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                   icon: const Icon(Icons.notification_important_rounded, size: 16),
                                                   label: const Text('Remind'),
                                                   style: TextButton.styleFrom(
-                                                    foregroundColor: const Color(0xFFD97706),
+                                                    foregroundColor: _isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
+                                                    disabledForegroundColor: _isDark ? DefensysTokens.textSecondaryDark.withValues(alpha: 0.4) : null,
                                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                                     textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                                                   ),

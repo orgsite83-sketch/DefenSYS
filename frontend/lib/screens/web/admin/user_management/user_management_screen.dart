@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 
-import 'package:defensys/screens/web/admin/admin_shell.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/academic/student_academic_records_provider.dart';
@@ -482,19 +481,6 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     final state = ref.watch(userManagementProvider);
     final academicState = ref.watch(academicPeriodProvider);
     final studentState = ref.watch(studentAcademicRecordsProvider);
-
-    ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (
-      previous,
-      next,
-    ) {
-      if ((next == DefensysAdminSection.userManagement ||
-              next == DefensysAdminSection.studentAcademicRecords) &&
-          previous != next) {
-        ref.read(userManagementProvider.notifier).fetchUsers();
-        ref.read(academicPeriodProvider.notifier).fetchPeriods();
-        ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
-      }
-    });
 
     if (_subView == _SubView.studentBatchHub) {
       return StudentBatchEnrollmentHubView(

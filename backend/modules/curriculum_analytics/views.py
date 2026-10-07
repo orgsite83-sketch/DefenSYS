@@ -4,7 +4,22 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .services import analytics_payload, proposal_payload
+from .explorer import explorer_payload, explorer_detail
 from reports.generators.curriculum_proposal_report import generate_curriculum_proposal_pdf
+
+
+class CurriculumExplorerView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response(explorer_payload(request.user, request.query_params))
+
+
+class CurriculumExplorerDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, project_id):
+        return Response(explorer_detail(request.user, request.query_params, project_id))
 
 
 class CurriculumAnalyticsView(APIView):
@@ -195,4 +210,3 @@ class CurriculumProposalPdfView(APIView):
             sections=sections,
             generated_by=user_name,
         )
-

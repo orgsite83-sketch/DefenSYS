@@ -31,6 +31,18 @@ class SessionStorageImpl extends SessionStorageBase {
   }
 
   @override
+  Future<String?> readAccess() => _storage.read(key: AuthStorageKeys.access);
+
+  @override
+  Future<void> writeAccess(String? value) async {
+    if (value == null) {
+      await _storage.delete(key: AuthStorageKeys.access);
+    } else {
+      await _storage.write(key: AuthStorageKeys.access, value: value);
+    }
+  }
+
+  @override
   Future<String?> readUserJson() => _storage.read(key: AuthStorageKeys.user);
 
   @override
@@ -45,6 +57,7 @@ class SessionStorageImpl extends SessionStorageBase {
   @override
   Future<void> clearAuth() async {
     await _storage.delete(key: AuthStorageKeys.refresh);
+    await _storage.delete(key: AuthStorageKeys.access);
     await _storage.delete(key: AuthStorageKeys.user);
   }
 

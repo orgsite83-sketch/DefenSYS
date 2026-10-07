@@ -2065,14 +2065,6 @@ def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=N
         ).select_related('team', 'semester')
     )
     total = len(grades)
-    ready = sum(
-        1
-        for grade in grades
-        if team_grading_readiness(grade, semester, scope, config)['ready']
-    )
-    from .peer_eval import is_team_peer_eval_complete
-
-    peer_complete = sum(1 for grade in grades if is_team_peer_eval_complete(grade))
     redefense_teams = [
         {'team_id': grade.team_id, 'team_name': grade.team.name}
         for grade in grades
@@ -2089,7 +2081,10 @@ def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=N
         if getattr(grade, 'result', '') == 'failed'
     ]
     from repository.deliverables.services import post_deliverables_complete
+    from .peer_eval import is_team_peer_eval_complete
 
+    ready = 0
+    peer_complete = 0
     panel_complete = 0
     adviser_complete = 0
     adviser_required_any = False
@@ -2099,6 +2094,13 @@ def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=N
 
     for grade in grades:
         tr = team_grading_readiness(grade, semester, scope, config)
+        if tr['ready']:
+            ready += 1
+        if tr.get('peer_required'):
+            if tr.get('peer_complete'):
+                peer_complete += 1
+        elif is_team_peer_eval_complete(grade):
+            peer_complete += 1
         if tr['panel_complete']:
             panel_complete += 1
         if tr['adviser_required']:

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../navigation/admin_route_paths.dart';
+import '../../../navigation/web_section_navigation.dart';
 import '../../../navigation/workspace_access.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../services/auth_provider.dart';
@@ -63,8 +64,14 @@ class WorkspaceOption {
 class FacultyDashboard extends ConsumerStatefulWidget {
   final Map<String, dynamic>? userData;
   final Widget? routeChild;
+  final StatefulNavigationShell? navigationShell;
 
-  const FacultyDashboard({super.key, this.userData, this.routeChild});
+  const FacultyDashboard({
+    super.key,
+    this.userData,
+    this.routeChild,
+    this.navigationShell,
+  });
 
   @override
   ConsumerState<FacultyDashboard> createState() => _FacultyDashboardState();
@@ -75,6 +82,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   WorkspaceOption? _activeWorkspaceOption;
   int? _selectedMinutesScheduleId;
   int _navigationEpoch = 0;
+  int _minutesRevision = 0;
+  final Set<String> _workspaceSections = {};
+  final _sectionState = WebSectionState();
   bool _isCollapsed = false;
 
   void _toggleCollapse() {
@@ -93,6 +103,12 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   }
 
   @override
+  void dispose() {
+    _sectionState.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final dashState = ref.watch(dashboardProvider('faculty'));
     final roles =
@@ -102,15 +118,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     final sectionFromRoute = FacultyRoutes.sectionForLocation(
       routerState.uri.path,
     );
-    if (sectionFromRoute != null && sectionFromRoute != _activeSection) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          setState(() {
-            _activeSection = sectionFromRoute;
-          });
-        }
-      });
-    }
+    _activeSection = sectionFromRoute ?? _activeSection;
+    _workspaceSections.add(_activeSection);
     // Check if user is ONLY an uploader (no other roles)
     final isOnlyUploader =
         roles['uploader'] == true &&
@@ -147,16 +156,24 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             _buildTopBar(showMenuButton: showSidebar && !isWide),
             Expanded(
               child: OfflineBanner(
-                child: dashState.isLoading
-                     ? const Center(child: CircularProgressIndicator())
-                     : dashState.error != null
-                     ? Center(
-                         child: Text(
-                           dashState.error!,
-                           style: const TextStyle(color: Colors.red),
-                         ),
-                       )
-                     : _buildActiveContent(dashState, roles),
+                child: _FacultyContentScope(
+                  dashboard: this,
+                  workspace: _resolvedWorkspace(roles),
+                  revision: _navigationEpoch,
+                  minutesRevision: _minutesRevision,
+                  child: WebSectionStateScope(
+                    notifier: _sectionState,
+                    child:
+                      widget.navigationShell ??
+                      widget.routeChild ??
+                      _buildSectionContent(
+                        dashState,
+                        roles,
+                        _activeSection,
+                        routerState,
+                      ),
+                  ),
+                ),
               ),
             ),
           ],
@@ -357,6 +374,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           ? 'project_archive'
           : 'dashboard';
       _navigationEpoch++;
+      _workspaceSections.clear();
+      _selectedMinutesScheduleId = null;
     });
     context.go(
       workspaceOption.type == FacultyWorkspace.faculty
@@ -378,14 +397,23 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     }
     ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
     ref.read(unsavedChangesProvider.notifier).setDirty(false);
-    setState(() {
-      _navigationEpoch++;
-    });
+    if (hasUnsaved) {
+      final sourcePath = FacultyRoutes.pathForSection(_activeSection);
+      _sectionState.reset(sourcePath);
+      context.go(sourcePath);
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
     final path = FacultyRoutes.pathForSection(section);
     if (queryParameters != null && queryParameters.isNotEmpty) {
       final uri = Uri(path: path, queryParameters: queryParameters);
       context.go(uri.toString());
-    } else {
+    } else if (!resumeWebSection(
+      widget.navigationShell,
+      path,
+      initialLocation: !_workspaceSections.contains(section),
+    )) {
       context.go(path);
     }
   }
@@ -1319,37 +1347,29 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     return groups;
   }
 
-
-  Widget _buildActiveContent(
+  Widget _buildSectionContent(
     DashboardState dashState,
     Map<String, dynamic> roles,
+    String activeSection,
+    GoRouterState routerState,
   ) {
-    if (_selectedMinutesScheduleId != null) {
+    if (dashState.data == null) {
+      return dashState.error != null
+          ? Center(child: Text(dashState.error!))
+          : const Center(child: CircularProgressIndicator());
+    }
+    if (activeSection == 'dashboard' && _selectedMinutesScheduleId != null) {
       return MinutesFormScreen(
         scheduleId: _selectedMinutesScheduleId!,
         onBack: () {
           setState(() {
             _selectedMinutesScheduleId = null;
+            _minutesRevision++;
           });
           ref.read(dashboardProvider('faculty').notifier).fetchDashboardData();
         },
       );
     }
-
-    final routerState = GoRouterState.of(context);
-    final isSubRoute = routerState.pathParameters.containsKey('teamId') ||
-        routerState.pathParameters.containsKey('sectionName');
-    if (isSubRoute && widget.routeChild != null) {
-      return Container(
-        color: DefensysTokens.backgroundOf(context),
-        child: widget.routeChild!,
-      );
-    }
-
-    final sectionFromRoute = FacultyRoutes.sectionForLocation(
-      routerState.uri.path,
-    );
-    final activeSection = sectionFromRoute ?? _activeSection;
 
     final workspaceOption = _resolvedWorkspace(roles);
     final facultyName =
@@ -1500,7 +1520,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           );
         }
         final isImport =
-            GoRouterState.of(context).uri.path == FacultyRoutes.defenseScheduleBulkImport;
+            routerState.uri.path == FacultyRoutes.defenseScheduleBulkImport;
         return Container(
           color: DefensysTokens.surfaceOf(context),
           child: DefenseBoardScreen(initialBulkImport: isImport),
@@ -1510,7 +1530,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       case 'rubrics':
         return Container(
           color: DefensysTokens.surfaceOf(context),
-          child: RubricEngineScreen(key: ValueKey('rubrics_$_navigationEpoch')),
+          child: const RubricEngineScreen(),
         );
       case 'dashboard':
       default:
@@ -1593,6 +1613,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           onOpenMinutes: (scheduleId) {
             setState(() {
               _selectedMinutesScheduleId = scheduleId;
+              _minutesRevision++;
             });
           },
         );
@@ -1895,3 +1916,50 @@ class _SidebarPanelPainter extends CustomPainter {
   bool shouldRepaint(_SidebarPanelPainter oldDelegate) => oldDelegate.color != color;
 }
 
+/// The shell owns workspace controls; section screens own their retained state.
+class FacultySectionContent extends ConsumerWidget {
+  const FacultySectionContent({super.key, required this.section});
+
+  final String section;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<_FacultyContentScope>()!;
+    final dashboard = ref.watch(dashboardProvider('faculty'));
+    final roles =
+        (dashboard.data?['roles'] as Map?)?.cast<String, dynamic>() ?? {};
+    return KeyedSubtree(
+      // Workspace changes must not reuse filters/forms from a different role,
+      // year or class section. Ordinary sidebar switches keep this key stable.
+      key: ValueKey((scope.workspace, scope.revision,
+        WebSectionStateScope.generationOf(context, FacultyRoutes.pathForSection(section)))),
+      child: scope.dashboard._buildSectionContent(
+        dashboard,
+        roles,
+        section,
+        GoRouterState.of(context),
+      ),
+    );
+  }
+}
+
+class _FacultyContentScope extends InheritedWidget {
+  const _FacultyContentScope({
+    required this.dashboard,
+    required this.workspace,
+    required this.revision,
+    required this.minutesRevision,
+    required super.child,
+  });
+
+  final _FacultyDashboardState dashboard;
+  final WorkspaceOption workspace;
+  final int revision;
+  final int minutesRevision;
+
+  @override
+  bool updateShouldNotify(_FacultyContentScope oldWidget) =>
+      workspace != oldWidget.workspace || revision != oldWidget.revision ||
+      minutesRevision != oldWidget.minutesRevision;
+}

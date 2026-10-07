@@ -104,6 +104,8 @@ class DeliverableSubmission(models.Model):
         null=True,
         help_text='Classification confidence score (0-100)'
     )
+    classification = models.JSONField(blank=True, default=dict,
+        help_text='Versioned model result, status and supporting document passages')
     
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -136,6 +138,8 @@ class DeliverableSubmission(models.Model):
             raise ValidationError({'team': 'Only Capstone or PIT teams can submit deliverables.'})
 
     def save(self, *args, **kwargs):
+        from .pdf_processor import invalidate_changed_pdf_cache
+        invalidate_changed_pdf_cache(self, kwargs)
         if not self.pk:
             self.project_version = self.team.project_version
         self.full_clean()
@@ -161,6 +165,7 @@ class DeliverableSubmission(models.Model):
                 self.category = result.get('category', '') or ''
                 classification = result.get('classification') or {}
                 self.category_confidence = classification.get('confidence_score')
+                self.classification = classification
             except Exception as e:
                 logger.warning(f'PDF extraction failed for {self.file_name}: {e}')
         
@@ -224,6 +229,8 @@ class DeliverableSubmissionFile(models.Model):
         null=True,
         help_text='Classification confidence score (0-100)'
     )
+    classification = models.JSONField(blank=True, default=dict,
+        help_text='Versioned model result, status and supporting document passages')
     
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
@@ -237,6 +244,8 @@ class DeliverableSubmissionFile(models.Model):
             raise ValidationError({'file_name': 'File name is required.'})
 
     def save(self, *args, **kwargs):
+        from .pdf_processor import invalidate_changed_pdf_cache
+        invalidate_changed_pdf_cache(self, kwargs)
         self.full_clean()
         
         # Extract PDF content if file exists and hasn't been extracted yet
@@ -260,6 +269,7 @@ class DeliverableSubmissionFile(models.Model):
                 self.category = result.get('category', '') or ''
                 classification = result.get('classification') or {}
                 self.category_confidence = classification.get('confidence_score')
+                self.classification = classification
             except Exception as e:
                 logger.warning(f'PDF extraction failed for {self.file_name}: {e}')
         

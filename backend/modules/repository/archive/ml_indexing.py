@@ -29,4 +29,5 @@ def apply_ml_from_pdf(entry, *, force: bool = False) -> bool:
     if confidence is None and classification:
         confidence = classification.get('confidence_score')
     entry.category_confidence = confidence
+    entry.classification = classification
     return True

@@ -1668,7 +1668,7 @@ class ScheduleImportDialog {
         stageItems.add(
           DropdownMenuItem<int?>(
             value: id,
-            child: Text(stage['label']?.toString() ?? ''),
+            child: Text(state.formatStageLabel(stage)),
           ),
         );
       }

@@ -8,6 +8,7 @@ import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/dashboard_provider.dart';
 import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/rubric_engine_provider.dart';
+import 'package:defensys/services/unsaved_changes_provider.dart';
 import 'package:defensys/notifications/notifications_provider.dart';
 import 'package:defensys/screens/web/admin/rubric_engine/rubric_engine_screen.dart';
 import 'package:defensys/screens/web/admin/rubric_engine/rubric_full_page_editor.dart';
@@ -163,5 +164,26 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.byType(RubricFullPageEditor), findsOneWidget);
+    final editorState = tester.state(find.byType(RubricFullPageEditor));
+    await tester.tap(find.text('Academic Periods').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rubrics').first);
+    await tester.pumpAndSettle();
+    expect(tester.state(find.byType(RubricFullPageEditor)), same(editorState));
+
+    await tester.enterText(find.descendant(
+      of: find.byType(RubricFullPageEditor), matching: find.byType(TextField),
+    ).first, 'Discarded rubric name');
+    await tester.pumpAndSettle();
+    expect(container.read(unsavedChangesProvider), isTrue);
+    await tester.tap(find.text('Academic Periods').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Discard').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rubrics').first);
+    await tester.pumpAndSettle();
+    expect(find.byType(RubricFullPageEditor), findsNothing);
+    expect(find.byType(RubricEngineScreen), findsOneWidget);
+    expect(container.read(unsavedChangesProvider), isFalse);
   });
 }

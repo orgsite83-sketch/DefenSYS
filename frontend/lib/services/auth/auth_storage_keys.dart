@@ -1,6 +1,7 @@
 /// Keys for persisted auth material (web session/local storage or secure mobile).
 abstract final class AuthStorageKeys {
   static const refresh = 'defensys_refresh';
+  static const access = 'defensys_access';
   static const user = 'defensys_user';
   static const rememberMe = 'remember_me';
   static const legacyJwtToken = 'jwt_token';

@@ -1,4 +1,4 @@
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers as drf_serializers
@@ -85,18 +85,33 @@ def filter_grade_queryset(request, queryset):
 
 def counts_payload(base_queryset, current_queryset=None):
     current = current_queryset if current_queryset is not None else base_queryset
+    base_agg = base_queryset.aggregate(
+        all=Count('pk'),
+        total_capstone=Count('pk', filter=Q(scope=TeamGrade.SCOPE_CAPSTONE)),
+        total_pit=Count('pk', filter=Q(scope=TeamGrade.SCOPE_PIT)),
+    )
+    current_agg = current.aggregate(
+        filtered=Count('pk'),
+        published=Count('pk', filter=Q(status=TeamGrade.STATUS_PUBLISHED)),
+        pending=Count('pk', filter=Q(status=TeamGrade.STATUS_PENDING)),
+        awaiting_peers=Count('pk', filter=Q(status=TeamGrade.STATUS_AWAITING_PEERS)),
+        passed=Count('pk', filter=Q(final_grade__gte=75)),
+        failed=Count('pk', filter=Q(final_grade__lt=75, final_grade__isnull=False)),
+        capstone=Count('pk', filter=Q(scope=TeamGrade.SCOPE_CAPSTONE)),
+        pit=Count('pk', filter=Q(scope=TeamGrade.SCOPE_PIT)),
+    )
     return {
-        'all': base_queryset.count(),
-        'filtered': current.count(),
-        'published': current.filter(status=TeamGrade.STATUS_PUBLISHED).count(),
-        'pending': current.filter(status=TeamGrade.STATUS_PENDING).count(),
-        'awaiting_peers': current.filter(status=TeamGrade.STATUS_AWAITING_PEERS).count(),
-        'passed': current.filter(final_grade__gte=75).count(),
-        'failed': current.filter(final_grade__lt=75, final_grade__isnull=False).count(),
-        'total_capstone': base_queryset.filter(scope=TeamGrade.SCOPE_CAPSTONE).count(),
-        'total_pit': base_queryset.filter(scope=TeamGrade.SCOPE_PIT).count(),
-        'capstone': current.filter(scope=TeamGrade.SCOPE_CAPSTONE).count(),
-        'pit': current.filter(scope=TeamGrade.SCOPE_PIT).count(),
+        'all': base_agg['all'] or 0,
+        'filtered': current_agg['filtered'] or 0,
+        'published': current_agg['published'] or 0,
+        'pending': current_agg['pending'] or 0,
+        'awaiting_peers': current_agg['awaiting_peers'] or 0,
+        'passed': current_agg['passed'] or 0,
+        'failed': current_agg['failed'] or 0,
+        'total_capstone': base_agg['total_capstone'] or 0,
+        'total_pit': base_agg['total_pit'] or 0,
+        'capstone': current_agg['capstone'] or 0,
+        'pit': current_agg['pit'] or 0,
     }
 
 

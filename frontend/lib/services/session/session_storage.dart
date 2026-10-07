@@ -59,6 +59,10 @@ class SessionStorage {
 
   Future<void> writeRefresh(String? value) => _impl.writeRefresh(value);
 
+  Future<String?> readAccess() => _impl.readAccess();
+
+  Future<void> writeAccess(String? value) => _impl.writeAccess(value);
+
   Future<String?> readUserJson() => _impl.readUserJson();
 
   Future<void> writeUserJson(String? value) => _impl.writeUserJson(value);

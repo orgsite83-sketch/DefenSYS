@@ -193,20 +193,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: AppRoutes.webWorkspaceOnly,
         builder: (_, __) => const WebWorkspaceOnlyScreen(),
       ),
-      ShellRoute(
-        builder: (context, state, child) {
-          final user = ref.read(authProvider).user;
-          return AdminShell(userData: user, routeChild: child);
-        },
-        routes: _adminRoutes(),
-      ),
-      ShellRoute(
-        builder: (context, state, child) {
-          final user = ref.read(authProvider).user;
-          return FacultyDashboard(userData: user, routeChild: child);
-        },
-        routes: _facultyRoutes(),
-      ),
+      ..._adminRoutes(),
+      ..._facultyRoutes(),
     ],
   );
 
@@ -267,146 +255,119 @@ List<RouteBase> _adminRoutes() {
       path: '/admin',
       redirect: (_, state) => _redirectAdminParentOnly(state),
       routes: [
+        StatefulShellRoute.indexedStack(
+          builder: (context, state, shell) =>
+              AdminShell(userData: _routeUser(context), navigationShell: shell),
+          branches: _adminSectionRoutes()
+              .map(
+                (route) => StatefulShellBranch(
+                  initialLocation: '/admin/${route.path}',
+                  routes: [
+                    route,
+                    if (route.path == 'defense-board')
+                      GoRoute(
+                        path: 'defense-board/import',
+                        pageBuilder: _adminSectionPage,
+                      ),
+                  ],
+                ),
+              )
+              .toList(),
+        ),
+      ],
+    ),
+  ];
+}
+
+Map<String, dynamic>? _routeUser(BuildContext context) =>
+    ProviderScope.containerOf(context, listen: false).read(authProvider).user;
+
+List<GoRoute> _adminSectionRoutes() {
+  return [
+    GoRoute(path: 'overview', pageBuilder: _adminSectionPage),
+    GoRoute(
+      path: 'profile',
+      pageBuilder: (_, __) => const NoTransitionPage(child: ProfileScreen()),
+    ),
+    GoRoute(
+      path: 'academic-periods',
+      pageBuilder: _adminSectionPage,
+      routes: [
         GoRoute(
-          path: 'overview',
-          pageBuilder: (_, __) =>
-              const NoTransitionPage(child: SizedBox.shrink()),
+          path: ':semesterId',
+          builder: (_, state) {
+            final id = int.tryParse(state.pathParameters['semesterId'] ?? '');
+            return AdminSemesterDetailRoute(semesterId: id);
+          },
+        ),
+      ],
+    ),
+    GoRoute(path: 'users', pageBuilder: _adminSectionPage),
+    GoRoute(
+      path: 'student-teams',
+      pageBuilder: _adminSectionPage,
+      routes: [
+        GoRoute(
+          path: ':teamId',
+          builder: (_, state) {
+            final id = int.parse(state.pathParameters['teamId']!);
+            return AdminTeamDetailRoute(teamId: id);
+          },
+        ),
+      ],
+    ),
+    GoRoute(path: 'student-records', pageBuilder: _adminSectionPage),
+    GoRoute(
+      path: 'grade-center',
+      pageBuilder: _adminSectionPage,
+      routes: [
+        GoRoute(
+          path: 'grades/:gradeId',
+          builder: (_, state) {
+            final id = int.parse(state.pathParameters['gradeId']!);
+            return AdminGradeTeamDetailRoute(gradeId: id);
+          },
         ),
         GoRoute(
-          path: 'profile',
-          pageBuilder: (_, __) =>
-              const NoTransitionPage(child: ProfileScreen()),
+          path: 'events/:groupKey',
+          builder: (_, state) {
+            final key = state.pathParameters['groupKey']!;
+            return AdminGradeEventTeamsRoute(groupKey: key);
+          },
         ),
+      ],
+    ),
+    GoRoute(
+      path: 'rubrics',
+      pageBuilder: _adminSectionPage,
+      routes: [
         GoRoute(
-          path: 'academic-periods',
-          pageBuilder: (_, __) =>
-              const NoTransitionPage(child: SizedBox.shrink()),
-          routes: [
-            GoRoute(
-              path: ':semesterId',
-              builder: (_, state) {
-                final id = int.tryParse(
-                  state.pathParameters['semesterId'] ?? '',
-                );
-                return AdminSemesterDetailRoute(semesterId: id);
-              },
-            ),
-          ],
+          path: ':rubricId/edit',
+          builder: (_, state) {
+            final id = state.pathParameters['rubricId']!;
+            return AdminRubricEditorRoute(rubricIdParam: id);
+          },
         ),
+      ],
+    ),
+    GoRoute(path: 'project-archive', pageBuilder: _adminSectionPage),
+    GoRoute(path: 'repository-audit', pageBuilder: _adminSectionPage),
+    GoRoute(path: 'curriculum-analytics', pageBuilder: _adminSectionPage),
+    GoRoute(path: 'audit-compliance', pageBuilder: _adminSectionPage),
+    GoRoute(path: 'defense-scheduler', pageBuilder: _adminSectionPage),
+    GoRoute(path: 'defense-board', pageBuilder: _adminSectionPage),
+    GoRoute(
+      path: 'defense-stages',
+      pageBuilder: _adminSectionPage,
+      routes: [
         GoRoute(
-          path: 'users',
-          pageBuilder: (_, __) =>
-              const NoTransitionPage(child: SizedBox.shrink()),
-        ),
-        GoRoute(
-          path: 'student-teams',
-          pageBuilder: (_, __) =>
-              const NoTransitionPage(child: SizedBox.shrink()),
-          routes: [
-            GoRoute(
-              path: ':teamId',
-              builder: (_, state) {
-                final id = int.parse(state.pathParameters['teamId']!);
-                return AdminTeamDetailRoute(teamId: id);
-              },
-            ),
-          ],
-        ),
-        GoRoute(
-          path: 'student-records',
-          pageBuilder: (_, __) =>
-              const NoTransitionPage(child: SizedBox.shrink()),
-        ),
-        GoRoute(
-          path: 'grade-center',
-          pageBuilder: (_, __) =>
-              const NoTransitionPage(child: SizedBox.shrink()),
-          routes: [
-            GoRoute(
-              path: 'grades/:gradeId',
-              builder: (_, state) {
-                final id = int.parse(state.pathParameters['gradeId']!);
-                return AdminGradeTeamDetailRoute(gradeId: id);
-              },
-            ),
-            GoRoute(
-              path: 'events/:groupKey',
-              builder: (_, state) {
-                final key = state.pathParameters['groupKey']!;
-                return AdminGradeEventTeamsRoute(groupKey: key);
-              },
-            ),
-          ],
-        ),
-        GoRoute(
-          path: 'rubrics',
-          pageBuilder: (_, __) =>
-              const NoTransitionPage(child: SizedBox.shrink()),
-          routes: [
-            GoRoute(
-              path: ':rubricId/edit',
-              builder: (_, state) {
-                final id = state.pathParameters['rubricId']!;
-                return AdminRubricEditorRoute(rubricIdParam: id);
-              },
-            ),
-          ],
-        ),
-        GoRoute(
-          path: 'project-archive',
-          pageBuilder: (_, __) =>
-              const NoTransitionPage(child: SizedBox.shrink()),
-        ),
-        GoRoute(
-          path: 'repository-audit',
-          pageBuilder: (_, __) =>
-              const NoTransitionPage(child: SizedBox.shrink()),
-        ),
-        GoRoute(
-          path: 'curriculum-analytics',
-          pageBuilder: (_, __) =>
-              const NoTransitionPage(child: SizedBox.shrink()),
-        ),
-        GoRoute(
-          path: 'audit-compliance',
-          pageBuilder: (_, __) =>
-              const NoTransitionPage(child: SizedBox.shrink()),
-        ),
-        GoRoute(
-          path: 'defense-scheduler',
-          pageBuilder: (_, __) =>
-              const NoTransitionPage(child: SizedBox.shrink()),
-        ),
-        GoRoute(
-          path: 'defense-board',
-          pageBuilder: (_, __) =>
-              const NoTransitionPage(child: SizedBox.shrink()),
-          routes: [
-            GoRoute(
-              path: 'import',
-              pageBuilder: (_, __) =>
-                  const NoTransitionPage(child: SizedBox.shrink()),
-            ),
-          ],
-        ),
-        GoRoute(
-          path: 'defense-stages',
-          pageBuilder: (_, __) =>
-              const NoTransitionPage(child: SizedBox.shrink()),
-          routes: [
-            GoRoute(
-              path: ':stageId/edit',
-              builder: (_, state) {
-                final id = int.parse(state.pathParameters['stageId']!);
-                final tab =
-                    int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0;
-                return AdminDefenseStageEditorRoute(
-                  stageId: id,
-                  initialTab: tab,
-                );
-              },
-            ),
-          ],
+          path: ':stageId/edit',
+          builder: (_, state) {
+            final id = int.parse(state.pathParameters['stageId']!);
+            final tab =
+                int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0;
+            return AdminDefenseStageEditorRoute(stageId: id, initialTab: tab);
+          },
         ),
       ],
     ),
@@ -419,108 +380,117 @@ List<RouteBase> _facultyRoutes() {
       path: '/faculty',
       redirect: (_, state) => _redirectFacultyParentOnly(state),
       routes: [
-        GoRoute(path: 'dashboard', builder: (_, __) => const SizedBox.shrink()),
-        GoRoute(
-          path: 'cohort',
-          builder: (_, __) => const SizedBox.shrink(),
-          routes: [
-            GoRoute(
-              path: ':sectionName',
-              builder: (_, state) {
-                final sectionName = state.pathParameters['sectionName']!;
-                return PitLeadCohortSectionDetailRoute(
-                  sectionName: sectionName,
-                );
-              },
-            ),
-          ],
-        ),
-        GoRoute(
-          path: 'pit-student-import',
-          builder: (_, __) => const SizedBox.shrink(),
-        ),
-        GoRoute(
-          path: 'student-teams',
-          builder: (_, __) => const SizedBox.shrink(),
-          routes: [
-            GoRoute(
-              path: ':teamId',
-              builder: (_, state) {
-                final id = int.parse(state.pathParameters['teamId']!);
-                return AdminTeamDetailRoute(teamId: id, pitLeadMode: true);
-              },
-            ),
-          ],
-        ),
-        GoRoute(
-          path: 'pit-instructors',
-          builder: (_, __) => const SizedBox.shrink(),
-        ),
-        GoRoute(
-          path: 'defense-scheduler',
-          builder: (_, __) => const SizedBox.shrink(),
-        ),
-        GoRoute(
-          path: 'defense-board',
-          builder: (_, __) => const SizedBox.shrink(),
-          routes: [
-            GoRoute(
-              path: 'import',
-              builder: (_, __) => const SizedBox.shrink(),
-            ),
-          ],
-        ),
-        GoRoute(
-          path: 'grade-center',
-          builder: (_, __) => const SizedBox.shrink(),
-          routes: [
-            GoRoute(
-              path: 'grades/:gradeId',
-              builder: (_, state) {
-                final id = int.parse(state.pathParameters['gradeId']!);
-                return AdminGradeTeamDetailRoute(gradeId: id);
-              },
-            ),
-            GoRoute(
-              path: 'events/:groupKey',
-              builder: (_, state) {
-                final key = state.pathParameters['groupKey']!;
-                return AdminGradeEventTeamsRoute(groupKey: key);
-              },
-            ),
-          ],
-        ),
-        GoRoute(path: 'rubrics', builder: (_, __) => const SizedBox.shrink()),
-        GoRoute(
-          path: 'project-archive',
-          builder: (_, __) => const SizedBox.shrink(),
-        ),
-        GoRoute(
-          path: 'repository-audit',
-          builder: (_, __) => const SizedBox.shrink(),
-        ),
-        GoRoute(
-          path: 'audit-compliance',
-          builder: (_, __) => const SizedBox.shrink(),
-        ),
-        GoRoute(
-          path: 'deliverables',
-          builder: (_, __) => const SizedBox.shrink(),
-        ),
-        GoRoute(
-          path: 'weekly-reports',
-          builder: (_, __) => const SizedBox.shrink(),
-        ),
-        GoRoute(
-          path: 'adviser-grading',
-          builder: (_, __) => const SizedBox.shrink(),
-        ),
-        GoRoute(path: 'uploader', builder: (_, __) => const SizedBox.shrink()),
-        GoRoute(
-          path: 'pit-events',
-          builder: (_, __) => const SizedBox.shrink(),
+        StatefulShellRoute.indexedStack(
+          builder: (context, state, shell) => FacultyDashboard(
+            userData: _routeUser(context),
+            navigationShell: shell,
+          ),
+          branches: _facultySectionRoutes()
+              .map(
+                (route) => StatefulShellBranch(
+                  initialLocation: '/faculty/${route.path}',
+                  routes: [
+                    route,
+                    if (route.path == 'defense-board')
+                      GoRoute(
+                        path: 'defense-board/import',
+                        pageBuilder: _facultySectionPage,
+                      ),
+                  ],
+                ),
+              )
+              .toList(),
         ),
       ],
     ),
   ];
 }
+
+List<GoRoute> _facultySectionRoutes() {
+  return [
+    GoRoute(path: 'dashboard', pageBuilder: _facultySectionPage),
+    GoRoute(
+      path: 'cohort',
+      pageBuilder: _facultySectionPage,
+      routes: [
+        GoRoute(
+          path: ':sectionName',
+          builder: (_, state) {
+            final sectionName = state.pathParameters['sectionName']!;
+            return PitLeadCohortSectionDetailRoute(sectionName: sectionName);
+          },
+        ),
+      ],
+    ),
+    GoRoute(path: 'pit-student-import', pageBuilder: _facultySectionPage),
+    GoRoute(
+      path: 'student-teams',
+      pageBuilder: _facultySectionPage,
+      routes: [
+        GoRoute(
+          path: ':teamId',
+          builder: (_, state) {
+            final id = int.parse(state.pathParameters['teamId']!);
+            return AdminTeamDetailRoute(teamId: id, pitLeadMode: true);
+          },
+        ),
+      ],
+    ),
+    GoRoute(path: 'pit-instructors', pageBuilder: _facultySectionPage),
+    GoRoute(path: 'defense-scheduler', pageBuilder: _facultySectionPage),
+    GoRoute(path: 'defense-board', pageBuilder: _facultySectionPage),
+    GoRoute(
+      path: 'grade-center',
+      pageBuilder: _facultySectionPage,
+      routes: [
+        GoRoute(
+          path: 'grades/:gradeId',
+          builder: (_, state) {
+            final id = int.parse(state.pathParameters['gradeId']!);
+            return AdminGradeTeamDetailRoute(gradeId: id);
+          },
+        ),
+        GoRoute(
+          path: 'events/:groupKey',
+          builder: (_, state) {
+            final key = state.pathParameters['groupKey']!;
+            return AdminGradeEventTeamsRoute(groupKey: key);
+          },
+        ),
+      ],
+    ),
+    GoRoute(path: 'rubrics', pageBuilder: _facultySectionPage),
+    GoRoute(path: 'project-archive', pageBuilder: _facultySectionPage),
+    GoRoute(path: 'repository-audit', pageBuilder: _facultySectionPage),
+    GoRoute(path: 'audit-compliance', pageBuilder: _facultySectionPage),
+    GoRoute(path: 'deliverables', pageBuilder: _facultySectionPage),
+    GoRoute(path: 'weekly-reports', pageBuilder: _facultySectionPage),
+    GoRoute(path: 'adviser-grading', pageBuilder: _facultySectionPage),
+    GoRoute(path: 'uploader', pageBuilder: _facultySectionPage),
+    GoRoute(path: 'pit-events', pageBuilder: _facultySectionPage),
+  ];
+}
+
+Page<void> _adminSectionPage(
+  BuildContext context,
+  GoRouterState state,
+) => NoTransitionPage(
+  // Board/import are two URLs for the same workspace, not two mounted boards.
+  key: state.uri.path.startsWith(AdminRoutes.defenseBoard)
+      ? const ValueKey('admin-defense-board')
+      : state.pageKey,
+  child: AdminSectionContent(
+    section: AdminRoutes.sectionForLocation(state.uri.path)!,
+    isImport: state.uri.path == AdminRoutes.defenseScheduleBulkImport,
+  ),
+);
+
+Page<void> _facultySectionPage(BuildContext context, GoRouterState state) =>
+    NoTransitionPage(
+      key: FacultyRoutes.sectionForLocation(state.uri.path) == 'defense_board'
+          ? const ValueKey('faculty-defense-board')
+          : state.pageKey,
+      child: FacultySectionContent(
+        section: FacultyRoutes.sectionForLocation(state.uri.path)!,
+      ),
+    );

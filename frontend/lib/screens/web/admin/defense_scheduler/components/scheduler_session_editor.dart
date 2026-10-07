@@ -82,11 +82,14 @@ class SchedulerSessionEditor extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
-            Text(
-              '${draft.teamIds.length} selected · ${draft.capacity} available',
-              style: TextStyle(
-                fontSize: 12,
-                color: DefensysTokens.textSecondaryOf(context),
+            Flexible(
+              child: Text(
+                '${draft.teamIds.length} selected · ${draft.capacity} available',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
             if (onRemove != null)
@@ -150,14 +153,19 @@ class SchedulerSessionEditor extends StatelessWidget {
             _field('End time *', timeField(draft.blocks[i].end)),
           ),
         ],
+        const SizedBox(height: 12),
         Align(
           alignment: Alignment.centerLeft,
-          child: TextButton.icon(
+          child: ShadButton.outline(
+            key: ValueKey('add-time-block-$number'),
+            size: ShadButtonSize.sm,
+            enabled: enabled && draft.blocks.length < 20,
             onPressed: enabled && draft.blocks.length < 20 ? onAddBlock : null,
-            icon: const Icon(Icons.add, size: 16),
-            label: const Text('Add time block'),
+            leading: const Icon(LucideIcons.plus, size: 14),
+            child: const Text('Add time block'),
           ),
         ),
+        const SizedBox(height: 16),
         _field(
           'Slot duration (minutes) *',
           ShadInput(
@@ -167,16 +175,19 @@ class SchedulerSessionEditor extends StatelessWidget {
             onChanged: (_) => onChanged(),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         Align(
           alignment: Alignment.centerLeft,
-          child: TextButton.icon(
+          child: ShadButton.outline(
+            key: ValueKey('customize-staff-$number'),
+            size: ShadButtonSize.sm,
+            enabled: enabled,
             onPressed: enabled ? onCustomize : null,
-            icon: Icon(
-              draft.customStaff ? Icons.group : Icons.group_outlined,
-              size: 16,
+            leading: Icon(
+              draft.customStaff ? LucideIcons.rotateCcw : LucideIcons.users,
+              size: 14,
             ),
-            label: Text(
+            child: Text(
               draft.customStaff
                   ? 'Use shared staff defaults'
                   : 'Customize staff for this session',
@@ -184,7 +195,7 @@ class SchedulerSessionEditor extends StatelessWidget {
           ),
         ),
         if (draft.customStaff) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 16),
           _field(
             'Faculty panelists *',
             SchedulerPeoplePicker(
@@ -250,7 +261,8 @@ class SchedulerSessionEditor extends StatelessWidget {
               ),
             ),
           ],
-        ] else
+        ] else ...[
+          const SizedBox(height: 6),
           Text(
             'Uses the shared faculty, chair, external evaluators${capstone ? ' and documenter' : ''}.',
             style: TextStyle(
@@ -258,6 +270,7 @@ class SchedulerSessionEditor extends StatelessWidget {
               color: DefensysTokens.textSecondaryOf(context),
             ),
           ),
+        ],
       ],
     ),
   );

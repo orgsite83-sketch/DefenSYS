@@ -79,6 +79,8 @@ class ArchiveEntry(models.Model):
         null=True,
         help_text='Classification confidence score (0-100)',
     )
+    classification = models.JSONField(blank=True, default=dict,
+        help_text='Versioned model result, status and supporting document passages')
 
     team = models.ForeignKey(
         'student_teams.StudentTeam',
@@ -137,6 +139,8 @@ class ArchiveEntry(models.Model):
         ]
 
     def save(self, *args, **kwargs):
+        from repository.deliverables.pdf_processor import invalidate_changed_pdf_cache
+        invalidate_changed_pdf_cache(self, kwargs)
         if not self.pk and self.team_id:
             self.project_version = self.team.project_version
             self.metadata = {**self.metadata, 'project_title': self.team.project_title, 'project_version': self.project_version}
@@ -158,7 +162,7 @@ class ArchiveEntry(models.Model):
         if self.file and not self.extracted_text:
             from .ml_indexing import apply_ml_from_pdf
             if apply_ml_from_pdf(self):
-                super().save(update_fields=['extracted_text', 'topics', 'summary', 'category', 'category_confidence'])
+                super().save(update_fields=['extracted_text', 'topics', 'summary', 'category', 'category_confidence', 'classification'])
 
     def _hydrate_pit_metadata(self):
         # 1. Try to hydrate from database relations first if available

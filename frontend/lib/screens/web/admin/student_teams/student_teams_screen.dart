@@ -56,6 +56,8 @@ class StudentTeamsScreen extends ConsumerStatefulWidget {
 }
 
 class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
+  late final UnsavedChangesNotifier _unsavedNotifier;
+  late final UnsavedChangesSaveDraftNotifier _unsavedDraftNotifier;
   final _searchController = TextEditingController();
 
   bool? _showBulkImport = false;
@@ -169,6 +171,8 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   @override
   void initState() {
     super.initState();
+    _unsavedNotifier = ref.read(unsavedChangesProvider.notifier);
+    _unsavedDraftNotifier = ref.read(unsavedChangesSaveDraftProvider.notifier);
     _dropSubscription = setupDropzoneListener((files) {
       if (mounted && _isBulkImportVisible) {
         _handleFilesDropped(files);
@@ -189,10 +193,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     _draftSaveTimer?.cancel();
     _rowPreviewTimer?.cancel();
     _searchController.dispose();
-    try {
-      ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
-      ref.read(unsavedChangesProvider.notifier).setDirty(false);
-    } catch (_) {}
+    releaseUnsavedChangesAfterFrame(_unsavedNotifier, _unsavedDraftNotifier);
     super.dispose();
   }
 
@@ -922,7 +923,6 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
 
     ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (previous, next) {
       if (next == DefensysAdminSection.studentTeams && previous != DefensysAdminSection.studentTeams) {
-        _fetchTeamsForCurrentRole();
         if (_isBulkImportVisible && _parsedBulkRows.isNotEmpty) {
           _refreshBulkPreview();
         }
@@ -943,7 +943,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
 
     if (_isBulkImportVisible) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
+        if (!mounted || !TickerMode.of(context)) return;
         ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(
           _parsedBulkRows.isNotEmpty ? () => _handleSaveDraft(showToast: false) : null,
         );
@@ -998,7 +998,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || !TickerMode.of(context)) return;
       ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
       ref.read(unsavedChangesProvider.notifier).setDirty(false);
     });

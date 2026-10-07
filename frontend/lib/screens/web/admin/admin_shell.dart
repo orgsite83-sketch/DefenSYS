@@ -4,15 +4,16 @@ import 'package:go_router/go_router.dart';
 
 import '../../../navigation/admin_route_paths.dart';
 import '../../../navigation/app_router.dart';
+import '../../../navigation/web_section_navigation.dart';
 import '../../../services/academic_period_provider.dart';
 import '../../../services/auth_provider.dart';
 import '../../../services/unsaved_changes_provider.dart';
 import '../../../utils/unsaved_changes.dart';
 import '../../../widgets/confirm_dialog.dart';
-import '../../../services/dashboard_provider.dart';
 import '../../../services/academic/student_teams_provider.dart';
 import '../../../services/academic/curriculum_analytics_provider.dart';
 import '../../../services/admin/user_management_provider.dart';
+import '../../../services/academic/student_academic_records_provider.dart';
 import '../../../services/grading/grade_center_provider.dart';
 import '../../../services/grading/rubric_engine_provider.dart';
 import '../../../services/defense_board_provider.dart';
@@ -20,6 +21,7 @@ import '../../../services/defense_stages_provider.dart';
 import '../../../services/defense/defense_scheduler_provider.dart';
 import '../../../services/system_audit_provider.dart';
 import '../../../services/project_archive_provider.dart';
+import '../../../services/dashboard_provider.dart';
 import 'academic_periods_screen.dart';
 import 'admin_dashboard_content.dart';
 import 'audit_compliance_screen.dart';
@@ -51,21 +53,23 @@ class ActiveAdminSectionNotifier extends Notifier<DefensysAdminSection> {
 class AdminShell extends ConsumerStatefulWidget {
   final Map<String, dynamic>? userData;
   final Widget? routeChild;
+  final StatefulNavigationShell? navigationShell;
 
-  const AdminShell({super.key, this.userData, this.routeChild});
+  const AdminShell({
+    super.key,
+    this.userData,
+    this.routeChild,
+    this.navigationShell,
+  });
 
   @override
   ConsumerState<AdminShell> createState() => _AdminShellState();
 }
 
 class _AdminShellState extends ConsumerState<AdminShell> {
-  final Set<DefensysAdminSection> _loadedSections = {};
-  final Map<DefensysAdminSection, Widget> _cachedSectionWidgets = {};
-  final Map<DefensysAdminSection, DateTime> _lastFetchedAt = {};
-  static const _refreshCooldown = Duration(seconds: 45);
-
+  final _refreshGate = WebSectionRefreshGate();
+  final _sectionState = WebSectionState();
   DefensysAdminSection? _currentSection;
-  DefensysAdminSection? _optimisticSection;
 
   @override
   void initState() {
@@ -74,6 +78,12 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       ref.read(dashboardProvider('admin').notifier).fetchDashboardData();
       ref.read(academicPeriodProvider.notifier).fetchPeriods();
     });
+  }
+
+  @override
+  void dispose() {
+    _sectionState.dispose();
+    super.dispose();
   }
 
   @override
@@ -92,74 +102,35 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     final routeSection = AdminRoutes.sectionForLocation(location);
     final isProfile = location == '/admin/profile';
 
-    if (_optimisticSection != null && routeSection == _optimisticSection) {
-      _optimisticSection = null;
+    final activeSection =
+        routeSection ?? (isProfile ? null : DefensysAdminSection.overview);
+
+    if (activeSection != null &&
+        ref.read(activeAdminSectionProvider) != activeSection) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && ref.read(activeAdminSectionProvider) != activeSection) {
+          ref
+              .read(activeAdminSectionProvider.notifier)
+              .setSection(activeSection);
+        }
+      });
     }
 
-    final activeSection = _optimisticSection ??
-        routeSection ??
-        (isProfile ? null : DefensysAdminSection.overview);
-
-    if (activeSection != null) {
-      _loadedSections.add(activeSection);
-
-      if (_currentSection != activeSection) {
-        final oldSection = _currentSection;
-        _currentSection = activeSection;
-        if (oldSection != null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            _refreshSectionData(activeSection);
-          });
-        }
-      }
-
-      if (ref.read(activeAdminSectionProvider) != activeSection) {
+    if (activeSection != null && activeSection != _currentSection) {
+      _currentSection = activeSection;
+      if (_refreshGate.activate(AdminRoutes.pathForSection(activeSection))) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && ref.read(activeAdminSectionProvider) != activeSection) {
-            ref.read(activeAdminSectionProvider.notifier).setSection(activeSection);
+          if (mounted && _currentSection == activeSection) {
+            _refreshSectionData(activeSection);
           }
         });
       }
     }
 
-    final isDetail = _isAdminDetailRoute(routerState);
-    final activeIndex = activeSection != null
-        ? DefensysAdminSection.values.indexOf(activeSection)
-        : (_currentSection != null ? DefensysAdminSection.values.indexOf(_currentSection!) : 0);
-    final isImport = location == AdminRoutes.defenseScheduleBulkImport;
-
-    final shellContent = RepaintBoundary(
-      child: Stack(
-        children: [
-          IndexedStack(
-            index: activeIndex >= 0 ? activeIndex : 0,
-            children: DefensysAdminSection.values.map((section) {
-              if (!_loadedSections.contains(section)) {
-                return const SizedBox.shrink();
-              }
-              if (section == DefensysAdminSection.defenseBoard && isImport) {
-                return _buildSectionWidget(section);
-              }
-              return _cachedSectionWidgets.putIfAbsent(
-                section,
-                () => _buildSectionWidget(section),
-              );
-            }).toList(),
-          ),
-          if (widget.routeChild != null)
-            Positioned.fill(
-              child: Offstage(
-                offstage: !isDetail,
-                child: ColoredBox(
-                  color: DefensysUi.bgLight,
-                  child: widget.routeChild!,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
+    final shellContent =
+        widget.navigationShell ??
+        widget.routeChild ??
+        _buildSectionWidget(activeSection ?? DefensysAdminSection.overview);
 
     return DefensysAdminShell(
       activeSection: activeSection,
@@ -171,7 +142,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       scrollContent: false,
       onNavigate: (section) => _goToSection(section),
       onLogout: _logout,
-      child: shellContent,
+      child: WebSectionStateScope(notifier: _sectionState, child: shellContent),
     );
   }
 
@@ -188,79 +159,64 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     }
     ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
     ref.read(unsavedChangesProvider.notifier).setDirty(false);
-    if (section == _currentSection) {
-      _refreshSectionData(section, force: true);
+    if (hasUnsaved && _currentSection != null) {
+      final sourcePath = AdminRoutes.pathForSection(_currentSection!);
+      _sectionState.reset(sourcePath);
+      GoRouter.of(context).go(sourcePath);
+      // Let the source branch record its clean root before restoring the target.
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) return;
     }
-    setState(() {
-      _optimisticSection = section;
-    });
-    ref.read(activeAdminSectionProvider.notifier).setSection(section);
-    ref.read(appRouterProvider).go(AdminRoutes.pathForSection(section));
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (!resumeWebSection(
+      widget.navigationShell,
+      AdminRoutes.pathForSection(section),
+    )) {
+      ref.read(appRouterProvider).go(AdminRoutes.pathForSection(section));
+    }
   }
 
-  void _refreshSectionData(DefensysAdminSection section, {bool force = false}) {
-    final now = DateTime.now();
-    final last = _lastFetchedAt[section];
-    if (!force && last != null && now.difference(last) < _refreshCooldown) {
-      return;
-    }
-    _lastFetchedAt[section] = now;
-
+  // Root screens perform their first load. Revisit refreshes are centralized,
+  // throttled, and retain provider filters instead of resetting their defaults.
+  void _refreshSectionData(DefensysAdminSection section) {
     switch (section) {
       case DefensysAdminSection.overview:
-        ref.read(dashboardProvider('admin').notifier).fetchDashboardData(silent: true);
-        break;
+        ref
+            .read(dashboardProvider('admin').notifier)
+            .fetchDashboardData(silent: true);
       case DefensysAdminSection.academicPeriods:
         ref.read(academicPeriodProvider.notifier).fetchPeriods();
-        break;
       case DefensysAdminSection.userManagement:
       case DefensysAdminSection.studentAcademicRecords:
         ref.read(userManagementProvider.notifier).fetchUsers();
-        break;
+        ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
+        ref.read(academicPeriodProvider.notifier).fetchPeriods();
       case DefensysAdminSection.studentTeams:
-        ref.read(studentTeamsProvider.notifier).fetchTeams(level: 'Capstone');
-        break;
+        ref.read(studentTeamsProvider.notifier).fetchTeams();
       case DefensysAdminSection.gradeCenter:
         ref.read(gradeCenterProvider.notifier).fetchGrades();
-        break;
       case DefensysAdminSection.rubrics:
-        ref.read(rubricEngineProvider.notifier).fetchRubrics(status: '');
-        break;
+        ref.read(rubricEngineProvider.notifier).fetchRubrics();
       case DefensysAdminSection.defenseBoard:
         ref.read(defenseBoardProvider.notifier).fetchBoard();
-        break;
+        ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
       case DefensysAdminSection.scheduling:
         ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
-        break;
       case DefensysAdminSection.defenseStages:
         ref.read(defenseStagesProvider.notifier).fetchStages();
-        break;
       case DefensysAdminSection.curriculumAnalytics:
         ref.read(curriculumAnalyticsProvider.notifier).fetchAnalytics();
-        break;
       case DefensysAdminSection.auditCompliance:
         ref.read(systemAuditProvider.notifier).fetch();
-        break;
       case DefensysAdminSection.repositoryAudit:
         ref.read(repositoryAuditProvider.notifier).fetchEntries();
-        break;
     }
   }
 
-  /// Detail / nested routes use [routeChild] from go_router; top-level sections
-  /// are built locally so sidebar navigation works even when shell child is empty.
-  bool _isAdminDetailRoute(GoRouterState state) {
-    if (state.uri.path == '/admin/profile') return true;
-    final params = state.pathParameters;
-    return params.containsKey('teamId') ||
-        params.containsKey('gradeId') ||
-        params.containsKey('groupKey') ||
-        params.containsKey('stageId') ||
-        params.containsKey('rubricId') ||
-        params.containsKey('semesterId');
-  }
-
-  Widget _buildSectionWidget(DefensysAdminSection section) {
+  Widget _buildSectionWidget(
+    DefensysAdminSection section, {
+    bool isImport = false,
+  }) {
     switch (section) {
       case DefensysAdminSection.overview:
         return AdminDashboardContent(
@@ -289,8 +245,6 @@ class _AdminShellState extends ConsumerState<AdminShell> {
           onBack: () => _goToSection(DefensysAdminSection.defenseBoard),
         );
       case DefensysAdminSection.defenseBoard:
-        final isImport =
-            GoRouterState.of(context).uri.path == AdminRoutes.defenseScheduleBulkImport;
         return DefenseBoardScreen(initialBulkImport: isImport);
       case DefensysAdminSection.defenseStages:
         return const DefenseStagesScreen();
@@ -344,4 +298,24 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     final schoolYear = RegExp(r'\d{4}-\d{4}').firstMatch(label)?.group(0);
     return 'Active Sem: ${schoolYear ?? label}';
   }
+}
+
+/// Root screens live in the section Navigator, alongside their detail routes.
+/// Switching sidebar sections keeps both the root and its navigation stack.
+class AdminSectionContent extends StatelessWidget {
+  const AdminSectionContent({
+    super.key,
+    required this.section,
+    this.isImport = false,
+  });
+
+  final DefensysAdminSection section;
+  final bool isImport;
+
+  @override
+  Widget build(BuildContext context) => KeyedSubtree(
+    key: ValueKey(WebSectionStateScope.generationOf(context, AdminRoutes.pathForSection(section))),
+    child: context.findAncestorStateOfType<_AdminShellState>()!
+        ._buildSectionWidget(section, isImport: isImport),
+  );
 }

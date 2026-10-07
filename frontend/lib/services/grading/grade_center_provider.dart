@@ -169,6 +169,15 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     final nextStatus = status ?? state.status;
     final nextScope = scope ?? state.scope;
 
+    if (state.isLoading &&
+        nextSearch == state.search &&
+        nextYearLevel == state.yearLevel &&
+        nextStatus == state.status &&
+        nextScope == state.scope &&
+        successMessage == null) {
+      return;
+    }
+
     state = state.copyWith(
       isLoading: state.grades.isEmpty,
       isSaving: false,

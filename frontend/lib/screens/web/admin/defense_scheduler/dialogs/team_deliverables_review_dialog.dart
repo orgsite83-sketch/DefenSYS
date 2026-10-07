@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/universal_file_viewer.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import '../models/schedule_import_models.dart';
@@ -16,6 +17,8 @@ class TeamDeliverablesReviewDialog {
     required String stageLabel,
     required String scope,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
           scope: scope,
           selectedStage: stageLabel,
@@ -38,17 +41,38 @@ class TeamDeliverablesReviewDialog {
                 .toList();
 
             return AlertDialog(
-              title: Text('${team['name']} - Deliverables Review'),
+              backgroundColor: isDark ? DefensysTokens.mistSurface : Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
+              ),
+              title: Text(
+                '${team['name']} - Deliverables Review',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? DefensysTokens.textPrimaryDark : AppColors.textPrimary,
+                ),
+              ),
               content: SizedBox(
                 width: 600,
                 height: 400,
                 child: delState.isLoading
-                    ? const Center(child: CircularProgressIndicator(color: AppColors.maroon))
+                    ? Center(child: CircularProgressIndicator(color: isDark ? DefensysTokens.mistMaroon : AppColors.maroon))
                     : deliverables.isEmpty
-                        ? const Center(child: Text('No deliverables configured for this stage.'))
+                        ? Center(
+                            child: Text(
+                              'No deliverables configured for this stage.',
+                              style: TextStyle(
+                                color: isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
+                              ),
+                            ),
+                          )
                         : ListView.separated(
                             itemCount: deliverables.length,
-                            separatorBuilder: (_, __) => const Divider(),
+                            separatorBuilder: (_, __) => Divider(
+                              color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
+                            ),
                             itemBuilder: (context, index) {
                               final d = deliverables[index];
                               final label = d['label'] ?? '';
@@ -57,18 +81,18 @@ class TeamDeliverablesReviewDialog {
                               final uploaded = d['uploaded'] == true;
                               final submission = d['submission'] as Map?;
 
-                              Color statusColor = Colors.grey;
+                              Color statusColor = isDark ? DefensysTokens.textSecondaryDark : Colors.grey;
                               String statusText = 'Not Submitted';
                               if (uploaded && submission != null) {
                                 final status = submission['status']?.toString() ?? 'pending';
                                 if (status == 'accepted') {
-                                  statusColor = Colors.green;
+                                  statusColor = isDark ? const Color(0xFF34D399) : Colors.green;
                                   statusText = 'Accepted';
                                 } else if (status == 'rejected') {
-                                  statusColor = Colors.red;
+                                  statusColor = isDark ? const Color(0xFFF87171) : Colors.red;
                                   statusText = 'Rejected';
                                 } else {
-                                  statusColor = Colors.orange;
+                                  statusColor = isDark ? const Color(0xFFFBBF24) : Colors.orange;
                                   statusText = 'Pending Review';
                                 }
                               }
@@ -86,7 +110,11 @@ class TeamDeliverablesReviewDialog {
                                     Expanded(
                                       child: Text(
                                         label,
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 14,
+                                          color: isDark ? DefensysTokens.textPrimaryDark : AppColors.textPrimary,
+                                        ),
                                       ),
                                     ),
                                     if (required) ...[
@@ -94,12 +122,23 @@ class TeamDeliverablesReviewDialog {
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFFFEECEC),
+                                          color: isDark
+                                              ? const Color(0xFF7F1D1D).withValues(alpha: 0.35)
+                                              : const Color(0xFFFEECEC),
                                           borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(
+                                            color: isDark
+                                                ? const Color(0xFFDC2626).withValues(alpha: 0.45)
+                                                : const Color(0xFFFECACA),
+                                          ),
                                         ),
-                                        child: const Text(
+                                        child: Text(
                                           'Required',
-                                          style: TextStyle(color: Colors.red, fontSize: 9, fontWeight: FontWeight.bold),
+                                          style: TextStyle(
+                                            color: isDark ? const Color(0xFFFCA5A5) : Colors.red,
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
                                       ),
                                     ],
@@ -109,7 +148,13 @@ class TeamDeliverablesReviewDialog {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     const SizedBox(height: 4),
-                                    Text('Type: ${type == 'pre' ? 'Pre-Defense' : 'Post-Defense'}', style: const TextStyle(fontSize: 12)),
+                                    Text(
+                                      'Type: ${type == 'pre' ? 'Pre-Defense' : 'Post-Defense'}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
+                                      ),
+                                    ),
                                     if (uploaded &&
                                         submission != null &&
                                         submission['feedback'] != null &&
@@ -117,7 +162,11 @@ class TeamDeliverablesReviewDialog {
                                       const SizedBox(height: 4),
                                       Text(
                                         'Feedback: ${submission['feedback']}',
-                                        style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.red),
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontStyle: FontStyle.italic,
+                                          color: isDark ? const Color(0xFFFCA5A5) : Colors.red,
+                                        ),
                                       ),
                                     ],
                                   ],
@@ -126,15 +175,19 @@ class TeamDeliverablesReviewDialog {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     if (uploaded) ...[
-                                      const Icon(Icons.remove_red_eye_rounded, size: 16, color: AppColors.maroon),
+                                      Icon(
+                                        Icons.remove_red_eye_rounded,
+                                        size: 16,
+                                        color: isDark ? DefensysTokens.mistMaroonText : AppColors.maroon,
+                                      ),
                                       const SizedBox(width: 8),
                                     ],
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                       decoration: BoxDecoration(
-                                        color: statusColor.withValues(alpha: 0.12),
+                                        color: statusColor.withValues(alpha: isDark ? 0.22 : 0.12),
                                         borderRadius: BorderRadius.circular(20),
-                                        border: Border.all(color: statusColor),
+                                        border: Border.all(color: statusColor.withValues(alpha: isDark ? 0.6 : 1.0)),
                                       ),
                                       child: Text(
                                         statusText,
@@ -158,6 +211,9 @@ class TeamDeliverablesReviewDialog {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    foregroundColor: isDark ? DefensysTokens.mistMaroonText : AppColors.maroon,
+                  ),
                   child: const Text('Close'),
                 ),
               ],

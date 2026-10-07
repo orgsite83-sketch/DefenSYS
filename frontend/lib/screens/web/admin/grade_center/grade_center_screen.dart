@@ -8,7 +8,6 @@ import '../../../../navigation/admin_route_paths.dart';
 import '../../../../services/auth_provider.dart';
 import '../../../../services/defense_stages_provider.dart';
 import '../../../../services/grade_center_provider.dart';
-import '../admin_shell.dart';
 import 'grade_center_capstone_table.dart';
 import 'grade_center_event_teams_screen.dart';
 import 'grade_center_shared.dart';
@@ -117,30 +116,6 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
       });
     });
 
-    ref.listen(activeAdminSectionProvider, (previous, next) {
-      if (previous == DefensysAdminSection.gradeCenter &&
-          next != DefensysAdminSection.gradeCenter) {
-        setState(() {
-          _eventGroupKey = null;
-          _eventScope = null;
-          _eventStageLabel = null;
-          _eventTitle = null;
-          _teamDetailGradeId = null;
-        });
-      }
-      if (next == DefensysAdminSection.gradeCenter &&
-          previous != DefensysAdminSection.gradeCenter) {
-        final user = ref.read(authProvider).user;
-        final isAdmin = _isGradeCenterAdmin(user);
-        ref.read(gradeCenterProvider.notifier).fetchGrades(
-              scope: _effectiveScope(state),
-            );
-        if (isAdmin) {
-          _ensureDefenseStagesLoaded();
-        }
-      }
-    });
-
     final onAdminGradeCenter =
         GoRouterState.of(context).uri.path == AdminRoutes.gradeCenter;
 
@@ -179,6 +154,17 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     required String stageLabel,
     required String title,
   }) {
+    if (GoRouterState.of(context).uri.path.startsWith('/faculty/')) {
+      context.push(
+        FacultyRoutes.gradeEventTeams(
+          groupKey,
+          scope: scope,
+          stageLabel: stageLabel,
+          title: title,
+        ),
+      );
+      return;
+    }
     if (GoRouterState.of(context).uri.path.startsWith('/admin/')) {
       context.push(
         AdminRoutes.gradeEventTeams(
@@ -215,6 +201,12 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
   }
 
   void _openTeamDetail(int gradeId, bool isLocked) {
+    if (GoRouterState.of(context).uri.path.startsWith('/faculty/')) {
+      context.push(
+        '${FacultyRoutes.gradeDetail(gradeId)}?locked=${isLocked ? 1 : 0}',
+      );
+      return;
+    }
     if (GoRouterState.of(context).uri.path.startsWith('/admin/')) {
       context.push(
         '${AdminRoutes.gradeDetail(gradeId)}?locked=${isLocked ? 1 : 0}',

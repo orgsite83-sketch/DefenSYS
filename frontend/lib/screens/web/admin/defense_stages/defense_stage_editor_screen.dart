@@ -64,6 +64,7 @@ class _DefenseStageEditorScreenState
   Map<String, dynamic>? _stage;
   bool _isDirty = false;
   UnsavedChangesNotifier? _unsavedNotifier;
+  UnsavedChangesSaveDraftNotifier? _unsavedDraftNotifier;
 
   int? _panelRubricId;
   String? _panelRubricName;
@@ -127,6 +128,7 @@ class _DefenseStageEditorScreenState
   void initState() {
     super.initState();
     _unsavedNotifier = ref.read(unsavedChangesProvider.notifier);
+    _unsavedDraftNotifier = ref.read(unsavedChangesSaveDraftProvider.notifier);
     _activeTab = widget.initialTab.clamp(0, 2);
     if (widget.initialStage != null) {
       _applyStage(widget.initialStage!);
@@ -148,7 +150,7 @@ class _DefenseStageEditorScreenState
       (item['_labelController'] as TextEditingController?)?.dispose();
       (item['_templateController'] as TextEditingController?)?.dispose();
     }
-    _unsavedNotifier?.setDirty(false);
+    releaseUnsavedChangesAfterFrame(_unsavedNotifier, _unsavedDraftNotifier);
     super.dispose();
   }
 

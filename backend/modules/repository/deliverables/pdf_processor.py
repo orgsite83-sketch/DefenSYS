@@ -12,6 +12,31 @@ from typing import Dict, List
 logger = logging.getLogger(__name__)
 
 
+def invalidate_changed_pdf_cache(instance, save_kwargs):
+    """A replacement or removed file cannot keep the previous file's ML text.
+
+    The upload processors run normally after this invalidation. Include the
+    derived fields in partial saves so an update_fields=['file'] is safe too.
+    """
+    if not instance.pk:
+        return
+    update_fields = save_kwargs.get('update_fields')
+    if update_fields is not None and 'file' not in update_fields:
+        return
+    old_name = type(instance)._base_manager.filter(pk=instance.pk).values_list('file', flat=True).first()
+    field = instance.file
+    changed = (field.name or '') != (old_name or '') or (bool(field) and not field._committed)
+    if not changed:
+        return
+    fields = ['extracted_text', 'topics', 'summary', 'category', 'category_confidence', 'classification']
+    instance.extracted_text = instance.summary = instance.category = ''
+    instance.topics = []
+    instance.category_confidence = None
+    instance.classification = {}
+    if update_fields is not None:
+        save_kwargs['update_fields'] = set(update_fields) | set(fields)
+
+
 def extract_pdf_from_file_object(file_obj, file_name: str = '', classify: bool = False) -> Dict[str, any]:
     """
     Extract PDF content from a Django UploadedFile or storage file handle.
