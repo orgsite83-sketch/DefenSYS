@@ -117,6 +117,9 @@ class DefenseSchedule(models.Model):
         on_delete=models.SET_NULL,
         help_text='Faculty assigned as documenter for this capstone defense.',
     )
+    minutes_required = models.BooleanField(null=True, blank=True, default=None)
+    minutes_deliverable_id = models.CharField(max_length=20, blank=True, default='')
+    minutes_deliverable_label = models.CharField(max_length=180, blank=True, default='')
     panelists = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         related_name='panel_defense_schedules',
@@ -142,8 +145,19 @@ class DefenseSchedule(models.Model):
             return self.event_name
         return self.defense_stage.label if self.defense_stage else ''
 
+    @property
+    def requires_minutes(self):
+        if self.scope != self.SCOPE_CAPSTONE:
+            return False
+        if self.minutes_required is not None:
+            return self.minutes_required
+        # Preserve pre-feature assignments and their signed records.
+        return bool(self.documenter_id or (self.defense_stage_id and self.defense_stage.minutes_required))
+
     def clean(self):
         errors = {}
+        if self.requires_minutes and not self.documenter_id:
+            errors['documenter'] = 'Assign a documenter: this stage requires signed minutes.'
         if self.slot_duration < 15:
             errors['slot_duration'] = 'Slot duration must be at least 15 minutes.'
         if not self.room.strip():
@@ -192,10 +206,19 @@ class DefenseSchedule(models.Model):
         if is_new:
             self.project_version = self.team.project_version
             self.project_title_snapshot = self.team.project_title
+            if self.scope == self.SCOPE_CAPSTONE and self.defense_stage_id:
+                self.minutes_required = self.defense_stage.minutes_required
+                self.minutes_deliverable_id = self.defense_stage.minutes_deliverable_id
+                self.minutes_deliverable_label = self.defense_stage.minutes_deliverable_label or f'Signed Minutes - {self.defense_stage.label}'
         old_status = None
         if not is_new:
             try:
-                old_status = DefenseSchedule.objects.filter(pk=self.pk).values_list('status', flat=True).first()
+                previous = DefenseSchedule.objects.filter(pk=self.pk).values('status', 'defense_stage_id').first()
+                old_status = previous['status'] if previous else None
+                if previous and previous['defense_stage_id'] != self.defense_stage_id and self.scope == self.SCOPE_CAPSTONE and self.defense_stage_id:
+                    self.minutes_required = self.defense_stage.minutes_required
+                    self.minutes_deliverable_id = self.defense_stage.minutes_deliverable_id
+                    self.minutes_deliverable_label = self.defense_stage.minutes_deliverable_label or f'Signed Minutes - {self.defense_stage.label}'
             except Exception:
                 pass
 

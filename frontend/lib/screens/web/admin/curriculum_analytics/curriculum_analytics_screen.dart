@@ -164,8 +164,8 @@ class _CurriculumAnalyticsScreenState
             ),
             child: Align(
               alignment: Alignment.topCenter,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1480),
+              child: SizedBox(
+                width: double.infinity,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -221,7 +221,7 @@ class _CurriculumAnalyticsScreenState
                                 q,
                                 _tab,
                               ),
-                              child: const Text('Export meeting report'),
+                              child: const Text('Export analytics report'),
                             ),
                           ],
                         ),

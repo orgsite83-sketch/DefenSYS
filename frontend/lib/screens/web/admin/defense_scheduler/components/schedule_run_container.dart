@@ -353,8 +353,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                     activeStageOrEvent.toLowerCase() &&
                 isPendingScheduled;
           }
-        },
-      );
+        });
       if (alreadyScheduled) return false;
       return hasPrerequisites
           ? isTeamStageReady(team, activeStageOrEvent)
@@ -426,6 +425,14 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         ),
       ],
     );
+  }
+
+  bool get _requiresMinutes {
+    if (widget.scope != 'capstone') return false;
+    final stage = widget.state.defenseStages
+        .where((s) => asInt(s['id']) == widget.stageId)
+        .firstOrNull;
+    return stage?['minutes_required'] == true;
   }
 
   List<Map<String, dynamic>> _rubricsForContext() {
@@ -578,6 +585,19 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       return null;
     }
 
+    if (_requiresMinutes &&
+        _sessions
+            .where((s) => s.teamIds.isNotEmpty)
+            .any(
+              (s) =>
+                  (s.customStaff ? s.documenter : widget.documenterId) == null,
+            )) {
+      showValidationToast(
+        context,
+        'Assign a documenter to every session. This stage requires signed minutes.',
+      );
+      return null;
+    }
     final effectiveChair = _effectiveChairId;
     final payload = <String, dynamic>{
       'scope': widget.scope,
@@ -595,9 +615,13 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       if (_guestExpiry != null)
         'guest_access_expires_at': _guestExpiry!.toUtc().toIso8601String(),
       if (effectiveChair != null) 'chair_panelist_id': effectiveChair,
-      if (widget.scope == 'capstone' && widget.documenterId != null)
+      if (_requiresMinutes && widget.documenterId != null)
         'documenter_id': widget.documenterId,
-      'sessions': _sessions.map((session) => session.toPayload()).toList(),
+      'sessions': _sessions.map((session) {
+        final payload = session.toPayload();
+        if (!_requiresMinutes) payload.remove('documenter_id');
+        return payload;
+      }).toList(),
     };
 
     if (widget.scope == 'pit') {
@@ -1032,8 +1056,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                     Icon(
                       Icons.open_in_new_rounded,
                       size: 13,
-                      color: textColor,
-                    ),
+                      color: textColor),
                   ],
                 ),
               ),
@@ -1354,6 +1377,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             documenters: state.documenters,
             externals: ref.watch(externalEvaluatorProvider).approved,
             capstone: widget.scope == 'capstone',
+            minutesRequired: _requiresMinutes,
             enabled: !busy,
             dateField: (controller) =>
                 _scheduleDateField(controller: controller),
@@ -1501,14 +1525,14 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           onExpiryChanged: (expiry) => setState(() => _guestExpiry = expiry),
           enabled: !busy,
         ),
-        if (widget.scope == 'capstone') ...[
+        if (_requiresMinutes) ...[
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 20),
             child: Divider(height: 1, color: DefensysTokens.borderOf(context)),
           ),
           _setupHeading(
             'Documenter',
-            'Optional. Records the minutes for this batch.',
+            'Required by this stage. Prepares the official signed minutes.',
           ),
           const SizedBox(height: 12),
           SchedulerPeoplePicker(
@@ -2029,7 +2053,8 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                       ? (session == null
                           ? const Color(0xFF7F1D1D).withValues(alpha: 0.25)
                           : (isFull
-                              ? const Color(0xFF064E3B).withValues(alpha: 0.35)
+                              ? const Color(0xFF064E3B,
+                                    ).withValues(alpha: 0.35)
                               : DefensysTokens.mistInputFill))
                       : (session == null
                           ? const Color(0xFFFEF3F2)

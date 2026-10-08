@@ -6,6 +6,7 @@ from .views import (
     MinutesSignAdviserView,
     MinutesSignChairmanView,
     MinutesPdfView,
+    MinutesPreviewView,
 )
 
 urlpatterns = [
@@ -14,5 +15,6 @@ urlpatterns = [
     path('<int:schedule_id>/submit/', MinutesSubmitView.as_view(), name='minutes_submit'),
     path('<int:schedule_id>/sign-adviser/', MinutesSignAdviserView.as_view(), name='minutes_sign_adviser'),
     path('<int:schedule_id>/sign-chairman/', MinutesSignChairmanView.as_view(), name='minutes_sign_chairman'),
+    path('<int:schedule_id>/preview/', MinutesPreviewView.as_view(), name='minutes_preview'),
     path('<int:schedule_id>/pdf/', MinutesPdfView.as_view(), name='minutes_pdf'),
 ]

@@ -124,6 +124,9 @@ class DefenseStage(models.Model):
         default=False,
         help_text='If true, this stage is an oral presentation, pitch, or demo day with no file uploads required.',
     )
+    minutes_required = models.BooleanField(default=False)
+    minutes_deliverable_id = models.CharField(max_length=20, default='MINUTES')
+    minutes_deliverable_label = models.CharField(max_length=180, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

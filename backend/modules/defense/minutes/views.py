@@ -104,6 +104,9 @@ class MinutesDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+        if not schedule.requires_minutes and not schedule.documenter_id:
+            return Response({'detail': 'Minutes are not required for this session.'}, status=400)
+
         with transaction.atomic():
             # Re-check inside transaction to avoid race condition
             minutes = DefenseMinutes.objects.filter(schedule=schedule).first()
@@ -438,7 +441,11 @@ class MinutesPdfView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
             
-        if not has_minutes_view_permission(request.user, schedule):
+        team_member = bool(schedule.team and (
+            schedule.team.leader_id == request.user.pk
+            or schedule.team.memberships.filter(student=request.user).exists()
+        ))
+        if not has_minutes_view_permission(request.user, schedule) and not team_member:
             return Response(
                 {"detail": "You do not have permission to download the minutes for this defense schedule."},
                 status=status.HTTP_403_FORBIDDEN
@@ -476,3 +483,22 @@ class MinutesPdfView(APIView):
                 {"detail": f"Failed to retrieve PDF file: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class MinutesPreviewView(APIView):
+    """Read-only rendering; never signs or stores a preview as an official PDF."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, schedule_id):
+        schedule = get_object_or_404(DefenseSchedule, pk=schedule_id)
+        if not has_minutes_view_permission(request.user, schedule):
+            return Response({'detail': 'You cannot preview minutes for this defense.'}, status=403)
+        minutes = get_object_or_404(DefenseMinutes.objects.select_related(
+            'schedule__team', 'documenter_signed_by', 'adviser_signed_by', 'chairman_signed_by',
+        ).prefetch_related('panelist_comments'), schedule=schedule)
+        if minutes.status == DefenseMinutes.STATUS_COMPLETED and minutes.pdf_file:
+            return MinutesPdfView().get(request, schedule_id)
+        response = HttpResponse(generate_minutes_pdf(minutes, draft=True), content_type='application/pdf')
+        response['Content-Disposition'] = 'inline; filename="minutes_preview.pdf"'
+        response['Cache-Control'] = 'no-store'
+        return response

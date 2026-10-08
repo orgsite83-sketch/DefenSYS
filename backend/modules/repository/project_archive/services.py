@@ -877,6 +877,9 @@ def scoped_entries(user, request=None, *, include_ml=False, include_audit_trail=
         entries.extend(capstone_entry_payload(submission, **payload_kwargs))
     for submission in pit_submissions:
         entries.extend(capstone_entry_payload(submission, **payload_kwargs))
+    if scope['scope'] == 'admin':
+        from defense.minutes.requirements import signed_minutes_archive_entries
+        entries.extend(signed_minutes_archive_entries())
     if scope['scope'] != 'admin':
         for entry in entries:
             if entry.get('deliverable_type') == DeliverableSubmission.TYPE_POST and entry.get('status') == 'Approved':

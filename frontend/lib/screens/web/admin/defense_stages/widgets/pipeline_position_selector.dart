@@ -6,7 +6,7 @@ import '../../../../../theme/defensys_tokens.dart';
 /// Features:
 /// 1. Real stage names on all cards instead of abstract numbered boxes.
 /// 2. Tactile drag-and-drop: pick up the active stage and drop it anywhere along the pipeline.
-/// 3. Visual drop zones with clear feedback for allowed slots vs locked completed milestones.
+/// 3. Visual drop zones with clear feedback for allowed slots vs locked milestones.
 /// 4. Quick nudge arrows (◀ Move Earlier / Move Later ▶) for effortless 1-click repositioning.
 /// 5. Direct click-to-place on any unlocked slot.
 /// 6. Live pipeline sequence breadcrumb preview.
@@ -276,7 +276,7 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                       _buildSlotDropTarget(
                         targetSlot: 1,
                         isLockedSlot: 1 < widget.minPosition,
-                        lockedMessage: 'Cannot place before completed milestone',
+                        lockedMessage: 'Cannot place before a locked stage',
                       ),
                       _buildConnector(isPast: false),
                     ],
@@ -775,7 +775,7 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
           const SizedBox(height: 2),
           Text(
             isItemLocked
-                ? 'Locked (Completed)'
+                ? 'Configuration locked'
                 : (isHovered ? 'Release to place here' : 'Click or drop to place here'),
             style: TextStyle(
               fontSize: 9.5,
@@ -796,7 +796,7 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
     // If item is locked, user cannot drop or click on it
     if (isItemLocked) {
       return Tooltip(
-        message: 'Completed stage is finalized. Cannot place before or replace this position.',
+        message: 'This stage is locked because of defense activity. Cannot place before or replace this position.',
         child: content,
       );
     }
@@ -927,7 +927,7 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
 
     if (isLockedSlot) {
       return Tooltip(
-        message: lockedMessage ?? 'Cannot place before completed milestone',
+        message: lockedMessage ?? 'Cannot place before a locked stage',
         child: targetBox,
       );
     }

@@ -14,6 +14,7 @@ class SchedulerSessionEditor extends StatelessWidget {
     required this.documenters,
     required this.externals,
     required this.capstone,
+    this.minutesRequired = false,
     required this.enabled,
     required this.onChanged,
     required this.onCustomize,
@@ -29,6 +30,7 @@ class SchedulerSessionEditor extends StatelessWidget {
   final int number;
   final List<Map<String, dynamic>> faculty, documenters, externals;
   final bool capstone, enabled;
+  final bool minutesRequired;
   final VoidCallback onChanged, onCustomize;
   final VoidCallback? onRemove;
   final Widget Function(TextEditingController) dateField, timeField;
@@ -242,10 +244,10 @@ class SchedulerSessionEditor extends StatelessWidget {
               },
             ),
           ),
-          if (capstone) ...[
+          if (capstone && minutesRequired) ...[
             const SizedBox(height: 16),
             _field(
-              'Documenter',
+              'Documenter *',
               SchedulerPeoplePicker(
                 people: documenters
                     .where((p) => !draft.panelists.contains(p['id']))
@@ -264,7 +266,7 @@ class SchedulerSessionEditor extends StatelessWidget {
         ] else ...[
           const SizedBox(height: 6),
           Text(
-            'Uses the shared faculty, chair, external evaluators${capstone ? ' and documenter' : ''}.',
+            'Uses the shared faculty, chair, external evaluators${minutesRequired ? ' and documenter' : ''}.',
             style: TextStyle(
               fontSize: 12,
               color: DefensysTokens.textSecondaryOf(context),

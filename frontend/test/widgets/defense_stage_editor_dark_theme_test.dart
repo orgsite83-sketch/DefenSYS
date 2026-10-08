@@ -60,7 +60,7 @@ void main() {
 
     expect(find.text('Active Stage'), findsOneWidget);
     expect(find.text('Project Proposal'), findsWidgets);
-    expect(find.text('Locked (Completed)'), findsOneWidget);
+    expect(find.text('Configuration locked'), findsOneWidget);
     expect(find.text('Live Pipeline Flow:'), findsOneWidget);
   });
 

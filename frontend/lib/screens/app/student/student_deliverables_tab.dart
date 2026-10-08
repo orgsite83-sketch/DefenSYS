@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/defense/system_defense_records.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
@@ -219,6 +220,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final endorsed = selectedStage['endorsed'] == true;
     final pre = _deliverables(selectedStage, 'pre');
     final vault = _deliverables(selectedStage, 'post');
+    final systemRecords = _deliverables(selectedStage, 'system');
 
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -380,7 +382,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                                 ),
                                 SizedBox(height: 3),
                                 Text(
-                                  'No document submissions are required for this milestone.',
+                                  'No student file submissions are required for this milestone.',
                                   style: TextStyle(
                                     fontSize: 12.5,
                                     color: Color(0xFF166534),
@@ -505,6 +507,10 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     );
                   },
                 ),
+                if (systemRecords.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  SystemDefenseRecords(items: systemRecords),
+                ],
               ],
             ],
           );

@@ -30,6 +30,65 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
   final Map<int, TextEditingController> _controllers = {};
   bool _isSavingDraft = false;
   bool _isSubmitting = false;
+  int _editVersion = 0, _savedVersion = 0;
+  bool _hydrating = false, _saveFailed = false;
+  Future<bool>? _autoSavePending;
+  DateTime? _lastSavedAt;
+
+  void _queueAutoSave() {
+    if (_hydrating) return;
+    _editVersion++;
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = Timer(const Duration(seconds: 1), _autoSave);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _autoSave() async {
+    if (_autoSavePending != null || _isSavingDraft || _isSubmitting) return;
+    final minutes = ref.read(documenterProvider).activeMinutes;
+    final schedule = minutes?['schedule'] as Map?;
+    if (minutes?['status'] != 'draft' ||
+        schedule?['documenter'] != ref.read(authProvider).user?['id']) {
+      return;
+    }
+    final scheduleId = widget.scheduleId;
+    final version = _editVersion;
+    final payload = _controllers.entries
+        .map((e) => {'id': e.key, 'comments': e.value.text})
+        .toList();
+    final pending = ref
+        .read(documenterProvider.notifier)
+        .autoSaveComments(scheduleId, payload);
+    _autoSavePending = pending;
+    if (mounted) setState(() {});
+    final saved = await pending;
+    if (!mounted || scheduleId != widget.scheduleId) return;
+    _autoSavePending = null;
+    setState(() {
+      _saveFailed = !saved;
+      if (saved) {
+        _savedVersion = version;
+        _lastSavedAt = DateTime.now();
+      }
+    });
+    if (saved && _editVersion > _savedVersion) {
+      _autoSaveTimer = Timer(const Duration(seconds: 1), _autoSave);
+    }
+  }
+
+  Future<void> _leaveForm() async {
+    if (_editVersion > _savedVersion && !await _saveDraft(silent: true)) {
+      if (mounted) {
+        showErrorToast(
+          context,
+          'Save failed. Your unsaved notes are still here.',
+        );
+      }
+      return;
+    }
+    if (mounted) widget.onBack();
+  }
+
   Timer? _autoSaveTimer;
   Timer? _loadingTimeoutTimer;
   bool _showLoadingTimeout = false;
@@ -49,6 +108,15 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.scheduleId != widget.scheduleId) {
       _cancelTimers();
+      for (final controller in _controllers.values) {
+        controller.dispose();
+      }
+      _controllers.clear();
+      _editVersion = _savedVersion = 0;
+      _lastSavedAt = null;
+      _saveFailed = false;
+      _autoSavePending = null;
+      _isSavingDraft = _isSubmitting = false;
       Future.microtask(() {
         if (mounted) {
           _fetchDetail();
@@ -74,6 +142,7 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
   }
 
   Future<void> _fetchDetail() async {
+    final scheduleId = widget.scheduleId;
     _loadingTimeoutTimer?.cancel();
     _loadingTimeoutTimer = Timer(const Duration(seconds: 10), () {
       if (mounted) {
@@ -82,12 +151,14 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
     });
 
     try {
-      await ref.read(documenterProvider.notifier).fetchMinutesDetail(widget.scheduleId);
+      await ref
+          .read(documenterProvider.notifier)
+          .fetchMinutesDetail(scheduleId);
     } catch (_) {
       // Error is caught and stored in provider state
     } finally {
-      _loadingTimeoutTimer?.cancel();
-      if (mounted) {
+      if (mounted && widget.scheduleId == scheduleId) {
+        _loadingTimeoutTimer?.cancel();
         setState(() {
           _showLoadingTimeout = false;
         });
@@ -103,38 +174,49 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
     final comments = minutes['panelist_comments'] as List?;
     if (comments == null) return;
 
+    _hydrating = true;
     for (final comment in comments) {
       final id = comment['id'] as int;
       final text = comment['comments']?.toString() ?? '';
       if (!_controllers.containsKey(id)) {
-        _controllers[id] = TextEditingController(text: text);
+        _controllers[id] = TextEditingController(text: text)
+          ..addListener(_queueAutoSave);
       } else {
         _controllers[id]!.text = text;
       }
     }
+    _hydrating = false;
   }
 
-  Future<void> _saveDraft({bool silent = false}) async {
-    if (_isSavingDraft) return;
+  Future<bool> _saveDraft({bool silent = false}) async {
+    if (_isSavingDraft) return false;
+    final scheduleId = widget.scheduleId;
+    _autoSaveTimer?.cancel();
+    if (_autoSavePending != null) await _autoSavePending;
+    if (!mounted || widget.scheduleId != scheduleId) return false;
+    final version = _editVersion;
 
     setState(() {
       _isSavingDraft = true;
     });
 
     final commentsPayload = _controllers.entries.map((e) {
-      return {
-        'id': e.key,
-        'comments': e.value.text,
-      };
+      return {'id': e.key, 'comments': e.value.text};
     }).toList();
 
     final ok = await ref
         .read(documenterProvider.notifier)
-        .saveComments(widget.scheduleId, commentsPayload);
+        .saveComments(scheduleId, commentsPayload);
+    if (!mounted || widget.scheduleId != scheduleId) return false;
 
     if (mounted) {
       setState(() {
         _isSavingDraft = false;
+        _saveFailed = !ok;
+        if (ok) {
+          _savedVersion = version;
+          _lastSavedAt = DateTime.now();
+        }
       });
       if (!silent) {
         if (ok) {
@@ -144,6 +226,7 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
         }
       }
     }
+    return ok;
   }
 
   Future<void> _submitAndSign() async {
@@ -154,7 +237,9 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Incomplete Comments'),
-            content: const Text('All panelist comments must be filled before submitting and signing the minutes.'),
+            content: const Text(
+              'All panelist comments must be filled before submitting and signing the minutes.',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
@@ -172,10 +257,22 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
     });
 
     // 1. Save current comments first
-    await _saveDraft(silent: true);
+    final saved = await _saveDraft(silent: true);
+    if (!saved || !mounted) {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+        showErrorToast(
+          context,
+          'Save failed. Minutes have not been signed. Please try again.',
+        );
+      }
+      return;
+    }
 
     // 2. Submit minutes (signs as documenter)
-    final ok = await ref.read(documenterProvider.notifier).submitMinutes(widget.scheduleId);
+    final ok = await ref
+        .read(documenterProvider.notifier)
+        .submitMinutes(widget.scheduleId);
 
     if (mounted) {
       setState(() {
@@ -208,7 +305,9 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
       _isSubmitting = true;
     });
 
-    final ok = await ref.read(documenterProvider.notifier).adviserSign(widget.scheduleId);
+    final ok = await ref
+        .read(documenterProvider.notifier)
+        .adviserSign(widget.scheduleId);
 
     if (mounted) {
       setState(() {
@@ -226,21 +325,58 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
       _isSubmitting = true;
     });
 
-    final ok = await ref.read(documenterProvider.notifier).chairmanSign(widget.scheduleId);
+    final ok = await ref
+        .read(documenterProvider.notifier)
+        .chairmanSign(widget.scheduleId);
 
     if (mounted) {
       setState(() {
         _isSubmitting = false;
       });
       if (ok) {
-        showSuccessToast(context, 'Signed as Chairman successfully. PDF generated.');
+        showSuccessToast(
+          context,
+          'Signed as Chairman successfully. PDF generated.',
+        );
         _fetchDetail();
       }
     }
   }
 
+  Future<void> _previewPdf() async {
+    final minutes = ref.read(documenterProvider).activeMinutes;
+    final schedule = minutes?['schedule'] as Map?;
+    if (minutes?['status'] == 'draft' &&
+        schedule?['documenter'] == ref.read(authProvider).user?['id']) {
+      if (!await _saveDraft(silent: true) || !mounted) {
+        if (mounted) {
+          showErrorToast(
+            context,
+            'Save your changes successfully before previewing.',
+          );
+        }
+        return;
+      }
+    }
+    final bytes = await ref
+        .read(documenterProvider.notifier)
+        .previewPdf(widget.scheduleId);
+    if (!mounted) return;
+    if (bytes == null) {
+      showErrorToast(context, 'Could not load the PDF preview.');
+      return;
+    }
+    await viewPdfInDialog(
+      context: context,
+      pdfBytes: bytes,
+      fileName: 'minutes_preview.pdf',
+    );
+  }
+
   Future<void> _viewPdf({int? revisionId}) async {
-    final bytes = await ref.read(documenterProvider.notifier).downloadPdf(widget.scheduleId, revisionId: revisionId);
+    final bytes = await ref
+        .read(documenterProvider.notifier)
+        .downloadPdf(widget.scheduleId, revisionId: revisionId);
     if (bytes != null && mounted) {
       final minutes = ref.read(documenterProvider).activeMinutes;
       final team = minutes?['team_name']?.toString() ?? 'team';
@@ -248,7 +384,8 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
       await viewPdfInDialog(
         context: context,
         pdfBytes: bytes,
-        fileName: 'minutes_${team.replaceAll(' ', '_')}_${stage.replaceAll(' ', '_')}.pdf',
+        fileName:
+            'minutes_${team.replaceAll(' ', '_')}_${stage.replaceAll(' ', '_')}.pdf',
       );
     } else {
       if (mounted) {
@@ -349,7 +486,10 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
                             onPressed: _fetchDetail,
                             style: OutlinedButton.styleFrom(
                               foregroundColor: DefensysTokens.maroon,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
                             ),
                           ),
                       ],
@@ -381,7 +521,8 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(documenterProvider);
     final user = ref.watch(authProvider).user;
-    final userHasSignature = user?['e_signature'] != null && user?['e_signature'] != '';
+    final userHasSignature =
+        user?['e_signature'] != null && user?['e_signature'] != '';
 
     final minutes = state.activeMinutes;
 
@@ -400,10 +541,7 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: _fetchDetail,
-              child: const Text('Retry'),
-            ),
+            ElevatedButton(onPressed: _fetchDetail, child: const Text('Retry')),
           ],
         ),
       );
@@ -415,9 +553,11 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
       final documenterId = schedule?['documenter'] as int?;
       final isDocumenter = user?['id'] == documenterId;
 
-      final isAdviser = schedule?['team_adviser_id'] == user?['id'] || 
-          (user?['is_adviser'] == true && minutes['adviser_name'] == user?['name']);
-      
+      final isAdviser =
+          schedule?['team_adviser_id'] == user?['id'] ||
+          (user?['is_adviser'] == true &&
+              minutes['adviser_name'] == user?['name']);
+
       final isAdmin = user?['role']?.toString() == 'admin';
       final isCancelled = schedule?['status']?.toString() == 'cancelled';
 
@@ -425,53 +565,86 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // E-Signature Alert Banner
-          if (!userHasSignature && _userNeedsToSign(status, isDocumenter, isAdviser, isAdmin))
+          if (!userHasSignature &&
+              _userNeedsToSign(status, isDocumenter, isAdviser, isAdmin))
             _buildNoSignatureBanner(),
 
           // Horizontal Progress Step Header
           _buildSigningFlowStepper(status),
           const SizedBox(height: 24),
           if ((minutes['revisions'] as List? ?? []).isNotEmpty) ...[
-            DefensysShadcnScope(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              const Text('Retained minutes versions', style: TextStyle(fontWeight: FontWeight.w700)),
-              ...(minutes['revisions'] as List).whereType<Map>().map((revision) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Row(children: [
-                  Expanded(child: Text('${revision['created_at']} · ${revision['reason']}')),
-                  if (revision['pdf_url'] != null) ShadButton.outline(
-                    onPressed: () => _viewPdf(revisionId: (revision['id'] as num).toInt()),
-                    child: const Text('View signed version'),
+            DefensysShadcnScope(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Retained minutes versions',
+                    style: TextStyle(fontWeight: FontWeight.w700),
                   ),
-                ]),
-              )),
-            ])),
+                  ...(minutes['revisions'] as List).whereType<Map>().map(
+                    (revision) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${revision['created_at']} · ${revision['reason']}',
+                            ),
+                          ),
+                          if (revision['pdf_url'] != null)
+                            ShadButton.outline(
+                              onPressed: () => _viewPdf(
+                                revisionId: (revision['id'] as num).toInt(),
+                              ),
+                              child: const Text('View signed version'),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 24),
           ],
 
-          // Main Layout
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Metadata Left Pane
-              Expanded(
-                flex: 4,
-                child: _buildDetailsCard(minutes),
-              ),
-              const SizedBox(width: 24),
-
-              // Comments / Form Right Pane
-              Expanded(
-                flex: 6,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildCommentsSection(minutes, status, isDocumenter, isCancelled),
-                    const SizedBox(height: 24),
-                    _buildActionButtons(status, isDocumenter, isAdviser, isAdmin, userHasSignature, isCancelled),
-                  ],
-                ),
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final details = _buildDetailsCard(minutes);
+              final editor = Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildCommentsSection(
+                    minutes,
+                    status,
+                    isDocumenter,
+                    isCancelled,
+                  ),
+                  const SizedBox(height: 24),
+                  _buildActionButtons(
+                    status,
+                    isDocumenter,
+                    isAdviser,
+                    isAdmin,
+                    userHasSignature,
+                    isCancelled,
+                  ),
+                ],
+              );
+              return constraints.maxWidth < 800
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [details, const SizedBox(height: 20), editor],
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(flex: 4, child: details),
+                        const SizedBox(width: 24),
+                        Expanded(flex: 6, child: editor),
+                      ],
+                    );
+            },
           ),
         ],
       );
@@ -484,13 +657,25 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
         elevation: 1,
         title: const Text(
           'Minutes of Defense Details',
-          style: TextStyle(color: DefensysTokens.maroon, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: DefensysTokens.maroon,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: DefensysTokens.maroon),
-          onPressed: widget.onBack,
+          onPressed: _isSavingDraft || _isSubmitting ? null : _leaveForm,
         ),
         actions: [
+          if (minutes != null && minutes['status'] != 'completed')
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: TextButton.icon(
+                onPressed: _isSavingDraft || _isSubmitting ? null : _previewPdf,
+                icon: const Icon(Icons.picture_as_pdf_outlined),
+                label: const Text('Preview PDF'),
+              ),
+            ),
           if (minutes != null && minutes['status'] == 'completed')
             Padding(
               padding: const EdgeInsets.only(right: 16.0),
@@ -513,7 +698,12 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
     );
   }
 
-  bool _userNeedsToSign(String? status, bool isDocumenter, bool isAdviser, bool isAdmin) {
+  bool _userNeedsToSign(
+    String? status,
+    bool isDocumenter,
+    bool isAdviser,
+    bool isAdmin,
+  ) {
     if (status == 'draft' && isDocumenter) return true;
     if (status == 'submitted' && isAdviser) return true;
     if (status == 'adviser_signed' && isAdmin) return true;
@@ -531,7 +721,11 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 24),
+          const Icon(
+            Icons.warning_amber_rounded,
+            color: Color(0xFFD97706),
+            size: 24,
+          ),
           const SizedBox(width: 12),
           const Expanded(
             child: Column(
@@ -604,7 +798,12 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
     );
   }
 
-  Widget _buildStep(int stepNum, String title, String subtitle, bool isCompleted) {
+  Widget _buildStep(
+    int stepNum,
+    String title,
+    String subtitle,
+    bool isCompleted,
+  ) {
     final color = isCompleted ? DefensysTokens.maroon : Colors.grey.shade400;
     return Expanded(
       child: Row(
@@ -623,7 +822,11 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
                   ? const Icon(Icons.check, color: Colors.white, size: 16)
                   : Text(
                       (stepNum + 1).toString(),
-                      style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12),
+                      style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
                     ),
             ),
           ),
@@ -637,7 +840,9 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
                   title,
                   style: TextStyle(
                     fontFamily: DefensysTokens.fontFamily,
-                    color: isCompleted ? DefensysTokens.textDark : Colors.grey.shade500,
+                    color: isCompleted
+                        ? DefensysTokens.textDark
+                        : Colors.grey.shade500,
                     fontWeight: FontWeight.bold,
                     fontSize: 13,
                   ),
@@ -697,14 +902,21 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
             _detailRow('Team Name', minutes['team_name']),
             _detailRow('Capstone Project', minutes['project_title']),
             _detailRow('Defense Stage', minutes['defense_stage_label']),
-            _detailRow('Date & Time', '${minutes['defense_date']} @ ${_formatTime(minutes['defense_time'])}'),
+            _detailRow(
+              'Date & Time',
+              '${minutes['defense_date']} @ ${_formatTime(minutes['defense_time'])}',
+            ),
             _detailRow('Room', minutes['room']),
             _detailRow('Project Adviser', minutes['adviser_name']),
             _detailRow('Documenter', minutes['documenter_name']),
             const SizedBox(height: 12),
             const Text(
               'Panel Assignments',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: DefensysTokens.textDark),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+                color: DefensysTokens.textDark,
+              ),
             ),
             const SizedBox(height: 8),
             ...panelists.map((panelist) {
@@ -712,16 +924,25 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
               final isChair = pMap['is_chair'] == true;
               return Container(
                 margin: const EdgeInsets.only(bottom: 6),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
-                  color: isChair ? const Color(0xFFFFFBEB) : Colors.grey.shade50,
+                  color: isChair
+                      ? const Color(0xFFFFFBEB)
+                      : Colors.grey.shade50,
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Row(
                   children: [
                     Icon(
-                      isChair ? Icons.star_rounded : Icons.person_outline_rounded,
-                      color: isChair ? const Color(0xFFD97706) : Colors.grey.shade600,
+                      isChair
+                          ? Icons.star_rounded
+                          : Icons.person_outline_rounded,
+                      color: isChair
+                          ? const Color(0xFFD97706)
+                          : Colors.grey.shade600,
                       size: 16,
                     ),
                     const SizedBox(width: 8),
@@ -730,20 +951,29 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
                         pMap['name']?.toString() ?? '',
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: isChair ? FontWeight.bold : FontWeight.normal,
+                          fontWeight: isChair
+                              ? FontWeight.bold
+                              : FontWeight.normal,
                         ),
                       ),
                     ),
                     if (isChair)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFFDE68A),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: const Text(
                           'Chair',
-                          style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFF78350F)),
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF78350F),
+                          ),
                         ),
                       ),
                   ],
@@ -764,19 +994,32 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
         children: [
           Text(
             label,
-            style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w500),
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.grey,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           const SizedBox(height: 3),
           Text(
             value?.toString() ?? 'N/A',
-            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: DefensysTokens.textDark),
+            style: const TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              color: DefensysTokens.textDark,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCommentsSection(Map<String, dynamic> minutes, String? status, bool isDocumenter, bool isCancelled) {
+  Widget _buildCommentsSection(
+    Map<String, dynamic> minutes,
+    String? status,
+    bool isDocumenter,
+    bool isCancelled,
+  ) {
     final comments = minutes['panelist_comments'] as List? ?? [];
     final isDraft = status == 'draft' && !isCancelled;
 
@@ -799,6 +1042,27 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
                 color: DefensysTokens.textDark,
               ),
             ),
+            if (isDraft && isDocumenter)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  _autoSavePending != null || _isSavingDraft
+                      ? 'Saving…'
+                      : _saveFailed
+                      ? 'Save failed · Retry Save Draft.'
+                      : _editVersion > _savedVersion
+                      ? 'Unsaved changes'
+                      : _lastSavedAt != null
+                      ? 'Saved at ${TimeOfDay.fromDateTime(_lastSavedAt!).format(context)}'
+                      : 'Changes save automatically',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _saveFailed
+                        ? Colors.red
+                        : DefensysTokens.textSecondaryOf(context),
+                  ),
+                ),
+              ),
             const Divider(height: 24),
             ...comments.map((comment) {
               final cMap = comment as Map;
@@ -812,11 +1076,21 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.comment_bank_outlined, size: 16, color: Colors.grey),
+                        const Icon(
+                          Icons.comment_bank_outlined,
+                          size: 16,
+                          color: Colors.grey,
+                        ),
                         const SizedBox(width: 8),
-                        Text(
-                          '${cMap['panelist_role_snapshot']}: ${cMap['panelist_name_snapshot']}',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: DefensysTokens.textDark),
+                        Expanded(
+                          child: Text(
+                            '${cMap['panelist_role_snapshot']}: ${cMap['panelist_name_snapshot']}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: DefensysTokens.textDark,
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -824,11 +1098,15 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
                     if (isDraft && isDocumenter && controller != null)
                       TextField(
                         controller: controller,
+                        enabled: !_isSubmitting && !_isSavingDraft,
                         maxLines: 4,
                         style: const TextStyle(fontSize: 13),
                         decoration: InputDecoration(
-                          hintText: 'Enter comments/questions from this panelist...',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          hintText:
+                              'Enter comments/questions from this panelist...',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                           contentPadding: const EdgeInsets.all(12),
                         ),
                       )
@@ -845,8 +1123,20 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
                           cMap['comments']?.toString() != ''
                               ? cMap['comments']?.toString() ?? ''
                               : 'No comments recorded.',
-                          style: const TextStyle(fontSize: 13, height: 1.4, color: DefensysTokens.textDark),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            height: 1.4,
+                            color: DefensysTokens.textDark,
+                          ),
                         ),
+                      ),
+                    if (isDraft && isDocumenter && controller != null)
+                      TextButton(
+                        onPressed: _isSubmitting || _isSavingDraft
+                            ? null
+                            : () => controller.text =
+                                  'No comments or suggestions.',
+                        child: const Text('Mark no comments or suggestions'),
                       ),
                   ],
                 ),
@@ -880,11 +1170,19 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.cancel_outlined, size: 18, color: Colors.red.shade700),
+                  Icon(
+                    Icons.cancel_outlined,
+                    size: 18,
+                    color: Colors.red.shade700,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     'Defense schedule is cancelled. Minutes are locked.',
-                    style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold, fontSize: 13),
+                    style: TextStyle(
+                      color: Colors.red.shade700,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
                   ),
                 ],
               ),
@@ -923,7 +1221,9 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
                 backgroundColor: DefensysTokens.maroon,
                 foregroundColor: DefensysTokens.gold,
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             ),
           ),
@@ -942,7 +1242,9 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
                 backgroundColor: DefensysTokens.maroon,
                 foregroundColor: DefensysTokens.gold,
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             ),
           ),
@@ -961,7 +1263,9 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
                 backgroundColor: DefensysTokens.maroon,
                 foregroundColor: DefensysTokens.gold,
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             ),
           ),
@@ -980,13 +1284,21 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.lock_outline_rounded, size: 18, color: Colors.grey.shade600),
+                Icon(
+                  Icons.lock_outline_rounded,
+                  size: 18,
+                  color: Colors.grey.shade600,
+                ),
                 const SizedBox(width: 8),
                 Text(
                   status == 'completed'
                       ? 'Minutes finalized & locked.'
                       : 'Minutes submitted. Pending signatures.',
-                  style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.bold, fontSize: 13),
+                  style: TextStyle(
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),

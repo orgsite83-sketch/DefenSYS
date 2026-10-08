@@ -1,3 +1,4 @@
+import 'widgets/stage_minutes_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -40,6 +41,9 @@ class _DefenseStageEditorScreenState
   final _label = TextEditingController();
   final _code = TextEditingController();
   final _description = TextEditingController();
+  final _minutesNumber = TextEditingController(text: 'MINUTES');
+  final _minutesName = TextEditingController();
+  bool _minutesRequired = false;
   final _panel = TextEditingController(text: '50');
   final _adviser = TextEditingController(text: '30');
   final _peer = TextEditingController(text: '20');
@@ -102,6 +106,8 @@ class _DefenseStageEditorScreenState
       _label,
       _code,
       _description,
+      _minutesNumber,
+      _minutesName,
       _panel,
       _adviser,
       _peer,
@@ -116,6 +122,8 @@ class _DefenseStageEditorScreenState
       _label,
       _code,
       _description,
+      _minutesNumber,
+      _minutesName,
       _panel,
       _adviser,
       _peer,
@@ -143,6 +151,8 @@ class _DefenseStageEditorScreenState
     _label.dispose();
     _code.dispose();
     _description.dispose();
+    _minutesNumber.dispose();
+    _minutesName.dispose();
     _panel.dispose();
     _adviser.dispose();
     _peer.dispose();
@@ -211,6 +221,9 @@ class _DefenseStageEditorScreenState
     _orderPosition = _asInt(stage['display_order']) ?? 1;
     _isActive = stage['is_active'] != false;
     _isPresentationOnly = stage['is_presentation_only'] == true;
+    _minutesRequired = stage['minutes_required'] == true;
+    _minutesNumber.text = stage['minutes_deliverable_id']?.toString() ?? 'MINUTES';
+    _minutesName.text = stage['minutes_deliverable_label']?.toString() ?? '';
     final delivs = stage['deliverables'];
     if (delivs is List) {
       _deliverables = delivs
@@ -324,6 +337,9 @@ class _DefenseStageEditorScreenState
             'description': _description.text.trim(),
             'is_active': _isActive,
             'is_presentation_only': _isPresentationOnly,
+            'minutes_required': _minutesRequired,
+            'minutes_deliverable_id': _minutesNumber.text.trim(),
+            'minutes_deliverable_label': _minutesName.text.trim(),
             'deliverables': _isPresentationOnly ? [] : _deliverables,
             if (endorsedAction != null) 'endorsed_teams_action': endorsedAction,
           },
@@ -519,7 +535,7 @@ class _DefenseStageEditorScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Defense Stage Completed (Read-Only)',
+                  'Stage Configuration Locked',
                   style: TextStyle(
                     color: _isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF),
                     fontSize: 14,
@@ -529,7 +545,7 @@ class _DefenseStageEditorScreenState
                 const SizedBox(height: 3),
                 Text(
                   _lockReason ??
-                      'This defense stage is completed and preserved because defenses have been scheduled or officially completed for this semester.',
+                      'Configuration is protected because this stage has scheduled defenses, recorded grades, or has been officially finalized for this semester.',
                   style: TextStyle(
                     color: _isDark ? const Color(0xFFBFDBFE) : const Color(0xFF1D4ED8),
                     fontSize: 12.5,
@@ -647,7 +663,7 @@ class _DefenseStageEditorScreenState
                       child: _buildTabBar(
                         activeTab: _activeTab,
                         hasWeightError: hasWeightError,
-                        deliverableCount: _deliverables.length,
+                        deliverableCount: (_isPresentationOnly ? 0 : _deliverables.length) + (_minutesRequired ? 1 : 0),
                         isPresentationOnly: _isPresentationOnly,
                         onTabSelected: (tab) => setState(() => _activeTab = tab),
                       ),
@@ -708,6 +724,11 @@ class _DefenseStageEditorScreenState
                                 child: _buildPositionSelector(),
                               ),
                               const SizedBox(height: 16),
+                              StageMinutesSettings(
+                                requiredMinutes: _minutesRequired, enabled: !_isLocked,
+                                onChanged: (value) { setState(() => _minutesRequired = value); _markDirty(); },
+                              ),
+                              const SizedBox(height: 20),
                               TextField(
                                 controller: _description,
                                 readOnly: _isLocked,
@@ -1166,6 +1187,13 @@ class _DefenseStageEditorScreenState
                                       : null,
                                 ),
                               ],
+                              if (_minutesRequired) ...[
+                                const SizedBox(height: 18),
+                                StageMinutesDeliverableCard(
+                                  number: _minutesNumber, name: _minutesName, stageName: _label.text, enabled: !_isLocked,
+                                  onConfigure: () => setState(() => _activeTab = 0),
+                                ),
+                              ],
                             ],
                           ),
                         ],
@@ -1311,32 +1339,7 @@ class _DefenseStageEditorScreenState
             index: 2,
             label: '3. Deliverables',
             icon: isPresentationOnly ? Icons.campaign_rounded : Icons.inventory_2_rounded,
-            badge: isPresentationOnly
-                ? Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: activeTab == 2
-                          ? Colors.white.withValues(alpha: 0.25)
-                          : (_isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFEFF6FF)),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: activeTab == 2
-                            ? Colors.white.withValues(alpha: 0.4)
-                            : (_isDark ? const Color(0xFF3B82F6).withValues(alpha: 0.4) : const Color(0xFFBFDBFE)),
-                      ),
-                    ),
-                    child: Text(
-                      'Oral / Demo',
-                      style: TextStyle(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w700,
-                        color: activeTab == 2
-                            ? Colors.white
-                            : (_isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8)),
-                      ),
-                    ),
-                  )
-                : (deliverableCount > 0
+            badge: (deliverableCount > 0
                     ? Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                         decoration: BoxDecoration(
@@ -1693,9 +1696,9 @@ class _DefenseStageEditorScreenState
               const SizedBox(width: 12),
               Expanded(
                 child: _submissionModeCard(
-                  title: 'Presentation / Demo Only',
+                  title: 'No student file submission',
                   description:
-                      'Oral defense, pitch, or expo only — no student file uploads required.',
+                      'Students present without uploading deliverables. Minutes are configured in Stage Details.',
                   icon: Icons.co_present_rounded,
                   selected: _isPresentationOnly,
                   onTap: _isLocked

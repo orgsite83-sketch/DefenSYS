@@ -232,6 +232,7 @@ class DefensysPdfReportBuilder:
         bold_cols: list[int] = None,
         custom_style: TableStyle = None,
         space_after: float = 0.10 * inch,
+        repeat_headers: bool = False,
     ):
         """
         Adds a fully formatted institutional table.
@@ -279,7 +280,7 @@ class DefensysPdfReportBuilder:
         if not formatted_table_data:
             return self
 
-        t = Table(formatted_table_data, colWidths=col_widths)
+        t = Table(formatted_table_data, colWidths=col_widths, repeatRows=1 if headers and repeat_headers else 0)
         t.setStyle(custom_style or defensys_table_style())
         self.story.append(t)
         if space_after:
@@ -363,9 +364,18 @@ class DefensysPdfReportBuilder:
 
             nr_p = Paragraph(name_role_text, self.styles['BodyDark'])
 
+            signature_mark = Spacer(1, 0.22 * inch)
+            if s.get('signature_image'):
+                from reportlab.lib.utils import ImageReader
+                image_bytes = BytesIO(s['signature_image'])
+                image_width, image_height = ImageReader(image_bytes).getSize()
+                image_bytes.seek(0)
+                scale = min(actual_line_w / image_width, (0.5 * inch) / image_height)
+                signature_mark = Image(image_bytes, width=image_width * scale, height=image_height * scale)
+                signature_mark.hAlign = 'LEFT'
             block_data = [
                 [lbl_p, ""],
-                [Spacer(1, 0.22 * inch), ""],
+                [signature_mark, ""],
                 [nr_p, ""],
             ]
             t = Table(block_data, colWidths=[actual_line_w, gap_w])

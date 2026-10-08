@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/defense/system_defense_records.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:defensys/models/defense_workflow_labels.dart';
@@ -1807,6 +1808,10 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 ),
             ],
 
+            if (_deliverables(stage, 'system').isNotEmpty) ...[
+              const SizedBox(height: 20),
+              SystemDefenseRecords(items: _deliverables(stage, 'system')),
+            ],
             if (canEndorse && !widget.isAdviser) ...[
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 16),

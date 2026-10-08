@@ -3266,7 +3266,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       return const SizedBox.shrink();
     }
 
-    String label = 'No Minutes';
+    if (schedule['minutes_required'] == false && status == null && schedule['documenter'] == null) {
+      return Text('Not required', style: TextStyle(fontSize: 12, color: _textSecondaryColor));
+    }
+    String label = 'Not started';
     Color bg = _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9);
     Color fg = _textSecondaryColor;
     Color border = _borderColor;
@@ -3279,19 +3282,19 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       border = _isDark ? const Color(0xFFB45309).withValues(alpha: 0.5) : const Color(0xFFFDE68A);
       icon = Icons.edit_note_rounded;
     } else if (status == 'submitted') {
-      label = 'Submitted';
+      label = 'Awaiting adviser';
       bg = _isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFEFF6FF);
       fg = _isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8);
       border = _isDark ? const Color(0xFF2563EB).withValues(alpha: 0.5) : const Color(0xFFBFDBFE);
       icon = Icons.send_rounded;
     } else if (status == 'adviser_signed') {
-      label = 'Adviser Signed';
+      label = 'Awaiting chairman';
       bg = _isDark ? const Color(0xFF581C87).withValues(alpha: 0.3) : const Color(0xFFFAF5FF);
       fg = _isDark ? const Color(0xFFD8B4FE) : const Color(0xFF7E22CE);
       border = _isDark ? const Color(0xFF9333EA).withValues(alpha: 0.5) : const Color(0xFFE9D5FF);
       icon = Icons.draw_rounded;
     } else if (status == 'completed') {
-      label = 'Completed';
+      label = 'Finalized';
       bg = _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.3) : const Color(0xFFECFDF5);
       fg = _isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857);
       border = _isDark ? const Color(0xFF059669).withValues(alpha: 0.5) : const Color(0xFFA7F3D0);

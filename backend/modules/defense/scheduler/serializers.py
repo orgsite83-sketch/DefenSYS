@@ -291,6 +291,7 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
     documenter = serializers.IntegerField(source='documenter.id', read_only=True, allow_null=True)
     documenter_name = serializers.SerializerMethodField()
     minutes_status = serializers.SerializerMethodField()
+    minutes_required = serializers.BooleanField(source='requires_minutes', read_only=True)
     minutes_id = serializers.SerializerMethodField()
     display_status = serializers.SerializerMethodField()
     grade_id = serializers.SerializerMethodField()
@@ -345,6 +346,7 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
             'documenter',
             'documenter_name',
             'minutes_status',
+            'minutes_required',
             'minutes_id',
             'created_at',
             'updated_at',
@@ -862,6 +864,8 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
         attrs['team'] = self._resolve_team(attrs)
 
         doc = attrs.get('documenter')
+        if attrs.get('defense_stage') and attrs['defense_stage'].minutes_required and not doc:
+            raise serializers.ValidationError({'documenter_id': 'Assign a documenter: this stage requires signed minutes.'})
         if doc:
             if attrs['team'].adviser_id == doc.id:
                 raise serializers.ValidationError({'documenter_id': "Documenter cannot be the team's adviser."})
@@ -1297,6 +1301,8 @@ class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
                 if field in slot and slot[field] != entry[field]:
                     raise serializers.ValidationError({'slots': f'{team.name}: the preview no longer matches its session. Regenerate the plan.'})
             doc = entry.get('documenter')
+            if attrs.get('defense_stage') and attrs['defense_stage'].minutes_required and not doc:
+                raise serializers.ValidationError({'sessions': 'Assign a documenter to every session: this stage requires signed minutes.'})
             if doc and (doc in entry['panelists'] or team.adviser_id == doc.pk):
                 raise serializers.ValidationError({'slots': f'Documenter cannot be a panelist or the adviser of team {team.name}.'})
             entries.append(entry)
@@ -1470,6 +1476,8 @@ class DefenseSchedulePatchSerializer(serializers.ModelSerializer):
     def validate_documenter_id(self, value):
         schedule = self.schedule_instance
         if value is None:
+            if schedule.requires_minutes:
+                raise serializers.ValidationError('A documenter is required for this defense.')
             return None
 
         try:

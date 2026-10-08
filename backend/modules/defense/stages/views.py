@@ -92,7 +92,7 @@ class DefenseStageListCreateView(APIView):
                     locked, _ = check_stage_locked(s)
                     if locked and s.display_order >= requested_order:
                         return Response(
-                            {'display_order': 'New defense stages cannot be placed before completed defense stages.'},
+                            {'display_order': 'New defense stages cannot be placed before locked defense stages.'},
                             status=status.HTTP_400_BAD_REQUEST,
                         )
             except (ValueError, TypeError):
@@ -170,7 +170,7 @@ class DefenseStageDetailView(APIView):
                 requested_order = int(requested_order)
                 if locked and requested_order != stage.display_order:
                     return Response(
-                        {'display_order': reason or 'Completed defense stages cannot change sequence position.'},
+                        {'display_order': reason or 'Locked defense stages cannot change sequence position.'},
                         status=status.HTTP_409_CONFLICT,
                     )
                 if not locked and requested_order != stage.display_order:
@@ -180,7 +180,7 @@ class DefenseStageDetailView(APIView):
                         s_locked, _ = check_stage_locked(s)
                         if s_locked and idx >= insert_idx:
                             return Response(
-                                {'display_order': 'Cannot move a defense stage before an already completed defense stage.'},
+                                {'display_order': 'Cannot move a defense stage before a locked defense stage.'},
                                 status=status.HTTP_400_BAD_REQUEST,
                             )
             except (ValueError, TypeError):
@@ -280,7 +280,7 @@ class DefenseStageReorderView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        # Enforce that completed stages cannot be reordered or moved
+        # Enforce that locked stages cannot be reordered or moved
         all_ordered = list(DefenseStage.objects.all().order_by('display_order', 'id'))
         completed_stages = [s for s in all_ordered if check_stage_locked(s)[0]]
         if completed_stages:
@@ -289,7 +289,7 @@ class DefenseStageReorderView(APIView):
                     return Response(
                         {
                             'stage_ids': (
-                                f'Completed stage "{c_stage.label}" is locked in sequence and cannot be reordered '
+                                f'Stage "{c_stage.label}" has a configuration lock and cannot be reordered '
                                 'or preceded by draft/active stages.'
                             )
                         },
@@ -345,7 +345,7 @@ class StageDeliverableListCreateView(APIView):
                 {'detail': reason or 'Deliverables cannot be added because this stage is locked.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        serializer = StageDeliverableSerializer(data=request.data)
+        serializer = StageDeliverableSerializer(data=request.data, context={'stage': stage})
         serializer.is_valid(raise_exception=True)
         deliverable = serializer.save(defense_stage=stage)
         return Response(

@@ -2,6 +2,7 @@ from django.db.models import Q
 from rest_framework import serializers
 
 from .models import DefenseStage, StageDeliverable, StageGradingConfig
+from .readiness import stage_setup_readiness
 
 
 class StageDeliverableSerializer(serializers.ModelSerializer):
@@ -21,6 +22,12 @@ class StageDeliverableSerializer(serializers.ModelSerializer):
             'verdict_condition',
             'file_format',
         ]
+
+    def validate_deliverable_id(self, value):
+        stage = self.instance.defense_stage if self.instance else self.context.get('stage')
+        if stage and stage.minutes_required and value.strip() == stage.minutes_deliverable_id:
+            raise serializers.ValidationError('This number belongs to the system-generated signed-minutes record.')
+        return value
 
     def validate_archive_file_template(self, value):
         if value:
@@ -57,6 +64,7 @@ def check_stage_locked(stage, semester=None):
 
 
 class DefenseStageSerializer(serializers.ModelSerializer):
+    system_deliverables = serializers.SerializerMethodField()
     previous_stage_id = serializers.SerializerMethodField()
     previous_stage_label = serializers.SerializerMethodField()
     previous_stage_code = serializers.SerializerMethodField()
@@ -69,6 +77,7 @@ class DefenseStageSerializer(serializers.ModelSerializer):
     rubric_name = serializers.SerializerMethodField()
     rubric_info = serializers.SerializerMethodField()
     rubrics_count = serializers.SerializerMethodField()
+    setup_readiness = serializers.SerializerMethodField()
 
     class Meta:
         model = DefenseStage
@@ -80,6 +89,10 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'description',
             'is_active',
             'is_presentation_only',
+            'minutes_required',
+            'minutes_deliverable_id',
+            'minutes_deliverable_label',
+            'system_deliverables',
             'previous_stage_id',
             'previous_stage_label',
             'previous_stage_code',
@@ -88,6 +101,7 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'rubric_name',
             'rubric_info',
             'rubrics_count',
+            'setup_readiness',
             'is_officially_complete',
             'is_locked',
             'lock_reason',
@@ -105,6 +119,7 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'rubric_name',
             'rubric_info',
             'rubrics_count',
+            'setup_readiness',
             'is_officially_complete',
             'is_locked',
             'lock_reason',
@@ -121,6 +136,14 @@ class DefenseStageSerializer(serializers.ModelSerializer):
         return obj.grading_configs.filter(semester=semester).select_related(
             'panel_rubric', 'adviser_rubric', 'peer_rubric'
         ).first()
+
+    def get_setup_readiness(self, obj):
+        config = self._get_stage_grading_config(obj)
+        semester = self.context.get('semester')
+        if semester is None:
+            from academic_period_management.models import Semester
+            semester = Semester.objects.filter(is_active=True).first()
+        return stage_setup_readiness(obj, config, semester)
 
     def get_rubrics_count(self, obj):
         config = self._get_stage_grading_config(obj)
@@ -196,7 +219,12 @@ class DefenseStageSerializer(serializers.ModelSerializer):
         }
 
     def get_deliverables_count(self, obj):
-        return obj.deliverables.count()
+        return obj.deliverables.count() + int(obj.minutes_required)
+
+    def get_system_deliverables(self, obj):
+        from defense.minutes.requirements import minutes_definition
+        definition = minutes_definition(obj)
+        return [definition] if definition else []
 
     def get_is_officially_complete(self, obj):
         semester = self.context.get('semester')
@@ -262,7 +290,7 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DefenseStage
-        fields = ['label', 'code', 'display_order', 'description', 'is_active', 'is_presentation_only', 'deliverables']
+        fields = ['label', 'code', 'display_order', 'description', 'is_active', 'is_presentation_only', 'minutes_required', 'minutes_deliverable_id', 'minutes_deliverable_label', 'deliverables']
         extra_kwargs = {
             'code': {'required': False, 'allow_blank': True},
             'display_order': {'required': False},
@@ -311,6 +339,22 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
         stage = super().create(validated_data)
         self._create_deliverables(stage, deliverables_data)
         return stage
+
+    def validate(self, attrs):
+        required = attrs.get('minutes_required', getattr(self.instance, 'minutes_required', False))
+        number = attrs.get('minutes_deliverable_id', getattr(self.instance, 'minutes_deliverable_id', 'MINUTES')).strip()
+        if not number:
+            raise serializers.ValidationError({'minutes_deliverable_id': 'Enter the signed-minutes deliverable number.'})
+        if required:
+            items = attrs.get('deliverables')
+            numbers = [str(d.get('deliverable_id', '')).strip() for d in items] if items is not None else (
+                list(self.instance.deliverables.values_list('deliverable_id', flat=True)) if self.instance else []
+            )
+            if number in numbers:
+                raise serializers.ValidationError({'minutes_deliverable_id': 'Use a different number from student-upload deliverables.'})
+        if 'minutes_deliverable_id' in attrs:
+            attrs['minutes_deliverable_id'] = number
+        return attrs
 
     def update(self, instance, validated_data):
         semester = self.context.get('semester')
