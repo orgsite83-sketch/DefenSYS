@@ -1,15 +1,19 @@
 """Start DefenSYS with one Wi-Fi address for the PC, phones and invitations.
 
-Uses only the standard library. Reuses an API server already listening on the
-LAN; never stops that server or changes .env, firewall rules, accounts or data.
+Uses only the standard library. Reuses a current API server on the LAN and
+enables Django's code reload. Restarts only an identified workspace backend;
+does not change .env, firewall rules, accounts or data.
 """
 
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import ipaddress
+import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import signal
 import socket
@@ -214,8 +218,14 @@ def stop(process: subprocess.Popen) -> None:
             os.killpg(process.pid, signal.SIGTERM)
         process.wait(timeout=5)
     except (OSError, subprocess.TimeoutExpired):
-        process.kill()
-        process.wait()
+        # Django's reloader and Windows' venv redirector both spawn children.
+        # Killing just the parent can leave an old API holding the port open.
+        if os.name == 'nt':
+            subprocess.run(['taskkill', '/F', '/T', '/PID', str(process.pid)],
+                           capture_output=True, check=False, timeout=10)
+        else:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=5)
 
 
 def wait_for(url: str, process: subprocess.Popen, timeout: int,
@@ -276,27 +286,144 @@ def stop_port(number: int) -> bool:
     return stopped
 
 
-def ensure_backend(host: str, number: int, health: str,
-                   owned: list[subprocess.Popen]) -> subprocess.Popen | None:
-    if ready(health):
+@dataclass(frozen=True)
+class BackendProcess:
+    pid: int
+    root_pid: int
+    reload_enabled: bool
+
+
+def windows_python_processes() -> dict[int, dict]:
+    """Read ownership metadata, without depending on psutil or WMIC."""
+    if os.name != 'nt':
+        return {}
+    script = (
+        "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); "
+        "@(Get-CimInstance Win32_Process -Filter "
+        "\"Name = 'python.exe' OR Name = 'pythonw.exe'\" | "
+        "Select-Object ProcessId, ParentProcessId, CommandLine) | "
+        "ConvertTo-Json -Compress"
+    )
+    try:
+        result = subprocess.run(
+            ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script],
+            capture_output=True, text=True, encoding='utf-8', timeout=10, check=True,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        records = json.loads(result.stdout or '[]')
+        if isinstance(records, dict):
+            records = [records]
+        return {int(record['ProcessId']): record for record in records}
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
+        return {}
+
+
+def workspace_backend_args(command_line: str, number: int) -> list[str] | None:
+    """Require this repo's venv, Django entry point and API port before a stop."""
+    try:
+        args = [arg.strip('"') for arg in shlex.split(command_line, posix=False)]
+    except ValueError:
         return None
+    if len(args) < 4:
+        return None
+
+    def normalized(value: str) -> str:
+        return value.replace('/', '\\').casefold()
+
+    python = ROOT / 'backend' / 'venv' / 'Scripts' / 'python.exe'
+    manage = ROOT / 'backend' / 'manage.py'
+    if normalized(args[0]) != normalized(str(python)):
+        return None
+    if normalized(args[1]) not in ('manage.py', normalized(str(manage))):
+        return None
+    if args[2] != 'runserver' or not args[3].endswith(f':{number}'):
+        return None
+    return args
+
+
+def backend_listener(number: int) -> BackendProcess | None:
+    """Identify the listener and its matching Django parents on Windows.
+
+    Unknown or manually launched servers remain untouched. On platforms where
+    ownership cannot be verified, an explicit restart requires a manual stop.
+    """
+    pids = pids_listening_on(number)
+    if len(pids) != 1:
+        return None
+    processes = windows_python_processes()
+    record = processes.get(pids[0], {})
+    args = workspace_backend_args(record.get('CommandLine') or '', number)
+    if args is None:
+        return None
+    root_pid = pids[0]
+    seen = {root_pid}
+    while record.get('ParentProcessId') in processes:
+        parent_pid = record['ParentProcessId']
+        parent = processes[parent_pid]
+        if parent_pid in seen or workspace_backend_args(parent.get('CommandLine') or '', number) is None:
+            break
+        seen.add(parent_pid)
+        root_pid = parent_pid
+        record = parent
+    return BackendProcess(pids[0], root_pid, '--noreload' not in args)
+
+
+def stop_backend(backend: BackendProcess, host: str, number: int) -> None:
+    """Stop the verified backend tree, including redirector/reloader parents."""
+    result = subprocess.run(
+        ['taskkill', '/F', '/T', '/PID', str(backend.root_pid)],
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    if result.returncode:
+        raise RuntimeError(f'Could not stop the identified backend (PID {backend.root_pid}). Check its terminal.')
+    deadline = time.monotonic() + 5
+    while listening('127.0.0.1', number) or listening(host, number):
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f'Port {number} is still occupied after the backend restart. No other process was stopped.')
+        time.sleep(0.2)
+
+
+def backend_parent_alive(backend: BackendProcess, number: int) -> bool:
+    """The reloader parent remains alive while its HTTP worker restarts."""
+    record = windows_python_processes().get(backend.root_pid, {})
+    return workspace_backend_args(record.get('CommandLine') or '', number) is not None
+
+
+def ensure_backend(host: str, number: int, health: str,
+                   owned: list[subprocess.Popen],
+                   *, restart: bool = False) -> subprocess.Popen | None:
+    if ready(health):
+        existing = backend_listener(number)
+        if existing is None:
+            if restart:
+                raise RuntimeError(f'Cannot verify that the server on port {number} belongs to this workspace. Stop it manually before restarting; no existing process was stopped.')
+            return None
+        if existing.reload_enabled and not restart:
+            return None
+        reason = 'an explicit restart was requested' if restart else 'automatic code reload was disabled'
+        print(f'Restarting the workspace backend: {reason}.', flush=True)
+        stop_backend(existing, host, number)
     if listening('127.0.0.1', number) or listening(host, number):
         raise RuntimeError(f'Port {number} is occupied but the API is not healthy over Wi-Fi. Check the backend terminal. No existing process was stopped.')
     python = ROOT / 'backend' / 'venv' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
     if not python.exists():
         raise RuntimeError('Backend virtual environment is missing. Run backend/setup_venv.ps1 first.')
-    backend = start([str(python), 'manage.py', 'runserver', f'0.0.0.0:{number}', '--noreload'], ROOT / 'backend')
+    backend = start([str(python), 'manage.py', 'runserver', f'0.0.0.0:{number}'], ROOT / 'backend')
     owned.append(backend)
     wait_for(health, backend, timeout=45)
+    print('Backend ready with automatic Python code reload.', flush=True)
     return backend
 
 
 def monitor_servers(frontend: subprocess.Popen | None, host: str,
                     web_port: int, api_port: int, health: str,
                     owned: list[subprocess.Popen],
-                    mobile: subprocess.Popen | None = None) -> int:
+                    mobile: subprocess.Popen | None = None,
+                    backend: subprocess.Popen | None = None,
+                    external_backend: BackendProcess | None = None) -> int:
     """Keep a reused API from silently disappearing while the web app stays up."""
     unhealthy = False
+    reloading = False
     while True:
         if frontend is not None:
             result = frontend.poll()
@@ -314,16 +441,27 @@ def monitor_servers(frontend: subprocess.Popen | None, host: str,
                 mobile = None
         if not ready(health):
             if not listening('127.0.0.1', api_port) and not listening(host, api_port):
-                print('Backend stopped. Restoring it on the shared Wi-Fi address...', flush=True)
-                ensure_backend(host, api_port, health, owned)
-                print('Backend restored. You can retry signing in.', flush=True)
-                unhealthy = False
+                parent_alive = (backend is not None and backend.poll() is None) or (
+                    external_backend is not None and backend_parent_alive(external_backend, api_port)
+                )
+                if parent_alive:
+                    if not reloading:
+                        print('Backend is reloading. Waiting for its existing process; no second server will be started.', flush=True)
+                    reloading = True
+                else:
+                    print('Backend stopped. Restoring it on the shared Wi-Fi address...', flush=True)
+                    backend = ensure_backend(host, api_port, health, owned)
+                    external_backend = backend_listener(api_port) if backend is None else None
+                    print('Backend restored. You can retry signing in.', flush=True)
+                    unhealthy = False
+                    reloading = False
             elif not unhealthy:
                 print('Backend is listening but its health check failed. Check its terminal; no process will be replaced.', flush=True)
                 unhealthy = True
-        elif unhealthy:
+        elif unhealthy or reloading:
             print('Backend health check is passing again.', flush=True)
             unhealthy = False
+            reloading = False
         time.sleep(5)
 
 
@@ -337,6 +475,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--debug', action='store_true', help='Use Flutter debug mode for web and Android development; both default to release mode for phone testing.')
     parser.add_argument('--restart-web', '--rebuild', action='store_true',
                         help='Stop any existing web server on this port and recompile a fresh build.')
+    parser.add_argument('--restart-backend', action='store_true',
+                        help='Restart the identified workspace backend, including changes to .env. New servers automatically reload Python changes.')
     parser.add_argument('--android-download-url', type=android_download_url,
                         help='Published HTTPS release APK URL shown in student/panelist web Settings.')
     android = parser.add_mutually_exclusive_group()
@@ -381,7 +521,9 @@ def main(argv: list[str] | None = None) -> int:
         existing_web = listening('127.0.0.1', args.web_port) or listening(host, args.web_port)
         if existing_web and not is_defensys_web(origin):
             raise RuntimeError(f'Port {args.web_port} is occupied by an unrecognized or unreachable web server. No existing process was stopped. Free the port or choose --web-port.')
-        if ensure_backend(host, args.api_port, health, owned) is None:
+        backend = ensure_backend(host, args.api_port, health, owned, restart=args.restart_backend)
+        external_backend = backend_listener(args.api_port) if backend is None else None
+        if backend is None:
             print('Using the existing backend and monitoring its availability. It will stay running when this launcher stops.', flush=True)
         frontend = None
         if existing_web:
@@ -403,7 +545,8 @@ def main(argv: list[str] | None = None) -> int:
             owned.append(mobile)
         if not args.no_browser:
             webbrowser.open(origin + '/#/login')
-        return monitor_servers(frontend, host, args.web_port, args.api_port, health, owned, mobile=mobile)
+        return monitor_servers(frontend, host, args.web_port, args.api_port, health, owned,
+                               mobile=mobile, backend=backend, external_backend=external_backend)
     except KeyboardInterrupt:
         return 0
     except (OSError, RuntimeError, argparse.ArgumentTypeError) as error:

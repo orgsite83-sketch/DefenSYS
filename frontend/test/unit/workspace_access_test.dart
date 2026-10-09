@@ -3,6 +3,48 @@ import 'package:defensys/navigation/workspace_access.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+    'browser restores an eligible role workspace and rejects a revoked role',
+    () {
+      const faculty = {
+        'role': 'faculty',
+        'is_documenter': true,
+        'is_panelist': true,
+        'has_staff_workspace': true,
+      };
+      for (final route in [AppRoutes.documenter, AppRoutes.panelist]) {
+        expect(
+          WorkspaceAccess.home(faculty, isWeb: true, preferredWorkspace: route),
+          route,
+        );
+        expect(
+          WorkspaceAccess.redirect(
+            faculty,
+            FacultyRoutes.dashboard,
+            isWeb: true,
+            preferredWorkspace: route,
+          ),
+          isNull,
+        );
+      }
+      expect(
+        WorkspaceAccess.home(
+          {...faculty, 'is_documenter': false},
+          isWeb: true,
+          preferredWorkspace: AppRoutes.documenter,
+        ),
+        FacultyRoutes.dashboard,
+      );
+      expect(
+        WorkspaceAccess.home(
+          faculty,
+          isWeb: false,
+          preferredWorkspace: FacultyRoutes.dashboard,
+        ),
+        AppRoutes.panelist,
+      );
+    },
+  );
   test('documenter can enter phone assignments, editor and settings', () {
     const doc = {'role': 'faculty', 'is_documenter': true};
     expect(WorkspaceAccess.home(doc, isWeb: false), AppRoutes.documenter);

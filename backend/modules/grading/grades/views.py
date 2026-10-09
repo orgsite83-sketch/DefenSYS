@@ -24,6 +24,7 @@ from .services import (
     build_group_settings_map,
     group_settings_key,
     group_completion_readiness,
+    grade_review_queryset,
     publish_grade_record,
     require_grade_editable,
     sync_missing_grade_rows,
@@ -133,9 +134,9 @@ def options_payload(queryset):
 
 def grade_center_payload(request, queryset=None, sync_info=None):
     raw_base = grade_records_for(request.user)
-    base = without_stale_unscheduled_placeholders(raw_base)
+    base = without_stale_unscheduled_placeholders(grade_review_queryset(raw_base))
     current = without_stale_unscheduled_placeholders(
-        queryset if queryset is not None else raw_base
+        grade_review_queryset(queryset if queryset is not None else raw_base)
     )
     semester = active_semester()
     payload = {

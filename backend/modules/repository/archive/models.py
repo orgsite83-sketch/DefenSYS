@@ -258,6 +258,8 @@ class UserBookShelf(models.Model):
     last_read_page = models.PositiveIntegerField(default=1)
     total_pages = models.PositiveIntegerField(default=1)
     progress_percent = models.FloatField(default=0.0)
+    is_saved = models.BooleanField(default=False)
+    last_opened_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

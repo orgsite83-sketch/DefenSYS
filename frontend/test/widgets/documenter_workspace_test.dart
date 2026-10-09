@@ -14,7 +14,9 @@ import 'package:defensys/services/documenter_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/widgets/minutes/documenter_assignments_view.dart';
 import 'package:defensys/widgets/minutes/minutes_pdf_dialog.dart';
+import 'package:defensys/widgets/minutes/faculty_app_workspace_switcher.dart';
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -33,6 +35,20 @@ class _Doc extends AuthNotifier {
     isRestoring: false,
     token: 'fixture-token',
     user: {'id': 7, 'role': 'faculty', 'is_documenter': true},
+  );
+}
+
+class _DualRoleDoc extends AuthNotifier {
+  @override
+  AuthState build() => const AuthState(
+    isRestoring: false,
+    token: 'fixture-token',
+    user: {
+      'id': 7,
+      'role': 'faculty',
+      'is_documenter': true,
+      'is_panelist': true,
+    },
   );
 }
 
@@ -167,6 +183,8 @@ Future<void> capture(WidgetTester tester, GlobalKey key, String name) async {
   });
 }
 
+void _ignoreMinutes(int _) {}
+
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   setUpAll(() => registerFallbackValue(Uri.parse('https://example.test')));
@@ -200,6 +218,7 @@ void main() {
             ],
             child: Consumer(
               builder: (context, ref, _) => MaterialApp.router(
+                debugShowCheckedModeBanner: false,
                 theme: AppTheme.theme,
                 localizationsDelegates: AppLocalizations.localizationsDelegates,
                 supportedLocales: AppLocalizations.supportedLocales,
@@ -222,6 +241,116 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+  testWidgets(
+    'workspace menu exposes eligible roles and honors the save guard',
+    (tester) async {
+      var guarded = false;
+      await pumpDefensysWidget(
+        tester,
+        Align(
+          alignment: Alignment.topRight,
+          child: FacultyAppWorkspaceSwitcher(
+            currentRoute: '/documenter',
+            beforeSwitch: () async {
+              guarded = true;
+              return false;
+            },
+          ),
+        ),
+        overrides: [authProvider.overrideWith(_DualRoleDoc.new)],
+      );
+      await tester.tap(find.text('Workspace'));
+      await tester.pumpAndSettle();
+      expect(find.text('Panel workspace'), findsOneWidget);
+      expect(find.text('Documenter workspace'), findsOneWidget);
+      expect(find.text('Student workspace'), findsNothing);
+      expect(find.text('Staff web workspace'), findsNothing);
+      await tester.tap(find.text('Panel workspace'));
+      await tester.pumpAndSettle();
+      expect(guarded, isTrue);
+      expect(
+        (await SharedPreferences.getInstance()).getString('app.workspace.7'),
+        isNull,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('compact queue searches, clears and filters signed records', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 850);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await pumpDefensysWidget(
+      tester,
+      const SingleChildScrollView(
+        padding: EdgeInsets.all(16),
+        child: DocumenterAssignmentsView(onOpenMinutes: _ignoreMinutes),
+      ),
+      overrides: [documenterProvider.overrideWith(_Assignments.new)],
+    );
+    await tester.enterText(find.byType(ShadInput), 'agrisense');
+    await tester.pumpAndSettle();
+    expect(find.text('Team AgriSense'), findsOneWidget);
+    expect(find.text('Team BioPulse'), findsNothing);
+    await tester.enterText(find.byType(ShadInput), 'unmatched-project');
+    await tester.pumpAndSettle();
+    expect(find.text('No matching defenses'), findsOneWidget);
+    await tester.tap(find.byTooltip('Clear search'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Records'));
+    await tester.pumpAndSettle();
+    expect(find.text('Team BioPulse'), findsOneWidget);
+    expect(find.text('Team AgriSense'), findsNothing);
+    expect(find.text('Awaiting adviser signature'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'documenter queue supports large text in a narrow dark viewport',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 850);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.runAsync(() => loadPreviewFonts(force: true));
+      final key = GlobalKey();
+      await pumpDefensysWidget(
+        tester,
+        RepaintBoundary(
+          key: key,
+          child: ColoredBox(
+            color: const Color(0xFF161618),
+            child: MediaQuery(
+              data: const MediaQueryData(
+                size: Size(320, 850),
+                textScaler: TextScaler.linear(1.3),
+              ),
+              child: const SingleChildScrollView(
+                padding: EdgeInsets.all(16),
+                child: DocumenterAssignmentsView(onOpenMinutes: _ignoreMinutes),
+              ),
+            ),
+          ),
+        ),
+        theme: AppTheme.mistDarkTheme,
+        overrides: [documenterProvider.overrideWith(_Assignments.new)],
+      );
+      expect(find.text('Continue minutes'), findsOneWidget);
+      final error = tester.takeException();
+      expect(
+        error,
+        isNull,
+        reason: error is FlutterError
+            ? error.diagnostics.map((d) => d.toStringDeep()).join('\n')
+            : null,
+      );
+      await capture(tester, key, 'dark-large-text');
+    },
+  );
+
   testWidgets(
     'phone assignments have clear actions, signature states and no overflow',
     (tester) async {
@@ -272,9 +401,12 @@ void main() {
       tester,
       RepaintBoundary(
         key: key,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: DocumenterAssignmentsView(onOpenMinutes: (_) {}),
+        child: ColoredBox(
+          color: const Color(0xFFF8FAFC),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: DocumenterAssignmentsView(onOpenMinutes: (_) {}),
+          ),
         ),
       ),
       overrides: [documenterProvider.overrideWith(_Assignments.new)],

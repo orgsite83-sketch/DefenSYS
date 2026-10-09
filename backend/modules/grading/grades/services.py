@@ -799,6 +799,51 @@ def without_stale_unscheduled_placeholders(queryset):
     )
 
 
+def grade_review_queryset(queryset):
+    """Keep scheduled grades and recorded evidence, excluding empty placeholders.
+
+    Schedule deletion deliberately preserves TeamGrade via SET_NULL. Endorsement
+    and explicit sync can also create unscheduled rows. Those empty contexts are
+    ready for scheduling, not outstanding evaluations. Blank student summaries
+    are scaffolding; a score of zero is recorded data.
+    """
+    from .correction_models import GradeCorrection
+    from .models import GradeAttemptHistory
+
+    student_scores = StudentStageGrade.objects.filter(team_grade_id=OuterRef('pk')).exclude(
+        panel_score__isnull=True,
+        adviser_score__isnull=True,
+        peer_score__isnull=True,
+        final_grade__isnull=True,
+    )
+    return queryset.alias(
+        _has_breakdowns=Exists(GradeBreakdown.objects.filter(team_grade_id=OuterRef('pk'))),
+        _has_student_scores=Exists(student_scores),
+        _has_peer_submissions=Exists(PeerEvaluationSubmission.objects.filter(team_grade_id=OuterRef('pk'))),
+        _has_panel_submissions=Exists(PanelistGradeSubmission.objects.filter(team_grade_id=OuterRef('pk'))),
+        _has_attempt_history=Exists(GradeAttemptHistory.objects.filter(team_grade_id=OuterRef('pk'))),
+        _has_corrections=Exists(GradeCorrection.objects.filter(grade_id=OuterRef('pk'))),
+    ).filter(
+        Q(schedule__isnull=False)
+        | Q(panel_score__isnull=False)
+        | Q(adviser_score__isnull=False)
+        | Q(peer_score__isnull=False)
+        | Q(final_grade__isnull=False)
+        | ~Q(status=TeamGrade.STATUS_PENDING)
+        | ~Q(verdict='')
+        | ~Q(verdict_remarks='')
+        | Q(published_at__isnull=False)
+        | Q(verdict_at__isnull=False)
+        | Q(attempt_count__gt=1)
+        | Q(_has_breakdowns=True)
+        | Q(_has_student_scores=True)
+        | Q(_has_peer_submissions=True)
+        | Q(_has_panel_submissions=True)
+        | Q(_has_attempt_history=True)
+        | Q(_has_corrections=True)
+    )
+
+
 def _merge_stale_grade(stale, canonical):
     score_fields = ('panel_score', 'adviser_score', 'peer_score')
     for field in score_fields:
@@ -1988,7 +2033,7 @@ def cohort_grading_teams_for_group(
             config=config,
             year_level=year_level,
         )
-    grades = grades.select_related('team', 'semester')
+    grades = grade_review_queryset(grades).select_related('team', 'semester')
     teams_list = []
     for grade in grades:
         readiness = team_grading_readiness(grade, semester, scope, config)
@@ -2056,13 +2101,13 @@ def incomplete_grading_teams_for_group(
 
 def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=None, year_level=None):
     grades = list(
-        _grades_for_group(
+        grade_review_queryset(_grades_for_group(
             semester,
             scope,
             stage_label,
             config=config,
             year_level=year_level,
-        ).select_related('team', 'semester')
+        )).select_related('team', 'semester')
     )
     total = len(grades)
     redefense_teams = [
@@ -2180,10 +2225,15 @@ def group_completion_readiness(*, semester, scope, stage_label, user):
     )
     incomplete = [t for t in cohort if t['missing_components']]
     is_complete = bool(config and config.is_officially_complete)
+    group_grades = _grades_for_group(semester, scope, label, config=config, year_level=year_level)
+    has_unscheduled_placeholders = group_grades.exclude(
+        pk__in=grade_review_queryset(group_grades).values('pk'),
+    ).exists()
     return {
         **counts,
         'is_officially_complete': is_complete,
-        'can_complete': counts['grading_total_team_count'] > 0 and not incomplete and not is_complete,
+        'can_complete': (counts['grading_total_team_count'] > 0 and not incomplete
+                         and not is_complete and not has_unscheduled_placeholders),
         'incomplete_teams': incomplete,
         'cohort_teams': cohort,
     }
@@ -2341,14 +2391,16 @@ class StageCompletionService:
 
         with transaction.atomic():
             config = cls._lock_config(scope, config)
+            group_grades = _grades_for_group(
+                semester, scope, label, config=config, year_level=year_level,
+            )
+            review_grades = grade_review_queryset(group_grades)
+            if group_grades.exclude(pk__in=review_grades.values('pk')).exists():
+                raise ValidationError({
+                    'stage_label': 'Teams are still ready for scheduling. Schedule their defenses before marking this stage or event officially complete.',
+                })
             grades = (
-                _grades_for_group(
-                    semester,
-                    scope,
-                    label,
-                    config=config,
-                    year_level=year_level,
-                )
+                review_grades
                 .select_for_update(of=('self',))
                 .select_related('team', 'schedule', 'semester')
             )

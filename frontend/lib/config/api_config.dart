@@ -183,10 +183,10 @@ class ApiConfig {
   static String get projectArchiveUrl => '$baseUrl/repository/project-archive';
   static String get repositoryAuditUrl => projectArchiveUrl;
   static String get gradeCenterUrl => '$baseUrl/grading/grades';
-  static String get repositoryUrl => '$baseUrl/repository/archive';
+  static String get repositoryUrl => '$baseUrl/repository/archive/';
   static String get repositoryReviewsUrl =>
-      '$baseUrl/repository/archive/reviews';
-  static String get repositoryShelfUrl => '$baseUrl/repository/archive/shelf';
+      '$baseUrl/repository/archive/reviews/';
+  static String get repositoryShelfUrl => '$baseUrl/repository/archive/shelf/';
   static String get defenseStagesUrl => '$baseUrl/defense/stages';
   static String get defenseSchedulesUrl => '$baseUrl/defense/schedules';
   static String get defenseBoardUrl => '$baseUrl/defense/board';

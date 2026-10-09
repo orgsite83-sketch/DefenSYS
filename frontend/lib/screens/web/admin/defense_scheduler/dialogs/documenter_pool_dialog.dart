@@ -1,12 +1,14 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../../config/api_config.dart';
 import '../../../../../services/auth_provider.dart';
 import '../../../../../services/authenticated_client.dart';
 import '../../../../../services/authz_errors.dart';
 import '../../../../../services/defense_scheduler_provider.dart';
 import '../../../../../theme/defensys_tokens.dart';
+import '../components/scheduler_people_picker.dart';
 
 class DocumenterPoolButton extends ConsumerWidget {
   const DocumenterPoolButton({super.key, this.onChanged});
@@ -14,22 +16,25 @@ class DocumenterPoolButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final admin = ref.watch(authProvider).user?['role'] == 'admin';
-    return TextButton(
-      onPressed: !admin
-          ? null
-          : () async {
-              final saved = await showDialog<bool>(
-                context: context,
-                builder: (_) => const DocumenterPoolDialog(),
-              );
-              if (saved == true && context.mounted) {
-                await ref
-                    .read(defenseSchedulerProvider.notifier)
-                    .fetchSchedules();
-                onChanged?.call();
-              }
-            },
-      child: const Text('Manage pool'),
+    return SchedulerShadcnScope(
+      child: ShadButton.ghost(
+        size: ShadButtonSize.sm,
+        onPressed: !admin
+            ? null
+            : () async {
+                final saved = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => const DocumenterPoolDialog(),
+                );
+                if (saved == true && context.mounted) {
+                  await ref
+                      .read(defenseSchedulerProvider.notifier)
+                      .fetchSchedules();
+                  onChanged?.call();
+                }
+              },
+        child: const Text('Manage pool'),
+      ),
     );
   }
 }

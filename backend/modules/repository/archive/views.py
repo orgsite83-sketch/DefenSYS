@@ -11,6 +11,7 @@ from .services import (
     delete_user_review,
     get_user_shelf_payload,
     update_user_shelf,
+    clear_user_reading_history,
 )
 
 
@@ -87,6 +88,12 @@ class UserBookShelfView(APIView):
             last_read_page=last_read_page,
             total_pages=total_pages,
             progress_percent=progress_percent,
+            is_saved=request.data.get('is_saved'),
+            opened=request.data.get('opened') is True,
         )
         return Response(shelf_item, status=status.HTTP_200_OK)
+
+    def delete(self, request):
+        clear_user_reading_history(request.user)
+        return Response({'success': True})
 

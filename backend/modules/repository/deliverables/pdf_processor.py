@@ -107,12 +107,15 @@ def extract_pdf_content(file_path: str, classify: bool = False) -> Dict[str, any
                     if text:
                         full_text.append(text)
                         logger.info(f'Page {page_num}: {len(text)} chars')
+                    else:
+                        full_text.append('')
                 except Exception as e:
                     logger.warning(f'Page {page_num} extraction failed: {e}')
+                    full_text.append('')
                     continue
         
         # Combine all text
-        combined_text = '\n'.join(full_text)
+        combined_text = '\f'.join(full_text)
         result['text'] = combined_text
         
         # Generate summary (first 500 characters)

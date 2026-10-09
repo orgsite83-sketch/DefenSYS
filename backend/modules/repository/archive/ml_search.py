@@ -10,6 +10,9 @@ def entry_haystack(entry: Dict[str, Any]) -> str:
         entry.get('deliverable_label'),
         entry.get('team_name'),
         entry.get('project_title'),
+        entry.get('display_title'),
+        entry.get('document_label'),
+        entry.get('overview_text'),
         entry.get('stage'),
         entry.get('course_code'),
         entry.get('uploaded_by'),
@@ -29,7 +32,8 @@ def matches_search(entry: Dict[str, Any], search: str) -> bool:
     if not search:
         return True
     query = search.lower().strip()
-    return query in entry_haystack(entry)
+    haystack = entry_haystack(entry)
+    return query in haystack or all(word in haystack for word in query.split())
 
 
 def score_entry(entry: Dict[str, Any], search: str) -> float:
@@ -49,6 +53,8 @@ def score_entry(entry: Dict[str, Any], search: str) -> float:
             score += 12.0
         if word in (entry.get('file_name') or '').lower():
             score += 8.0
+        if word in (entry.get('project_title') or entry.get('display_title') or '').lower():
+            score += 18.0
         if word in (entry.get('team_name') or '').lower():
             score += 6.0
         category = (entry.get('category') or '').lower()
@@ -98,6 +104,9 @@ def build_suggestions(
         if len(suggestions) >= limit:
             break
         entry_id = str(entry.get('id') or '')
+        project_title = str(entry.get('project_title') or entry.get('display_title') or '').strip()
+        if project_title and query in project_title.lower():
+            add(project_title, 'project', entry_id)
         category = (entry.get('category') or '').strip()
         if category and query in category.lower():
             add(category, 'category', entry_id)
@@ -138,7 +147,9 @@ def filter_and_rank_entries(
             continue
         filtered.append(entry)
 
-    suggestions = build_suggestions(entries, search) if search else []
+    scoped = [entry for entry in entries if _apply_standard_filters(entry, query_params)
+              and (not extra_filters or extra_filters(entry, query_params))]
+    suggestions = build_suggestions(scoped, search) if search else []
 
     if search:
         filtered.sort(
@@ -164,6 +175,7 @@ def _apply_standard_filters(entry: Dict[str, Any], query_params) -> bool:
     stage = get_param('stage')
     deliverable_id = get_param('deliverable_id')
     submission_kind = get_param('submission_kind')
+    document_kind = get_param('document_kind')
 
     if entry_type and entry.get('type') != entry_type:
         return False
@@ -182,5 +194,9 @@ def _apply_standard_filters(entry: Dict[str, Any], query_params) -> bool:
     if deliverable_id and (entry.get('deliverable_id') or '') != deliverable_id:
         return False
     if submission_kind and entry.get('submission_kind') != submission_kind:
+        return False
+    if document_kind == 'documents' and entry.get('document_kind') not in ('concept', 'chapters', 'final', 'document'):
+        return False
+    if document_kind and document_kind != 'documents' and entry.get('document_kind') != document_kind:
         return False
     return True

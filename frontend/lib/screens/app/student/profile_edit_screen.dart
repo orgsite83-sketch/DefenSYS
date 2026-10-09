@@ -24,6 +24,7 @@ import '../../about_screen.dart';
 import '../../privacy_screen.dart';
 import '../../terms_screen.dart';
 import '../app_settings_screen.dart';
+import '../../../widgets/repository/library_activity_panel.dart';
 
 MediaType _inferMediaType(String filename) {
   final ext = filename.toLowerCase().split('.').last;
@@ -495,6 +496,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             // Top Hero Card Banner
             _buildHeroBanner(displayName, username, email, roleLabel, user, isWide),
             const SizedBox(height: 16),
+            if (isStudent) ...[
+              const LibraryActivityPanel(),
+              const SizedBox(height: 20),
+            ],
 
             // Main Content Grid
             if (isWide)

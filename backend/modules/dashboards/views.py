@@ -27,7 +27,7 @@ from defense.scheduler.models import DefenseSchedule
 from defense.stages.models import DefenseStage, StageDeliverable, StageGradingConfig
 from repository.archive.services import restricted_archive_entries_count, visible_archive_entries_count
 from grading.grades.models import TeamGrade
-from grading.grades.services import default_weights, weights_for_schedule
+from grading.grades.services import default_weights, grade_review_queryset, weights_for_schedule
 from grading.grades.peer_eval import peer_criteria_payload, peer_submissions_for_evaluator
 from repository.project_archive.services import (
     repository_approved_count,
@@ -629,7 +629,7 @@ def _pit_lead_overview_payload(user, active_sem=None):
     ).count() if pit_team_ids else 0
 
     grade_qs = TeamGrade.objects.filter(team_id__in=pit_team_ids) if pit_team_ids else TeamGrade.objects.none()
-    pending_grades = grade_qs.exclude(status=TeamGrade.STATUS_PUBLISHED).count() if pit_team_ids else 0
+    pending_grades = grade_review_queryset(grade_qs).exclude(status=TeamGrade.STATUS_PUBLISHED).count() if pit_team_ids else 0
     published_grades = grade_qs.filter(status=TeamGrade.STATUS_PUBLISHED).count() if pit_team_ids else 0
     alerts = []
     active_label = _active_semester_label(active_sem)
@@ -881,9 +881,9 @@ class AdminDashboardView(APIView):
             scope=TeamGrade.SCOPE_CAPSTONE,
             status=TeamGrade.STATUS_PUBLISHED,
         ).count()
-        pending_grade_count = TeamGrade.objects.filter(
+        pending_grade_count = grade_review_queryset(TeamGrade.objects.filter(
             scope=TeamGrade.SCOPE_CAPSTONE,
-        ).exclude(status=TeamGrade.STATUS_PUBLISHED).count()
+        )).exclude(status=TeamGrade.STATUS_PUBLISHED).count()
         submitted_deliverable_count = DeliverableSubmission.objects.count()
         archive_file_count = visible_archive_entries_count()
         restricted_archive_file_count = restricted_archive_entries_count()

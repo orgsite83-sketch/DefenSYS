@@ -72,9 +72,9 @@ class RepositoryNotifier extends Notifier<RepositoryState> {
     return const RepositoryState();
   }
 
-  /// Mobile student Repository tab: project archives plus team document uploads.
+  /// Public project library. Private team uploads stay in the team's workspace.
   Future<void> fetchForStudent({String? search}) {
-    return fetchEntries(search: search, includeTeamDocuments: true);
+    return fetchEntries(search: search, type: '', yearLevel: '', stage: '', academicYear: '');
   }
 
   Future<void> fetchEntries({

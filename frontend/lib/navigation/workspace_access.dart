@@ -31,6 +31,13 @@ abstract final class WorkspaceAccess {
     final role = user['role'];
     if (role == 'guest_panelist') return AppRoutes.guestDefenses;
     if (role == 'student') return AppRoutes.student;
+    // Remember explicit role-workspace choices in the browser as well as the app.
+    if (preferredWorkspace == AppRoutes.documenter && canDocument(user)) {
+      return AppRoutes.documenter;
+    }
+    if (preferredWorkspace == AppRoutes.panelist && canEvaluate(user)) {
+      return AppRoutes.panelist;
+    }
     if (isWeb) {
       if (role == 'admin') return AdminRoutes.overview;
       if (role == 'faculty') {
@@ -39,9 +46,6 @@ abstract final class WorkspaceAccess {
             : FacultyRoutes.dashboard;
       }
     } else {
-      if (preferredWorkspace == AppRoutes.documenter && canDocument(user)) {
-        return AppRoutes.documenter;
-      }
       if (canEvaluate(user)) return AppRoutes.panelist;
       if (canDocument(user)) return AppRoutes.documenter;
     }

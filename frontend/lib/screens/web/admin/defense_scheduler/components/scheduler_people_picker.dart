@@ -230,10 +230,18 @@ class _SchedulerPeoplePickerState extends State<SchedulerPeoplePicker> {
             if (!widget.multiple && selectedPeople.isNotEmpty)
               Align(
                 alignment: Alignment.centerRight,
-                child: ShadButton.ghost(
-                  size: ShadButtonSize.sm,
-                  onPressed: widget.enabled ? () => widget.onChanged({}) : null,
-                  child: const Text('Clear selection'),
+                child: Tooltip(
+                  message:
+                      'Remove ${schedulerPersonName(selectedPeople.first)}',
+                  child: ShadButton.ghost(
+                    width: 32,
+                    height: 32,
+                    padding: EdgeInsets.zero,
+                    onPressed: widget.enabled
+                        ? () => widget.onChanged({})
+                        : null,
+                    child: const Icon(LucideIcons.x, size: 14),
+                  ),
                 ),
               ),
           ],

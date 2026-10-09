@@ -5,6 +5,9 @@ from repository.deliverables.services import display_name
 from repository.entry_payloads import ml_fields_from
 
 from django.db.models import Avg, Count
+from django.utils import timezone
+from rest_framework.exceptions import NotFound, ValidationError
+from .library import enrich_library_entry
 from .ml_search import filter_and_rank_entries
 from .models import ArchiveEntry, RepositoryReview, UserBookShelf
 
@@ -99,6 +102,7 @@ def pit_restricted_queryset():
 def pit_queryset():
     return ArchiveEntry.objects.select_related('team', 'uploaded_by').filter(
         entry_type=ArchiveEntry.TYPE_PIT,
+        status=ArchiveEntry.STATUS_APPROVED,
     )
 
 
@@ -144,6 +148,8 @@ def capstone_entry_payload(submission):
             'team_id': team.id if team else None,
             'team_name': team.name if team else '',
             'project_title': team.project_title if team else '',
+            'project_version': submission.project_version,
+            'uploaded_by_id': submission.uploaded_by_id,
             'year_level': team.year_level if team else '',
             'academic_year': team.semester.school_year.label if team and team.semester else '',
             'semester': team.semester.label if team and team.semester else '',
@@ -176,6 +182,8 @@ def capstone_entry_payload(submission):
             'team_id': team.id if team else None,
             'team_name': team.name if team else '',
             'project_title': team.project_title if team else '',
+            'project_version': submission.project_version,
+            'uploaded_by_id': submission.uploaded_by_id,
             'year_level': team.year_level if team else '',
             'academic_year': team.semester.school_year.label if team and team.semester else '',
             'semester': team.semester.label if team and team.semester else '',
@@ -206,7 +214,10 @@ def pit_entry_payload(entry):
         'deliverable_label': entry.file_name,
         'team_id': entry.team_id,
         'team_name': entry.team_name or (entry.team.name if entry.team else 'Unmatched'),
-        'project_title': entry.metadata.get('project_title', '') if isinstance(entry.metadata, dict) else '',
+        'project_title': (entry.metadata.get('project_title', '') if isinstance(entry.metadata, dict) else '')
+                         or (entry.team.project_title if entry.team else ''),
+        'project_version': entry.project_version,
+        'uploaded_by_id': entry.uploaded_by_id,
         'year_level': entry.year_level,
         'academic_year': entry.academic_year,
         'semester': entry.semester_label,
@@ -265,6 +276,8 @@ def get_user_shelf_map(user, target_ids=None):
             'last_read_page': item.last_read_page,
             'total_pages': item.total_pages,
             'reading_progress': item.progress_percent,
+            'is_saved': item.is_saved,
+            'last_opened_at': item.last_opened_at.isoformat() if item.last_opened_at else None,
         }
         for item in qs
     }
@@ -305,6 +318,7 @@ def all_visible_entries(user=None):
     user_reviews = get_user_review_map(user)
 
     for entry in entries:
+        enrich_library_entry(entry)
         tid = entry.get('id', '')
         stats = review_stats.get(tid, {})
         entry['average_rating'] = stats.get('average_rating', 0.0)
@@ -320,6 +334,8 @@ def all_visible_entries(user=None):
         entry['last_read_page'] = shelf_info.get('last_read_page', 1)
         entry['total_pages'] = shelf_info.get('total_pages', 1)
         entry['reading_progress'] = shelf_info.get('reading_progress', 0.0)
+        entry['is_saved'] = shelf_info.get('is_saved', False)
+        entry['last_opened_at'] = shelf_info.get('last_opened_at')
 
     return sorted(entries, key=lambda item: item.get('uploaded_at'), reverse=True)
 
@@ -469,11 +485,35 @@ def delete_user_review(user, review_id):
     return deleted_count > 0
 
 
+def library_targets(user):
+    entries = all_visible_entries(user=user)
+    visible = {entry['id']: entry for entry in entries}
+    groups = {}
+    for entry in entries:
+        groups.setdefault(entry['project_key'], []).append(entry)
+    for key, files in groups.items():
+        visible[f'project:{key}'] = {**files[0], 'id': f'project:{key}',
+            'document_kind': 'project', 'document_label': 'Project', 'project_entries': files}
+    return visible
+
+
 def get_user_shelf_payload(user):
     if not user or not getattr(user, 'is_authenticated', False):
         return {'items': []}
     
-    shelf_items = list(UserBookShelf.objects.filter(user=user).order_by('-updated_at'))
+    visible = library_targets(user)
+    shelf_items = list(UserBookShelf.objects.filter(user=user, target_id__in=visible).order_by('-updated_at'))
+    recent = sorted((item for item in shelf_items if item.last_opened_at),
+                    key=lambda item: item.last_opened_at, reverse=True)
+    activity = []
+    for item in shelf_items:
+        if item.is_saved:
+            activity.append({'action': 'Saved an output', 'timestamp': item.updated_at.isoformat(),
+                             'entry': visible[item.target_id]})
+    for review in RepositoryReview.objects.filter(user=user, target_id__in=visible).order_by('-updated_at')[:30]:
+        activity.append({'action': f'Rated {review.rating}/5' + (' and left a remark' if review.remark else ''),
+                         'timestamp': review.updated_at.isoformat(), 'entry': visible[review.target_id]})
+    activity.sort(key=lambda item: item['timestamp'], reverse=True)
     return {
         'items': [
             {
@@ -484,16 +524,35 @@ def get_user_shelf_payload(user):
                 'total_pages': item.total_pages,
                 'progress_percent': item.progress_percent,
                 'updated_at': item.updated_at.isoformat(),
+                'is_saved': item.is_saved,
+                'last_opened_at': item.last_opened_at.isoformat() if item.last_opened_at else None,
             }
             for item in shelf_items
-        ]
+        ],
+        'recent': [visible[item.target_id] for item in recent[:50]],
+        'saved': [visible[item.target_id] for item in shelf_items if item.is_saved],
+        'activity': activity[:30],
     }
 
 
-def update_user_shelf(user, target_id, status=None, last_read_page=None, total_pages=None, progress_percent=None):
+def update_user_shelf(user, target_id, status=None, last_read_page=None, total_pages=None, progress_percent=None,
+                      is_saved=None, opened=False):
+    if target_id not in library_targets(user):
+        raise NotFound('This public output is no longer available.')
     defaults = {}
     if status is not None:
-        defaults['status'] = status
+        if status not in dict(UserBookShelf.STATUS_CHOICES) and status != 'none':
+            raise ValidationError({'status': 'Invalid reading status.'})
+        if status in ('want_to_read', 'favorited', 'none'):
+            defaults['is_saved'] = status != 'none'
+        elif status:
+            defaults['status'] = status
+    if is_saved is not None:
+        if not isinstance(is_saved, bool):
+            raise ValidationError({'is_saved': 'Expected a boolean.'})
+        defaults['is_saved'] = is_saved
+    if opened:
+        defaults['last_opened_at'] = timezone.now()
     if last_read_page is not None:
         try:
             defaults['last_read_page'] = max(1, int(last_read_page))
@@ -525,5 +584,10 @@ def update_user_shelf(user, target_id, status=None, last_read_page=None, total_p
         'total_pages': item.total_pages,
         'progress_percent': item.progress_percent,
         'updated_at': item.updated_at.isoformat(),
+        'is_saved': item.is_saved,
+        'last_opened_at': item.last_opened_at.isoformat() if item.last_opened_at else None,
     }
 
+
+def clear_user_reading_history(user):
+    UserBookShelf.objects.filter(user=user).update(last_opened_at=None)

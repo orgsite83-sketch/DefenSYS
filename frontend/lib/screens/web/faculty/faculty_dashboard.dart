@@ -525,6 +525,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             const SizedBox(width: 8),
           ],
           const Spacer(),
+          if (WorkspaceAccess.canDocument(ref.watch(authProvider).user ?? widget.userData ?? {}))
+            IconButton(icon: const Icon(Icons.edit_note_rounded), tooltip: 'Open documenter app workspace',
+              onPressed: () => context.push(AppRoutes.documenter)),
           if (WorkspaceAccess.canEvaluate(ref.watch(authProvider).user ?? widget.userData ?? {}))
             IconButton(icon: const Icon(Icons.rate_review_outlined), tooltip: 'Panelist evaluations',
               onPressed: () => context.push(AppRoutes.panelist)),

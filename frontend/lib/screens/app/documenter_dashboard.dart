@@ -45,13 +45,41 @@ class _DocumenterDashboardState extends ConsumerState<DocumenterDashboard>
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    backgroundColor: DefensysTokens.backgroundOf(context),
     appBar: AppBar(
       automaticallyImplyLeading: false,
-      backgroundColor: DefensysTokens.maroon,
-      foregroundColor: Colors.white,
-      title: Text(
-        ['Documenter workspace', 'Minutes records', 'Profile'][_tab],
-        style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+      backgroundColor: DefensysTokens.surfaceOf(context),
+      foregroundColor: DefensysTokens.textPrimaryOf(context),
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      toolbarHeight: 72,
+      shape: Border(
+        bottom: BorderSide(color: DefensysTokens.borderOf(context)),
+      ),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'DefenSYS',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: DefensysTokens.maroonTextOf(context),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            ['Documenter workspace', 'Minutes records', 'Profile'][_tab],
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: DefensysTokens.textPrimaryOf(context),
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.3,
+            ),
+          ),
+        ],
       ),
       actions: const [
         FacultyAppWorkspaceSwitcher(currentRoute: AppRoutes.documenter),
@@ -65,7 +93,7 @@ class _DocumenterDashboardState extends ConsumerState<DocumenterDashboard>
                   ref.read(documenterProvider.notifier).fetchAssignments(),
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
                 child: DocumenterAssignmentsView(
                   recordsOnly: _tab == 1,
                   showHeader: false,
@@ -76,15 +104,25 @@ class _DocumenterDashboardState extends ConsumerState<DocumenterDashboard>
             ),
           ),
     bottomNavigationBar: NavigationBar(
+      backgroundColor: DefensysTokens.surfaceOf(context),
+      surfaceTintColor: Colors.transparent,
+      indicatorColor: DefensysTokens.maroonTextOf(
+        context,
+      ).withValues(alpha: 0.10),
+      indicatorShape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(6),
+      ),
       selectedIndex: _tab,
       onDestinationSelected: (index) => setState(() => _tab = index),
       destinations: const [
         NavigationDestination(
           icon: Icon(Icons.assignment_outlined),
+          selectedIcon: Icon(Icons.assignment_rounded),
           label: 'Assignments',
         ),
         NavigationDestination(
-          icon: Icon(Icons.picture_as_pdf_outlined),
+          icon: Icon(Icons.folder_open_outlined),
+          selectedIcon: Icon(Icons.folder_rounded),
           label: 'Records',
         ),
         NavigationDestination(

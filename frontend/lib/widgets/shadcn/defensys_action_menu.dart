@@ -12,11 +12,13 @@ class DefensysActionMenu extends StatefulWidget {
     required this.items,
     this.enabled = true,
     this.triggerLabel,
+    this.triggerIcon,
   });
   final String label;
   final List<Widget> items;
   final bool enabled;
   final String? triggerLabel;
+  final IconData? triggerIcon;
 
   @override
   State<DefensysActionMenu> createState() => _DefensysActionMenuState();
@@ -83,7 +85,10 @@ class _DefensysActionMenuState extends State<DefensysActionMenu> {
                     enabled: widget.enabled,
                     height: 36,
                     onPressed: widget.enabled ? _controller.toggle : null,
-                    trailing: const Icon(LucideIcons.ellipsis, size: 16),
+                    trailing: Icon(
+                      widget.triggerIcon ?? LucideIcons.ellipsis,
+                      size: 16,
+                    ),
                     child: Text(widget.triggerLabel!),
                   )
                 : ShadButton.ghost(

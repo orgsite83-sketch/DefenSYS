@@ -3,6 +3,7 @@
 import argparse
 from contextlib import ExitStack, redirect_stderr, redirect_stdout
 import io
+import subprocess
 import threading
 import unittest
 from unittest.mock import Mock, call, patch
@@ -30,6 +31,8 @@ class LocalWebLauncherTests(unittest.TestCase):
         self.is_web = stack.enter_context(patch.object(launcher, 'is_defensys_web', return_value=False))
         self.monitor = stack.enter_context(patch.object(launcher, 'monitor_servers', return_value=0))
         self.android = stack.enter_context(patch.object(launcher, 'connected_android_device', return_value=None))
+        self.backend_listener = stack.enter_context(patch.object(launcher, 'backend_listener', return_value=None))
+        self.stop_backend = stack.enter_context(patch.object(launcher, 'stop_backend'))
 
     def test_rejects_loopback_public_and_invalid_addresses(self):
         for address in ['127.0.0.1', '0.0.0.0', '203.0.113.10', '172.15.0.1', '172.32.0.1', '192.168.1.300']:
@@ -45,6 +48,27 @@ class LocalWebLauncherTests(unittest.TestCase):
             self.start.assert_not_called()
             self.stop.assert_not_called()
             self.browser.assert_not_called()
+
+    def test_check_mode_with_restart_flags_is_still_read_only(self):
+        with ExitStack() as stack:
+            self.setup_runtime(stack)
+            self.assertEqual(launcher.main(['--check', '--restart-backend', '--restart-web']), 0)
+            self.start.assert_not_called()
+            self.stop_backend.assert_not_called()
+            self.backend_listener.assert_not_called()
+
+    def test_restart_backend_flag_replaces_only_the_identified_backend(self):
+        with ExitStack() as stack:
+            self.setup_runtime(stack)
+            existing = launcher.BackendProcess(101, 100, True)
+            self.backend_listener.return_value = existing
+            backend, frontend = Mock(), Mock()
+            self.start.side_effect = [backend, frontend]
+            stack.enter_context(patch.object(launcher.Path, 'exists', return_value=True))
+            stack.enter_context(patch.object(launcher, 'wait_for'))
+            self.assertEqual(launcher.main(['--restart-backend', '--no-android', '--no-browser']), 0)
+            self.stop_backend.assert_called_once_with(existing, '192.168.1.3', 8000)
+            self.assertEqual(self.stop.call_args_list, [call(frontend), call(backend)])
 
     def test_published_apk_is_passed_to_web_settings(self):
         with ExitStack() as stack:
@@ -223,6 +247,106 @@ class StartupReadinessTests(unittest.TestCase):
             launcher.forward_web_output(process, started)
             self.assertTrue(started.is_set())
 
+
+class BackendReloadTests(unittest.TestCase):
+    def runtime(self, stack, existing=None, healthy=True):
+        stack.enter_context(redirect_stdout(io.StringIO()))
+        stack.enter_context(patch.object(launcher, 'ready', return_value=healthy))
+        self.listener = stack.enter_context(patch.object(launcher, 'backend_listener', return_value=existing))
+        self.stop = stack.enter_context(patch.object(launcher, 'stop_backend'))
+        self.start = stack.enter_context(patch.object(launcher, 'start'))
+        stack.enter_context(patch.object(launcher, 'listening', return_value=False))
+        stack.enter_context(patch.object(launcher.Path, 'exists', return_value=True))
+        stack.enter_context(patch.object(launcher, 'wait_for'))
+
+    def test_new_backend_enables_django_reload(self):
+        owned = []
+        with ExitStack() as stack:
+            self.runtime(stack, healthy=False)
+            backend = launcher.ensure_backend('192.168.1.3', 8000, 'health', owned)
+            command = self.start.call_args.args[0]
+            self.assertNotIn('--noreload', command)
+            self.assertEqual(owned, [backend])
+            self.stop.assert_not_called()
+
+    def test_existing_backend_without_reload_is_upgraded(self):
+        existing = launcher.BackendProcess(101, 100, False)
+        owned = []
+        with ExitStack() as stack:
+            self.runtime(stack, existing)
+            backend = launcher.ensure_backend('192.168.1.3', 8000, 'health', owned)
+            self.stop.assert_called_once_with(existing, '192.168.1.3', 8000)
+            self.assertEqual(owned, [backend])
+            self.assertNotIn('--noreload', self.start.call_args.args[0])
+
+    def test_existing_backend_with_reload_is_reused(self):
+        with ExitStack() as stack:
+            self.runtime(stack, launcher.BackendProcess(101, 100, True))
+            self.assertIsNone(launcher.ensure_backend('192.168.1.3', 8000, 'health', []))
+            self.stop.assert_not_called()
+            self.start.assert_not_called()
+
+    def test_unknown_healthy_server_is_not_stopped_even_on_explicit_restart(self):
+        with ExitStack() as stack:
+            self.runtime(stack)
+            self.assertIsNone(launcher.ensure_backend('192.168.1.3', 8000, 'health', []))
+            with self.assertRaisesRegex(RuntimeError, 'Cannot verify'):
+                launcher.ensure_backend('192.168.1.3', 8000, 'health', [], restart=True)
+            self.stop.assert_not_called()
+            self.start.assert_not_called()
+
+    def test_backend_ownership_requires_repo_venv_entrypoint_and_port(self):
+        python = str(launcher.ROOT / 'backend' / 'venv' / 'Scripts' / 'python.exe')
+        cases = [
+            ([python, 'manage.py', 'runserver', '0.0.0.0:8000'], True),
+            ([python, str(launcher.ROOT / 'backend' / 'manage.py'), 'runserver', '0.0.0.0:8000'], True),
+            ([python, 'other.py', 'runserver', '0.0.0.0:8000'], False),
+            (['C:/other-repo/venv/Scripts/python.exe', 'manage.py', 'runserver', '0.0.0.0:8000'], False),
+            ([python, 'manage.py', 'runserver', '0.0.0.0:8001'], False),
+            ([python, 'manage.py', 'shell', '0.0.0.0:8000'], False),
+        ]
+        for args, expected in cases:
+            with self.subTest(args=args):
+                self.assertEqual(launcher.workspace_backend_args(subprocess.list2cmdline(args), 8000) is not None, expected)
+
+    def test_listener_includes_reloader_parents_and_excludes_the_launcher(self):
+        python = str(launcher.ROOT / 'backend' / 'venv' / 'Scripts' / 'python.exe')
+        command = subprocess.list2cmdline([python, 'manage.py', 'runserver', '0.0.0.0:8000'])
+        table = {
+            103: {'ProcessId': 103, 'ParentProcessId': 102, 'CommandLine': command},
+            102: {'ProcessId': 102, 'ParentProcessId': 101, 'CommandLine': command},
+            101: {'ProcessId': 101, 'ParentProcessId': 100, 'CommandLine': command},
+            100: {'ProcessId': 100, 'ParentProcessId': 99, 'CommandLine': 'python start_local_web.py'},
+        }
+        with patch.object(launcher, 'pids_listening_on', return_value=[103]), \
+                patch.object(launcher, 'windows_python_processes', return_value=table):
+            self.assertEqual(launcher.backend_listener(8000), launcher.BackendProcess(103, 101, True))
+        table[103]['CommandLine'] = command + ' --noreload'
+        with patch.object(launcher, 'pids_listening_on', return_value=[103]), \
+                patch.object(launcher, 'windows_python_processes', return_value=table):
+            self.assertFalse(launcher.backend_listener(8000).reload_enabled)
+
+    def test_backend_stop_failure_does_not_start_a_second_server(self):
+        with ExitStack() as stack:
+            self.runtime(stack, launcher.BackendProcess(101, 100, False))
+            self.stop.side_effect = RuntimeError('Backend could not stop')
+            with self.assertRaisesRegex(RuntimeError, 'could not stop'):
+                launcher.ensure_backend('192.168.1.3', 8000, 'health', [])
+            self.start.assert_not_called()
+
+    def test_windows_cleanup_stops_the_owned_reloader_tree_after_signal_failure(self):
+        process = Mock()
+        process.pid = 100
+        process.poll.return_value = None
+        process.send_signal.side_effect = OSError('No console')
+        with patch.object(launcher.os, 'name', 'nt'), \
+                patch.object(launcher.signal, 'CTRL_BREAK_EVENT', 1, create=True), \
+                patch.object(launcher.subprocess, 'run') as terminate:
+            launcher.stop(process)
+        terminate.assert_called_once()
+        self.assertEqual(terminate.call_args.args[0], ['taskkill', '/F', '/T', '/PID', '100'])
+        process.kill.assert_not_called()
+
 class AndroidSelectionTests(unittest.TestCase):
     def select(self, output, requested=None):
         with patch.object(launcher, 'adb_executable', return_value='adb'), \
@@ -251,6 +375,40 @@ class AndroidSelectionTests(unittest.TestCase):
 
 
 class ServerMonitoringTests(unittest.TestCase):
+    def test_owned_reloader_is_allowed_to_restart_without_a_second_server(self):
+        frontend, backend = Mock(), Mock()
+        frontend.poll.side_effect = [None, None, 0]
+        backend.poll.return_value = None
+        with patch.object(launcher, 'ready', side_effect=[False, True]), \
+                patch.object(launcher, 'listening', return_value=False), \
+                patch.object(launcher, 'ensure_backend') as restore, \
+                patch.object(launcher.time, 'sleep'), redirect_stdout(io.StringIO()):
+            self.assertEqual(launcher.monitor_servers(frontend, '192.168.1.3', 57583, 8000, 'health', [backend], backend=backend), 0)
+        restore.assert_not_called()
+
+    def test_reused_reloader_is_allowed_to_restart_without_a_second_server(self):
+        frontend = Mock()
+        frontend.poll.side_effect = [None, None, 0]
+        external = launcher.BackendProcess(101, 100, True)
+        with patch.object(launcher, 'ready', side_effect=[False, True]), \
+                patch.object(launcher, 'listening', return_value=False), \
+                patch.object(launcher, 'backend_parent_alive', return_value=True), \
+                patch.object(launcher, 'ensure_backend') as restore, \
+                patch.object(launcher.time, 'sleep'), redirect_stdout(io.StringIO()):
+            self.assertEqual(launcher.monitor_servers(frontend, '192.168.1.3', 57583, 8000, 'health', [], external_backend=external), 0)
+        restore.assert_not_called()
+
+    def test_dead_owned_backend_is_restored(self):
+        frontend, backend = Mock(), Mock()
+        frontend.poll.side_effect = [None, 0]
+        backend.poll.return_value = 1
+        with patch.object(launcher, 'ready', return_value=False), \
+                patch.object(launcher, 'listening', return_value=False), \
+                patch.object(launcher, 'ensure_backend') as restore, \
+                patch.object(launcher.time, 'sleep'), redirect_stdout(io.StringIO()):
+            self.assertEqual(launcher.monitor_servers(frontend, '192.168.1.3', 57583, 8000, 'health', [backend], backend=backend), 0)
+        restore.assert_called_once()
+
     def test_failed_phone_deployment_does_not_stop_web_or_api_monitoring(self):
         frontend, mobile = Mock(), Mock()
         frontend.poll.side_effect = [None, None, 0]
