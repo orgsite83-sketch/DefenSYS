@@ -32,6 +32,7 @@ import '../widgets/defensys_admin_shell.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import '../../../../widgets/table/defensys_segmented_control.dart';
 import '../../faculty/minutes_form_screen.dart';
+import '../../../../widgets/minutes/minutes_pdf_dialog.dart';
 import '../../../../utils/import/schedule_import_draft.dart';
 import '../../../../utils/scheduler/defense_scheduler_draft.dart';
 import 'components/defense_schedule_bulk_import_view.dart';
@@ -2952,7 +2953,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                     if (!isPit) ...[
                       OutlinedButton.icon(
                         icon: const Icon(Icons.description_outlined, size: 15),
-                        label: const Text('Open Minutes'),
+                        label: const Text('Preview minutes PDF'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: _textPrimaryColor,
                           side: BorderSide(color: _borderColor),
@@ -2964,7 +2965,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                           Navigator.pop(ctx);
                           final scheduleId = _asInt(schedule['id']);
                           if (scheduleId != null) {
-                            setState(() => _selectedMinutesScheduleId = scheduleId);
+                            _previewMinutes(schedule);
                           }
                         },
                       ),
@@ -3259,6 +3260,18 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     return int.tryParse(value?.toString() ?? '');
   }
 
+  Future<void> _previewMinutes(Map<String, dynamic> schedule) async {
+    final scheduleId = _asInt(schedule['id']);
+    if (scheduleId == null) return;
+    await MinutesPdfDialog.show(context, scheduleId: scheduleId,
+      finalized: schedule['minutes_status'] == 'completed',
+      teamName: schedule['team_name']?.toString() ?? 'Defense minutes',
+      onReviewAndSign: schedule['minutes_status'] == 'adviser_signed' &&
+          ref.read(authProvider).user?['role'] == 'admin'
+        ? () => setState(() => _selectedMinutesScheduleId = scheduleId)
+        : null);
+  }
+
   Widget _minutesStatusChip(Map<String, dynamic> schedule) {
     final status = schedule['minutes_status']?.toString();
     final scheduleId = _asInt(schedule['id']);
@@ -3302,11 +3315,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     }
 
     return InkWell(
-      onTap: () {
-        setState(() {
-          _selectedMinutesScheduleId = scheduleId;
-        });
-      },
+      onTap: () => _previewMinutes(schedule),
       borderRadius: BorderRadius.circular(6),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

@@ -228,6 +228,7 @@ abstract final class AppRoutes {
   static const login = '/login';
   static const student = '/student';
   static const panelist = '/panelist';
+  static const documenter = '/documenter';
   static const settings = '/settings';
   static const webWorkspaceOnly = '/web-workspace';
   static const terms = '/terms';

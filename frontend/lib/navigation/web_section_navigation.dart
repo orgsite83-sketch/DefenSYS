@@ -38,16 +38,26 @@ class WebSectionRefreshGate {
   final Duration cooldown;
   final DateTime Function() _now;
   final Map<String, DateTime> _lastRefresh = {};
+  final Map<String, int> _lastRevision = {};
 
-  bool activate(String section) {
+  bool activate(
+    String section, {
+    int revision = 0,
+    bool alwaysRefresh = false,
+  }) {
     final now = _now();
     final previous = _lastRefresh[section];
+    final changed = _lastRevision[section] != revision;
     if (previous == null) {
       _lastRefresh[section] = now;
+      _lastRevision[section] = revision;
       return false; // The root screen already performs its initial fetch.
     }
-    if (now.difference(previous) < cooldown) return false;
+    if (!alwaysRefresh && !changed && now.difference(previous) < cooldown) {
+      return false;
+    }
     _lastRefresh[section] = now;
+    _lastRevision[section] = revision;
     return true;
   }
 }

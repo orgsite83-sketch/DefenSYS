@@ -152,9 +152,14 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
                       _tableView()
                     else
                       for (var i = 0; i < widget.state.stages.length; i++) ...[
-                        _stageCard(widget.state.stages[i], i, compact),
+                        _stageItemWithSpine(
+                          stage: widget.state.stages[i],
+                          index: i,
+                          isLast: i == widget.state.stages.length - 1,
+                          compact: compact,
+                        ),
                         if (i < widget.state.stages.length - 1)
-                          const SizedBox(height: 14),
+                          _timelineConnectorSpacer(compact),
                       ],
                   ],
                 ],
@@ -353,6 +358,182 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
     );
   }
 
+  Widget _stageItemWithSpine({
+    required Map<String, dynamic> stage,
+    required int index,
+    required bool isLast,
+    required bool compact,
+  }) {
+    if (compact || MediaQuery.sizeOf(context).width < 1000) {
+      return _stageCard(stage, index, compact, showInlineNode: true);
+    }
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 44,
+            child: Column(
+              children: [
+                _buildMilestoneNode(stage, index),
+                if (!isLast)
+                  Expanded(
+                    child: Center(
+                      child: Container(
+                        width: 2,
+                        color: _border,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: _stageCard(stage, index, compact, showInlineNode: false),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _timelineConnectorSpacer(bool compact) {
+    if (compact || MediaQuery.sizeOf(context).width < 1000) {
+      return const SizedBox(height: 14);
+    }
+    return SizedBox(
+      height: 14,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 44,
+            child: Center(
+              child: Container(
+                width: 2,
+                color: _border,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Spacer(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMilestoneNode(
+    Map<String, dynamic> stage,
+    int index, {
+    double size = 44,
+  }) {
+    final locked = stageSetupLocked(stage);
+    final published = stagePublished(stage);
+    final issues = stageSetupIssues(stage);
+    final ready = issues.isEmpty;
+
+    Color borderColor;
+    Color bgColor;
+    Widget? cornerBadge;
+    String tooltipMessage;
+
+    if (locked) {
+      borderColor = DefensysTokens.maroonOf(context).withValues(alpha: 0.5);
+      bgColor = _dark
+          ? DefensysTokens.maroonOf(context).withValues(alpha: 0.14)
+          : const Color(0xFFFDF2F2);
+      cornerBadge = Container(
+        padding: const EdgeInsets.all(2.5),
+        decoration: BoxDecoration(
+          color: DefensysTokens.maroonOf(context),
+          shape: BoxShape.circle,
+          border: Border.all(color: _surface, width: 1.5),
+        ),
+        child: const Icon(LucideIcons.lockKeyhole, size: 8, color: Colors.white),
+      );
+      tooltipMessage =
+          'Configuration locked · ${stage['lock_reason'] ?? 'Defenses scheduled'}';
+    } else if (!published) {
+      borderColor = _border;
+      bgColor = _fill;
+      cornerBadge = Container(
+        padding: const EdgeInsets.all(2.5),
+        decoration: BoxDecoration(
+          color: _muted,
+          shape: BoxShape.circle,
+          border: Border.all(color: _surface, width: 1.5),
+        ),
+        child: const Icon(LucideIcons.circleDashed, size: 8, color: Colors.white),
+      );
+      tooltipMessage = 'Draft milestone';
+    } else if (ready) {
+      borderColor = _success.withValues(alpha: 0.5);
+      bgColor = _dark
+          ? DefensysTokens.success.withValues(alpha: 0.12)
+          : const Color(0xFFF0FDF4);
+      cornerBadge = Container(
+        padding: const EdgeInsets.all(2.5),
+        decoration: BoxDecoration(
+          color: _success,
+          shape: BoxShape.circle,
+          border: Border.all(color: _surface, width: 1.5),
+        ),
+        child: const Icon(LucideIcons.check, size: 8, color: Colors.white),
+      );
+      tooltipMessage = 'Setup ready · Published';
+    } else {
+      borderColor = _warning.withValues(alpha: 0.6);
+      bgColor = _dark
+          ? DefensysTokens.goldOf(context).withValues(alpha: 0.12)
+          : const Color(0xFFFFFBEB);
+      cornerBadge = Container(
+        padding: const EdgeInsets.all(2.5),
+        decoration: BoxDecoration(
+          color: _warning,
+          shape: BoxShape.circle,
+          border: Border.all(color: _surface, width: 1.5),
+        ),
+        child: const Icon(LucideIcons.alertTriangle, size: 8, color: Colors.white),
+      );
+      tooltipMessage = issues.join('\n');
+    }
+
+    return Tooltip(
+      message: tooltipMessage,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: size,
+            height: size,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: borderColor, width: 1.5),
+            ),
+            child: Text(
+              (index + 1).toString().padLeft(2, '0'),
+              style: TextStyle(
+                fontSize: size >= 40 ? 14 : 12,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.2,
+                color: locked
+                    ? DefensysTokens.maroonOf(context)
+                    : (published ? _ink : _muted),
+              ),
+            ),
+          ),
+          if (cornerBadge != null)
+            Positioned(
+              top: -3,
+              right: -3,
+              child: cornerBadge,
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _readiness(Map<String, dynamic> stage) {
     final issues = stageSetupIssues(stage);
     final ready = issues.isEmpty;
@@ -360,52 +541,83 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
       message: ready
           ? 'Required grading and deliverable settings are configured.'
           : issues.join('\n'),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Icon(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: ready
+              ? (_dark
+                  ? DefensysTokens.success.withValues(alpha: .1)
+                  : const Color(0xFFF0FDF4))
+              : (_dark
+                  ? DefensysTokens.goldOf(context).withValues(alpha: .1)
+                  : const Color(0xFFFFFBEB)),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: ready
+                ? _success.withValues(alpha: 0.35)
+                : _warning.withValues(alpha: 0.35),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
               ready ? LucideIcons.circleCheck : LucideIcons.circleAlert,
-              size: 16,
+              size: 15,
               color: ready ? _success : _warning,
             ),
-          ),
-          const SizedBox(width: 7),
-          Expanded(
-            child: Text(
-              ready
-                  ? 'Setup ready'
-                  : issues.first +
-                        (issues.length > 1
-                            ? ' (+${issues.length - 1} more)'
-                            : ''),
-              style: _small.copyWith(color: ready ? _success : _warning),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                ready
+                    ? 'Setup ready'
+                    : issues.first +
+                          (issues.length > 1
+                              ? ' (+${issues.length - 1} more)'
+                              : ''),
+                style: _small.copyWith(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: ready ? _success : _warning,
+                ),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _lockNotice(Map<String, dynamic> stage) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Padding(
-        padding: const EdgeInsets.only(top: 2),
-        child: Icon(LucideIcons.lockKeyhole, size: 14, color: _muted),
-      ),
-      const SizedBox(width: 7),
-      Expanded(
-        child: Text(
-          'Configuration locked · ${stage['lock_reason'] ?? 'This stage has scheduled defenses or recorded grades.'}',
-          style: _small.copyWith(fontSize: 12),
+  Widget _lockNotice(Map<String, dynamic> stage) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    decoration: BoxDecoration(
+      color: _fill,
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: _border),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 1),
+          child: Icon(LucideIcons.lockKeyhole, size: 14, color: _muted),
         ),
-      ),
-    ],
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'Configuration locked · ${stage['lock_reason'] ?? 'This stage has scheduled defenses or recorded grades.'}',
+            style: _small.copyWith(fontSize: 12),
+          ),
+        ),
+      ],
+    ),
   );
 
-  Widget _stageCard(Map<String, dynamic> stage, int index, bool compact) {
+  Widget _stageCard(
+    Map<String, dynamic> stage,
+    int index,
+    bool compact, {
+    bool showInlineNode = false,
+  }) {
     final key = stage['id'] ?? index;
     final expanded = _expanded.contains(key);
     final deliverables = _rows(stage['deliverables']);
@@ -419,25 +631,10 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
     final title = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 38,
-          height: 38,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: _fill,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: _border),
-          ),
-          child: Text(
-            (index + 1).toString().padLeft(2, '0'),
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: _muted,
-            ),
-          ),
-        ),
-        const SizedBox(width: 14),
+        if (showInlineNode) ...[
+          _buildMilestoneNode(stage, index, size: 38),
+          const SizedBox(width: 12),
+        ],
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -493,30 +690,30 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
             const SizedBox(height: 12),
             Text(stage['description'].toString(), style: _small),
           ],
-          const SizedBox(height: 16),
-          _readiness(stage),
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
           Wrap(
-            spacing: 20,
+            spacing: 8,
             runSpacing: 8,
             children: [
-              _metadata(
+              _metadataPill(
                 LucideIcons.clipboardList,
                 '$count ${count == 1 ? 'rubric' : 'rubrics'} attached',
               ),
               if (stage['is_presentation_only'] == true)
-                _metadata(LucideIcons.presentation, 'Presentation only')
+                _metadataPill(LucideIcons.presentation, 'Presentation only')
               else
-                _metadata(
+                _metadataPill(
                   LucideIcons.folder,
                   '$pre pre-defense · $post post-defense',
                 ),
               if (system.isNotEmpty)
-                _metadata(LucideIcons.fileCheck, 'Signed minutes required'),
+                _metadataPill(LucideIcons.fileCheck, 'Signed minutes required'),
             ],
           ),
+          const SizedBox(height: 10),
+          _readiness(stage),
           if (stageSetupLocked(stage)) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             _lockNotice(stage),
           ],
           const SizedBox(height: 16),
@@ -554,6 +751,34 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
       ),
     );
   }
+
+  Widget _metadataPill(IconData icon, String text, {Color? color}) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: _fill,
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: _border),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color ?? _muted),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: _small.copyWith(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: color ?? _ink,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _metadata(IconData icon, String text) => Row(
     mainAxisSize: MainAxisSize.min,
@@ -612,37 +837,46 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
     final rubrics = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Evaluation rubrics',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: _ink,
-          ),
+        Row(
+          children: [
+            Icon(LucideIcons.clipboardCheck, size: 15, color: _ink),
+            const SizedBox(width: 6),
+            Text(
+              'Evaluation rubrics',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: _ink,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 12),
-        for (final role in ['panel', 'adviser', 'peer']) ...[
-          Text(
-            '${role[0].toUpperCase()}${role.substring(1)} evaluation',
-            style: _small.copyWith(fontSize: 12),
+        const SizedBox(height: 10),
+        for (final role in ['panel', 'adviser', 'peer'])
+          _rubricCard(
+            role: role,
+            name: info['${role}_rubric_name']?.toString(),
+            isRequired: roles.contains(role),
+            isReady: readiness['ready'] == true,
           ),
-          Text(
-            info['${role}_rubric_name']?.toString() ??
-                (roles.contains(role)
-                    ? 'Rubric required'
-                    : readiness['ready'] == true
-                    ? 'Not required for current grading settings'
-                    : 'Not attached'),
-            style: TextStyle(fontSize: 13, height: 1.5, color: _ink),
-          ),
-          const SizedBox(height: 10),
-        ],
         if (stageSetupIssues(stage).isNotEmpty) ...[
           const SizedBox(height: 4),
           for (final issue in stageSetupIssues(stage))
             Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Text(issue, style: _small.copyWith(color: _warning)),
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(LucideIcons.circleAlert, size: 13, color: _warning),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      issue,
+                      style: _small.copyWith(fontSize: 12, color: _warning),
+                    ),
+                  ),
+                ],
+              ),
             ),
         ],
       ],
@@ -658,17 +892,33 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (stage['is_presentation_only'] == true)
-          Text(
-            'Presentation only. Student file uploads are not required.',
-            style: _small,
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: _border),
+            ),
+            child: Row(
+              children: [
+                Icon(LucideIcons.presentation, size: 16, color: _muted),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Presentation only. Student file uploads are not required.',
+                    style: _small,
+                  ),
+                ),
+              ],
+            ),
           )
         else ...[
           _requirementGroup('Pre-defense requirements', pre),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           _requirementGroup('Post-defense requirements', post),
         ],
         if (_rows(stage['system_deliverables']).isNotEmpty) ...[
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           _requirementGroup(
             'Documenter requirements',
             _rows(stage['system_deliverables']),
@@ -681,9 +931,10 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: _fill,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _border),
       ),
-      child: compact
+      child: (compact || MediaQuery.sizeOf(context).width < 1000)
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -696,10 +947,100 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(child: rubrics),
-                const SizedBox(width: 28),
+                const SizedBox(width: 24),
                 Expanded(flex: 2, child: requirements),
               ],
             ),
+    );
+  }
+
+  Widget _rubricCard({
+    required String role,
+    required String? name,
+    required bool isRequired,
+    required bool isReady,
+  }) {
+    final hasRubric = name != null && name.trim().isNotEmpty;
+    final roleLabel = '${role[0].toUpperCase()}${role.substring(1)} evaluation';
+    final fallbackText = isRequired
+        ? 'Rubric required'
+        : (isReady
+            ? 'Not required for current grading settings'
+            : 'Not attached');
+
+    IconData roleIcon;
+    Color roleColor;
+    switch (role) {
+      case 'panel':
+        roleIcon = LucideIcons.graduationCap;
+        roleColor = DefensysTokens.maroonOf(context);
+        break;
+      case 'adviser':
+        roleIcon = LucideIcons.userCheck;
+        roleColor = const Color(0xFF0284C7);
+        break;
+      default:
+        roleIcon = LucideIcons.users;
+        roleColor = const Color(0xFF7C3AED);
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: roleColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Icon(roleIcon, size: 16, color: roleColor),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  roleLabel,
+                  style: _small.copyWith(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: _muted,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  hasRubric ? name : fallbackText,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: hasRubric ? _ink : _muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (hasRubric)
+            Icon(LucideIcons.check, size: 15, color: _success)
+          else if (isRequired)
+            ShadBadge.outline(
+              backgroundColor: _dark
+                  ? DefensysTokens.goldOf(context).withValues(alpha: 0.1)
+                  : const Color(0xFFFEF3C7),
+              foregroundColor: _warning,
+              child: const Text('Required'),
+            ),
+        ],
+      ),
     );
   }
 
@@ -710,59 +1051,126 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
   }) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Text(
-        title,
-        style: TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-          color: _ink,
-        ),
+      Row(
+        children: [
+          Icon(
+            system
+                ? LucideIcons.stamp
+                : (title.contains('Pre') ? LucideIcons.fileUp : LucideIcons.fileCheck),
+            size: 15,
+            color: _ink,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: _ink,
+              ),
+            ),
+          ),
+          if (rows.isNotEmpty) ...[
+            const SizedBox(width: 6),
+            ShadBadge.secondary(
+              child: Text('${rows.length}'),
+            ),
+          ],
+        ],
       ),
       const SizedBox(height: 8),
       if (rows.isEmpty)
-        Text('No requirements configured', style: _small)
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: _border),
+          ),
+          child: Text('No requirements configured', style: _small),
+        )
       else
         for (final row in rows)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 7),
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: _border),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+                Row(
                   children: [
-                    Text(
-                      row['label']?.toString() ?? 'Deliverable',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: _ink,
+                    Icon(
+                      system ? LucideIcons.fileCheck : LucideIcons.fileText,
+                      size: 16,
+                      color: system ? DefensysTokens.maroonOf(context) : _muted,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        row['label']?.toString() ?? 'Deliverable',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: _ink,
+                        ),
                       ),
                     ),
+                    const SizedBox(width: 8),
                     ShadBadge.outline(
+                      backgroundColor: row['required'] == true
+                          ? (_dark
+                              ? DefensysTokens.maroonOf(context).withValues(alpha: 0.15)
+                              : const Color(0xFFFEE2E2))
+                          : null,
+                      foregroundColor: row['required'] == true
+                          ? DefensysTokens.maroonOf(context)
+                          : _muted,
                       child: Text(
                         row['required'] == true ? 'Required' : 'Optional',
                       ),
                     ),
                   ],
                 ),
-                if (system)
+                if (system) ...[
+                  const SizedBox(height: 6),
                   Text(
                     'Assigned documenter · All required signatures completed',
                     style: _small.copyWith(fontSize: 12),
-                  )
-                else if (_requirementMetadata(row).isNotEmpty)
+                  ),
+                ] else if (_requirementMetadata(row).isNotEmpty) ...[
+                  const SizedBox(height: 6),
                   Text(
                     _requirementMetadata(row),
                     style: _small.copyWith(fontSize: 12),
                   ),
-                if ((row['archive_file_template'] ?? '').toString().isNotEmpty)
-                  Text(
-                    'Archive filename: ${row['archive_file_template']}',
-                    style: _small.copyWith(fontSize: 12),
+                ],
+                if ((row['archive_file_template'] ?? '').toString().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: _fill,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: _border),
+                    ),
+                    child: Text(
+                      'Archive filename: ${row['archive_file_template']}',
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                        color: _muted,
+                      ),
+                    ),
                   ),
+                ],
               ],
             ),
           ),

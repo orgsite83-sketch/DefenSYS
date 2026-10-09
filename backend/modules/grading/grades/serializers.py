@@ -212,6 +212,9 @@ class TeamGradeSerializer(serializers.ModelSerializer):
     def get_members(self, obj):
         if not obj.team_id:
             return []
+        memberships = obj.team.memberships.all()
+        if 'memberships' not in getattr(obj.team, '_prefetched_objects_cache', {}):
+            memberships = memberships.select_related('student')
         return [
             {
                 'id': m.student_id,
@@ -219,11 +222,18 @@ class TeamGradeSerializer(serializers.ModelSerializer):
                 'name': display_name(m.student),
                 'is_leader': m.is_leader,
             }
-            for m in obj.team.memberships.select_related('student').all()
+            for m in memberships
         ]
 
     def get_breakdowns(self, obj):
-        return GradeBreakdownSerializer(obj.breakdowns.filter(is_void=False), many=True).data
+        # Filtering a related queryset would discard its prefetched rows.
+        prefetched = getattr(obj, '_prefetched_objects_cache', {}).get('breakdowns')
+        rows = (
+            [row for row in prefetched if not row.is_void]
+            if prefetched is not None
+            else obj.breakdowns.filter(is_void=False).select_related('rubric', 'student')
+        )
+        return GradeBreakdownSerializer(rows, many=True).data
 
     def get_panel_evaluators_submitted(self, obj):
         return self._grading_readiness(obj)['panel_evaluators_submitted']
@@ -314,14 +324,18 @@ class TeamGradeSerializer(serializers.ModelSerializer):
         return required_peer_submission_count(obj.team)
 
     def get_peer_evaluators_done(self, obj):
-        from .peer_eval import peer_completion_summary
-
-        return peer_completion_summary(obj)['evaluators_done']
+        return self._peer_summary(obj)['evaluators_done']
 
     def get_peer_evaluators_total(self, obj):
-        from .peer_eval import peer_completion_summary
+        return self._peer_summary(obj)['evaluators_total']
 
-        return peer_completion_summary(obj)['evaluators_total']
+    def _peer_summary(self, obj):
+        from .peer_eval import peer_completion_summary
+        if not hasattr(self, '_peer_summary_cache'):
+            self._peer_summary_cache = {}
+        if obj.pk not in self._peer_summary_cache:
+            self._peer_summary_cache[obj.pk] = peer_completion_summary(obj)
+        return self._peer_summary_cache[obj.pk]
 
     def _grading_readiness(self, obj):
         from .services import team_grading_readiness

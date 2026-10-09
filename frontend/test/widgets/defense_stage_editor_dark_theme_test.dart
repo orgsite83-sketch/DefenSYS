@@ -95,7 +95,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Repository Archiving & Naming'), findsOneWidget);
-    expect(find.text('📋 Suggested Name'), findsOneWidget);
+    expect(find.text('Preview Output: '), findsOneWidget);
     expect(find.text('Primary Manuscript'), findsOneWidget);
     expect(find.text('Configure Format'), findsOneWidget);
 

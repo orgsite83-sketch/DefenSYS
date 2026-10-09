@@ -33,7 +33,7 @@ class WebWorkspaceOnlyScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'Management tools are available in the web app. The phone app supports student work and eligible panelist evaluations.',
+                    'Management tools are available in the web app. The phone app supports student work, panelist evaluations and assigned documenter minutes.',
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 20),

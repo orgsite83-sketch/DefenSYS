@@ -5,7 +5,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from django.utils import timezone
 from student_teams.project_versions import CurrentProjectManager
 
@@ -31,8 +31,7 @@ class TeamGradeQuerySet(models.QuerySet):
             'verdict_by',
             'schedule__minutes',
         ).prefetch_related(
-            'breakdowns',
-            'breakdowns__rubric',
+            Prefetch('breakdowns', queryset=GradeBreakdown.objects.select_related('rubric', 'student')),
             'student_grades',
             'student_grades__student',
             'team__memberships',

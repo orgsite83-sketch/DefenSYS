@@ -6,8 +6,16 @@ from .models import DefenseMinutes, MinutesPanelistComment
 User = get_user_model()
 
 class DocumenterAssignmentSerializer(DefenseScheduleSerializer):
+    minutes_has_comments = serializers.SerializerMethodField()
+
     class Meta(DefenseScheduleSerializer.Meta):
-        pass
+        fields = [*DefenseScheduleSerializer.Meta.fields, 'minutes_has_comments']
+
+    def get_minutes_has_comments(self, obj):
+        try:
+            return any(comment.comments.strip() for comment in obj.minutes.panelist_comments.all())
+        except DefenseMinutes.DoesNotExist:
+            return False
 
 
 class MinutesPanelistCommentSerializer(serializers.ModelSerializer):

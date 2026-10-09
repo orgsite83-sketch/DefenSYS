@@ -101,6 +101,16 @@ class DefenseBoardApiTests(APITestCase):
         SchedulePanelist.objects.create(schedule=self.pit_schedule, panelist=self.panelist)
         self.client.force_authenticate(user=self.admin)
 
+    def test_deletion_blockers_are_computed_once_per_schedule(self):
+        from unittest.mock import patch
+        from defense.scheduler.services import deletion_blockers
+        with patch('defense.scheduler.services.deletion_blockers', wraps=deletion_blockers) as checks:
+            response = self.client.get('/api/defense/board/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(checks.call_count, len(response.data['schedules']))
+        for row in response.data['schedules']:
+            self.assertEqual(row['can_delete'], not row['deletion_blockers'])
+
     def test_board_lists_schedules_with_counts_and_stage_options(self):
         response = self.client.get('/api/defense/board/')
 

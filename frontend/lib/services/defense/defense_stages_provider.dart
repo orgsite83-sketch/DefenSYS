@@ -4,10 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
-import '../app/dashboard_provider.dart';
-import '../grading/grade_center_provider.dart';
-import '../grading/rubric_engine_provider.dart';
-import 'defense_board_provider.dart';
+import '../app/data_refresh_provider.dart';
 
 final defenseStagesProvider =
     NotifierProvider<DefenseStagesNotifier, DefenseStagesState>(
@@ -126,8 +123,11 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
       if (response.statusCode == 201) {
         final data = jsonDecode(response.body);
         final newId = data is Map ? _asInt(data['stage']?['id']) : null;
-        await fetchStages(successMessage: 'Defense stage added.');
-        await _refreshDependentProviders();
+        _applyPayload(
+          Map<String, dynamic>.from(jsonDecode(response.body)),
+          successMessage: 'Defense stage added.',
+        );
+        _markDependentDataChanged();
         return newId;
       }
 
@@ -168,8 +168,11 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
       );
 
       if (response.statusCode == 200) {
-        await fetchStages(successMessage: 'Defense stage updated.');
-        await _refreshDependentProviders();
+        _applyPayload(
+          Map<String, dynamic>.from(jsonDecode(response.body)),
+          successMessage: 'Defense stage updated.',
+        );
+        _markDependentDataChanged();
         return true;
       }
 
@@ -221,6 +224,10 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
           isSaving: false,
           message: 'Grade weights updated.',
         );
+        _markDependentDataChanged();
+        ref.read(dataRefreshProvider.notifier).markChanged(const [
+          DataArea.defenseStages,
+        ]);
         return true;
       }
       state = state.copyWith(
@@ -262,7 +269,7 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
         _applyPayload(payload, successMessage: 'Stage order updated.');
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return true;
       }
 
@@ -318,8 +325,11 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
       );
 
       if (response.statusCode == 200) {
-        await fetchStages(successMessage: 'Defense stage deleted.');
-        await _refreshDependentProviders();
+        _applyPayload(
+          Map<String, dynamic>.from(jsonDecode(response.body)),
+          successMessage: 'Defense stage deleted.',
+        );
+        _markDependentDataChanged();
         return true;
       }
 
@@ -345,19 +355,15 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
   }
 
 
-  Future<void> _refreshDependentProviders() async {
-    try {
-      await ref.read(dashboardProvider('admin').notifier).fetchDashboardData(silent: true);
-    } catch (_) {}
-    try {
-      await ref.read(rubricEngineProvider.notifier).fetchRubrics();
-    } catch (_) {}
-    try {
-      await ref.read(gradeCenterProvider.notifier).fetchGrades();
-    } catch (_) {}
-    try {
-      await ref.read(defenseBoardProvider.notifier).fetchBoard();
-    } catch (_) {}
+  void _markDependentDataChanged() {
+    ref.read(dataRefreshProvider.notifier).markChanged(const [
+      DataArea.dashboard,
+      DataArea.rubrics,
+      DataArea.grades,
+      DataArea.defenseBoard,
+      DataArea.scheduler,
+      DataArea.audit,
+    ]);
   }
 
   AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);

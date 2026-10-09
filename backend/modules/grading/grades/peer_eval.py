@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Count
 from grading.rubrics.models import Rubric
 from student_teams.models import StudentTeam, TeamMembership
 
@@ -80,23 +81,29 @@ def is_evaluator_peer_complete(grade, evaluator):
 
 
 def peer_completion_summary(grade):
-    memberships = list(grade.team.memberships.select_related('student').all())
-    required = required_peer_submission_count(grade.team)
-    submitted = peer_submission_count(grade)
+    memberships = grade.team.memberships.all()
+    if 'memberships' not in getattr(grade.team, '_prefetched_objects_cache', {}):
+        memberships = memberships.select_related('student')
+    memberships = list(memberships)
     evaluators_total = len(memberships)
+    required = evaluators_total * max(evaluators_total - 1, 0)
+    # One aggregate replaces a separate count for every evaluator.
+    counts = dict(
+        PeerEvaluationSubmission.objects.filter(team_grade=grade)
+        .values('evaluator_id').annotate(total=Count('pk'))
+        .values_list('evaluator_id', 'total')
+    )
+    submitted = sum(counts.values())
     evaluators_done = 0
     missing_evaluators = []
 
     for membership in memberships:
         student = membership.student
-        if is_evaluator_peer_complete(grade, student):
+        need = max(evaluators_total - 1, 0)
+        have = counts.get(student.pk, 0)
+        if have >= need:
             evaluators_done += 1
         else:
-            need = max(evaluators_total - 1, 0)
-            have = PeerEvaluationSubmission.objects.filter(
-                team_grade=grade,
-                evaluator=student,
-            ).count()
             missing_evaluators.append(
                 {
                     'student_id': student.id,
@@ -111,7 +118,7 @@ def peer_completion_summary(grade):
         'required': required,
         'evaluators_done': evaluators_done,
         'evaluators_total': evaluators_total,
-        'complete': is_team_peer_eval_complete(grade),
+        'complete': grade.peer_score is not None or submitted >= required,
         'missing_evaluators': missing_evaluators,
     }
 

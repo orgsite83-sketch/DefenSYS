@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
+import '../app/data_refresh_provider.dart';
 
 final studentAcademicRecordsProvider =
     NotifierProvider<
@@ -172,6 +173,7 @@ class StudentAcademicRecordsNotifier
 
       if (response.statusCode == 201) {
         await fetchRecords(successMessage: 'Academic record created.');
+        _markDependentDataChanged();
         return true;
       }
 
@@ -202,6 +204,7 @@ class StudentAcademicRecordsNotifier
 
       if (response.statusCode == 200) {
         await fetchRecords(successMessage: 'Academic record updated.');
+        _markDependentDataChanged();
         return true;
       }
 
@@ -231,6 +234,7 @@ class StudentAcademicRecordsNotifier
 
       if (response.statusCode == 200) {
         await fetchRecords(successMessage: 'Academic record deleted.');
+        _markDependentDataChanged();
         return true;
       }
 
@@ -322,6 +326,7 @@ class StudentAcademicRecordsNotifier
           successMessage:
               'Rollover complete. $created created, $skipped skipped.',
         );
+        _markDependentDataChanged();
         return true;
       }
 
@@ -338,6 +343,17 @@ class StudentAcademicRecordsNotifier
 
   AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
 
+
+  void _markDependentDataChanged() {
+    ref.read(dataRefreshProvider.notifier).markChanged(const [
+      DataArea.scheduler,
+      DataArea.teams,
+      DataArea.users,
+      DataArea.academicRecords,
+      DataArea.dashboard,
+      DataArea.audit,
+    ]);
+  }
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     state = state.copyWith(

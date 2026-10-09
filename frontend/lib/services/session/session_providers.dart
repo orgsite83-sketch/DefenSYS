@@ -6,6 +6,7 @@ import '../grading/adviser_grading_provider.dart';
 import '../defense/capstone_deliverables_provider.dart';
 import '../academic/curriculum_analytics_provider.dart';
 import '../app/dashboard_provider.dart';
+import '../app/data_refresh_provider.dart';
 import '../defense/defense_board_provider.dart';
 import '../defense/defense_scheduler_provider.dart';
 import '../defense/defense_stages_provider.dart';
@@ -26,6 +27,7 @@ import '../app/unsaved_changes_provider.dart';
 void invalidateSessionProviders(Ref ref) {
   ref.invalidate(unsavedChangesProvider);
   ref.invalidate(activeAdminSectionProvider);
+  ref.invalidate(dataRefreshProvider);
   ref.invalidate(gradeCenterProvider);
   ref.invalidate(academicPeriodProvider);
   ref.invalidate(defenseStagesProvider);

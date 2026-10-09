@@ -4,8 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
-import '../app/dashboard_provider.dart';
-import '../academic/curriculum_analytics_provider.dart';
+import '../app/data_refresh_provider.dart';
 
 final gradeCenterProvider =
     NotifierProvider<GradeCenterNotifier, GradeCenterState>(
@@ -308,7 +307,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
 
       if (response.statusCode == 200) {
         await fetchGrades(successMessage: 'Grade scores updated.');
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return true;
       }
 
@@ -327,8 +326,9 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     final response = await _client.get(
       Uri.parse('$baseUrl/$gradeId/corrections/'),
     );
-    if (response.statusCode != 200)
+    if (response.statusCode != 200) {
       throw Exception(_errorFromResponse(response));
+    }
     return Map<String, dynamic>.from(jsonDecode(response.body));
   }
 
@@ -341,8 +341,9 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(payload),
     );
-    if (response.statusCode != 200)
+    if (response.statusCode != 200) {
       throw Exception(_errorFromResponse(response));
+    }
     final result = Map<String, dynamic>.from(jsonDecode(response.body));
     if (payload['preview'] != true) {
       await fetchGrades(
@@ -351,7 +352,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
             : 'Grade correction recorded.',
       );
       await refreshGrade(gradeId);
-      await _refreshDependentProviders();
+      _markDependentDataChanged();
     }
     return result;
   }
@@ -372,7 +373,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
         await fetchGrades(
           successMessage: 'Grade published and team result updated.',
         );
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return true;
       }
 
@@ -653,15 +654,15 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     }
   }
 
-  Future<void> _refreshDependentProviders() async {
-    try {
-      await ref
-          .read(dashboardProvider('admin').notifier)
-          .fetchDashboardData(silent: true);
-    } catch (_) {}
-    try {
-      await ref.read(curriculumAnalyticsProvider.notifier).fetchAnalytics();
-    } catch (_) {}
+  void _markDependentDataChanged() {
+    ref.read(dataRefreshProvider.notifier).markChanged(const [
+      DataArea.dashboard,
+      DataArea.analytics,
+      DataArea.teams,
+      DataArea.scheduler,
+      DataArea.defenseBoard,
+      DataArea.audit,
+    ]);
   }
 
   Future<bool> applyDefenseWorkflow(int gradeId, Map<String, dynamic> action) async {
@@ -676,7 +677,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       }
       _applyPayload(Map<String, dynamic>.from(jsonDecode(response.body)),
           successMessage: 'Defense workflow updated.');
-      await _refreshDependentProviders();
+      _markDependentDataChanged();
       return true;
     } catch (e) {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');

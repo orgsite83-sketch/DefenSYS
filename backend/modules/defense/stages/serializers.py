@@ -133,9 +133,14 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             semester = Semester.objects.filter(is_active=True).first()
         if not semester:
             return None
-        return obj.grading_configs.filter(semester=semester).select_related(
-            'panel_rubric', 'adviser_rubric', 'peer_rubric'
-        ).first()
+        if not hasattr(self, '_config_cache'):
+            self._config_cache = {}
+        key = (obj.pk, semester.pk)
+        if key not in self._config_cache:
+            self._config_cache[key] = obj.grading_configs.filter(semester=semester).select_related(
+                'panel_rubric', 'adviser_rubric', 'peer_rubric'
+            ).first()
+        return self._config_cache[key]
 
     def get_setup_readiness(self, obj):
         config = self._get_stage_grading_config(obj)
@@ -236,13 +241,18 @@ class DefenseStageSerializer(serializers.ModelSerializer):
         config = obj.grading_configs.filter(semester=semester).first()
         return config.is_officially_complete if config else False
 
+    def _lock_info(self, obj):
+        if not hasattr(self, '_lock_cache'):
+            self._lock_cache = {}
+        if obj.pk not in self._lock_cache:
+            self._lock_cache[obj.pk] = check_stage_locked(obj, self.context.get('semester'))
+        return self._lock_cache[obj.pk]
+
     def get_is_locked(self, obj):
-        locked, _ = check_stage_locked(obj, self.context.get('semester'))
-        return locked
+        return self._lock_info(obj)[0]
 
     def get_lock_reason(self, obj):
-        _, reason = check_stage_locked(obj, self.context.get('semester'))
-        return reason
+        return self._lock_info(obj)[1]
 
     def get_endorsed_teams_count(self, obj):
         from student_teams.models import TeamStageProgress, StudentTeam

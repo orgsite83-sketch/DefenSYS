@@ -1,4 +1,4 @@
-from django.db.models import Q, Case, When, F, CharField
+from django.db.models import Q, Case, When, F, CharField, Prefetch
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.permissions import BasePermission, IsAuthenticated
@@ -161,6 +161,11 @@ def latest_schedule_changes(queryset):
 def board_payload(request, queryset=None):
     base = board_queryset_for_user(request.user)
     current = queryset if queryset is not None else base
+    from grading.grades.models import TeamGrade
+    # Assessment fields reuse the same fully loaded grade rows for this request.
+    current = current.select_related('documenter', 'minutes').prefetch_related(
+        Prefetch('grade_records', queryset=TeamGrade.objects.with_relations()),
+    )
     semester = active_semester()
     return {
         'schedules': DefenseScheduleSerializer(current, many=True, context={'latest_changes': latest_schedule_changes(current) if request.user.role == 'admin' or request.user.is_superuser or request.user.is_pit_lead else {}}).data,

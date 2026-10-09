@@ -24,8 +24,10 @@ class MyDocumenterAssignmentsView(APIView):
     def get(self, request):
         schedules = (
             schedule_queryset()
-            .filter(documenter=request.user)
+            .filter(documenter=request.user, scope=DefenseSchedule.SCOPE_CAPSTONE)
             .select_related('minutes')
+            .prefetch_related('minutes__panelist_comments')
+            .order_by('scheduled_date', 'start_time', 'pk')
         )
         serializer = DocumenterAssignmentSerializer(schedules, many=True)
         return Response(serializer.data)
@@ -493,9 +495,11 @@ class MinutesPreviewView(APIView):
         schedule = get_object_or_404(DefenseSchedule, pk=schedule_id)
         if not has_minutes_view_permission(request.user, schedule):
             return Response({'detail': 'You cannot preview minutes for this defense.'}, status=403)
-        minutes = get_object_or_404(DefenseMinutes.objects.select_related(
+        minutes = DefenseMinutes.objects.select_related(
             'schedule__team', 'documenter_signed_by', 'adviser_signed_by', 'chairman_signed_by',
-        ).prefetch_related('panelist_comments'), schedule=schedule)
+        ).prefetch_related('panelist_comments').filter(schedule=schedule).first()
+        if minutes is None:
+            return Response({'detail': 'Minutes have not been prepared yet.'}, status=404)
         if minutes.status == DefenseMinutes.STATUS_COMPLETED and minutes.pdf_file:
             return MinutesPdfView().get(request, schedule_id)
         response = HttpResponse(generate_minutes_pdf(minutes, draft=True), content_type='application/pdf')

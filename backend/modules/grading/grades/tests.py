@@ -214,6 +214,75 @@ class GradeCenterApiTests(APITestCase):
         )
         self.client.force_authenticate(user=self.admin)
 
+    def test_adviser_save_response_contains_new_breakdowns_and_student_scores(self):
+        grade = self._capstone_grade()
+        GradeBreakdown.objects.create(team_grade=grade, rubric=self.adviser_rubric,
+            evaluation_type=Rubric.EVAL_ADVISER, criterion_name='Old criterion',
+            score=2, max_score=10)
+        self.client.force_authenticate(user=self.adviser)
+        for score in (8, 9):
+            response = self.client.post(f'/api/grading/grades/adviser-grades/{grade.pk}/submit/', {
+                'rubric_id': self.adviser_rubric.pk,
+                'criteria_scores': [{'criterion_name': 'Current criterion', 'score': score, 'max_score': 10}],
+            }, format='json')
+            self.assertEqual(response.status_code, 200, response.data)
+            rows = [row for row in response.data['grade']['breakdowns']
+                    if row['evaluation_type'] == Rubric.EVAL_ADVISER]
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]['criterion_name'], 'Current criterion')
+            self.assertEqual(Decimal(rows[0]['score']), Decimal(score))
+            for student in response.data['grade']['peer_per_student']:
+                self.assertEqual(Decimal(student['adviser_score']), Decimal(score * 10))
+
+    def test_breakdown_serialization_reuses_prefetched_students_and_rubrics(self):
+        from .serializers import TeamGradeSerializer
+        grade = self._capstone_grade()
+        GradeBreakdown.objects.bulk_create([
+            GradeBreakdown(team_grade=grade, rubric=self.panel_rubric,
+                student=self.student, evaluation_type=Rubric.EVAL_PANEL,
+                criterion_name=f'Criterion {i}', score=5, max_score=10,
+                is_void=(i == 0))
+            for i in range(30)
+        ])
+        loaded = TeamGrade.objects.with_relations().get(pk=grade.pk)
+        serializer = TeamGradeSerializer()
+        with self.assertNumQueries(0):
+            rows = serializer.get_breakdowns(loaded)
+            members = serializer.get_members(loaded)
+        self.assertEqual(len(rows), 29)
+        self.assertEqual(rows[0]['student_username'], self.student.username)
+        self.assertEqual(rows[0]['rubric_name'], self.panel_rubric.name)
+        self.assertEqual(len(members), 2)
+
+    def test_peer_summary_uses_one_aggregate_and_reads_new_submissions(self):
+        from .peer_eval import peer_completion_summary
+        grade = self._capstone_grade()
+        students = [self.student, self.second_student]
+        for i in range(4):
+            student = User.objects.create_user(username=f'peer-extra-{i}', role='student')
+            TeamMembership.objects.create(team=self.capstone_team, student=student, order=i + 2)
+            students.append(student)
+        PeerEvaluationSubmission.objects.bulk_create([
+            PeerEvaluationSubmission(team_grade=grade, evaluator=self.student,
+                evaluatee=student, total_score=4, max_score=5)
+            for student in students[1:]
+        ])
+        loaded = TeamGrade.objects.with_relations().get(pk=grade.pk)
+        with self.assertNumQueries(1):
+            summary = peer_completion_summary(loaded)
+        self.assertEqual(summary['required'], 30)
+        self.assertEqual(summary['submitted'], 5)
+        self.assertEqual(summary['evaluators_done'], 1)
+        self.assertEqual(len(summary['missing_evaluators']), 5)
+        self.assertFalse(summary['complete'])
+        PeerEvaluationSubmission.objects.create(team_grade=grade,
+            evaluator=self.second_student, evaluatee=self.student, total_score=4, max_score=5)
+        with self.assertNumQueries(1):
+            updated = peer_completion_summary(loaded)
+        self.assertEqual(updated['submitted'], 6)
+        loaded.peer_score = Decimal('80')
+        self.assertTrue(peer_completion_summary(loaded)['complete'])
+
     def _record_panel_evaluations(self, grade):
         # Complete source evaluations are required before closing a defense.
         from .models import PanelistGradeSubmission, PanelistCriterionScore

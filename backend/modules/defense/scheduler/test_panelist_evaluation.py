@@ -15,6 +15,8 @@ from .panelist_evaluation import evaluation_context
 
 
 class PanelistEvaluationTests(APITestCase):
+    _complete_prior_stages = fixtures.DefenseSchedulerApiTests._complete_prior_stages
+
     def setUp(self):
         fixtures.DefenseSchedulerApiTests.setUp(self)
         self.client.force_authenticate(user=self.panelist)
@@ -103,6 +105,14 @@ class PanelistEvaluationTests(APITestCase):
         self.assertEqual(response.status_code, 201, response.data)
         assignment = self.client.get('/api/defense/schedules/panelist-assignments/').data['teams'][0]
         self.assertTrue(assignment['is_chair'])
+        self.assertFalse(assignment['can_issue_verdict'])
+        self.client.force_authenticate(user=self.second_panelist)
+        second = self.client.post('/api/defense/schedules/submit-grades/', {
+            'team_id': self.team.pk, 'schedule_id': schedule.pk, 'criteria_scores': self.scores(0),
+        }, format='json')
+        self.assertEqual(second.status_code, 201, second.data)
+        self.client.force_authenticate(user=self.panelist)
+        assignment = self.client.get('/api/defense/schedules/panelist-assignments/').data['teams'][0]
         self.assertTrue(assignment['can_issue_verdict'])
         self.assertEqual(assignment['verdict_unavailable_reason'], '')
         self.client.force_authenticate(user=self.second_panelist)

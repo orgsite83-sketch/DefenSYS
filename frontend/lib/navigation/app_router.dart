@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../screens/app/panelist_dashboard.dart';
+import '../screens/app/documenter_dashboard.dart';
+import '../screens/web/faculty/documenter/minutes_form_screen.dart';
 import '../screens/app/student_dashboard.dart';
 import '../screens/app/app_settings_screen.dart';
 import '../screens/app/web_workspace_only_screen.dart';
@@ -19,10 +21,12 @@ import '../services/auth_provider.dart';
 import 'admin_route_paths.dart';
 import 'route_pages.dart';
 import 'workspace_access.dart';
+import 'workspace_preference.dart';
 
 class RouterRefreshNotifier extends ChangeNotifier {
   RouterRefreshNotifier(this._ref) {
     _ref.listen(authProvider, (_, __) => notifyListeners());
+    _ref.listen(workspacePreferenceProvider, (_, __) => notifyListeners());
   }
 
   final Ref _ref;
@@ -68,7 +72,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         (state.uri.queryParameters['code']?.trim().isNotEmpty ?? false)) {
       return null;
     }
-    return WorkspaceAccess.redirect(auth.user!, location);
+    if ((location == AppRoutes.login || location == '/') &&
+        WorkspaceAccess.canDocument(auth.user!) &&
+        ref.read(workspacePreferenceProvider).isLoading) {
+      return null;
+    }
+    return WorkspaceAccess.redirect(
+      auth.user!,
+      location,
+      preferredWorkspace: ref.read(workspacePreferenceProvider).value,
+    );
   }
 
   final router = GoRouter(
@@ -108,7 +121,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           if (auth.token == null || auth.user == null) {
             return AppRoutes.login;
           }
-          return homeRouteForUser(auth.user!);
+          return WorkspaceAccess.home(
+            auth.user!,
+            preferredWorkspace: ref.read(workspacePreferenceProvider).value,
+          );
         },
       ),
       GoRoute(
@@ -188,6 +204,27 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.settings,
         builder: (_, __) => const AppSettingsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.documenter,
+        builder: (_, __) => const DocumenterDashboard(),
+        routes: [
+          GoRoute(
+            path: 'minutes/:scheduleId',
+            builder: (context, state) {
+              final id = int.tryParse(state.pathParameters['scheduleId'] ?? '');
+              if (id == null) {
+                return const Scaffold(
+                  body: Center(child: Text('Invalid defense.')),
+                );
+              }
+              return MinutesFormScreen(
+                scheduleId: id,
+                onBack: () => context.go(AppRoutes.documenter),
+              );
+            },
+          ),
+        ],
       ),
       GoRoute(
         path: AppRoutes.webWorkspaceOnly,

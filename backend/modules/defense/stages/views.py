@@ -37,7 +37,7 @@ def ordered_stages(include_inactive=True):
     queryset = DefenseStage.objects.all()
     if not include_inactive:
         queryset = queryset.filter(is_active=True)
-    return list(queryset.order_by('display_order', 'id'))
+    return list(queryset.prefetch_related('deliverables').order_by('display_order', 'id'))
 
 
 def counts_payload():

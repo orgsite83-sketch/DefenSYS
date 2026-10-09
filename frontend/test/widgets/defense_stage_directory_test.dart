@@ -278,6 +278,10 @@ void main() {
         await icons.load();
       });
       await pumpDirectory(tester, dark: dark);
+      if (find.text('Hide requirements').evaluate().isNotEmpty) {
+        await tester.tap(find.byKey(const ValueKey('stage-requirements-1')));
+        await tester.pumpAndSettle();
+      }
       await tester.runAsync(() async {
         final boundary = tester.renderObject<RenderRepaintBoundary>(
           find.byKey(const ValueKey('directory-preview')),
@@ -287,6 +291,19 @@ void main() {
         await Directory('../.tmp/stage-redesign').create(recursive: true);
         await File(
           '../.tmp/stage-redesign/${dark ? 'dark' : 'light'}.png',
+        ).writeAsBytes(bytes!.buffer.asUint8List());
+        image.dispose();
+      });
+      await tester.tap(find.byKey(const ValueKey('stage-requirements-1')));
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        final boundary = tester.renderObject<RenderRepaintBoundary>(
+          find.byKey(const ValueKey('directory-preview')),
+        );
+        final image = await boundary.toImage();
+        final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+        await File(
+          '../.tmp/stage-redesign/${dark ? 'dark' : 'light'}_expanded.png',
         ).writeAsBytes(bytes!.buffer.asUint8List());
         image.dispose();
       });

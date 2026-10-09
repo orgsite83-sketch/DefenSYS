@@ -8,6 +8,7 @@ import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import '../models/schedule_import_models.dart';
 import 'panelist_pool_dialog.dart';
+import 'documenter_pool_dialog.dart';
 import '../../user_management/external_evaluators/external_evaluator_views.dart';
 
 class ManualSlotEditorDialog {
@@ -446,11 +447,14 @@ class ManualSlotEditorDialog {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'Documenter (Optional)${documenterId != null ? ' (1 selected)' : ''}',
+                              'Documenter${documenterId != null ? ' (1 selected)' : ''}',
                               style:
                                   const TextStyle(fontWeight: FontWeight.w800),
                             ),
-                            if (documenterId != null)
+                             DocumenterPoolButton(onChanged: () => setDialogState(() {
+                               state = ref.read(defenseSchedulerProvider);
+                             })),
+                             if (documenterId != null)
                               TextButton(
                                 onPressed: () {
                                   setDialogState(() {

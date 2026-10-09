@@ -1,4 +1,5 @@
 from django.urls import path
+from .documenter_pool import DocumenterPoolView
 from .views import (
     MyDocumenterAssignmentsView,
     MinutesDetailView,
@@ -10,6 +11,7 @@ from .views import (
 )
 
 urlpatterns = [
+    path('documenter-pool/', DocumenterPoolView.as_view(), name='documenter_pool'),
     path('my-assignments/', MyDocumenterAssignmentsView.as_view(), name='my_documenter_assignments'),
     path('<int:schedule_id>/', MinutesDetailView.as_view(), name='minutes_detail'),
     path('<int:schedule_id>/submit/', MinutesSubmitView.as_view(), name='minutes_submit'),

@@ -239,6 +239,11 @@ class _AdviserGradeSubmitSerializer(drf_serializers.Serializer):
             grade.adviser_score = self.validated_data['adviser_score']
 
         grade.save()
+        # The grade may have been read with these relations before bulk writes.
+        # Return the new evaluation and per-student scores, not those old rows.
+        cached = getattr(grade, '_prefetched_objects_cache', {})
+        cached.pop('breakdowns', None)
+        cached.pop('student_grades', None)
         return grade
 
 

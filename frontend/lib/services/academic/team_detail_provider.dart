@@ -129,15 +129,20 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
       final level = team['level']?.toString() ?? '';
       final isCapstone = level.toUpperCase().contains('CAPSTONE');
 
-      List<Map<String, dynamic>> adviserHistory = const [];
-      if (isCapstone) {
-        adviserHistory = await _fetchAdviserHistory();
-      }
+      // These reads depend only on the team identity, not on each other.
+      final historyFuture = isCapstone
+          ? _fetchAdviserHistory()
+          : Future.value(<Map<String, dynamic>>[]);
+      final documentsFuture = _fetchDocuments();
+      final weeklyReportsFuture = _fetchWeeklyReports();
+      final deliverablesFuture = _fetchDeliverableTeam(isCapstone);
+      final gradesFuture = _fetchGrades();
 
-      final documents = await _fetchDocuments();
-      final weeklyReports = await _fetchWeeklyReports();
-      final deliverableData = await _fetchDeliverableTeam(isCapstone);
-      final grades = await _fetchGrades();
+      final adviserHistory = await historyFuture;
+      final documents = await documentsFuture;
+      final weeklyReports = await weeklyReportsFuture;
+      final deliverableData = await deliverablesFuture;
+      final grades = await gradesFuture;
 
       state = state.copyWith(
         isLoading: false,
@@ -270,14 +275,13 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
     return const [];
   }
 
-  Future<(Map<String, dynamic>?, List<String>)> _fetchDeliverableTeam(bool isCapstone) async {
+  Future<(Map<String, dynamic>?, List<String>)> _fetchDeliverableTeam(
+    bool isCapstone,
+  ) async {
     try {
       final scope = isCapstone ? 'capstone' : 'pit';
       final uri = Uri.parse(ApiConfig.capstoneDeliverablesUrl).replace(
-        queryParameters: {
-          'scope': scope,
-          'team_id': _teamId.toString(),
-        },
+        queryParameters: {'scope': scope, 'team_id': _teamId.toString()},
       );
       final response = await _client.get(uri);
       if (response.statusCode != 200) {
@@ -292,7 +296,9 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
               .map((s) => s['stage_label']?.toString() ?? '')
               .where((s) => s.isNotEmpty)
               .toList();
-          final effectiveStageOptions = teamStages.isNotEmpty ? teamStages : stageOptions;
+          final effectiveStageOptions = teamStages.isNotEmpty
+              ? teamStages
+              : stageOptions;
           return (team, effectiveStageOptions);
         }
       }

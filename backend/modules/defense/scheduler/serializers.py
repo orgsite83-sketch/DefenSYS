@@ -400,7 +400,12 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
 
     def get_deletion_blockers(self, obj):
         from .services import deletion_blockers
-        return deletion_blockers(obj)
+        # can_delete and deletion_blockers are two projections of one result.
+        if not hasattr(self, '_deletion_blockers_cache'):
+            self._deletion_blockers_cache = {}
+        if obj.pk not in self._deletion_blockers_cache:
+            self._deletion_blockers_cache[obj.pk] = deletion_blockers(obj)
+        return self._deletion_blockers_cache[obj.pk]
 
     def get_can_delete(self, obj):
         return not self.get_deletion_blockers(obj)

@@ -3,6 +3,61 @@ import 'package:defensys/navigation/workspace_access.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('documenter can enter phone assignments, editor and settings', () {
+    const doc = {'role': 'faculty', 'is_documenter': true};
+    expect(WorkspaceAccess.home(doc, isWeb: false), AppRoutes.documenter);
+    expect(WorkspaceAccess.canUsePhone(doc), isTrue);
+    for (final route in [
+      AppRoutes.documenter,
+      '/documenter/minutes/42',
+      AppRoutes.settings,
+    ]) {
+      expect(WorkspaceAccess.redirect(doc, route, isWeb: false), isNull);
+    }
+    expect(
+      WorkspaceAccess.redirect(doc, AppRoutes.panelist, isWeb: false),
+      AppRoutes.documenter,
+    );
+  });
+  test('remembered workspace is honored only while its role is eligible', () {
+    const mixedDoc = {
+      'role': 'faculty',
+      'is_documenter': true,
+      'is_panelist': true,
+    };
+    expect(
+      WorkspaceAccess.home(
+        mixedDoc,
+        isWeb: false,
+        preferredWorkspace: AppRoutes.documenter,
+      ),
+      AppRoutes.documenter,
+    );
+    expect(
+      WorkspaceAccess.home(
+        {...mixedDoc, 'is_documenter': false},
+        isWeb: false,
+        preferredWorkspace: AppRoutes.documenter,
+      ),
+      AppRoutes.panelist,
+    );
+    expect(
+      WorkspaceAccess.home(
+        mixedDoc,
+        isWeb: false,
+        preferredWorkspace: '/admin/users',
+      ),
+      AppRoutes.panelist,
+    );
+    expect(
+      WorkspaceAccess.redirect(
+        {'role': 'student'},
+        '/documenter/minutes/42',
+        isWeb: false,
+      ),
+      AppRoutes.student,
+    );
+  });
   const student = {'role': 'student'};
   const panelist = {
     'role': 'faculty',

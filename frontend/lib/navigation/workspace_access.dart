@@ -7,8 +7,11 @@ abstract final class WorkspaceAccess {
   static bool canEvaluate(Map<String, dynamic> user) =>
       user['role'] == 'faculty' && user['is_panelist'] == true;
 
+  static bool canDocument(Map<String, dynamic> user) =>
+      user['role'] == 'faculty' && user['is_documenter'] == true;
+
   static bool canUsePhone(Map<String, dynamic> user) =>
-      user['role'] == 'student' || canEvaluate(user);
+      user['role'] == 'student' || canEvaluate(user) || canDocument(user);
 
   static bool hasStaffWorkspace(Map<String, dynamic> user) =>
       user['role'] == 'admin' ||
@@ -20,7 +23,11 @@ abstract final class WorkspaceAccess {
               user['is_documenter'] == true ||
               user['is_uploader'] == true));
 
-  static String home(Map<String, dynamic> user, {bool isWeb = kIsWeb}) {
+  static String home(
+    Map<String, dynamic> user, {
+    bool isWeb = kIsWeb,
+    String? preferredWorkspace,
+  }) {
     final role = user['role'];
     if (role == 'guest_panelist') return AppRoutes.guestDefenses;
     if (role == 'student') return AppRoutes.student;
@@ -31,8 +38,12 @@ abstract final class WorkspaceAccess {
             ? AppRoutes.panelist
             : FacultyRoutes.dashboard;
       }
-    } else if (canEvaluate(user)) {
-      return AppRoutes.panelist;
+    } else {
+      if (preferredWorkspace == AppRoutes.documenter && canDocument(user)) {
+        return AppRoutes.documenter;
+      }
+      if (canEvaluate(user)) return AppRoutes.panelist;
+      if (canDocument(user)) return AppRoutes.documenter;
     }
     return AppRoutes.webWorkspaceOnly;
   }
@@ -41,8 +52,13 @@ abstract final class WorkspaceAccess {
     Map<String, dynamic> user,
     String location, {
     bool isWeb = kIsWeb,
+    String? preferredWorkspace,
   }) {
-    final destination = home(user, isWeb: isWeb);
+    final destination = home(
+      user,
+      isWeb: isWeb,
+      preferredWorkspace: preferredWorkspace,
+    );
     if (user['role'] == 'guest_panelist') {
       return location == AppRoutes.guestDefenses ? null : destination;
     }
@@ -54,6 +70,9 @@ abstract final class WorkspaceAccess {
     final allowed = switch (location) {
       AppRoutes.student => user['role'] == 'student',
       AppRoutes.panelist => canEvaluate(user),
+      AppRoutes.documenter => canDocument(user),
+      _ when RegExp(r'^/documenter/minutes/\d+$').hasMatch(location) =>
+        canDocument(user),
       AppRoutes.settings => canUsePhone(user),
       AppRoutes.webWorkspaceOnly => destination == AppRoutes.webWorkspaceOnly,
       _ when location == '/admin' || location.startsWith('/admin/') =>

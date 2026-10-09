@@ -22,6 +22,7 @@ import '../../../services/defense/defense_scheduler_provider.dart';
 import '../../../services/system_audit_provider.dart';
 import '../../../services/project_archive_provider.dart';
 import '../../../services/dashboard_provider.dart';
+import '../../../services/app/data_refresh_provider.dart';
 import 'academic_periods_screen.dart';
 import 'admin_dashboard_content.dart';
 import 'audit_compliance_screen.dart';
@@ -118,7 +119,14 @@ class _AdminShellState extends ConsumerState<AdminShell> {
 
     if (activeSection != null && activeSection != _currentSection) {
       _currentSection = activeSection;
-      if (_refreshGate.activate(AdminRoutes.pathForSection(activeSection))) {
+      final area = _dataAreaForSection(activeSection);
+      final revision = ref.read(dataRefreshProvider)[area] ?? 0;
+      if (_refreshGate.activate(
+        AdminRoutes.pathForSection(activeSection),
+        revision: revision,
+        // Scheduling also depends on changes made by other users or sessions.
+        alwaysRefresh: activeSection == DefensysAdminSection.scheduling,
+      )) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && _currentSection == activeSection) {
             _refreshSectionData(activeSection);
@@ -150,9 +158,13 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     final hasUnsaved = ref.read(unsavedChangesProvider);
     if (hasUnsaved) {
       final saveDraftCallback = ref.read(unsavedChangesSaveDraftProvider);
-      final action = await showDiscardUnsavedChangesDialog(context, onSaveDraft: saveDraftCallback);
+      final action = await showDiscardUnsavedChangesDialog(
+        context,
+        onSaveDraft: saveDraftCallback,
+      );
       if (action == UnsavedChangesAction.cancel || !mounted) return;
-      if (action == UnsavedChangesAction.saveDraft && saveDraftCallback != null) {
+      if (action == UnsavedChangesAction.saveDraft &&
+          saveDraftCallback != null) {
         final ok = await saveDraftCallback();
         if (!ok || !mounted) return;
       }
@@ -175,6 +187,23 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       ref.read(appRouterProvider).go(AdminRoutes.pathForSection(section));
     }
   }
+
+  DataArea _dataAreaForSection(DefensysAdminSection section) =>
+      switch (section) {
+        DefensysAdminSection.overview => DataArea.dashboard,
+        DefensysAdminSection.academicPeriods => DataArea.academicPeriods,
+        DefensysAdminSection.userManagement => DataArea.users,
+        DefensysAdminSection.studentAcademicRecords => DataArea.academicRecords,
+        DefensysAdminSection.studentTeams => DataArea.teams,
+        DefensysAdminSection.gradeCenter => DataArea.grades,
+        DefensysAdminSection.rubrics => DataArea.rubrics,
+        DefensysAdminSection.defenseBoard => DataArea.defenseBoard,
+        DefensysAdminSection.scheduling => DataArea.scheduler,
+        DefensysAdminSection.defenseStages => DataArea.defenseStages,
+        DefensysAdminSection.curriculumAnalytics => DataArea.analytics,
+        DefensysAdminSection.auditCompliance => DataArea.audit,
+        DefensysAdminSection.repositoryAudit => DataArea.repository,
+      };
 
   // Root screens perform their first load. Revisit refreshes are centralized,
   // throttled, and retain provider filters instead of resetting their defaults.
@@ -219,9 +248,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
   }) {
     switch (section) {
       case DefensysAdminSection.overview:
-        return AdminDashboardContent(
-          onNavigate: _goToSection,
-        );
+        return AdminDashboardContent(onNavigate: _goToSection);
       case DefensysAdminSection.academicPeriods:
         return const AcademicPeriodsScreen();
       case DefensysAdminSection.userManagement:
@@ -229,7 +256,9 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       case DefensysAdminSection.studentTeams:
         return const StudentTeamsScreen(mode: TeamListMode.capstoneAdmin);
       case DefensysAdminSection.studentAcademicRecords:
-        return const UserManagementScreen(initialUserTab: UserManagementTab.students);
+        return const UserManagementScreen(
+          initialUserTab: UserManagementTab.students,
+        );
       case DefensysAdminSection.gradeCenter:
         return const GradeCenterScreen();
       case DefensysAdminSection.rubrics:
@@ -256,9 +285,13 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     final hasUnsaved = ref.read(unsavedChangesProvider);
     if (hasUnsaved) {
       final saveDraftCallback = ref.read(unsavedChangesSaveDraftProvider);
-      final action = await showDiscardUnsavedChangesDialog(context, onSaveDraft: saveDraftCallback);
+      final action = await showDiscardUnsavedChangesDialog(
+        context,
+        onSaveDraft: saveDraftCallback,
+      );
       if (action == UnsavedChangesAction.cancel || !mounted) return;
-      if (action == UnsavedChangesAction.saveDraft && saveDraftCallback != null) {
+      if (action == UnsavedChangesAction.saveDraft &&
+          saveDraftCallback != null) {
         final ok = await saveDraftCallback();
         if (!ok || !mounted) return;
       }
@@ -314,8 +347,14 @@ class AdminSectionContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => KeyedSubtree(
-    key: ValueKey(WebSectionStateScope.generationOf(context, AdminRoutes.pathForSection(section))),
-    child: context.findAncestorStateOfType<_AdminShellState>()!
+    key: ValueKey(
+      WebSectionStateScope.generationOf(
+        context,
+        AdminRoutes.pathForSection(section),
+      ),
+    ),
+    child: context
+        .findAncestorStateOfType<_AdminShellState>()!
         ._buildSectionWidget(section, isImport: isImport),
   );
 }

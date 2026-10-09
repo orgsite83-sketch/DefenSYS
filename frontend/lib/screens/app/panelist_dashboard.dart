@@ -22,6 +22,8 @@ import '../../widgets/offline_banner.dart';
 import '../../widgets/defensys_skeleton.dart';
 import '../../widgets/error_banner.dart';
 import '../../config/api_config.dart';
+import '../../navigation/admin_route_paths.dart';
+import '../../widgets/minutes/faculty_app_workspace_switcher.dart';
 
 class PanelistDashboard extends ConsumerStatefulWidget {
   final Map<String, dynamic>? userData;
@@ -402,6 +404,10 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
             foregroundColor: Colors.white,
             title: _buildAppBarTitle(),
             actions: [
+              if (!_isGuest)
+                FacultyAppWorkspaceSwitcher(currentRoute: AppRoutes.panelist,
+                  beforeSwitch: () async => await (
+                    _gradeSheetKey.currentState?.savePendingChanges() ?? Future.value(true))),
               if (_isGuest)
                 IconButton(
                   icon: const Icon(Icons.account_circle_outlined),

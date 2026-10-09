@@ -4,7 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import 'admin_route_paths.dart';
 
-import 'app_router.dart';
+import 'workspace_access.dart';
+import 'workspace_preference.dart';
 
 import '../services/terms_acceptance.dart';
 
@@ -20,7 +21,9 @@ Future<void> navigateToHomeAfterAuth(
   if (await TermsAcceptance.hasAcceptedCurrentTerms()) {
     if (!context.mounted) return;
 
-    context.go(homeRouteForUser(userData));
+    final preferred = await readRememberedWorkspace(userData['id']);
+    if (!context.mounted) return;
+    context.go(WorkspaceAccess.home(userData, preferredWorkspace: preferred));
 
     return;
   }

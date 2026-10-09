@@ -9,8 +9,7 @@ import '../../../../theme/defensys_tokens.dart';
 import '../../../../utils/universal_file_viewer.dart';
 import '../e_signature_upload_dialog.dart';
 import '../../../../toasts/feedback_toast.dart';
-import '../../../../widgets/widgets.dart';
-import '../../admin/widgets/defensys_admin_shell.dart';
+import '../../../../widgets/minutes/minutes_review_dialog.dart';
 
 class MinutesFormScreen extends ConsumerStatefulWidget {
   final int scheduleId;
@@ -26,10 +25,12 @@ class MinutesFormScreen extends ConsumerStatefulWidget {
   ConsumerState<MinutesFormScreen> createState() => _MinutesFormScreenState();
 }
 
-class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
+class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
+    with WidgetsBindingObserver {
   final Map<int, TextEditingController> _controllers = {};
   bool _isSavingDraft = false;
   bool _isSubmitting = false;
+  bool _isReviewing = false;
   int _editVersion = 0, _savedVersion = 0;
   bool _hydrating = false, _saveFailed = false;
   Future<bool>? _autoSavePending;
@@ -96,6 +97,7 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     Future.microtask(() {
       if (mounted) {
         _fetchDetail();
@@ -116,7 +118,7 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
       _lastSavedAt = null;
       _saveFailed = false;
       _autoSavePending = null;
-      _isSavingDraft = _isSubmitting = false;
+      _isSavingDraft = _isSubmitting = _isReviewing = false;
       Future.microtask(() {
         if (mounted) {
           _fetchDetail();
@@ -127,11 +129,19 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _cancelTimers();
     for (final controller in _controllers.values) {
       controller.dispose();
     }
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused && _editVersion > _savedVersion) {
+      unawaited(_autoSave());
+    }
   }
 
   void _cancelTimers() {
@@ -227,6 +237,60 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
       }
     }
     return ok;
+  }
+
+  Future<void> _reviewAndSign() async {
+    if (_isReviewing) return;
+    final scheduleId = widget.scheduleId;
+    setState(() => _isReviewing = true);
+    try {
+      if (!await _saveDraft(silent: true) ||
+          !mounted ||
+          scheduleId != widget.scheduleId) {
+        if (mounted) {
+          showErrorToast(
+            context,
+            'Save your notes successfully before reviewing.',
+          );
+        }
+        return;
+      }
+      final bytes = await ref
+          .read(documenterProvider.notifier)
+          .previewPdf(scheduleId);
+      if (!mounted || scheduleId != widget.scheduleId) return;
+      if (bytes == null) {
+        showErrorToast(
+          context,
+          'Unable to load the preview. Your saved notes are still available.',
+        );
+        return;
+      }
+      final comments =
+          ref.read(documenterProvider).activeMinutes?['panelist_comments']
+              as List? ??
+          [];
+      final user = ref.read(authProvider).user;
+      final sign = await showDialog<bool>(
+        context: context,
+        builder: (_) => MinutesReviewDialog(
+          pdfBytes: bytes,
+          panelists: {
+            for (final comment in comments)
+              '${comment['panelist_role_snapshot']}: ${comment['panelist_name_snapshot']}':
+                  _controllers[comment['id']]?.text.trim().isNotEmpty == true,
+          },
+          hasSignature: user?['e_signature']?.toString().isNotEmpty == true,
+        ),
+      );
+      if (sign == true && mounted && scheduleId == widget.scheduleId) {
+        await _submitAndSign();
+      }
+    } finally {
+      if (mounted && scheduleId == widget.scheduleId) {
+        setState(() => _isReviewing = false);
+      }
+    }
   }
 
   Future<void> _submitAndSign() async {
@@ -610,7 +674,10 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
 
           LayoutBuilder(
             builder: (context, constraints) {
-              final details = _buildDetailsCard(minutes);
+              final details = _buildDetailsCard(
+                minutes,
+                collapsed: constraints.maxWidth < 800,
+              );
               final editor = Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -650,50 +717,54 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
       );
     }
 
-    return Scaffold(
-      backgroundColor: DefensysUi.bgLight,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 1,
-        title: const Text(
-          'Minutes of Defense Details',
-          style: TextStyle(
-            color: DefensysTokens.maroon,
-            fontWeight: FontWeight.bold,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && !_isSavingDraft && !_isSubmitting && !_isReviewing) {
+          _leaveForm();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: DefensysTokens.backgroundOf(context),
+        appBar: AppBar(
+          backgroundColor: DefensysTokens.surfaceOf(context),
+          elevation: 0,
+          title: const Text(
+            'Minutes of defense',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: DefensysTokens.maroon,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: DefensysTokens.maroon),
-          onPressed: _isSavingDraft || _isSubmitting ? null : _leaveForm,
-        ),
-        actions: [
-          if (minutes != null && minutes['status'] != 'completed')
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: TextButton.icon(
-                onPressed: _isSavingDraft || _isSubmitting ? null : _previewPdf,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: DefensysTokens.maroon),
+            onPressed: _isSavingDraft || _isSubmitting || _isReviewing
+                ? null
+                : _leaveForm,
+          ),
+          actions: [
+            if (minutes != null)
+              IconButton(
+                tooltip: minutes['status'] == 'completed'
+                    ? 'View signed PDF'
+                    : 'Preview PDF',
+                onPressed: _isSavingDraft || _isSubmitting || _isReviewing
+                    ? null
+                    : minutes['status'] == 'completed'
+                    ? _viewPdf
+                    : _previewPdf,
                 icon: const Icon(Icons.picture_as_pdf_outlined),
-                label: const Text('Preview PDF'),
               ),
-            ),
-          if (minutes != null && minutes['status'] == 'completed')
-            Padding(
-              padding: const EdgeInsets.only(right: 16.0),
-              child: ElevatedButton.icon(
-                onPressed: _viewPdf,
-                icon: const Icon(Icons.picture_as_pdf),
-                label: const Text('View Final PDF'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: DefensysTokens.maroon,
-                  foregroundColor: DefensysTokens.gold,
-                ),
-              ),
-            ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: body,
+          ],
+        ),
+        body: SingleChildScrollView(
+          padding: EdgeInsets.all(
+            MediaQuery.sizeOf(context).width < 600 ? 12 : 24,
+          ),
+          child: body,
+        ),
       ),
     );
   }
@@ -710,309 +781,199 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
     return false;
   }
 
-  Widget _buildNoSignatureBanner() {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 24),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
-        border: Border.all(color: const Color(0xFFFDE68A)),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.warning_amber_rounded,
-            color: Color(0xFFD97706),
-            size: 24,
+  Widget _buildNoSignatureBanner() => Container(
+    margin: const EdgeInsets.only(bottom: 20),
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.secondaryContainer,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'E-signature required',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Upload your signature before signing these minutes. You can continue recording comments.',
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: () => showDialog(
+            context: context,
+            builder: (_) => const ESignatureUploadDialog(),
           ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'E-Signature Required',
-                  style: TextStyle(
-                    fontFamily: DefensysTokens.fontFamily,
-                    color: Color(0xFF92400E),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  'You have not uploaded your e-signature yet. You must upload a signature image to sign or submit these minutes.',
-                  style: TextStyle(
-                    fontFamily: DefensysTokens.fontFamily,
-                    color: Color(0xFFB45309),
-                    fontSize: 12.5,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          ElevatedButton.icon(
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (context) => const ESignatureUploadDialog(),
-              );
-            },
-            icon: const Icon(Icons.draw_rounded, size: 16),
-            label: const Text('Upload Signature'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFD97706),
-              foregroundColor: Colors.white,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+          icon: const Icon(Icons.draw_outlined),
+          label: const Text('Upload signature'),
+        ),
+      ],
+    ),
+  );
 
   Widget _buildSigningFlowStepper(String? status) {
-    int activeStep = 0;
-    if (status == 'submitted') activeStep = 1;
-    if (status == 'adviser_signed') activeStep = 2;
-    if (status == 'completed') activeStep = 3;
-
+    final activeStep = switch (status) {
+      'submitted' => 1,
+      'adviser_signed' => 2,
+      'completed' => 3,
+      _ => 0,
+    };
+    final labels = [
+      'Editing',
+      'Documenter signed',
+      'Adviser signed',
+      'Chairman signed',
+    ];
+    final message = switch (status) {
+      'submitted' => 'Awaiting the project adviser’s signature.',
+      'adviser_signed' => 'Awaiting the administrator’s signature as chairman.',
+      'completed' => 'Finalized · All three signatures recorded.',
+      _ => 'Record comments, review the PDF, then sign and submit.',
+    };
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE6E8EF)),
       ),
-      child: Row(
-        children: [
-          _buildStep(0, 'Draft', 'Documenter Editing', activeStep >= 0),
-          _buildArrow(activeStep >= 1),
-          _buildStep(1, 'Submitted', 'Documenter Signed', activeStep >= 1),
-          _buildArrow(activeStep >= 2),
-          _buildStep(2, 'Adviser Signed', 'Adviser Approved', activeStep >= 2),
-          _buildArrow(activeStep >= 3),
-          _buildStep(3, 'Completed', 'Chairman Signed & PDF', activeStep >= 3),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStep(
-    int stepNum,
-    String title,
-    String subtitle,
-    bool isCompleted,
-  ) {
-    final color = isCompleted ? DefensysTokens.maroon : Colors.grey.shade400;
-    return Expanded(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: isCompleted ? DefensysTokens.maroon : Colors.white,
-              border: Border.all(color: color, width: 2),
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: isCompleted
-                  ? const Icon(Icons.check, color: Colors.white, size: 16)
-                  : Text(
-                      (stepNum + 1).toString(),
-                      style: TextStyle(
-                        color: color,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontFamily: DefensysTokens.fontFamily,
-                    color: isCompleted
-                        ? DefensysTokens.textDark
-                        : Colors.grey.shade500,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontFamily: DefensysTokens.fontFamily,
-                    color: Colors.grey.shade400,
-                    fontSize: 10.5,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildArrow(bool isCompleted) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Icon(
-        Icons.chevron_right,
-        color: isCompleted ? DefensysTokens.maroon : Colors.grey.shade300,
-      ),
-    );
-  }
-
-  Widget _buildDetailsCard(Map<String, dynamic> minutes) {
-    final schedule = minutes['schedule'];
-    final panelists = schedule?['panelists'] as List? ?? [];
-
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: Color(0xFFE6E8EF)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Defense Information',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: DefensysTokens.textDark,
-              ),
-            ),
-            const Divider(height: 24),
-            _detailRow('Team Name', minutes['team_name']),
-            _detailRow('Capstone Project', minutes['project_title']),
-            _detailRow('Defense Stage', minutes['defense_stage_label']),
-            _detailRow(
-              'Date & Time',
-              '${minutes['defense_date']} @ ${_formatTime(minutes['defense_time'])}',
-            ),
-            _detailRow('Room', minutes['room']),
-            _detailRow('Project Adviser', minutes['adviser_name']),
-            _detailRow('Documenter', minutes['documenter_name']),
-            const SizedBox(height: 12),
-            const Text(
-              'Panel Assignments',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-                color: DefensysTokens.textDark,
-              ),
-            ),
-            const SizedBox(height: 8),
-            ...panelists.map((panelist) {
-              final pMap = panelist as Map;
-              final isChair = pMap['is_chair'] == true;
-              return Container(
-                margin: const EdgeInsets.only(bottom: 6),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: isChair
-                      ? const Color(0xFFFFFBEB)
-                      : Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      isChair
-                          ? Icons.star_rounded
-                          : Icons.person_outline_rounded,
-                      color: isChair
-                          ? const Color(0xFFD97706)
-                          : Colors.grey.shade600,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        pMap['name']?.toString() ?? '',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: isChair
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                        ),
-                      ),
-                    ),
-                    if (isChair)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFDE68A),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'Chair',
-                          style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF78350F),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _detailRow(String label, dynamic value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12,
-              color: Colors.grey,
-              fontWeight: FontWeight.w500,
-            ),
+          Wrap(
+            spacing: 12,
+            runSpacing: 10,
+            children: [
+              for (var index = 0; index < labels.length; index++)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      index <= activeStep
+                          ? Icons.check_circle_outline
+                          : Icons.radio_button_unchecked,
+                      size: 18,
+                      color: index <= activeStep
+                          ? DefensysTokens.maroonOf(context)
+                          : DefensysTokens.textSecondaryOf(context),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      labels[index],
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: index <= activeStep
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ],
+                ),
+            ],
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 12),
           Text(
-            value?.toString() ?? 'N/A',
-            style: const TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.w600,
-              color: DefensysTokens.textDark,
+            message,
+            style: TextStyle(
+              fontSize: 13,
+              color: DefensysTokens.textSecondaryOf(context),
             ),
           ),
         ],
       ),
     );
   }
+
+  Widget _buildDetailsCard(
+    Map<String, dynamic> minutes, {
+    bool collapsed = false,
+  }) {
+    final schedule = minutes['schedule'] as Map?;
+    final panelists = schedule?['panelists'] as List? ?? [];
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _detailRow('Team', minutes['team_name']),
+        _detailRow('Project', minutes['project_title']),
+        _detailRow('Stage', minutes['defense_stage_label']),
+        _detailRow(
+          'Date & time',
+          '${minutes['defense_date']} · ${_formatTime(minutes['defense_time'])}',
+        ),
+        _detailRow('Room', minutes['room']),
+        _detailRow('Project adviser', minutes['adviser_name']),
+        _detailRow('Documenter', minutes['documenter_name']),
+        const Divider(),
+        const Text(
+          'Panel roster',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        for (final panelist in panelists)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              '${panelist['name']} · ${panelist['is_chair'] == true ? 'Presiding panel chair' : 'Panel member'}',
+              style: const TextStyle(fontSize: 13),
+            ),
+          ),
+      ],
+    );
+    return Card(
+      elevation: 0,
+      color: DefensysTokens.surfaceOf(context),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: DefensysTokens.borderOf(context)),
+      ),
+      child: collapsed
+          ? ExpansionTile(
+              title: const Text(
+                'Defense details',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+              ),
+              subtitle: Text(minutes['team_name']?.toString() ?? 'Defense'),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              children: [content],
+            )
+          : Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Defense details',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 18),
+                  content,
+                ],
+              ),
+            ),
+    );
+  }
+
+  Widget _detailRow(String label, dynamic value) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value?.toString() ?? '—',
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+      ],
+    ),
+  );
 
   Widget _buildCommentsSection(
     Map<String, dynamic> minutes,
@@ -1021,127 +982,101 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
     bool isCancelled,
   ) {
     final comments = minutes['panelist_comments'] as List? ?? [];
-    final isDraft = status == 'draft' && !isCancelled;
-
+    final editable = status == 'draft' && isDocumenter && !isCancelled;
+    final completed = _controllers.values
+        .where((c) => c.text.trim().isNotEmpty)
+        .length;
+    final saveLabel = _autoSavePending != null || _isSavingDraft
+        ? 'Saving…'
+        : _saveFailed
+        ? 'Save failed · Your notes are still here. Retry Save draft.'
+        : _editVersion > _savedVersion
+        ? 'Unsaved changes'
+        : _lastSavedAt != null
+        ? 'Saved at ${TimeOfDay.fromDateTime(_lastSavedAt!).format(context)}'
+        : 'Changes save automatically';
     return Card(
       elevation: 0,
+      color: DefensysTokens.surfaceOf(context),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: Color(0xFFE6E8EF)),
+        side: BorderSide(color: DefensysTokens.borderOf(context)),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
-              'Panelist Comments',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: DefensysTokens.textDark,
-              ),
+              'Panelist comments',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
-            if (isDraft && isDocumenter)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  _autoSavePending != null || _isSavingDraft
-                      ? 'Saving…'
-                      : _saveFailed
-                      ? 'Save failed · Retry Save Draft.'
-                      : _editVersion > _savedVersion
-                      ? 'Unsaved changes'
-                      : _lastSavedAt != null
-                      ? 'Saved at ${TimeOfDay.fromDateTime(_lastSavedAt!).format(context)}'
-                      : 'Changes save automatically',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: _saveFailed
-                        ? Colors.red
-                        : DefensysTokens.textSecondaryOf(context),
+            if (editable) ...[
+              const SizedBox(height: 8),
+              Text(
+                saveLabel,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _saveFailed
+                      ? Theme.of(context).colorScheme.error
+                      : DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '$completed of ${comments.length} panelist sections recorded',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+            ],
+            const Divider(height: 28),
+            for (final comment in comments) ...[
+              Text(
+                '${comment['panelist_role_snapshot'] == 'Chair' ? 'Presiding panel chair' : comment['panelist_role_snapshot']}: ${comment['panelist_name_snapshot']}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (editable && _controllers[comment['id']] != null)
+                TextField(
+                  key: ValueKey('minutes-comment-${comment['id']}'),
+                  controller: _controllers[comment['id']],
+                  enabled: !_isSubmitting && !_isSavingDraft && !_isReviewing,
+                  minLines: 5,
+                  maxLines: 10,
+                  textCapitalization: TextCapitalization.sentences,
+                  style: const TextStyle(fontSize: 14, height: 1.5),
+                  decoration: const InputDecoration(
+                    hintText:
+                        'Record this panelist’s comments, questions and recommendations…',
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.all(14),
+                  ),
+                )
+              else
+                Text(
+                  comment['comments']?.toString().isNotEmpty == true
+                      ? comment['comments'].toString()
+                      : 'No comments recorded.',
+                  style: const TextStyle(fontSize: 14, height: 1.5),
+                ),
+              if (editable)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: _isSubmitting || _isSavingDraft
+                        ? null
+                        : () => _controllers[comment['id']]?.text =
+                              'No comments or suggestions.',
+                    child: const Text('No comments or suggestions'),
                   ),
                 ),
-              ),
-            const Divider(height: 24),
-            ...comments.map((comment) {
-              final cMap = comment as Map;
-              final id = cMap['id'] as int;
-              final controller = _controllers[id];
-
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.comment_bank_outlined,
-                          size: 16,
-                          color: Colors.grey,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '${cMap['panelist_role_snapshot']}: ${cMap['panelist_name_snapshot']}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                              color: DefensysTokens.textDark,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    if (isDraft && isDocumenter && controller != null)
-                      TextField(
-                        controller: controller,
-                        enabled: !_isSubmitting && !_isSavingDraft,
-                        maxLines: 4,
-                        style: const TextStyle(fontSize: 13),
-                        decoration: InputDecoration(
-                          hintText:
-                              'Enter comments/questions from this panelist...',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          contentPadding: const EdgeInsets.all(12),
-                        ),
-                      )
-                    else
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.grey.shade200),
-                        ),
-                        child: Text(
-                          cMap['comments']?.toString() != ''
-                              ? cMap['comments']?.toString() ?? ''
-                              : 'No comments recorded.',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            height: 1.4,
-                            color: DefensysTokens.textDark,
-                          ),
-                        ),
-                      ),
-                    if (isDraft && isDocumenter && controller != null)
-                      TextButton(
-                        onPressed: _isSubmitting || _isSavingDraft
-                            ? null
-                            : () => controller.text =
-                                  'No comments or suggestions.',
-                        child: const Text('Mark no comments or suggestions'),
-                      ),
-                  ],
-                ),
-              );
-            }),
+              const SizedBox(height: 20),
+            ],
           ],
         ),
       ),
@@ -1157,157 +1092,67 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
     bool isCancelled,
   ) {
     if (isCancelled) {
-      return Row(
+      return const Text(
+        'This defense is cancelled. Minutes are locked.',
+        style: TextStyle(fontWeight: FontWeight.w600),
+      );
+    }
+    if (_isSubmitting || _isSavingDraft || _isReviewing) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final style = FilledButton.styleFrom(
+      backgroundColor: DefensysTokens.maroon,
+      foregroundColor: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+    );
+    if (status == 'draft' && isDocumenter) {
+      return Wrap(
+        spacing: 12,
+        runSpacing: 12,
         children: [
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.red.shade100),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.cancel_outlined,
-                    size: 18,
-                    color: Colors.red.shade700,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Defense schedule is cancelled. Minutes are locked.',
-                    style: TextStyle(
-                      color: Colors.red.shade700,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          OutlinedButton.icon(
+            onPressed: _saveDraft,
+            icon: const Icon(Icons.save_outlined),
+            label: const Text('Save draft'),
+          ),
+          FilledButton.icon(
+            onPressed: _reviewAndSign,
+            style: style,
+            icon: const Icon(Icons.fact_check_outlined),
+            label: const Text('Review and sign'),
           ),
         ],
       );
     }
-
-    if (_isSubmitting || _isSavingDraft) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    final List<Widget> buttons = [];
-
-    if (status == 'draft' && isDocumenter) {
-      buttons.add(
-        DefensysSaveButton(
-          label: 'Save Draft',
-          savingLabel: 'Saving Draft…',
-          onPressed: _saveDraft,
-          isPill: false,
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
-        ),
-      );
-      buttons.add(const SizedBox(width: 16));
-      buttons.add(
-        Expanded(
-          child: Tooltip(
-            message: userHasSignature ? '' : 'Upload your e-signature first',
-            child: ElevatedButton.icon(
-              icon: const Icon(Icons.check_circle_outline_rounded),
-              label: const Text('Submit and Sign'),
-              onPressed: userHasSignature ? _submitAndSign : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: DefensysTokens.maroon,
-                foregroundColor: DefensysTokens.gold,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    } else if (status == 'submitted' && isAdviser) {
-      buttons.add(
-        Expanded(
-          child: Tooltip(
-            message: userHasSignature ? '' : 'Upload your e-signature first',
-            child: ElevatedButton.icon(
-              icon: const Icon(Icons.draw_rounded),
-              label: const Text('Sign as Project Adviser'),
-              onPressed: userHasSignature ? _signAsAdviser : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: DefensysTokens.maroon,
-                foregroundColor: DefensysTokens.gold,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    } else if (status == 'adviser_signed' && isAdmin) {
-      buttons.add(
-        Expanded(
-          child: Tooltip(
-            message: userHasSignature ? '' : 'Upload your e-signature first',
-            child: ElevatedButton.icon(
-              icon: const Icon(Icons.draw_rounded),
-              label: const Text('Sign as Chairman'),
-              onPressed: userHasSignature ? _signAsChairman : null,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: DefensysTokens.maroon,
-                foregroundColor: DefensysTokens.gold,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    } else {
-      // Finished state or view-only state for this user
-      buttons.add(
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.lock_outline_rounded,
-                  size: 18,
-                  color: Colors.grey.shade600,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  status == 'completed'
-                      ? 'Minutes finalized & locked.'
-                      : 'Minutes submitted. Pending signatures.',
-                  style: TextStyle(
-                    color: Colors.grey.shade700,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+    if (status == 'submitted' && isAdviser) {
+      return FilledButton.icon(
+        onPressed: userHasSignature ? _signAsAdviser : null,
+        style: style,
+        icon: const Icon(Icons.draw_outlined),
+        label: const Text('Sign as project adviser'),
       );
     }
-
-    return Row(children: buttons);
+    if (status == 'adviser_signed' && isAdmin) {
+      return FilledButton.icon(
+        onPressed: userHasSignature ? _signAsChairman : null,
+        style: style,
+        icon: const Icon(Icons.draw_outlined),
+        label: const Text('Sign as chairman'),
+      );
+    }
+    return Row(
+      children: [
+        const Icon(Icons.lock_outline, size: 18),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            status == 'completed'
+                ? 'Finalized · Minutes are locked.'
+                : 'Submitted · Waiting for the remaining signatures.',
+          ),
+        ),
+      ],
+    );
   }
 
   String _formatTime(dynamic timeVal) {

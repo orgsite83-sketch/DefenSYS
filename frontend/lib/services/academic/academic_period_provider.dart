@@ -1,17 +1,10 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
-import '../app/dashboard_provider.dart';
-import '../grading/grade_center_provider.dart';
-import '../grading/rubric_engine_provider.dart';
-import '../defense/defense_stages_provider.dart';
-import '../defense/defense_scheduler_provider.dart';
-import 'student_academic_records_provider.dart';
-import 'student_teams_provider.dart';
+import '../app/data_refresh_provider.dart';
 
 final academicPeriodProvider =
     NotifierProvider<AcademicPeriodNotifier, AcademicPeriodState>(
@@ -127,7 +120,7 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
 
       if (response.statusCode == 201) {
         await fetchPeriods(successMessage: 'School year $trimmed added.');
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return true;
       }
 
@@ -164,7 +157,7 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
         _applyPayload(payload, successMessage: 'School year updated to $trimmed.');
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return true;
       }
 
@@ -198,7 +191,7 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
           state = state.copyWith(selectedSchoolYearId: null);
         }
         _applyPayload(payload, successMessage: msg);
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return true;
       }
 
@@ -229,7 +222,7 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
 
       if (response.statusCode == 201) {
         await fetchPeriods(successMessage: '$label added.');
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return true;
       }
 
@@ -260,7 +253,7 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
         final msg = payload['detail']?.toString() ?? 'Semester deleted.';
         _applyPayload(payload, successMessage: msg);
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return true;
       }
 
@@ -338,7 +331,7 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
 
       if (response.statusCode == 200) {
         await fetchPeriods(successMessage: 'Active semester updated.');
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return true;
       }
 
@@ -384,7 +377,7 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
 
       if (response.statusCode == 200) {
         await fetchPeriods(successMessage: 'Evaluation settings updated.');
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return true;
       }
 
@@ -403,71 +396,20 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     state = state.copyWith(selectedSchoolYearId: id, clearMessage: true);
   }
 
-  Future<void> _refreshDependentProviders() async {
-    try {
-      await ref.read(studentTeamsProvider.notifier).fetchTeams();
-    } catch (e, st) {
-      assert(() {
-        debugPrint('studentTeams refresh after period save failed: $e\n$st');
-        return true;
-      }());
-    }
-    try {
-      await ref.read(gradeCenterProvider.notifier).fetchGrades();
-    } catch (e, st) {
-      assert(() {
-        debugPrint('gradeCenter refresh after period save failed: $e\n$st');
-        return true;
-      }());
-    }
-    try {
-      await ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
-    } catch (e, st) {
-      assert(() {
-        debugPrint('studentAcademicRecords refresh after period save failed: $e\n$st');
-        return true;
-      }());
-    }
-    try {
-      await ref.read(dashboardProvider('admin').notifier).fetchDashboardData(silent: true);
-    } catch (e, st) {
-      assert(() {
-        debugPrint('dashboardProvider admin refresh after period save failed: $e\n$st');
-        return true;
-      }());
-    }
-    try {
-      await ref.read(dashboardProvider('faculty').notifier).fetchDashboardData(silent: true);
-    } catch (e, st) {
-      assert(() {
-        debugPrint('dashboardProvider faculty refresh after period save failed: $e\n$st');
-        return true;
-      }());
-    }
-    try {
-      await ref.read(rubricEngineProvider.notifier).fetchRubrics();
-    } catch (e, st) {
-      assert(() {
-        debugPrint('rubricEngine refresh after period save failed: $e\n$st');
-        return true;
-      }());
-    }
-    try {
-      await ref.read(defenseStagesProvider.notifier).fetchStages();
-    } catch (e, st) {
-      assert(() {
-        debugPrint('defenseStages refresh after period save failed: $e\n$st');
-        return true;
-      }());
-    }
-    try {
-      await ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
-    } catch (e, st) {
-      assert(() {
-        debugPrint('defenseScheduler refresh after period save failed: $e\n$st');
-        return true;
-      }());
-    }
+  void _markDependentDataChanged() {
+    ref.read(dataRefreshProvider.notifier).markChanged(const [
+      DataArea.dashboard,
+      DataArea.users,
+      DataArea.academicRecords,
+      DataArea.teams,
+      DataArea.grades,
+      DataArea.rubrics,
+      DataArea.defenseStages,
+      DataArea.scheduler,
+      DataArea.defenseBoard,
+      DataArea.analytics,
+      DataArea.audit,
+    ]);
   }
 
   AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);

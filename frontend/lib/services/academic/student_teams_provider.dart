@@ -4,9 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
-import '../app/dashboard_provider.dart';
-import '../defense/defense_board_provider.dart';
-import '../grading/grade_center_provider.dart';
+import '../app/data_refresh_provider.dart';
 import '../auth/auth_provider.dart';
 
 final studentTeamsProvider =
@@ -227,7 +225,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
 
       if (response.statusCode == 201) {
         await fetchTeams(successMessage: 'Team created.');
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return true;
       }
 
@@ -258,7 +256,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
 
       if (response.statusCode == 200) {
         await fetchTeams(successMessage: 'Team updated.');
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return true;
       }
 
@@ -288,7 +286,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
 
       if (response.statusCode == 200) {
         await fetchTeams(successMessage: 'Team deleted.');
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return true;
       }
 
@@ -395,7 +393,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
         await fetchTeams(
           successMessage: '$created teams imported. $errors row errors.',
         );
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return payload;
       }
 
@@ -428,19 +426,15 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     return const [];
   }
 
-  Future<void> _refreshDependentProviders() async {
-    try {
-      await ref.read(dashboardProvider('admin').notifier).fetchDashboardData(silent: true);
-    } catch (_) {}
-    try {
-      await ref.read(dashboardProvider('faculty').notifier).fetchDashboardData(silent: true);
-    } catch (_) {}
-    try {
-      await ref.read(defenseBoardProvider.notifier).fetchBoard();
-    } catch (_) {}
-    try {
-      await ref.read(gradeCenterProvider.notifier).fetchGrades();
-    } catch (_) {}
+  void _markDependentDataChanged() {
+    ref.read(dataRefreshProvider.notifier).markChanged(const [
+      DataArea.dashboard,
+      DataArea.grades,
+      DataArea.defenseBoard,
+      DataArea.scheduler,
+      DataArea.analytics,
+      DataArea.audit,
+    ]);
   }
 
   AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);

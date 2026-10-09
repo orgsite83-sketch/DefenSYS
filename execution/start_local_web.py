@@ -239,6 +239,43 @@ def is_defensys_web(origin: str) -> bool:
         return False
 
 
+def pids_listening_on(number: int) -> list[int]:
+    """Find process IDs listening on a TCP port."""
+    pids = []
+    if os.name == 'nt':
+        try:
+            output = subprocess.check_output(['netstat', '-ano', '-p', 'tcp'], text=True)
+            for line in output.splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[0] == 'TCP' and parts[3] == 'LISTENING':
+                    local_address = parts[1]
+                    if local_address.endswith(f':{number}'):
+                        try:
+                            pids.append(int(parts[4]))
+                        except ValueError:
+                            pass
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return list(dict.fromkeys(pids))
+
+
+def stop_port(number: int) -> bool:
+    """Terminate any process listening on the given port."""
+    pids = pids_listening_on(number)
+    stopped = False
+    for pid in pids:
+        try:
+            if os.name == 'nt':
+                subprocess.run(['taskkill', '/F', '/T', '/PID', str(pid)],
+                               capture_output=True, check=False)
+            else:
+                os.kill(pid, signal.SIGTERM)
+            stopped = True
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return stopped
+
+
 def ensure_backend(host: str, number: int, health: str,
                    owned: list[subprocess.Popen]) -> subprocess.Popen | None:
     if ready(health):
@@ -298,6 +335,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--check', action='store_true', help='Print addresses and check setup without starting anything.')
     parser.add_argument('--no-browser', action='store_true', help='Leave the PC browser closed.')
     parser.add_argument('--debug', action='store_true', help='Use Flutter debug mode for web and Android development; both default to release mode for phone testing.')
+    parser.add_argument('--restart-web', '--rebuild', action='store_true',
+                        help='Stop any existing web server on this port and recompile a fresh build.')
     parser.add_argument('--android-download-url', type=android_download_url,
                         help='Published HTTPS release APK URL shown in student/panelist web Settings.')
     android = parser.add_mutually_exclusive_group()
@@ -335,6 +374,10 @@ def main(argv: list[str] | None = None) -> int:
             if mobile_command:
                 print('Android options: ' + ' '.join(mobile_command[mobile_command.index('run'):]), flush=True)
             return 0
+        if args.restart_web:
+            if stop_port(args.web_port):
+                print(f'Stopped existing web server on port {args.web_port}. Recompiling fresh build...', flush=True)
+                time.sleep(1)
         existing_web = listening('127.0.0.1', args.web_port) or listening(host, args.web_port)
         if existing_web and not is_defensys_web(origin):
             raise RuntimeError(f'Port {args.web_port} is occupied by an unrecognized or unreachable web server. No existing process was stopped. Free the port or choose --web-port.')
@@ -343,6 +386,7 @@ def main(argv: list[str] | None = None) -> int:
         frontend = None
         if existing_web:
             print('Using the existing DefenSYS web session. It will stay running when this launcher stops.', flush=True)
+            print('NOTE: If you recently edited frontend code, run with --restart-web to recompile.', flush=True)
         else:
             web_started = threading.Event()
             frontend = start(command, ROOT / 'frontend', web_started=web_started)

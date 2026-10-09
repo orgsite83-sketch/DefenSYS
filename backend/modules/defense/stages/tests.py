@@ -704,6 +704,12 @@ class StageGradingConfigApiTests(APITestCase):
         self.assertTrue(stage_deliverables_configured(team, stage.label))
         self.assertTrue(required_complete(team, stage.label))
 
+        # This case tests upload readiness after the prerequisite stages pass.
+        from student_teams.models import TeamStageProgress
+        for previous in DefenseStage.objects.filter(is_active=True, display_order__lt=stage.display_order):
+            TeamStageProgress.objects.create(team=team, semester=self.semester,
+                defense_stage=previous, status=TeamStageProgress.STATUS_PASSED)
+
         # Endorsement should succeed with 0 deliverables
         endorsed_team = endorse_team(team, stage.label)
         self.assertEqual(endorsed_team.ready_for_stage, 'Demo Day Expo')

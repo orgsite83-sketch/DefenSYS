@@ -4,8 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
-import '../app/dashboard_provider.dart';
-import 'defense_board_provider.dart';
+import '../app/data_refresh_provider.dart';
 import '../admin/user_management_provider.dart';
 
 final defenseSchedulerProvider =
@@ -172,8 +171,9 @@ class DefenseSchedulerState {
       }
     }
 
-    final incompleteStages =
-        stages.where((s) => s['is_officially_complete'] != true).toList();
+    final incompleteStages = stages
+        .where((s) => s['is_officially_complete'] != true)
+        .toList();
     if (incompleteStages.isEmpty) {
       return _parseId(stages.first['id']);
     }
@@ -198,8 +198,8 @@ class DefenseSchedulerState {
         final currentStage = team['current_stage']?.toString().trim();
         final scheduledStages = team['scheduled_stages'] is List
             ? (team['scheduled_stages'] as List)
-                .map((e) => e?.toString().trim())
-                .toList()
+                  .map((e) => e?.toString().trim())
+                  .toList()
             : const [];
 
         if (readyFor == stageLabel ||
@@ -279,6 +279,10 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     return const DefenseSchedulerState();
   }
 
+  Future<void>? _fetchInFlight;
+  String? _fetchKey;
+  int _fetchSerial = 0;
+
   /// Import validation needs every active appointment, including those hidden
   /// by the board's search, scope or status filters. Do not change those filters.
   Future<List<Map<String, dynamic>>> fetchImportConflictSchedules() async {
@@ -297,11 +301,45 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     String? scope,
     String? status,
     String? successMessage,
-  }) async {
+  }) {
     final nextSearch = search ?? state.search;
     final nextScope = scope ?? state.scope;
     final nextStatus = status ?? state.status;
+    final revision = ref.read(dataRefreshProvider)[DataArea.scheduler] ?? 0;
+    final key = jsonEncode([
+      nextSearch,
+      nextScope,
+      nextStatus,
+      successMessage,
+      revision,
+    ]);
+    if (_fetchInFlight != null && _fetchKey == key) return _fetchInFlight!;
 
+    final serial = ++_fetchSerial;
+    final future = _fetchSchedules(
+      nextSearch,
+      nextScope,
+      nextStatus,
+      successMessage,
+      serial,
+    );
+    _fetchKey = key;
+    _fetchInFlight = future;
+    return future.whenComplete(() {
+      if (identical(_fetchInFlight, future)) {
+        _fetchInFlight = null;
+        _fetchKey = null;
+      }
+    });
+  }
+
+  Future<void> _fetchSchedules(
+    String nextSearch,
+    String nextScope,
+    String nextStatus,
+    String? successMessage,
+    int serial,
+  ) async {
     state = state.copyWith(
       isLoading: state.schedules.isEmpty,
       isSaving: false,
@@ -321,6 +359,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
         },
       );
       final response = await _client.get(uri);
+      if (!ref.mounted || serial != _fetchSerial) return;
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -334,6 +373,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
         error: _errorFromResponse(response),
       );
     } catch (e) {
+      if (!ref.mounted || serial != _fetchSerial) return;
       state = state.copyWith(
         isLoading: false,
         isSaving: false,
@@ -384,7 +424,8 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
           canSchedulePit: data['can_schedule_pit'] == true,
           canScheduleCapstone: data['can_schedule_capstone'] == true,
           allowedScopes: _readStringList(data['allowed_scopes']),
-          message: '${data['slot_count'] ?? 0} teams assigned · ${data['unassigned_count'] ?? 0} remaining.',
+          message:
+              '${data['slot_count'] ?? 0} teams assigned · ${data['unassigned_count'] ?? 0} remaining.',
           clearError: true,
         );
         return true;
@@ -420,7 +461,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
         final created = data['created_count'] ?? 0;
         _applyPayload(data, successMessage: '$created schedules saved.');
         state = state.copyWith(generatedSlots: const []);
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return true;
       }
 
@@ -455,7 +496,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
         state = state.copyWith(
           createdInvitations: _readMapList(data['created_invitations']),
         );
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return true;
       }
 
@@ -501,7 +542,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     }
 
     await fetchSchedules();
-    await _refreshDependentProviders();
+    _markDependentDataChanged();
 
     if (errors.isNotEmpty && created == 0) {
       state = state.copyWith(error: errors.first);
@@ -647,7 +688,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
 
       if (response.statusCode == 200) {
         await fetchSchedules(successMessage: 'Schedule deleted.');
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return true;
       }
 
@@ -680,7 +721,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
 
       if (response.statusCode == 200) {
         await fetchSchedules(successMessage: 'Schedule updated.');
-        await _refreshDependentProviders();
+        _markDependentDataChanged();
         return true;
       }
 
@@ -695,15 +736,19 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     }
   }
 
-  Future<void> _refreshDependentProviders() async {
-    try {
-      await ref
-          .read(dashboardProvider('admin').notifier)
-          .fetchDashboardData(silent: true);
-    } catch (_) {}
-    try {
-      await ref.read(defenseBoardProvider.notifier).fetchBoard();
-    } catch (_) {}
+  void _markDependentDataChanged() {
+    // A read started before this write must not replace the confirmed payload.
+    ++_fetchSerial;
+    _fetchInFlight = null;
+    _fetchKey = null;
+    ref.read(dataRefreshProvider.notifier).markChanged(const [
+      DataArea.dashboard,
+      DataArea.defenseBoard,
+      DataArea.grades,
+      DataArea.teams,
+      DataArea.defenseStages,
+      DataArea.audit,
+    ]);
   }
 
   AuthenticatedHttpClient get _client =>

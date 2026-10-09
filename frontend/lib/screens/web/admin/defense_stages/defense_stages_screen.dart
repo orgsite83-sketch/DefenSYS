@@ -16,8 +16,6 @@ import 'widgets/pipeline_position_selector.dart';
 import 'widgets/defense_stage_directory.dart';
 import 'widgets/stage_setup_confirmation.dart';
 import 'widgets/endorsed_stage_resolution_dialog.dart';
-import '../widgets/defensys_admin_shell.dart';
-import '../admin_shell.dart';
 
 class DefenseStagesScreen extends ConsumerStatefulWidget {
   const DefenseStagesScreen({super.key});
@@ -78,14 +76,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       },
     );
 
-    ref.listen<DefensysAdminSection>(
-      activeAdminSectionProvider,
-      (previous, next) {
-        if (next == DefensysAdminSection.defenseStages) {
-          ref.read(defenseStagesProvider.notifier).fetchStages();
-        }
-      },
-    );
 
     final onAdminList =
         GoRouterState.of(context).uri.path == AdminRoutes.defenseStages;

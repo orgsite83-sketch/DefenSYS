@@ -13,6 +13,7 @@ import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import '../models/schedule_import_models.dart';
 import '../dialogs/panelist_pool_dialog.dart';
+import '../dialogs/documenter_pool_dialog.dart';
 import '../../user_management/external_evaluators/external_evaluator_views.dart';
 import 'package:defensys/services/admin/external_evaluator_provider.dart';
 import 'package:go_router/go_router.dart';
@@ -1533,6 +1534,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           _setupHeading(
             'Documenter',
             'Required by this stage. Prepares the official signed minutes.',
+            trailing: const DocumenterPoolButton(),
           ),
           const SizedBox(height: 12),
           SchedulerPeoplePicker(

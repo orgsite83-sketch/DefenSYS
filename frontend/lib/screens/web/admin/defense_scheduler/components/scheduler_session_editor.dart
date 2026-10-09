@@ -4,6 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import '../models/schedule_session_draft.dart';
 import 'scheduler_people_picker.dart';
+import '../dialogs/documenter_pool_dialog.dart';
 
 class SchedulerSessionEditor extends StatelessWidget {
   const SchedulerSessionEditor({
@@ -246,6 +247,7 @@ class SchedulerSessionEditor extends StatelessWidget {
           ),
           if (capstone && minutesRequired) ...[
             const SizedBox(height: 16),
+            const Align(alignment: Alignment.centerRight, child: DocumenterPoolButton()),
             _field(
               'Documenter *',
               SchedulerPeoplePicker(

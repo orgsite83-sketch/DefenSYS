@@ -5,6 +5,16 @@ import '../../../navigation/admin_route_paths.dart';
 import '../../../navigation/web_section_navigation.dart';
 import '../../../navigation/workspace_access.dart';
 import '../../../services/dashboard_provider.dart';
+import '../../../services/app/data_refresh_provider.dart';
+import '../../../services/academic/student_teams_provider.dart';
+import '../../../services/academic/student_academic_records_provider.dart';
+import '../../../services/admin/user_management_provider.dart';
+import '../../../services/grading/grade_center_provider.dart';
+import '../../../services/grading/rubric_engine_provider.dart';
+import '../../../services/defense/defense_scheduler_provider.dart';
+import '../../../services/defense/defense_board_provider.dart';
+import '../../../services/pit/pit_lead_cohort_provider.dart';
+import '../../../services/admin/system_audit_provider.dart';
 import '../../../services/auth_provider.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/offline_banner.dart';
@@ -85,6 +95,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   int _minutesRevision = 0;
   final Set<String> _workspaceSections = {};
   final _sectionState = WebSectionState();
+  final _refreshGate = WebSectionRefreshGate();
+  String? _refreshSection;
   bool _isCollapsed = false;
 
   void _toggleCollapse() {
@@ -120,6 +132,25 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     );
     _activeSection = sectionFromRoute ?? _activeSection;
     _workspaceSections.add(_activeSection);
+    final area = _dataAreaForSection(_activeSection);
+    final sectionKey = '$_navigationEpoch:$_activeSection';
+    if (sectionKey != _refreshSection) {
+      _refreshSection = sectionKey;
+      if (area != null &&
+          _refreshGate.activate(
+            sectionKey,
+            revision: ref.read(dataRefreshProvider)[area] ?? 0,
+            alwaysRefresh: _activeSection == 'defense_scheduler' ||
+                _activeSection == 'pit_events',
+          )) {
+        final section = _activeSection;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _refreshSection == sectionKey) {
+            _refreshSectionData(section);
+          }
+        });
+      }
+    }
     // Check if user is ONLY an uploader (no other roles)
     final isOnlyUploader =
         roles['uploader'] == true &&
@@ -205,6 +236,48 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         );
       },
     );
+  }
+
+  DataArea? _dataAreaForSection(String section) => switch (section) {
+    'dashboard' || 'cohort' => DataArea.dashboard,
+    'student_teams' => DataArea.teams,
+    'rubrics' => DataArea.rubrics,
+    'grade_center' => DataArea.grades,
+    'defense_scheduler' || 'pit_events' => DataArea.scheduler,
+    'defense_board' => DataArea.defenseBoard,
+    'pit_student_import' => DataArea.academicRecords,
+    'pit_instructors' => DataArea.users,
+    'audit_compliance' => DataArea.audit,
+    _ => null,
+  };
+
+  void _refreshSectionData(String section) {
+    switch (section) {
+      case 'dashboard':
+        ref
+            .read(dashboardProvider('faculty').notifier)
+            .fetchDashboardData(silent: true);
+      case 'cohort':
+        ref.read(pitLeadCohortProvider.notifier).fetchCohort();
+      case 'student_teams':
+        ref.read(studentTeamsProvider.notifier).fetchTeams();
+      case 'rubrics':
+        ref.read(rubricEngineProvider.notifier).fetchRubrics();
+      case 'grade_center':
+        ref.read(gradeCenterProvider.notifier).fetchGrades();
+      case 'defense_scheduler':
+      case 'pit_events':
+        ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
+      case 'defense_board':
+        ref.read(defenseBoardProvider.notifier).fetchBoard();
+        ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
+      case 'pit_student_import':
+      case 'pit_instructors':
+        ref.read(userManagementProvider.notifier).fetchUsers();
+        ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
+      case 'audit_compliance':
+        ref.read(systemAuditProvider.notifier).fetch();
+    }
   }
 
   List<WorkspaceOption> _availableWorkspaces(Map<String, dynamic> roles) {

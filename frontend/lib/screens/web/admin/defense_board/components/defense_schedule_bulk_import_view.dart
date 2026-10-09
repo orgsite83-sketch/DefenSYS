@@ -9,6 +9,7 @@ import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/confirm_dialog.dart';
 import 'schedule_import_review_widgets.dart';
 import 'schedule_import_settings_dialog.dart';
+import '../../defense_scheduler/dialogs/documenter_pool_dialog.dart';
 
 import 'package:defensys/navigation/admin_route_paths.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
@@ -2100,9 +2101,12 @@ class _DefenseScheduleBulkImportViewState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildStageHeader(schedState, previewRows),
-          const Align(
+          Align(
             alignment: Alignment.centerRight,
-            child: PanelistPoolButton(),
+            child: Wrap(spacing: 12, children: [
+              const PanelistPoolButton(),
+              if (!_isPit) const DocumenterPoolButton(),
+            ]),
           ),
           if (schedState.canApprovePanelists)
             Padding(
