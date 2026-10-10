@@ -105,11 +105,12 @@ class FakeFacultyDashboardNotifier extends DashboardNotifier {
 }
 
 class FakeNotificationsNotifier extends NotificationsNotifier {
+  FakeNotificationsNotifier([super.workspace = 'admin']);
   @override
   NotificationsState build() => const NotificationsState(notifications: [], unreadCount: 0);
 
   @override
-  Future<void> fetchNotifications() async {}
+  Future<void> fetchNotifications({bool? unreadOnly, bool loadMore = false}) async {}
 }
 
 void main() {
@@ -125,7 +126,7 @@ void main() {
         academicPeriodProvider.overrideWith(() => FakeAcademicPeriodNotifier()),
         dashboardProvider('admin').overrideWith(() => FakeAdminDashboardNotifier()),
         dashboardProvider('faculty').overrideWith(() => FakeFacultyDashboardNotifier()),
-        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+        notificationsProvider.overrideWith2((workspace) => FakeNotificationsNotifier(workspace)),
       ],
     );
     addTearDown(container.dispose);

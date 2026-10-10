@@ -289,7 +289,12 @@ class MinutesSubmitView(APIView):
                     recipient=adviser,
                     sender=request.user,
                     title="Minutes Ready for Review",
-                    message=f"The minutes for {minutes.team_name}'s {stage_label} defense are ready for your review and signature"
+                    message=f"The minutes for {minutes.team_name}'s {stage_label} defense are ready for your review and signature",
+                    workspace='admin' if adviser.role == 'admin' else 'adviser',
+                    category=NotificationCategory.MINUTES,
+                    priority='HIGH',
+                    action_route=f"/{'admin' if adviser.role == 'admin' else 'faculty'}/defense-board/minutes/{schedule.pk}",
+                    action_payload={'schedule_id': schedule.pk, 'action_kind': 'minutes_adviser'},
                 )
                 
         serializer = DefenseMinutesSerializer(minutes)
@@ -355,7 +360,10 @@ class MinutesSignAdviserView(APIView):
                     title="Minutes Awaiting Final Signature",
                     message=f"The minutes for {minutes.team_name}'s {stage_label} defense have been reviewed by the adviser and await your signature",
                     category=NotificationCategory.MINUTES,
-                    action_route="/admin/overview",
+                    workspace='admin',
+                    priority='HIGH',
+                    action_route=f"/admin/defense-board/minutes/{schedule.pk}",
+                    action_payload={'schedule_id': schedule.pk, 'action_kind': 'minutes_chairman'},
                 )
                 
         serializer = DefenseMinutesSerializer(minutes)
@@ -424,7 +432,9 @@ class MinutesSignChairmanView(APIView):
                     title="Minutes Finalized",
                     message=f"The minutes for {minutes.team_name}'s {stage_label} defense have been finalized with all signatures",
                     category=NotificationCategory.MINUTES,
-                    action_route="/faculty/defense_board",
+                    workspace='admin' if documenter.role == 'admin' else 'documenter',
+                    action_route=f'/admin/defense-board/minutes/{schedule.pk}' if documenter.role == 'admin' else f'/documenter/minutes/{schedule.pk}',
+                    action_payload={'schedule_id': schedule.pk, 'action_kind': 'minutes_finalized'},
                 )
                 
         serializer = DefenseMinutesSerializer(minutes)

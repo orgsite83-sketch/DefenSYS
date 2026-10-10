@@ -26,6 +26,7 @@ class TeamDetailState {
   final String? error;
   final String? message;
   final List<Map<String, dynamic>> grades;
+  final String? gradesError;
 
   const TeamDetailState({
     this.isLoading = false,
@@ -42,6 +43,7 @@ class TeamDetailState {
     this.error,
     this.message,
     this.grades = const [],
+    this.gradesError,
   });
 
   TeamDetailState copyWith({
@@ -62,6 +64,8 @@ class TeamDetailState {
     bool clearMessage = false,
     bool clearDeliverableTeam = false,
     List<Map<String, dynamic>>? grades,
+    String? gradesError,
+    bool clearGradesError = false,
   }) {
     return TeamDetailState(
       isLoading: isLoading ?? this.isLoading,
@@ -80,6 +84,7 @@ class TeamDetailState {
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
       grades: grades ?? this.grades,
+      gradesError: clearGradesError ? null : gradesError ?? this.gradesError,
     );
   }
 }
@@ -99,6 +104,7 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
       isLoading: true,
       clearError: true,
       clearMessage: true,
+      clearGradesError: true,
     );
 
     try {
@@ -136,7 +142,7 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
       final documentsFuture = _fetchDocuments();
       final weeklyReportsFuture = _fetchWeeklyReports();
       final deliverablesFuture = _fetchDeliverableTeam(isCapstone);
-      final gradesFuture = _fetchGrades();
+      final gradesFuture = _fetchGrades(isCapstone ? 'capstone' : 'pit');
 
       final adviserHistory = await historyFuture;
       final documents = await documentsFuture;
@@ -155,7 +161,8 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
         weeklyReports: weeklyReports,
         deliverableTeam: deliverableData.$1,
         stageOptions: deliverableData.$2,
-        grades: grades,
+        grades: grades.$1,
+        gradesError: grades.$2,
       );
     } catch (e) {
       state = state.copyWith(isLoading: false, error: 'Connection error: $e');
@@ -260,19 +267,32 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
     return const [];
   }
 
-  Future<List<Map<String, dynamic>>> _fetchGrades() async {
+  Future<(List<Map<String, dynamic>>, String?)> _fetchGrades(
+    String scope,
+  ) async {
     try {
       final response = await _client.get(
-        Uri.parse('${ApiConfig.gradeCenterUrl}/?team_id=$_teamId'),
+        Uri.parse(
+          '${ApiConfig.gradeCenterUrl}/',
+        ).replace(queryParameters: {'team_id': '$_teamId', 'scope': scope}),
       );
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
-        return _readMapList(payload['grades']);
+        return (_readMapList(payload['grades']), null);
+      }
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        return (
+          const <Map<String, dynamic>>[],
+          'You do not have permission to view this team\'s grades.',
+        );
       }
     } catch (_) {
-      // Empty on failure.
+      // A failed read must not look like a team with no evaluations.
     }
-    return const [];
+    return (
+      const <Map<String, dynamic>>[],
+      'Grades could not be loaded. Please try again.',
+    );
   }
 
   Future<(Map<String, dynamic>?, List<String>)> _fetchDeliverableTeam(

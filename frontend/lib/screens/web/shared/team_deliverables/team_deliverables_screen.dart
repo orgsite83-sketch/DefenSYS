@@ -66,6 +66,7 @@ class TeamDeliverablesScreen extends ConsumerStatefulWidget {
   final String? pitSection;
   final int? initialTeamId;
   final int? initialTab;
+  final String? initialStage;
 
   const TeamDeliverablesScreen({
     super.key,
@@ -74,6 +75,7 @@ class TeamDeliverablesScreen extends ConsumerStatefulWidget {
     this.pitYearLevel,
     this.pitSection,
     this.initialTeamId,
+    this.initialStage,
     this.initialTab,
   });
 
@@ -96,11 +98,12 @@ class _TeamDeliverablesScreenState
     final isInstructor = widget.initialScope == 'pit' ||
         widget.pitYearLevel != null ||
         widget.pitSection != null;
-    _viewMode = isInstructor ? DeliverablesViewMode.matrix : DeliverablesViewMode.dossier;
+    _viewMode = isInstructor && widget.initialTeamId == null ? DeliverablesViewMode.matrix : DeliverablesViewMode.dossier;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
         scope: widget.initialScope,
+        selectedStage: widget.initialStage,
         yearLevel: widget.pitYearLevel,
         section: widget.pitSection,
       );

@@ -11,13 +11,14 @@ import 'package:defensys/screens/app/student/profile_edit_screen.dart';
 import '../helpers/pump_app.dart';
 
 class FakeNotificationsNotifier extends NotificationsNotifier {
+  FakeNotificationsNotifier([super.workspace = 'admin']);
   @override
   NotificationsState build() {
     return const NotificationsState(notifications: [], unreadCount: 0);
   }
 
   @override
-  Future<void> fetchNotifications() async {}
+  Future<void> fetchNotifications({bool? unreadOnly, bool loadMore = false}) async {}
 }
 
 class FakeAuthNotifier extends AuthNotifier {
@@ -47,7 +48,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         authProvider.overrideWith(() => FakeAuthNotifier()),
-        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+        notificationsProvider.overrideWith2((workspace) => FakeNotificationsNotifier(workspace)),
       ],
     );
     addTearDown(container.dispose);
@@ -56,7 +57,7 @@ void main() {
       ProviderScope(
         overrides: [
           authProvider.overrideWith(() => FakeAuthNotifier()),
-          notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+          notificationsProvider.overrideWith2((workspace) => FakeNotificationsNotifier(workspace)),
         ],
         child: const MaterialApp(
           localizationsDelegates: [

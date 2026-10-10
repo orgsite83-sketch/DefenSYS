@@ -36,17 +36,18 @@ def request_payload(item):
         'review_note': item.review_note,
         'created_at': item.created_at.isoformat(),
         'reviewed_at': item.reviewed_at.isoformat() if item.reviewed_at else None,
+        'reviewed_by_name': (item.reviewed_by.get_full_name() or item.reviewed_by.username) if item.reviewed_by else None,
     }
 
 
-def visible_requests(actor):
-    items = PanelistEligibilityRequest.objects.select_related('faculty', 'requested_by')
+def visible_requests(actor, *, include_reviewed=False):
+    items = PanelistEligibilityRequest.objects.select_related('faculty', 'requested_by', 'reviewed_by')
     if is_admin_user(actor):
-        return items.filter(status=PanelistEligibilityRequest.PENDING)
+        return items if include_reviewed else items.filter(status=PanelistEligibilityRequest.PENDING)
     return items.filter(requested_by=actor)
 
 
-def _notify(recipient, actor, title, message):
+def _notify(recipient, actor, item, title, message):
     from notifications.models import Notification, NotificationCategory
 
     Notification.objects.create(
@@ -55,10 +56,12 @@ def _notify(recipient, actor, title, message):
         title=title,
         message=message,
         category=NotificationCategory.DEFENSE,
+        workspace='admin' if is_admin_user(recipient) else 'pit_lead',
         action_route=(
-            '/admin/defense-board' if is_admin_user(recipient) else '/faculty/defense_board'
+            f'/admin/users?tab=faculty&view=panelists&section=requests&request={item.pk}'
+            if is_admin_user(recipient) else f'/faculty/defense-board?panelistRequest={item.pk}'
         ),
-        action_payload={'panelist_eligibility': True},
+        action_payload={'panelist_eligibility': True, 'action_kind': 'panelist_request', 'request_id': item.pk},
     )
 
 
@@ -84,7 +87,7 @@ def resolve_approved_requests(faculty, actor):
     name = faculty.get_full_name() or faculty.username
     for item in pending:
         _notify(
-            item.requested_by, actor, 'Panelist eligibility approved',
+            item.requested_by, actor, item, 'Panelist eligibility approved',
             f'{name} is now in the approved panelist pool. '
             'You can assign them to future defenses without requesting approval again.',
         )
@@ -138,7 +141,7 @@ def nominate_panelist(actor, faculty_id, reason):
         )
         for admin in admins:
             _notify(
-                admin, actor, 'Panelist eligibility request',
+                admin, actor, item, 'Panelist eligibility request',
                 f'{actor.get_full_name() or actor.username} ({actor.pit_lead_year}) '
                 f'nominated {faculty.get_full_name() or faculty.username}. '
                 'Review the request in the panelist pool.',
@@ -169,7 +172,7 @@ def review_nomination(actor, item, decision, note):
         item.review_note = note
         item.save(update_fields=['status', 'reviewed_by', 'reviewed_at', 'review_note'])
         _notify(
-            item.requested_by, actor, 'Panelist eligibility request declined',
+            item.requested_by, actor, item, 'Panelist eligibility request declined',
             f'{faculty.get_full_name() or faculty.username} was not approved. {note}'.strip(),
         )
     return item

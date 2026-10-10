@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:defensys/screens/app/panelist/overall_results_tab.dart';
+import 'package:defensys/screens/app/panelist/widgets/panelist_segmented_tabs.dart';
 
 import '../helpers/pump_app.dart';
 
@@ -78,23 +79,25 @@ void main() {
       },
     ];
 
-    testWidgets('renders executive KPI summary strip and team card ranking', (tester) async {
+    testWidgets('renders executive KPI summary strip and team card ranking', (
+      tester,
+    ) async {
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
 
-      await pumpDefensysWidget(
-        tester,
-        OverallResultsTab(results: mockResults),
-      );
+      await pumpDefensysWidget(tester, OverallResultsTab(results: mockResults));
 
       // Verify KPI Metrics
-      expect(find.text('Class Avg'), findsOneWidget);
+      expect(find.text('Panel average'), findsOneWidget);
       expect(find.text('81.5%'), findsOneWidget); // (85 + 78) / 2 = 81.5%
       expect(find.text('Top Score'), findsOneWidget);
-      expect(find.text('85.0%'), findsNWidgets(2)); // KPI Top Score and Team EcoSense score pill
-      expect(find.text('Pass Rate'), findsOneWidget);
-      expect(find.text('100%'), findsWidgets);
+      expect(
+        find.text('85.0%'),
+        findsNWidgets(2),
+      ); // KPI Top Score and Team EcoSense score pill
+      expect(find.text('Evaluated teams'), findsOneWidget);
+      expect(find.text('2'), findsWidgets);
 
       // Verify Team Names & Podium
       expect(find.text('Team EcoSense'), findsOneWidget);
@@ -103,72 +106,98 @@ void main() {
       expect(find.text('#2'), findsOneWidget);
     });
 
-    testWidgets('groups individual student criteria under student names and separates shared criteria', (
-      tester,
-    ) async {
-      tester.view.physicalSize = const Size(800, 1400);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
+    testWidgets(
+      'groups individual student criteria under student names and separates shared criteria',
+      (tester) async {
+        tester.view.physicalSize = const Size(800, 1400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
 
-      await pumpDefensysWidget(
-        tester,
-        OverallResultsTab(results: mockResults),
-      );
+        await pumpDefensysWidget(
+          tester,
+          OverallResultsTab(results: mockResults),
+        );
 
-      // Team 0 is expanded by default
-      expect(find.text('Shared Team Criteria'), findsOneWidget);
-      expect(find.text('Problem Identification & Clarity'), findsOneWidget);
+        // Team 0 is expanded by default
+        expect(find.text('Shared Team Criteria'), findsOneWidget);
+        expect(find.text('Problem Identification & Clarity'), findsOneWidget);
 
-      expect(find.text('Individual Member Criteria'), findsOneWidget);
-      expect(find.text('Marcus Villar'), findsWidgets);
-      expect(find.text('Patricia Ong'), findsWidgets);
-    });
+        expect(find.text('Individual Member Criteria'), findsOneWidget);
+        expect(find.text('Marcus Villar'), findsWidgets);
+        expect(find.text('Patricia Ong'), findsWidgets);
+        expect(find.text('Your panel evaluation'), findsWidgets);
+        expect(find.text('Individual Final Grades'), findsNothing);
+        expect(find.text('84.5'), findsNothing);
+      },
+    );
 
-    testWidgets('progressive disclosure toggles detailed breakdown open and closed', (tester) async {
-      tester.view.physicalSize = const Size(800, 1400);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
+    testWidgets(
+      'progressive disclosure toggles detailed breakdown open and closed',
+      (tester) async {
+        tester.view.physicalSize = const Size(800, 1400);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
 
-      await pumpDefensysWidget(
-        tester,
-        OverallResultsTab(results: mockResults),
-      );
+        await pumpDefensysWidget(
+          tester,
+          OverallResultsTab(results: mockResults),
+        );
 
-      // Initially expanded for #1
-      expect(find.text('Hide Detailed Breakdown'), findsOneWidget);
+        // Initially expanded for #1
+        expect(find.text('Hide Detailed Breakdown'), findsOneWidget);
 
-      // Tap to collapse
-      await tester.tap(find.text('Hide Detailed Breakdown'));
-      await tester.pumpAndSettle();
+        // Tap to collapse
+        await tester.tap(find.text('Hide Detailed Breakdown'));
+        await tester.pumpAndSettle();
 
-      // Should now be collapsed
-      expect(find.text('View Criteria & Member Breakdown (3 items)'), findsOneWidget);
-      expect(find.text('Shared Team Criteria'), findsNothing);
+        // Should now be collapsed
+        expect(
+          find.text('View Criteria & Member Breakdown (3 items)'),
+          findsOneWidget,
+        );
+        expect(find.text('Shared Team Criteria'), findsNothing);
 
-      // Tap to expand again
-      await tester.tap(find.text('View Criteria & Member Breakdown (3 items)'));
-      await tester.pumpAndSettle();
+        // Tap to expand again
+        await tester.tap(
+          find.text('View Criteria & Member Breakdown (3 items)'),
+        );
+        await tester.pumpAndSettle();
 
-      expect(find.text('Hide Detailed Breakdown'), findsOneWidget);
-      expect(find.text('Shared Team Criteria'), findsOneWidget);
-    });
+        expect(find.text('Hide Detailed Breakdown'), findsOneWidget);
+        expect(find.text('Shared Team Criteria'), findsOneWidget);
+      },
+    );
 
     testWidgets('stage filter chips filter results', (tester) async {
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
 
-      await pumpDefensysWidget(
-        tester,
-        OverallResultsTab(results: mockResults),
+      await pumpDefensysWidget(tester, OverallResultsTab(results: mockResults));
+
+      expect(find.text('All Stages'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(PanelistSegmentedTabs<String>),
+          matching: find.text('Proposal Defense'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(PanelistSegmentedTabs<String>),
+          matching: find.text('Final Defense'),
+        ),
+        findsOneWidget,
       );
 
-      expect(find.text('All Stages (2)'), findsOneWidget);
-      expect(find.text('Proposal Defense (1)'), findsOneWidget);
-      expect(find.text('Final Defense (1)'), findsOneWidget);
-
       // Filter by Proposal Defense
-      await tester.tap(find.text('Proposal Defense (1)'));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(PanelistSegmentedTabs<String>),
+          matching: find.text('Proposal Defense'),
+        ),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('Team EcoSense'), findsOneWidget);

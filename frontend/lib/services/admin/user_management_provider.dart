@@ -216,6 +216,16 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     return const [];
   }
 
+  Future<Map<String, dynamic>> fetchManagedUser(int id) async {
+    final response = await _client.get(Uri.parse('$baseUrl/$id/'));
+    if (response.statusCode != 200) {
+      throw Exception('Could not load this user.');
+    }
+    return Map<String, dynamic>.from(
+      (jsonDecode(response.body) as Map)['user'],
+    );
+  }
+
   Future<List<Map<String, dynamic>>> fetchRoleAssignmentHistory(
     int userId,
   ) async {
@@ -229,10 +239,10 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
             .map((item) => Map<String, dynamic>.from(item as Map))
             .toList();
       }
+      throw Exception('Could not load role history.');
     } catch (_) {
-      // Caller shows empty state on failure.
+      rethrow;
     }
-    return const [];
   }
 
   Future<bool> deleteUser(int userId) async {
@@ -336,8 +346,8 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
         final assignmentMessage = assignments.isNotEmpty
             ? ' ${assignments.length} PIT Instructor${assignments.length == 1 ? '' : 's'} assigned.'
             : (payload['instructor_assignment'] != null
-                ? ' PIT Instructor assigned.'
-                : '');
+                  ? ' PIT Instructor assigned.'
+                  : '');
         if (created == 0 && records == 0) {
           final reason = skipped > 0 && errors == 0
               ? '$skipped row${skipped == 1 ? '' : 's'} skipped. They likely already exist or do not match the selected import mode.'

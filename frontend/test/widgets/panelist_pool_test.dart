@@ -117,7 +117,7 @@ class _Pool extends DefenseSchedulerNotifier {
 }
 
 void main() {
-  setUpAll(loadPreviewFonts);
+  setUpAll(() => loadPreviewFonts(force: true));
   Future<ProviderContainer> pump(
     WidgetTester tester,
     _Pool pool, {
@@ -193,53 +193,17 @@ void main() {
     },
   );
 
-  testWidgets('admin reviews nomination and makes faculty reusable', (
-    tester,
-  ) async {
-    final pool = _Pool(admin: true);
-    final container = await pump(tester, pool);
-    await tester.tap(find.text('Requests (1)'));
-    await tester.pumpAndSettle();
-    await capturePreview(
-      tester,
-      find.byKey(const ValueKey('pool-preview')),
-      'panelist-requests-light',
-    );
-    await tester.tap(find.text('Approve eligibility'));
-    await tester.pumpAndSettle();
-    expect(pool.reviews, 1);
-    expect(
-      container.read(defenseSchedulerProvider).isEligiblePanelist(12),
-      isTrue,
-    );
-    expect(find.text('Requests (0)'), findsOneWidget);
-    await tester.tap(find.text('Faculty (2)'));
-    await tester.pumpAndSettle();
-    expect(find.text('Eligible panelist'), findsNWidgets(2));
-    expect(tester.takeException(), isNull);
-  });
-
   testWidgets(
-    'admin grants and removes eligibility while keeping a schedule draft',
+    'admin pool delegates role editing and preserves the schedule draft',
     (tester) async {
       final pool = _Pool(admin: true);
       final container = await pump(tester, pool);
+      expect(find.text('Edit roles'), findsNWidgets(2));
+      expect(find.text('Grant eligibility'), findsNothing);
       await tester.tap(find.byKey(const ValueKey('panelist-eligibility-12')));
       await tester.pumpAndSettle();
-      expect(pool.eligibilityChanges, [true]);
-      expect(
-        container.read(defenseSchedulerProvider).isEligiblePanelist(12),
-        isTrue,
-      );
-      await tester.tap(find.byKey(const ValueKey('panelist-eligibility-12')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Remove eligibility').last);
-      await tester.pumpAndSettle();
-      expect(pool.eligibilityChanges, [true, false]);
-      expect(
-        container.read(defenseSchedulerProvider).isEligiblePanelist(12),
-        isFalse,
-      );
+      expect(find.byType(PanelistPoolDialog), findsNothing);
+      expect(pool.eligibilityChanges, isEmpty);
       expect(container.read(defenseSchedulerProvider).generatedSlots, [
         {'team_id': 99},
       ]);
@@ -267,7 +231,7 @@ void main() {
         'eligibility directory fits $width in ${dark ? 'dark' : 'light'} mode',
         (tester) async {
           await pump(tester, _Pool(admin: true), width: width, dark: dark);
-          expect(find.text('Grant eligibility'), findsOneWidget);
+          expect(find.text('Edit roles'), findsNWidgets(2));
           expect(tester.takeException(), isNull);
           await capturePreview(
             tester,

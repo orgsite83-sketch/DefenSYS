@@ -17,6 +17,19 @@ class NotificationPriority(models.TextChoices):
     URGENT = 'URGENT', 'Urgent'
 
 
+class NotificationWorkspace(models.TextChoices):
+    ADMIN = 'admin', 'Administrator'
+    FACULTY = 'faculty', 'Faculty'
+    STUDENT = 'student', 'Student'
+    ADVISER = 'adviser', 'Project Adviser'
+    PIT_LEAD = 'pit_lead', 'PIT Lead'
+    PIT_INSTRUCTOR = 'pit_instructor', 'PIT Instructor'
+    PANELIST = 'panelist', 'Panelist'
+    DOCUMENTER = 'documenter', 'Minutes Documenter'
+    UPLOADER = 'uploader', 'Uploader'
+    ACCOUNT = 'account', 'Account & Security'
+
+
 class Notification(models.Model):
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -44,6 +57,10 @@ class Notification(models.Model):
     )
     action_route = models.CharField(max_length=255, blank=True, null=True)
     action_payload = models.JSONField(default=dict, blank=True)
+    workspace = models.CharField(
+        max_length=24, choices=NotificationWorkspace.choices, blank=True,
+        default='', help_text='Inbox that owns this notification and its read state.',
+    )
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -53,7 +70,20 @@ class Notification(models.Model):
             models.Index(fields=['recipient', 'is_read']),
             models.Index(fields=['recipient', '-created_at']),
             models.Index(fields=['recipient', 'category']),
+            models.Index(fields=['recipient', 'workspace', 'is_read'], name='notif_recipient_workspace_read'),
         ]
+
+    def save(self, *args, **kwargs):
+        # Compatibility for integrations that have not supplied a workspace yet.
+        # Operational producers should always set the role explicitly.
+        if not self.workspace:
+            if self.category in (NotificationCategory.SECURITY, NotificationCategory.ANNOUNCEMENT):
+                self.workspace = NotificationWorkspace.ACCOUNT
+            else:
+                self.workspace = self.recipient.role
+            if kwargs.get('update_fields') is not None:
+                kwargs['update_fields'] = set(kwargs['update_fields']) | {'workspace'}
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         sender_username = self.sender.username if self.sender else "System"

@@ -65,10 +65,12 @@ class AppSettingsContent extends ConsumerStatefulWidget {
     super.key,
     this.installation,
     this.androidDownloadUrl,
+    this.compactInstallation = false,
   });
 
   final AppInstallation? installation;
   final String? androidDownloadUrl;
+  final bool compactInstallation;
 
   @override
   ConsumerState<AppSettingsContent> createState() => _AppSettingsContentState();
@@ -157,6 +159,35 @@ class _AppSettingsContentState extends ConsumerState<AppSettingsContent> {
     ),
   );
 
+  Widget _installationSection(String title, List<Widget> children) {
+    if (!widget.compactInstallation) return _section(title, children);
+    return Container(
+      decoration: BoxDecoration(
+        color: DefensysTokens.panelOf(context),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ExpansionTile(
+        key: const PageStorageKey('install-guide'),
+        tilePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+        childrenPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        shape: const Border(),
+        collapsedShape: const Border(),
+        title: Text(
+          title,
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+        ),
+        subtitle: Text(
+          'Install options and instructions',
+          style: TextStyle(color: DefensysTokens.textSecondaryOf(context)),
+        ),
+        children: children,
+      ),
+    );
+  }
+
   Widget _step(int number, String title, String detail) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 8),
     child: Row(
@@ -233,7 +264,7 @@ class _AppSettingsContentState extends ConsumerState<AppSettingsContent> {
         ]),
         if (eligible) const SizedBox(height: 16),
         if (eligible && status.isWeb && !status.installed)
-          _section('Get DefenSYS on your phone', [
+          _installationSection('Get DefenSYS on your phone', [
             Text(
               'Open your workspace from your home screen. Your account, teams and evaluations stay the same.',
               style: TextStyle(color: DefensysTokens.textSecondaryOf(context)),

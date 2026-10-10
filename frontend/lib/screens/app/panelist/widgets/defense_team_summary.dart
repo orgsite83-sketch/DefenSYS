@@ -7,8 +7,15 @@ import '../panelist_models.dart';
 /// The project and presenting roster stay ahead of the rubric so evaluators
 /// can identify the defense before entering scores.
 class DefenseTeamSummary extends StatelessWidget {
-  const DefenseTeamSummary({super.key, required this.team});
+  const DefenseTeamSummary({
+    super.key,
+    required this.team,
+    this.showDetailsInitially = false,
+    this.previewMode = false,
+  });
   final TeamData team;
+  final bool showDetailsInitially;
+  final bool previewMode;
 
   String _initials(String name) {
     final words = name
@@ -142,61 +149,30 @@ class DefenseTeamSummary extends StatelessWidget {
   }
 
   Widget _composition(BuildContext context) {
-    final weights = <String, int>{
-      'Panel': team.panelWeight,
-      'Peer': team.peerWeight,
-      if (team.isCapstone && team.adviserWeight > 0)
-        'Adviser': team.adviserWeight,
-    };
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: DefensysTokens.surfaceHigherOf(context),
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Grade composition',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: DefensysTokens.textSecondaryOf(context),
-            ),
+          Icon(
+            Icons.info_outline_rounded,
+            size: 16,
+            color: DefensysTokens.maroonTextOf(context),
           ),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              for (final weight in weights.entries)
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${weight.value}%',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -.4,
-                          color: weight.key == 'Panel'
-                              ? DefensysTokens.maroonTextOf(context)
-                              : DefensysTokens.textPrimaryOf(context),
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        weight.key,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: DefensysTokens.textSecondaryOf(context),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Panel evaluations account for ${team.panelWeight}% of the final stage grade. Panelist scores are combined.',
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.4,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+            ),
           ),
         ],
       ),
@@ -210,36 +186,14 @@ class DefenseTeamSummary extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Color.alphaBlend(
-            accent.withValues(alpha: .12),
-            DefensysTokens.borderOf(context),
-          ),
-        ),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color.alphaBlend(accent.withValues(alpha: .045), surface),
-            surface,
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(
-              alpha: DefensysTokens.isDark(context) ? .12 : .035,
-            ),
-            blurRadius: 18,
-            offset: const Offset(0, 5),
-          ),
-        ],
+        border: Border.all(color: DefensysTokens.borderOf(context)),
+        color: surface,
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(15),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(height: 3, color: accent),
             Padding(
               padding: const EdgeInsets.all(18),
               child: Column(
@@ -317,47 +271,45 @@ class DefenseTeamSummary extends StatelessWidget {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 18),
-                  _detail(
-                    context,
-                    Icons.person_outline_rounded,
-                    team.displaySupervisorLabel,
-                    team.displaySupervisor,
-                  ),
-                  if (team.section.isNotEmpty || team.level.isNotEmpty) ...[
-                    const SizedBox(height: 14),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  if (previewMode) ...[
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 6,
                       children: [
-                        if (team.section.isNotEmpty)
-                          Expanded(
-                            child: _detail(
-                              context,
-                              Icons.groups_outlined,
-                              'Section',
-                              team.section,
-                            ),
-                          ),
-                        if (team.section.isNotEmpty && team.level.isNotEmpty)
-                          const SizedBox(width: 12),
-                        if (team.level.isNotEmpty)
-                          Expanded(
-                            child: _detail(
-                              context,
-                              Icons.school_outlined,
-                              'Year level',
-                              team.level,
-                            ),
-                          ),
+                        _previewMeta(
+                          context,
+                          Icons.school_outlined,
+                          team.displayStage,
+                        ),
+                        _previewMeta(
+                          context,
+                          Icons.schedule_outlined,
+                          team.formattedTime,
+                        ),
+                        _previewMeta(
+                          context,
+                          Icons.place_outlined,
+                          team.displayRoom,
+                        ),
                       ],
                     ),
                   ],
-                  const Divider(height: 30),
+                  const SizedBox(height: 12),
+                  Text(
+                    team.name,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: DefensysTokens.textSecondaryOf(context),
+                    ),
+                  ),
+                  const Divider(height: 24),
                   ExpansionTile(
                     key: PageStorageKey(
-                      'presenting-members-${team.scheduleId}-${team.evaluationContext}',
+                      'team-details-${team.scheduleId}-${team.evaluationContext}-$showDetailsInitially',
                     ),
-                    initiallyExpanded: true,
+                    initiallyExpanded: showDetailsInitially,
                     tilePadding: EdgeInsets.zero,
                     childrenPadding: EdgeInsets.zero,
                     shape: const Border(),
@@ -366,7 +318,7 @@ class DefenseTeamSummary extends StatelessWidget {
                       children: [
                         const Expanded(
                           child: Text(
-                            'Presenting members',
+                            'Team details & presenting members',
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
@@ -384,6 +336,53 @@ class DefenseTeamSummary extends StatelessWidget {
                       ],
                     ),
                     children: [
+                      const SizedBox(height: 8),
+                      _detail(
+                        context,
+                        Icons.person_outline_rounded,
+                        team.displaySupervisorLabel,
+                        team.displaySupervisor,
+                      ),
+                      if (team.section.isNotEmpty || team.level.isNotEmpty) ...[
+                        const SizedBox(height: 14),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (team.section.isNotEmpty)
+                              Expanded(
+                                child: _detail(
+                                  context,
+                                  Icons.groups_outlined,
+                                  'Section',
+                                  team.section,
+                                ),
+                              ),
+                            if (team.section.isNotEmpty &&
+                                team.level.isNotEmpty)
+                              const SizedBox(width: 12),
+                            if (team.level.isNotEmpty)
+                              Expanded(
+                                child: _detail(
+                                  context,
+                                  Icons.school_outlined,
+                                  'Year level',
+                                  team.level,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                      const Divider(height: 24),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Presenting members',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
                       for (final member in team.memberDetails)
                         _member(context, member),
                       if (team.memberDetails.isEmpty)
@@ -391,10 +390,10 @@ class DefenseTeamSummary extends StatelessWidget {
                           padding: EdgeInsets.symmetric(vertical: 12),
                           child: Text('No presenting members listed.'),
                         ),
+                      const SizedBox(height: 12),
+                      if (!previewMode) _composition(context),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  _composition(context),
                 ],
               ),
             ),
@@ -403,4 +402,19 @@ class DefenseTeamSummary extends StatelessWidget {
       ),
     );
   }
+
+  Widget _previewMeta(BuildContext context, IconData icon, String value) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(icon, size: 14, color: DefensysTokens.textSecondaryOf(context)),
+      const SizedBox(width: 5),
+      Text(
+        value,
+        style: TextStyle(
+          fontSize: 11,
+          color: DefensysTokens.textSecondaryOf(context),
+        ),
+      ),
+    ],
+  );
 }

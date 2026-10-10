@@ -49,6 +49,7 @@ class _DefensysExportDialogState extends State<DefensysExportDialog> {
   bool _isDownloading = false;
   bool _isLoadingPreview = false;
   ReportPreviewData? _previewData;
+  int _previewRequestId = 0;
 
   @override
   void initState() {
@@ -137,6 +138,7 @@ class _DefensysExportDialogState extends State<DefensysExportDialog> {
   }
 
   Future<void> _loadPreview() async {
+    final requestId = ++_previewRequestId;
     setState(() => _isLoadingPreview = true);
 
     try {
@@ -147,14 +149,14 @@ class _DefensysExportDialogState extends State<DefensysExportDialog> {
       }
 
       final preview = await widget.config.onFetchPreview(queryParams);
-      if (mounted) {
+      if (mounted && requestId == _previewRequestId) {
         setState(() {
           _isLoadingPreview = false;
           _previewData = preview;
         });
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && requestId == _previewRequestId) {
         setState(() {
           _isLoadingPreview = false;
           _previewData = null;

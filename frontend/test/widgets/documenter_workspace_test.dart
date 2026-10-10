@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:defensys/models/documenter_assignment.dart';
+import 'package:defensys/notifications/notifications_provider.dart';
 import 'package:defensys/navigation/app_router.dart';
 import 'package:defensys/navigation/workspace_preference.dart';
 import 'package:defensys/l10n/app_localizations.dart';
@@ -28,6 +29,14 @@ import '../helpers/pump_app.dart';
 import '../helpers/capture_preview.dart';
 
 class _Client extends Mock implements AuthenticatedHttpClient {}
+
+class _Notifications extends NotificationsNotifier {
+  _Notifications(super.workspace);
+  @override
+  NotificationsState build() => const NotificationsState();
+  @override
+  Future<void> fetchNotifications({bool? unreadOnly, bool loadMore = false}) async {}
+}
 
 class _Doc extends AuthNotifier {
   @override
@@ -210,6 +219,7 @@ void main() {
           child: ProviderScope(
             overrides: [
               authProvider.overrideWith(_Doc.new),
+              notificationsProvider.overrideWith2(_Notifications.new),
               documenterProvider.overrideWith(_AppDocumenter.new),
               connectivityProvider.overrideWith(_Online.new),
               workspacePreferenceProvider.overrideWith(
@@ -231,6 +241,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Documenter workspace'), findsOneWidget);
       await capture(tester, nativeKey, 'phone-app');
+      await tester.ensureVisible(find.text('Continue minutes'));
       await tester.tap(find.text('Continue minutes'));
       await tester.pumpAndSettle();
       expect(find.byType(MinutesFormScreen), findsOneWidget);

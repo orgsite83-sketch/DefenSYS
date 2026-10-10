@@ -245,6 +245,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
   Widget _buildSectionWidget(
     DefensysAdminSection section, {
     bool isImport = false,
+    Map<String, String> userQuery = const {},
   }) {
     switch (section) {
       case DefensysAdminSection.overview:
@@ -252,7 +253,13 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       case DefensysAdminSection.academicPeriods:
         return const AcademicPeriodsScreen();
       case DefensysAdminSection.userManagement:
-        return const UserManagementScreen();
+        return UserManagementScreen(
+          initialUserTab: userQuery['tab'] == 'faculty' ? UserManagementTab.faculty : UserManagementTab.students,
+          initialPanelistAccess: userQuery['view'] == 'panelists',
+          initialPanelistTab: const ['faculty', 'requests', 'history'].contains(userQuery['section']) ? userQuery['section']! : 'faculty',
+          initialPanelistRequestId: int.tryParse(userQuery['request'] ?? ''),
+          initialAccessUserId: userQuery['view'] == 'roles' ? int.tryParse(userQuery['user'] ?? '') : null,
+        );
       case DefensysAdminSection.studentTeams:
         return const StudentTeamsScreen(mode: TeamListMode.capstoneAdmin);
       case DefensysAdminSection.studentAcademicRecords:
@@ -340,10 +347,12 @@ class AdminSectionContent extends StatelessWidget {
     super.key,
     required this.section,
     this.isImport = false,
+    this.userQuery = const {},
   });
 
   final DefensysAdminSection section;
   final bool isImport;
+  final Map<String, String> userQuery;
 
   @override
   Widget build(BuildContext context) => KeyedSubtree(
@@ -355,6 +364,6 @@ class AdminSectionContent extends StatelessWidget {
     ),
     child: context
         .findAncestorStateOfType<_AdminShellState>()!
-        ._buildSectionWidget(section, isImport: isImport),
+        ._buildSectionWidget(section, isImport: isImport, userQuery: userQuery),
   );
 }

@@ -76,13 +76,11 @@ class _DocumenterAssignmentsViewState
     }
     final secondary = DefensysTokens.textSecondaryOf(context);
     return DefensysShadcnScope(
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1280),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+      child: SizedBox(
+        width: double.infinity,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
               Row(
                 children: [
                   Expanded(
@@ -326,8 +324,7 @@ class _DocumenterAssignmentsViewState
             ],
           ),
         ),
-      ),
-    );
+      );
   }
 
   Widget _summary(
@@ -341,7 +338,10 @@ class _DocumenterAssignmentsViewState
       expands: true,
       onPressed: () => _select(filter),
       height: (compact ? 80 : 104) * MediaQuery.textScalerOf(context).scale(1),
-      padding: EdgeInsets.all(compact ? 12 : 16),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 16,
+        vertical: compact ? 6 : 16,
+      ),
       mainAxisAlignment: MainAxisAlignment.start,
       backgroundColor: selected
           ? DefensysTokens.surfaceHigherOf(context)
@@ -349,27 +349,29 @@ class _DocumenterAssignmentsViewState
       hoverBackgroundColor: DefensysTokens.surfaceHigherOf(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
             loading ? '—' : '$count',
             style: TextStyle(
-              fontSize: compact ? 24 : 28,
+              fontSize: compact ? 22 : 28,
               height: 1,
               fontWeight: FontWeight.w700,
               color: DefensysTokens.textPrimaryOf(context),
             ),
           ),
-          const SizedBox(height: 6),
+          SizedBox(height: compact ? 3 : 6),
           Text(
             switch (filter) {
               DocumenterFilter.today => 'Today',
               DocumenterFilter.needsAction => 'To complete',
               _ => compact ? 'Records' : 'Minutes records',
             },
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: compact ? 11 : 12,
-              height: 1.3,
+              height: 1.15,
               color: DefensysTokens.textSecondaryOf(context),
             ),
           ),

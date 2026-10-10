@@ -363,6 +363,9 @@ class MinutesCrudApiTests(APITestCase):
         notification = Notification.objects.filter(recipient=self.adviser_faculty).first()
         self.assertIsNotNone(notification)
         self.assertEqual(notification.title, "Minutes Ready for Review")
+        self.assertEqual(notification.workspace, 'adviser')
+        self.assertEqual(notification.priority, 'HIGH')
+        self.assertEqual(notification.action_payload['schedule_id'], self.schedule.pk)
         self.assertEqual(notification.message, f"The minutes for {self.team.name}'s Project Proposal defense are ready for your review and signature")
 
     def test_adviser_signing_flow(self):
@@ -398,6 +401,8 @@ class MinutesCrudApiTests(APITestCase):
         notification = Notification.objects.filter(recipient=self.admin).first()
         self.assertIsNotNone(notification)
         self.assertEqual(notification.title, "Minutes Awaiting Final Signature")
+        self.assertEqual(notification.workspace, 'admin')
+        self.assertEqual(notification.action_route, f'/admin/defense-board/minutes/{self.schedule.pk}')
         self.assertEqual(notification.message, f"The minutes for {self.team.name}'s Project Proposal defense have been reviewed by the adviser and await your signature")
 
     def test_chairman_signing_and_pdf_generation(self):
@@ -445,6 +450,8 @@ class MinutesCrudApiTests(APITestCase):
         notification = Notification.objects.filter(recipient=self.doc_faculty).first()
         self.assertIsNotNone(notification)
         self.assertEqual(notification.title, "Minutes Finalized")
+        self.assertEqual(notification.workspace, 'documenter')
+        self.assertEqual(notification.action_route, f'/documenter/minutes/{self.schedule.pk}')
         self.assertEqual(notification.message, f"The minutes for {self.team.name}'s Project Proposal defense have been finalized with all signatures")
 
         # Download the PDF
@@ -598,6 +605,8 @@ class MinutesEdgeCasesApiTests(APITestCase):
             self.assertEqual(pdf_response.content, pdf_content)
 
     def test_cancelled_schedule_blocks_minutes_ops(self):
+        from defense.scheduler.tests import DefenseSchedulerApiTests
+        DefenseSchedulerApiTests._complete_prior_stages(self, self.team)
         # 1. Cancel the schedule
         self.schedule.status = DefenseSchedule.STATUS_CANCELLED
         self.schedule.save()

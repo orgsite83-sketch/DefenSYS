@@ -22,12 +22,12 @@ import '../../../widgets/defensys_logo_mark.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../services/unsaved_changes_provider.dart';
 import '../../../utils/unsaved_changes.dart';
-import '../../../notifications/notifications_modal.dart';
-import '../../../notifications/notifications_provider.dart';
+import '../../../notifications/notifications_bell.dart';
 import '../../../widgets/buttons/defensys_theme_toggle.dart';
 import '../shared/team_deliverables/team_deliverables_screen.dart';
 import '../shared/project_archive/project_archive_screen.dart';
 import '../../app/student/repository_tab.dart';
+import '../../app/student/profile_edit_screen.dart';
 import '../admin/audit_compliance_screen.dart';
 import '../admin/defense_scheduler/defense_scheduler_screen.dart';
 import '../admin/defense_board_screen.dart';
@@ -110,7 +110,6 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(dashboardProvider('faculty').notifier).fetchDashboardData();
-      ref.read(notificationsProvider.notifier).fetchNotifications();
     });
   }
 
@@ -163,10 +162,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     final showSidebar = !isOnlyUploader;
 
     // If user is only uploader, show uploader dashboard directly
-    if (isOnlyUploader) {
+    if (isOnlyUploader && _activeSection != 'profile') {
       return Scaffold(
         backgroundColor: DefensysTokens.backgroundOf(context),
-        body: const UploaderDashboard(),
+        body: const UploaderDashboard(showNotificationBell: true),
       );
     }
 
@@ -184,7 +183,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
 
         final mainColumn = Column(
           children: [
-            _buildTopBar(showMenuButton: showSidebar && !isWide),
+            _buildTopBar(
+              showMenuButton: showSidebar && !isWide,
+              showWorkspaceBack: isOnlyUploader && _activeSection == 'profile',
+            ),
             Expanded(
               child: OfflineBanner(
                 child: _FacultyContentScope(
@@ -492,13 +494,25 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   }
 
   void _afterSidebarAction(bool isWide, VoidCallback action) {
-    action();
     if (!isWide && mounted) {
       Navigator.of(context).pop();
     }
+    action();
   }
 
-  Widget _buildTopBar({required bool showMenuButton}) {
+  Widget _buildTopBar({
+    required bool showMenuButton,
+    bool showWorkspaceBack = false,
+  }) {
+    final roles = (ref.watch(dashboardProvider('faculty')).data?['roles'] as Map?)?.cast<String, dynamic>() ?? {};
+    final workspace = _resolvedWorkspace(roles);
+    final inbox = _activeSection == 'uploader' ? 'uploader' : switch (workspace.type) {
+      FacultyWorkspace.faculty => 'faculty',
+      FacultyWorkspace.pitLead => 'pit_lead',
+      FacultyWorkspace.adviser => 'adviser',
+      FacultyWorkspace.pitInstructor => 'pit_instructor',
+      FacultyWorkspace.documenter => 'documenter',
+    };
     return Container(
       height: DefensysTokens.topNavHeight,
       padding: EdgeInsets.only(
@@ -516,11 +530,19 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       ),
       child: Row(
         children: [
-          if (showMenuButton) ...[
+          if (showWorkspaceBack)
             IconButton(
-              icon: const Icon(Icons.menu),
-              tooltip: 'Open menu',
-              onPressed: () => Scaffold.of(context).openDrawer(),
+              icon: const Icon(Icons.arrow_back_rounded),
+              tooltip: 'Back to uploader workspace',
+              onPressed: () => _goToSection('uploader'),
+            ),
+          if (showMenuButton) ...[
+            Builder(
+              builder: (scaffoldContext) => IconButton(
+                icon: const Icon(Icons.menu),
+                tooltip: 'Open menu',
+                onPressed: () => Scaffold.of(scaffoldContext).openDrawer(),
+              ),
             ),
             const SizedBox(width: 8),
           ],
@@ -531,39 +553,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           if (WorkspaceAccess.canEvaluate(ref.watch(authProvider).user ?? widget.userData ?? {}))
             IconButton(icon: const Icon(Icons.rate_review_outlined), tooltip: 'Panelist evaluations',
               onPressed: () => context.push(AppRoutes.panelist)),
-          Consumer(
-            builder: (context, ref, child) {
-              final state = ref.watch(notificationsProvider);
-              return Badge(
-                isLabelVisible: state.unreadCount > 0,
-                label: Text(
-                  state.unreadCount.toString(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                backgroundColor: DefensysTokens.maroonOf(context),
-                child: IconButton(
-                  icon: Icon(
-                    Icons.notifications_outlined,
-                    color: DefensysTokens.textSecondaryOf(context),
-                    size: 23,
-                  ),
-                  tooltip: 'Notifications',
-                  onPressed: () {
-                    showModalBottomSheet(
-                      context: context,
-                      backgroundColor: Colors.transparent,
-                      isScrollControlled: true,
-                      builder: (_) => const NotificationsModal(),
-                    );
-                  },
-                ),
-              );
-            },
-          ),
+          NotificationsBell(workspace: inbox,
+            workspaceLabel: inbox == 'uploader' ? 'Uploader' : _workspaceLabel(workspace)),
           const SizedBox(width: 10),
           const DefensysThemeToggle(),
         ],
@@ -893,6 +884,25 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
 
     final popupItems = <PopupMenuEntry<String>>[
       PopupMenuItem(
+        value: 'profile',
+        height: 38,
+        child: Row(
+          children: [
+            Icon(Icons.person_outline_rounded, size: 16, color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569)),
+            const SizedBox(width: 10),
+            Text(
+              'Profile',
+              style: TextStyle(
+                fontFamily: DefensysTokens.fontFamily,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+              ),
+            ),
+          ],
+        ),
+      ),
+      PopupMenuItem(
         value: 'signature',
         height: 38,
         child: Row(
@@ -934,7 +944,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     ];
 
     void handleSelect(String value) async {
-      if (value == 'signature') {
+      if (value == 'profile') {
+        _afterSidebarAction(isWide, () => _goToSection('profile'));
+      } else if (value == 'signature') {
         if (!isWide && mounted) {
           Navigator.of(context).pop();
         }
@@ -1429,6 +1441,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     String activeSection,
     GoRouterState routerState,
   ) {
+    if (activeSection == 'profile') {
+      return const ProfileScreen(showAppBar: false);
+    }
     if (dashState.data == null) {
       return dashState.error != null
           ? Center(child: Text(dashState.error!))
@@ -1574,12 +1589,15 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         if (!isAdmin && !isPitLead) {
           return SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-            child: _buildWorkspaceDashboard(
-              workspace: workspaceOption.type,
-              dashState: dashState,
-              facultyName: facultyName,
-              yearLevel: workspaceOption.yearLevel,
-              section: workspaceOption.section,
+            child: SizedBox(
+              width: double.infinity,
+              child: _buildWorkspaceDashboard(
+                workspace: workspaceOption.type,
+                dashState: dashState,
+                facultyName: facultyName,
+                yearLevel: workspaceOption.yearLevel,
+                section: workspaceOption.section,
+              ),
             ),
           );
         }
@@ -1617,22 +1635,25 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         final hasCapstoneInfo = capstoneTeams.isNotEmpty || roles['capstone_instructor'] == true;
         return SingleChildScrollView(
           padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildWorkspaceDashboard(
-                workspace: workspaceOption.type,
-                dashState: dashState,
-                facultyName: facultyName,
-                yearLevel: workspaceOption.yearLevel,
-                section: workspaceOption.section,
-              ),
-              if (hasCapstoneInfo)
-                CapstoneInstructorInfoSection(
-                  capstoneTeams: capstoneTeams,
-                  capstoneYears: (roles['capstone_instructor_years'] as List?)?.cast<String>(),
+          child: SizedBox(
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildWorkspaceDashboard(
+                  workspace: workspaceOption.type,
+                  dashState: dashState,
+                  facultyName: facultyName,
+                  yearLevel: workspaceOption.yearLevel,
+                  section: workspaceOption.section,
                 ),
-            ],
+                if (hasCapstoneInfo)
+                  CapstoneInstructorInfoSection(
+                    capstoneTeams: capstoneTeams,
+                    capstoneYears: (roles['capstone_instructor_years'] as List?)?.cast<String>(),
+                  ),
+              ],
+            ),
           ),
         );
     }

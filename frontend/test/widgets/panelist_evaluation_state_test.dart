@@ -96,6 +96,10 @@ TeamData _team({
 Finder _picker(String criterion) => find.byWidgetPredicate(
   (w) => w is EvaluationScorePicker && w.label == criterion,
 );
+Finder _targetTab(String label) => find.descendant(
+  of: find.byKey(const ValueKey('evaluation-target-tabs')),
+  matching: find.text(label),
+);
 double? _value(WidgetTester tester, String criterion) =>
     tester.widget<EvaluationScorePicker>(_picker(criterion)).value;
 Future<void> _tapScore(
@@ -231,7 +235,7 @@ void main() {
       final team = _team();
       final client = await _showSheet(tester, [team]);
       expect(find.text('0 of 1 scores entered'), findsOneWidget);
-      expect(find.textContaining('Students ·'), findsNothing);
+      expect(_targetTab('Individuals'), findsNothing);
       expect(find.text('PANEL RAW SCORE'), findsNothing);
       await _tapVisible(
         tester,
@@ -249,13 +253,13 @@ void main() {
       await tester.pageBack();
       await tester.pumpAndSettle();
       await _tapScore(tester, 'Clarity', '0');
-      expect(find.text('1 of 1 scores entered'), findsOneWidget);
+      expect(find.text('Your panel score 0.0%'), findsOneWidget);
       expect(find.text('Score entered'), findsOneWidget);
       expect(team.draftSubmissions.single['criteria_scores'], [
         {'criterion_id': 1, 'score': 0.0},
       ]);
       expect(team.evaluationProgress.complete, isTrue);
-      expect(find.text('PANEL RAW SCORE'), findsOneWidget);
+      expect(find.text('PANEL RAW SCORE'), findsNothing);
       await _tapVisible(
         tester,
         find.byKey(const ValueKey('review-evaluation')),
@@ -281,9 +285,9 @@ void main() {
         final criterion = target == 'both' ? 'Contribution' : 'Clarity';
         if (target == 'both') {
           await _tapScore(tester, 'Clarity', '0');
-          await _tapVisible(tester, find.textContaining('Students ·'));
+          await _tapVisible(tester, _targetTab('Individuals'));
         } else {
-          expect(find.textContaining('Team ·'), findsNothing);
+          expect(_targetTab('Team'), findsNothing);
           expect(find.text('Team criteria'), findsNothing);
         }
         await _tapScore(tester, criterion, '7');
@@ -295,11 +299,11 @@ void main() {
         );
         expect(_value(tester, criterion), isNull);
         expect(find.text('Viewing'), findsOneWidget);
-        expect(find.text('Complete · 1/1 scored'), findsOneWidget);
+        expect(find.text('1 of 2 members complete'), findsOneWidget);
         await _tapScore(tester, criterion, '9');
         expect(
-          find.text(
-            '${target == 'both' ? 3 : 2} of ${target == 'both' ? 3 : 2} scores entered',
+          find.textContaining(
+            '${target == 'both' ? 3 : 2}/${target == 'both' ? 3 : 2} scored',
           ),
           findsOneWidget,
         );
@@ -310,7 +314,7 @@ void main() {
         );
         expect(_value(tester, criterion), 7);
         if (target == 'both') {
-          await _tapVisible(tester, find.textContaining('Team ·'));
+          await _tapVisible(tester, _targetTab('Team'));
           expect(_value(tester, 'Clarity'), 0);
         }
         expect(tester.takeException(), isNull);
@@ -361,7 +365,7 @@ void main() {
       expect(team.isPosted, isTrue);
       expect(team.evaluationProgress.complete, isTrue);
       expect(find.byType(EvaluationScorePicker), findsNothing);
-      expect(find.text('Submitted · Locked'), findsOneWidget);
+      expect(find.textContaining('Submitted · Locked'), findsOneWidget);
       await tester.pump(const Duration(seconds: 4));
       expect(tester.takeException(), isNull);
     },
@@ -384,7 +388,7 @@ void main() {
       await _showSheet(tester, [team]);
       expect(_value(tester, 'Clarity'), 0);
       expect(find.text('1 of 3 scores entered'), findsOneWidget);
-      await _tapVisible(tester, find.textContaining('Students ·'));
+      await _tapVisible(tester, _targetTab('Individuals'));
       expect(_value(tester, 'Contribution'), isNull);
       expect(find.text('Draft saved'), findsOneWidget);
     },
@@ -400,10 +404,10 @@ void main() {
         () => client.post(any(), body: any(named: 'body')),
       ).thenAnswer((_) => response.future);
       await _tapScore(tester, 'Clarity', '0');
-      expect(find.text('Changes pending'), findsOneWidget);
+      expect(find.textContaining('Changes pending'), findsOneWidget);
       await tester.pump(const Duration(milliseconds: 850));
-      expect(find.text('Saving draft…'), findsOneWidget);
-      expect(find.text('Draft saved'), findsNothing);
+      expect(find.textContaining('Saving draft…'), findsOneWidget);
+      expect(find.textContaining('Draft saved'), findsNothing);
       expect(team.hasUnsavedChanges, isTrue);
       response.complete(_saved());
       await tester.pumpAndSettle();
@@ -420,7 +424,7 @@ void main() {
       expect(payload['submissions'][0]['criteria_scores'][0]['score'], 0);
       expect(team.hasUnsavedChanges, isFalse);
       expect(team.isPosted, isFalse);
-      expect(find.text('Draft saved'), findsOneWidget);
+      expect(find.textContaining('Draft saved'), findsOneWidget);
       expect(find.text('Draft saved. You can continue later.'), findsNothing);
     },
   );
@@ -442,6 +446,16 @@ void main() {
         find.byKey(const ValueKey('preview-team-21-21')),
       );
       expect(find.text('Team preview'), findsOneWidget);
+      await capturePreview(
+        tester,
+        find
+            .ancestor(
+              of: find.text('Team preview'),
+              matching: find.byType(RepaintBoundary),
+            )
+            .first,
+        'panel-team-preview',
+      );
       expect(first.hasUnsavedChanges, isTrue);
       await tester.tap(find.byTooltip('Keep current team'));
       await tester.pumpAndSettle();
@@ -533,7 +547,7 @@ void main() {
         find.byKey(const ValueKey('grading-preview')),
         'grading-team-${width.toInt()}',
       );
-      await _tapVisible(tester, find.textContaining('Students ·'));
+      await _tapVisible(tester, _targetTab('Individuals'));
       await _tapScore(tester, 'Contribution', '7');
       await tester.ensureVisible(find.text('Proposal rubric'));
       await tester.pumpAndSettle();
@@ -560,7 +574,7 @@ void main() {
       final team = _team(target: 'both', longNames: true);
       await _showSheet(tester, [team, _team(id: '21')], width: 320, dark: true);
       await _tapScore(tester, 'Clarity', '8');
-      await _tapVisible(tester, find.textContaining('Students ·'));
+      await _tapVisible(tester, _targetTab('Individuals'));
       await _tapScore(tester, 'Contribution', '7');
       await tester.ensureVisible(find.text('Proposal rubric'));
       await tester.pumpAndSettle();

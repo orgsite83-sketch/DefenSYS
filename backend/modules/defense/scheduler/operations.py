@@ -477,13 +477,35 @@ def execute_operation(actor, data, request=None):
                 create_invitations([evaluator], missing, actor)
     for schedule in changed_items:
         from notifications.models import Notification, NotificationCategory
-        recipients = set(schedule.panel_assignments.values_list('panelist_id', flat=True)) | set(old_values[schedule.pk]['panelist_ids'])
-        recipients |= {x for x in (schedule.documenter_id, schedule.team.adviser_id, schedule.team.leader_id) if x}
-        for recipient in recipients:
-            recipient_role = get_user_model().objects.filter(pk=recipient).values_list('role', flat=True).first()
-            Notification.objects.create(recipient_id=recipient, sender=actor, title='Defense schedule updated',
+        # The same person can receive this event in several independent role inboxes.
+        targets = {
+            (pk, 'panelist') for pk in
+            set(schedule.panel_assignments.values_list('panelist_id', flat=True)) | set(old_values[schedule.pk]['panelist_ids'])
+        }
+        targets |= {(pk, workspace) for pk, workspace in (
+            (schedule.documenter_id, 'documenter'),
+            (old_values[schedule.pk].get('documenter_id'), 'documenter'),
+            (schedule.team.adviser_id, 'adviser'), (schedule.team.leader_id, 'student'),
+        ) if pk}
+        users = {u.pk: u for u in get_user_model().objects.filter(pk__in={pk for pk, _ in targets})}
+        delivered = set()
+        for recipient, workspace in sorted(targets):
+            person = users.get(recipient)
+            if person is None:
+                continue
+            if person.role == 'admin':
+                workspace = 'admin'
+            if (recipient, workspace) in delivered:
+                continue
+            delivered.add((recipient, workspace))
+            route = {'student': '/student', 'admin': '/admin/defense-board',
+                'panelist': '/panelist', 'documenter': f'/documenter/minutes/{schedule.pk}'}.get(workspace, '/faculty/defense-board')
+            if workspace == 'documenter' and schedule.documenter_id != recipient:
+                route = '/documenter'
+            Notification.objects.create(recipient=person, sender=actor, title='Defense schedule updated',
                 message=f'{schedule.team.name}: {schedule.stage_label}, {schedule.scheduled_date} {schedule.start_time}, {schedule.room}. Reason: {data["reason"]}',
-                category=NotificationCategory.DEFENSE, action_route='/student' if recipient_role == 'student' else '/admin/defense-board' if recipient_role == 'admin' else '/faculty/defense_board')
+                category=NotificationCategory.DEFENSE, workspace=workspace, priority='HIGH', action_route=route,
+                action_payload={'schedule_id': schedule.pk, 'team_id': schedule.team_id})
         log_high_impact_action(category=SystemAuditLog.CATEGORY_SCHEDULING, action='schedule.operational_change', target=schedule,
             old_values=old_values[schedule.pk], new_values={**operation_values(schedule), 'change_details': diffs[schedule.pk]}, reason=data['reason'], actor=actor, request=request, strict=True)
     return review

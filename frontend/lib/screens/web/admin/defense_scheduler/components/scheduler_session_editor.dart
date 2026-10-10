@@ -87,7 +87,7 @@ class SchedulerSessionEditor extends StatelessWidget {
             ),
             Flexible(
               child: Text(
-                '${draft.teamIds.length} selected · ${draft.capacity} available',
+                '${draft.teamIds.length} selected · ${draft.capacity} slots',
                 style: TextStyle(
                   fontSize: 12,
                   color: DefensysTokens.textSecondaryOf(context),

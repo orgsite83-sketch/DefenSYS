@@ -359,7 +359,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       return hasPrerequisites
           ? isTeamStageReady(team, activeStageOrEvent)
           : !isTeamStageScheduled(team, activeStageOrEvent) &&
-                !isTeamStageCompleted(team, activeStageOrEvent);
+                {'pending', 'ready'}.contains(getTeamStageStatus(team, activeStageOrEvent));
     }).toList();
   }
 
@@ -1079,12 +1079,14 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     );
     if (targetStage.isEmpty) return const SizedBox.shrink();
 
-    final readyTeamsCount = state.teams.where((team) {
-      final readyForStage = team['ready_for_stage']?.toString() ?? '';
-      final teamLevel = team['level']?.toString() ?? '';
-      final isCapstone = teamLevel.toLowerCase().contains('capstone');
-      return isCapstone && readyForStage == targetStage['label'];
-    }).length;
+    final stageLabel = targetStage['label']?.toString() ?? '';
+    final stageTeams = teamsForScope(state, 'capstone');
+    final readyTeamsCount = stageTeams.where((team) =>
+        isTeamStageReady(team, stageLabel)).length;
+    final hasDefenseProgress = stageTeams.any((team) {
+      final status = getTeamStageStatus(team, stageLabel);
+      return status != 'pending' && status != 'ready';
+    });
 
     final isOfficiallyComplete = targetStage['is_officially_complete'] == true;
 
@@ -1140,8 +1142,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           _buildWarningBanner(
             icon: Icons.warning_amber_rounded,
             isError: false,
-            message:
-                'No teams are currently ready for ${targetStage['label'] ?? 'this stage'}. Teams must have pre-defense deliverables approved by their instructor.',
+            message: hasDefenseProgress
+                ? 'No teams are eligible to schedule for $stageLabel. Teams already scheduled or assessed remain in the readiness queue with their defense status. Another attempt requires an eligible re-defense or authorized retake.'
+                : 'No teams are currently ready for $stageLabel. Teams need approved pre-defense deliverables, endorsement, and completed prior stages.',
           ),
         );
       }

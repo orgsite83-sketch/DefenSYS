@@ -1,10 +1,13 @@
 from django.contrib.auth import get_user_model
 from unittest.mock import patch, MagicMock
+from datetime import timedelta
 import tempfile
 from pathlib import Path
-from io import StringIO
+from io import StringIO, BytesIO
+from django.core.files.base import ContentFile
+from django.test import override_settings
 from django.core.management import call_command
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APIClient
 
 from academic_period_management.models import SchoolYear, Semester
 from defense.stages.models import DefenseStage, StageDeliverable, StageGradingConfig
@@ -146,6 +149,160 @@ class CurriculumExplorerTests(APITestCase):
         self.assertEqual(response.data['projects_count'], 0)
         self.assertEqual(response.data['criteria'], [])
         self.assertEqual(response.data['contexts'], [])
+
+    def test_source_documents_use_repository_current_file_and_deliverable_metadata(self):
+        from repository.project_archive.payloads import capstone_entry_payload
+        from repository.deliverables.services import submission_payload
+
+        old_text = ('Objectives\nCloudSync monitors sensors, soil moisture and crop irrigation.\n'
+                    'Expected Outputs\nAn IoT embedded telemetry prototype supports farmers.')
+        current_text = ('Abstract\nCloudSync develops a responsive web application for patients in a hospital.\n'
+                        'Methodology\nReact and Django provide browser forms for patient records.')
+        parent = DeliverableSubmission.objects.create(team=self.a, stage_label=self.stage.label,
+            deliverable_id='D1', label='Chapter 1-3', deliverable_type='pre', uploaded_by=self.student,
+            file='deliverables/parent.pdf', file_name='parent.pdf', extracted_text=old_text)
+        StageDeliverable.objects.create(defense_stage=self.stage, deliverable_id='D1',
+            label='Chapter 1-3', is_defense_material=True)
+        old = DeliverableSubmissionFile.objects.create(submission=parent,
+            file='deliverables/old.pdf', file_name='old.pdf', extracted_text=old_text)
+        latest = DeliverableSubmissionFile.objects.create(submission=parent,
+            file='deliverables/current.pdf', file_name='current.pdf', extracted_text=current_text)
+        # Equal timestamps must still choose the last upload deterministically.
+        DeliverableSubmissionFile.objects.filter(pk=old.pk).update(uploaded_at=latest.uploaded_at)
+        response = self.client.get(f'/api/curriculum-analytics/explorer/projects/{self.a.pk}:1/',
+                                  {'scope': 'capstone', 'academic_year': self.year.label})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['documents']), 1)
+        document = response.data['documents'][0]
+        repository_document = capstone_entry_payload(parent)[0]
+        self.assertEqual(document['id'], f'file:{latest.pk}')
+        self.assertEqual(document['file_name'], repository_document['file_name'])
+        self.assertEqual(document['url'], repository_document['file_url'])
+        self.assertEqual(document['file_name'], submission_payload(parent)['file_name'])
+        self.assertIn('/api/media/', document['url'])
+        self.assertEqual(document['display_name'], 'D1 · Chapter 1-3')
+        self.assertEqual(document['stage'], self.stage.label)
+        self.assertEqual(document['status'], 'Pending Review')
+        self.assertEqual(document['uploaded_by'], self.student.username)
+        self.assertEqual(response.data['classification']['label'], 'Web Development')
+        self.assertEqual(response.data['classification']['document_id'], document['id'])
+        self.assertEqual(response.data['classification']['source_label'], document['display_name'])
+        profile = response.data['profile']
+        self.assertEqual(profile['primary_document_id'], document['id'])
+        self.assertEqual(profile['description']['document_id'], document['id'])
+        self.assertEqual([p['name'] for p in profile['platforms']], ['Web'])
+        self.assertNotIn('_raw_text', document)
+        self.assertEqual(parent.files.count(), 2)  # History remains stored.
+
+    def test_legacy_source_without_file_is_explicitly_unavailable(self):
+        parent = DeliverableSubmission.objects.create(team=self.a, stage_label=self.stage.label,
+            deliverable_id='P', label='Project proposal', deliverable_type='pre', file_name='missing.pdf',
+            extracted_text='CloudSync develops a responsive web application using React and Django.')
+        response = self.client.get(f'/api/curriculum-analytics/explorer/projects/{self.a.pk}:1/',
+                                  {'scope': 'capstone', 'academic_year': self.year.label})
+        self.assertEqual(len(response.data['documents']), 1)
+        document = response.data['documents'][0]
+        self.assertEqual(document['id'], f'submission:{parent.pk}')
+        self.assertEqual(document['display_name'], 'P · Project proposal')
+        self.assertIsNone(document['url'])
+
+    def test_current_post_deliverable_supersedes_archive_only_in_its_period_and_version(self):
+        text = 'CloudSync develops a responsive web application using React and Django for browser registration.'
+        self.a.project_version = 2
+        self.a.save(update_fields=['project_version'])
+        parent = DeliverableSubmission.objects.create(team=self.a, stage_label=self.stage.label,
+            deliverable_id='D3', label='Approved Concept Paper', deliverable_type='post',
+            file='deliverables/concept.pdf', file_name='concept.pdf', extracted_text=text)
+        copy = ArchiveEntry.objects.create(team=self.a, entry_type='capstone', academic_year=self.year.label,
+            semester_label=self.sem.label, stage_label=self.stage.label, file_name='archive-copy.pdf',
+            metadata={'deliverable_label': 'Approved Concept Paper'}, extracted_text=text)
+        later = ArchiveEntry.objects.create(team=self.a, entry_type='capstone', academic_year=self.year.label,
+            semester_label=self.second.label, stage_label=self.stage.label, file_name='later.pdf',
+            metadata={'deliverable_label': 'Approved Concept Paper'}, extracted_text=text)
+        previous_year = SchoolYear.objects.create(label='2025-2026')
+        Semester.objects.create(school_year=previous_year, label=Semester.FIRST)
+        historical = ArchiveEntry.objects.create(team=self.a, entry_type='capstone',
+            academic_year=previous_year.label, semester_label=self.sem.label, stage_label=self.stage.label,
+            file_name='historical.pdf', metadata={'deliverable_label': 'Approved Concept Paper'}, extracted_text=text)
+        # Uploads inherit the team's current version; restore a historical
+        # snapshot explicitly in the isolated test database.
+        ArchiveEntry.objects.filter(pk=historical.pk).update(project_version=1)
+        current = self.client.get(f'/api/curriculum-analytics/explorer/projects/{self.a.pk}:2/',
+            {'scope': 'capstone', 'academic_year': self.year.label, 'semester': self.sem.pk})
+        self.assertEqual([d['id'] for d in current.data['documents']], [f'submission:{parent.pk}'])
+        other_period = self.client.get(f'/api/curriculum-analytics/explorer/projects/{self.a.pk}:2/',
+            {'scope': 'capstone', 'academic_year': self.year.label, 'semester': self.second.pk})
+        self.assertEqual([d['id'] for d in other_period.data['documents']], [f'archive:{later.pk}'])
+        other_version = self.client.get(f'/api/curriculum-analytics/explorer/projects/{self.a.pk}:1/',
+            {'scope': 'capstone', 'academic_year': previous_year.label})
+        self.assertEqual([d['id'] for d in other_version.data['documents']], [f'archive:{historical.pk}'])
+        self.assertTrue(ArchiveEntry.objects.filter(pk=copy.pk).exists())
+
+    def test_distinct_deliverables_keep_their_metadata_even_with_identical_text(self):
+        text = 'CloudSync develops a responsive web application using React and Django for browser registration.'
+        for deliverable_id, label, kind in [('D2', 'Concept Paper', 'pre'), ('D3', 'Approved Concept Paper', 'post')]:
+            DeliverableSubmission.objects.create(team=self.a, stage_label=self.stage.label,
+                deliverable_id=deliverable_id, label=label, deliverable_type=kind, extracted_text=text)
+        response = self.client.get(f'/api/curriculum-analytics/explorer/projects/{self.a.pk}:1/',
+                                  {'scope': 'capstone', 'academic_year': self.year.label})
+        self.assertEqual({d['display_name'] for d in response.data['documents']},
+                         {'D2 · Concept Paper', 'D3 · Approved Concept Paper'})
+        self.assertEqual(response.data['classification']['document_count'], 2)
+        self.assertEqual(response.data['classification']['unique_documents'], 1)
+
+    def test_pit_source_documents_also_use_only_the_latest_revision(self):
+        from defense.scheduler.models import PitEventDeliverable
+        team = self.team('PIT-source', StudentTeam.LEVEL_1_PIT, '1st Year')
+        event = PitEventGradingConfig.objects.create(semester=self.sem, event_name='Programming Expo')
+        PitEventDeliverable.objects.create(pit_event_config=event, deliverable_id='D1',
+            label='Project documentation', is_defense_material=True)
+        parent = DeliverableSubmission.objects.create(team=team, stage_label=event.event_name,
+            deliverable_id='D1', label='Project documentation', deliverable_type='pre')
+        old = DeliverableSubmissionFile.objects.create(submission=parent, file_name='old.pdf')
+        latest = DeliverableSubmissionFile.objects.create(submission=parent, file_name='latest.pdf')
+        DeliverableSubmissionFile.objects.filter(pk=old.pk).update(uploaded_at=latest.uploaded_at - timedelta(days=1))
+        response = self.client.get(f'/api/curriculum-analytics/explorer/projects/{team.pk}:1/',
+            {'scope': 'pit', 'year_level': '1', 'academic_year': self.year.label})
+        self.assertEqual([d['id'] for d in response.data['documents']], [f'file:{latest.pk}'])
+        self.assertEqual(response.data['documents'][0]['display_name'], 'D1 · Project documentation')
+
+    def test_archive_copy_of_the_same_current_file_is_not_an_extra_source(self):
+        text = 'CloudSync develops a responsive web application using React and Django for browser registration.'
+        parent = DeliverableSubmission.objects.create(team=self.a, stage_label=self.stage.label,
+            deliverable_id='P', label='Project proposal', deliverable_type='pre', extracted_text=text,
+            file='deliverables/shared.pdf', file_name='shared.pdf')
+        ArchiveEntry.objects.create(team=self.a, entry_type='capstone', academic_year=self.year.label,
+            semester_label=self.sem.label, file='deliverables/shared.pdf', file_name='shared-archive.pdf',
+            metadata={'deliverable_label': 'Project proposal'}, extracted_text=text)
+        response = self.client.get(f'/api/curriculum-analytics/explorer/projects/{self.a.pk}:1/',
+                                  {'scope': 'capstone', 'academic_year': self.year.label})
+        self.assertEqual([d['id'] for d in response.data['documents']], [f'submission:{parent.pk}'])
+
+    def test_source_pdf_url_streams_the_current_file_with_authentication(self):
+        from reportlab.pdfgen import canvas
+        pdf = BytesIO()
+        document = canvas.Canvas(pdf)
+        document.drawString(72, 720, 'CloudSync project proposal')
+        document.save()
+        pdf_bytes = pdf.getvalue()
+        with tempfile.TemporaryDirectory() as media, override_settings(MEDIA_ROOT=media):
+            parent = DeliverableSubmission.objects.create(team=self.a, stage_label=self.stage.label,
+                deliverable_id='P', label='Project proposal', deliverable_type='pre')
+            latest = DeliverableSubmissionFile.objects.create(submission=parent,
+                file=ContentFile(pdf_bytes, name='current-proposal.pdf'), file_name='current-proposal.pdf',
+                extracted_text='CloudSync develops a responsive web application using React and Django.')
+            response = self.client.get(f'/api/curriculum-analytics/explorer/projects/{self.a.pk}:1/',
+                                      {'scope': 'capstone', 'academic_year': self.year.label})
+            source = response.data['documents'][0]
+            self.assertEqual(source['id'], f'file:{latest.pk}')
+            opened = self.client.get(source['url'])
+            self.assertEqual(opened.status_code, 200)
+            self.assertEqual(opened['Content-Type'], 'application/pdf')
+            self.assertEqual(b''.join(opened.streaming_content), pdf_bytes)
+            # The test client's streaming iterator closes the response while
+            # shielding the transaction from connection cleanup signals.
+            self.assertTrue(opened.closed)
+            self.assertEqual(APIClient().get(source['url']).status_code, 401)
 
     def test_pit_is_event_and_year_level_scoped(self):
         first = self.team('PIT-first', StudentTeam.LEVEL_1_PIT, '1st Year')
@@ -329,6 +486,11 @@ class CurriculumExplorerTests(APITestCase):
             extracted_text='We configure network topology, routing and switching. The network monitoring platform reports bandwidth across routers and switches.')
         project = next(p for p in self.get(academic_year=self.year.label).data['projects'] if p['team_id'] == self.a.pk)
         self.assertEqual(project['classification_reason_code'], 'unrelated_documents')
+        detail = self.client.get(f'/api/curriculum-analytics/explorer/projects/{self.a.pk}:1/',
+                                 {'scope': 'capstone', 'academic_year': self.year.label})
+        self.assertEqual(detail.data['profile']['source_count'], 0)
+        self.assertNotIn('features', detail.data['profile'])
+        self.assertIsNone(detail.data['profile']['description'])
 
     def test_reclassification_changes_only_derived_fields_and_creates_backup(self):
         parent = DeliverableSubmission.objects.create(team=self.a, stage_label=self.stage.label,

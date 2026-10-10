@@ -17,7 +17,7 @@ class DefensysDocumentSheet extends StatelessWidget {
     super.key,
     required this.previewData,
     this.signatories = const [],
-    this.includeSignatures = true,
+    this.includeSignatures = false,
     this.scale = 1.0,
   });
 

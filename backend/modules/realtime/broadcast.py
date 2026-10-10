@@ -8,7 +8,7 @@ from typing import Any
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
-from .groups import broadcast_groups_for_capstone_semester, broadcast_groups_for_pit_event
+from .groups import broadcast_groups_for_capstone_semester, broadcast_groups_for_pit_event, user_group_name
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,13 @@ def _send_to_groups(groups: list[str], payload: dict[str, Any]) -> None:
                 f"Failed to broadcast real-time sync notification to group {group}: {e}",
                 exc_info=True,
             )
+
+
+def notify_team_peer_open(*, semester_id, team_id, stage_label, student_ids):
+    """Refresh only this team's students after their panel finishes grading."""
+    payload = _base_payload(scope='capstone', semester_id=semester_id, stage_label=stage_label)
+    payload['team_id'] = team_id
+    _send_to_groups([user_group_name(pk) for pk in student_ids], payload)
 
 
 def notify_capstone_evaluation_flags(

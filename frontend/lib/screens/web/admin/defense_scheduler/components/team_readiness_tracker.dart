@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:defensys/models/defense_workflow_labels.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
@@ -358,6 +359,12 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                             .where((team) => isTeamStageReady(team, activeStageOrEventName))
                             .length
                         : 0;
+                    final sectionPendingCount = sectionTeams.where((team) =>
+                        getTeamStageStatus(team, activeStageOrEventName) == 'pending').length;
+                    final sectionAwaitingCompletion = sectionTeams.every((team) =>
+                        getTeamStageStatus(team, activeStageOrEventName) == 'awaiting_completion');
+                    final sectionHasVerdicts = sectionTeams.every((team) =>
+                        ((team['stage_verdicts'] as Map?)?[activeStageOrEventName]?.toString() ?? '').isNotEmpty);
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
@@ -442,7 +449,11 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                 const SizedBox(width: 10),
                                 _buildSectionStatusBadge(
                                   icon: Icons.warning_amber_rounded,
-                                  label: 'Needs Endorsement',
+                                  label: sectionPendingCount > 0
+                                      ? 'Needs Endorsement'
+                                      : sectionAwaitingCompletion
+                                          ? 'Awaiting Completion'
+                                          : sectionHasVerdicts ? 'Outcomes Recorded' : 'Defense in Progress',
                                   isSuccess: false,
                                 ),
                               ],
@@ -674,7 +685,7 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                     ),
                                     children: [
                                       _tableHeaderCell('TEAM & PROJECT TITLE'),
-                                      _tableHeaderCell('READINESS STATUS'),
+                                      _tableHeaderCell('DEFENSE STATUS'),
                                       _tableHeaderCell('ACTIONS'),
                                     ],
                                   ),
@@ -682,7 +693,10 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                     final stageStatus = getTeamStageStatus(team, activeStageOrEventName);
                                     final isCompleted = stageStatus == 'completed';
                                     final isScheduled = stageStatus == 'scheduled';
-                                    final isReady = stageStatus == 'ready';
+                                    final isReady = isTeamStageReady(team, activeStageOrEventName);
+                                    final isPending = stageStatus == 'pending';
+                                    final verdict = (team['stage_verdicts'] as Map?)?[activeStageOrEventName]?.toString() ?? '';
+                                    final hasVerdict = verdict.isNotEmpty;
 
                                     Color dotColor;
                                     Color statusTextColor;
@@ -702,13 +716,45 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                     } else if (isReady) {
                                       dotColor = _isDark ? const Color(0xFF34D399) : const Color(0xFF10B981);
                                       statusTextColor = _isDark ? const Color(0xFF34D399) : const Color(0xFF065F46);
-                                      statusText = 'Ready for Defense';
+                                      statusText = stageStatus == 'redefense_required'
+                                          ? 'Ready for Re-defense'
+                                          : stageStatus == 'failed'
+                                              ? 'Ready for Retake'
+                                              : 'Ready for Defense';
                                       statusIcon = Icons.auto_awesome_rounded;
-                                    } else {
+                                    } else if (isPending) {
                                       dotColor = _isDark ? const Color(0xFFFBBF24) : const Color(0xFFF59E0B);
                                       statusTextColor = _isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309);
                                       statusText = 'Awaiting Endorsement';
                                       statusIcon = Icons.hourglass_top_rounded;
+                                    } else {
+                                      final isBlocked = stageStatus == 'failed' || stageStatus == 'project_rejected';
+                                      dotColor = isBlocked
+                                          ? (_isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626))
+                                          : (_isDark ? const Color(0xFFFBBF24) : const Color(0xFFF59E0B));
+                                      statusTextColor = dotColor;
+                                      statusText = defenseProgressLabel(stageStatus);
+                                      statusIcon = isBlocked ? Icons.block_rounded : Icons.assignment_turned_in_outlined;
+                                    }
+
+                                    final progressText = isCompleted
+                                        ? 'Completed'
+                                        : hasVerdict && stageStatus == 'redefense_required' && !isReady
+                                            ? 'Awaiting re-defense eligibility'
+                                            : statusText;
+                                    if (hasVerdict) {
+                                      statusText = defenseVerdictLabel(verdict);
+                                      final isPassing = verdict == 'approved' || verdict == 'approved_with_revisions';
+                                      final isFailed = verdict == 'failed' || verdict == 'project_rejected';
+                                      dotColor = isPassing
+                                          ? (_isDark ? const Color(0xFF34D399) : const Color(0xFF059669))
+                                          : isFailed
+                                              ? (_isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626))
+                                              : (_isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309));
+                                      statusTextColor = dotColor;
+                                      statusIcon = isPassing
+                                          ? Icons.check_circle_rounded
+                                          : isFailed ? Icons.block_rounded : Icons.replay_rounded;
                                     }
 
                                     return TableRow(
@@ -836,14 +882,30 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                               ),
                                               const SizedBox(width: 8),
                                               Expanded(
-                                                child: Text(
-                                                  statusText,
-                                                  style: TextStyle(
-                                                    fontSize: 13,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: statusTextColor,
-                                                  ),
-                                                  overflow: TextOverflow.ellipsis,
+                                                child: Column(
+                                                  key: ValueKey('team-defense-status-${team['id']}-$activeStageOrEventName'),
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      statusText,
+                                                      style: TextStyle(
+                                                        fontSize: 13,
+                                                        fontWeight: FontWeight.w700,
+                                                        color: statusTextColor,
+                                                      ),
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                    if (hasVerdict && progressText.toLowerCase() != statusText.toLowerCase()) ...[
+                                                      const SizedBox(height: 3),
+                                                      Text(
+                                                        progressText,
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          color: DefensysTokens.textSecondaryOf(context),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ],
                                                 ),
                                               ),
                                             ],
@@ -867,7 +929,7 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                 ),
                                               ),
                                               const SizedBox(width: 8),
-                                              if (!isReady && !isCompleted && !isScheduled)
+                                              if (isPending && !hasVerdict)
                                                 TextButton.icon(
                                                   onPressed: widget.isSendingReminder || activeStageOrEventName.isEmpty
                                                       ? null

@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers as drf_serializers
 from rest_framework import status
@@ -9,8 +10,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from grading.rubrics.models import Rubric
+from student_teams.models import StudentTeam
+from defense.scheduler.models import DefenseSchedule
 from .models import GradeBreakdown, StudentStageGrade, TeamGrade
 from .peer_eval import recalculate_student_grade
+from .availability import adviser_grading_unavailable_reason
 from .serializers import TeamGradeSerializer
 from .services import (
     GradeContextService,
@@ -20,6 +24,7 @@ from .services import (
     grade_queryset,
     require_grade_editable,
     require_matching_rubric,
+    resolve_canonical_capstone_grade,
 )
 
 
@@ -268,6 +273,9 @@ class AdviserGradeListView(APIView):
         for grade in canonical_rows:
             row = TeamGradeSerializer(grade).data
             row.update(assigned_adviser_rubric_payload(grade))
+            reason = adviser_grading_unavailable_reason(grade)
+            row.update(adviser_grading_available=not reason, adviser_grading_unavailable_reason=reason)
+            row['session_id'] = str(grade.schedule.session_id) if grade.schedule_id else None
             grade_payload.append(row)
         return Response({
             'grades': grade_payload,
@@ -289,6 +297,7 @@ class AdviserSubmitGradeView(APIView):
 
     permission_classes = [IsAuthenticated]
 
+    @transaction.atomic
     def post(self, request, grade_id):
         semester = active_semester()
         if semester and not getattr(semester, 'capstone_adviser_grading_enabled', True):
@@ -300,7 +309,13 @@ class AdviserSubmitGradeView(APIView):
             grade_queryset().filter(team__adviser=request.user),
             pk=grade_id,
         )
-        grade = GradeContextService.get_for_adviser_context(request.user, grade)
+        StudentTeam.objects.select_for_update().get(pk=grade.team_id)
+        grade = resolve_canonical_capstone_grade(grade)
+        if grade.schedule_id:
+            DefenseSchedule.objects.select_for_update().get(pk=grade.schedule_id)
+        grade = TeamGrade.objects.select_for_update(of=('self',)).select_related(
+            'team', 'semester', 'schedule', 'defense_stage',
+        ).get(pk=grade.pk)
 
         if grade.status in TeamGrade.LOCKED_STATUSES:
             return Response(
@@ -310,12 +325,16 @@ class AdviserSubmitGradeView(APIView):
 
         try:
             require_grade_editable(grade)
+            reason = adviser_grading_unavailable_reason(grade)
+            if reason:
+                raise DjangoValidationError(reason)
         except DjangoValidationError as exc:
             return Response(
                 {'detail': exc.message if hasattr(exc, 'message') else str(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        grade = GradeContextService.get_for_adviser_context(request.user, grade)
         serializer = _AdviserGradeSubmitSerializer(
             data=request.data, context={'grade': grade}
         )
@@ -323,4 +342,6 @@ class AdviserSubmitGradeView(APIView):
         grade = serializer.save()
         payload = TeamGradeSerializer(grade).data
         payload.update(assigned_adviser_rubric_payload(grade))
+        reason = adviser_grading_unavailable_reason(grade)
+        payload.update(adviser_grading_available=not reason, adviser_grading_unavailable_reason=reason)
         return Response({'grade': payload})

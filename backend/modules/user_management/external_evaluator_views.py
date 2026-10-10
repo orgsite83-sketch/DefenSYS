@@ -2,6 +2,8 @@ from django.shortcuts import get_object_or_404
 from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.exceptions import PermissionDenied
+from authentication_access_control.scopes import is_admin_user
 
 from authentication_access_control.audit import log_high_impact_action
 from authentication_access_control.models import SystemAuditLog
@@ -63,9 +65,18 @@ class ExternalEvaluatorsView(APIView):
 
 
 class ExternalEvaluatorDetailView(APIView):
-    permission_classes = [IsSystemAdmin]
+    permission_classes = [IsPitLeadOrAdmin]
+
+    def get(self, request, evaluator_id):
+        items = ExternalEvaluator.objects.select_related('created_by', 'reviewed_by')
+        if not is_admin_user(request.user):
+            items = items.filter(created_by=request.user)
+        item = get_object_or_404(items, pk=evaluator_id)
+        return Response({'request': evaluator_payload(item), 'can_review': is_admin_user(request.user)})
 
     def patch(self, request, evaluator_id):
+        if not is_admin_user(request.user):
+            raise PermissionDenied('Only admins can approve or update external evaluators.')
         serializer = EvaluatorReviewSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         item = get_object_or_404(ExternalEvaluator, pk=evaluator_id)

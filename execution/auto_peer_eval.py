@@ -83,8 +83,10 @@ def parse_args():
     )
     parser.add_argument(
         "--stage",
-        help="Optional stage label override (e.g. 'Concept Proposal'). Defaults to current active stage.",
+        help="Only evaluate students whose current evaluation stage matches this label.",
     )
+    parser.add_argument('--session-id', help='Only evaluate teams in this scheduled session UUID.')
+    parser.add_argument('--semester-id', type=int, help='Only evaluate teams in this academic term.')
     parser.add_argument(
         "--http-login",
         action="store_true",
@@ -297,6 +299,18 @@ def run():
             continue
 
         stage = args.stage or dashboard.get("current_stage") or "Concept Proposal"
+        context = dashboard.get('peerEvalContext') or {}
+        if args.session_id and str(context.get('session_id') or '') != args.session_id:
+            continue
+        if args.semester_id and context.get('semester_id') != args.semester_id:
+            continue
+        if args.stage and args.stage.strip().casefold() != str(dashboard.get("current_stage") or "").strip().casefold():
+            print(f"  [SKIP] {team_name}: --stage does not match the student's current evaluation context.")
+            continue
+        if dashboard.get("peerEvalEnabled") is not True:
+            reason = dashboard.get("peerEvalUnavailableReason") or "Peer evaluation is not open for this team."
+            print(f"  [SKIP] {team_name}: {reason}")
+            continue
         peer_criteria = dashboard.get("peerCriteria") or []
 
         if not peer_criteria:

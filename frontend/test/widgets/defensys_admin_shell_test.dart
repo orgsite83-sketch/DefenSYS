@@ -6,6 +6,7 @@ import 'package:defensys/notifications/notifications_provider.dart';
 import '../helpers/pump_app.dart';
 
 class FakeNotificationsNotifier extends NotificationsNotifier {
+  FakeNotificationsNotifier([super.workspace = 'admin']);
   @override
   NotificationsState build() {
     return const NotificationsState(
@@ -15,7 +16,7 @@ class FakeNotificationsNotifier extends NotificationsNotifier {
   }
 
   @override
-  Future<void> fetchNotifications() async {
+  Future<void> fetchNotifications({bool? unreadOnly, bool loadMore = false}) async {
     // No-op to prevent timer creation in tests
   }
 }
@@ -38,7 +39,7 @@ void main() {
         child: const Center(child: Text('Shell child content')),
       ),
       overrides: [
-        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+        notificationsProvider.overrideWith2((workspace) => FakeNotificationsNotifier(workspace)),
       ],
     );
 
@@ -64,7 +65,7 @@ void main() {
         child: const Center(child: Text('Narrow shell content')),
       ),
       overrides: [
-        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+        notificationsProvider.overrideWith2((workspace) => FakeNotificationsNotifier(workspace)),
       ],
     );
 
@@ -100,7 +101,7 @@ void main() {
         child: const Center(child: Text('Compact content')),
       ),
       overrides: [
-        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+        notificationsProvider.overrideWith2((workspace) => FakeNotificationsNotifier(workspace)),
       ],
     );
 
@@ -130,7 +131,7 @@ void main() {
         child: const Center(child: Text('Profile page content')),
       ),
       overrides: [
-        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+        notificationsProvider.overrideWith2((workspace) => FakeNotificationsNotifier(workspace)),
       ],
     );
 
@@ -155,7 +156,7 @@ void main() {
         child: const Center(child: Text('Content')),
       ),
       overrides: [
-        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+        notificationsProvider.overrideWith2((workspace) => FakeNotificationsNotifier(workspace)),
       ],
     );
 

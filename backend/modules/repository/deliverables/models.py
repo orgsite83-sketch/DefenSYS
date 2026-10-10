@@ -175,6 +175,15 @@ class DeliverableSubmission(models.Model):
         return f'{self.team} - {self.deliverable_id}'
     
     @property
+    def latest_file(self):
+        """The current repository file; older uploads remain stored as history.
+
+        Use the prefetched collection when available and break timestamp ties
+        by ID so every consumer selects the same revision.
+        """
+        return max(self.files.all(), key=lambda f: (f.uploaded_at, f.pk), default=None)
+
+    @property
     def file_url(self):
         """Get the URL for the uploaded file"""
         if self.file:

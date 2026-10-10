@@ -3,17 +3,22 @@ import 'package:intl/intl.dart';
 
 import '../../../theme/defensys_tokens.dart';
 import 'panelist_models.dart';
+import 'widgets/panelist_segmented_tabs.dart';
 
 class AssignmentsTab extends StatefulWidget {
   final List<TeamData> teams;
   final void Function(int teamIndex) onOpenGradeSheet;
   final Future<void> Function()? onRefresh;
+  final bool compactHeader;
+  final bool history;
 
   const AssignmentsTab({
     super.key,
     required this.teams,
     required this.onOpenGradeSheet,
     this.onRefresh,
+    this.compactHeader = false,
+    this.history = false,
   });
 
   @override
@@ -48,7 +53,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
           (!t.isLockedByDate || t.scheduledDate == null || t.isPosted)) {
         continue;
       }
-      if (_statusFilter == 'pending' && !t.gradingAvailable) {
+      if (_statusFilter == 'pending' && (!t.gradingAvailable || t.isPosted)) {
         continue;
       }
       if (_statusFilter == 'submitted' && !t.isPosted) {
@@ -96,9 +101,17 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       children: [
-        _buildHeader(),
-        const SizedBox(height: 12),
-        _buildWorkloadTriageBar(),
+        if (!widget.compactHeader) ...[
+          _buildHeader(),
+          const SizedBox(height: 12),
+        ],
+        if (!widget.history)
+          _buildWorkloadTriageBar()
+        else
+          const Text(
+            'Session history',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
         const SizedBox(height: 12),
         _buildSearchAndFilters(),
         const SizedBox(height: 16),
@@ -274,8 +287,10 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
 
   Widget _buildWorkloadTriageBar() {
     final total = widget.teams.length;
-    final completed = widget.teams.where((t) => t.isPosted).length;
-    final pending = widget.teams.where((t) => t.gradingAvailable).length;
+    final submitted = widget.teams.where((t) => t.isPosted).length;
+    final pending = widget.teams
+        .where((t) => t.gradingAvailable && !t.isPosted)
+        .length;
     final upcoming = widget.teams
         .where(
           (t) => t.isLockedByDate && t.scheduledDate != null && !t.isPosted,
@@ -283,171 +298,91 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
         .length;
     final chairCount = widget.teams.where((t) => t.isChair).length;
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-        border: Border.all(color: DefensysTokens.border),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x08000000),
-            blurRadius: 4,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final width = (constraints.maxWidth - 8) / 2;
-              return Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  SizedBox(
-                    width: width,
-                    child: _triageStatPill(
-                      label: 'All Teams',
-                      count: total,
-                      icon: Icons.list_alt,
-                      isActive: _statusFilter == 'all',
-                      color: DefensysTokens.textPrimary,
-                      onTap: () => setState(() => _statusFilter = 'all'),
-                    ),
-                  ),
-                  SizedBox(
-                    width: width,
-                    child: _triageStatPill(
-                      label: 'Upcoming',
-                      count: upcoming,
-                      icon: Icons.calendar_month_outlined,
-                      isActive: _statusFilter == 'upcoming',
-                      color: DefensysTokens.warningText,
-                      onTap: () => setState(() => _statusFilter = 'upcoming'),
-                    ),
-                  ),
-                  SizedBox(
-                    width: width,
-                    child: _triageStatPill(
-                      label: 'Needs Grading',
-                      count: pending,
-                      icon: Icons.edit_note,
-                      isActive: _statusFilter == 'pending',
-                      color: DefensysTokens.maroon,
-                      onTap: () => setState(() => _statusFilter = 'pending'),
-                    ),
-                  ),
-                  SizedBox(
-                    width: width,
-                    child: _triageStatPill(
-                      label: 'Submitted',
-                      count: completed,
-                      icon: Icons.check_circle_outline,
-                      isActive: _statusFilter == 'submitted',
-                      color: DefensysTokens.successText,
-                      onTap: () => setState(() => _statusFilter = 'submitted'),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-          if (chairCount > 0) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: DefensysTokens.surfaceHigherOf(context),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: DefensysTokens.borderOf(context)),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Session assignments',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: DefensysTokens.textPrimaryOf(context),
+                ),
               ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.gavel_rounded,
-                    size: 14,
-                    color: DefensysTokens.textSecondaryOf(context),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'You are presiding as Panel Chair for $chairCount ${chairCount == 1 ? 'team' : 'teams'}.',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        color: DefensysTokens.textSecondaryOf(context),
-                      ),
-                    ),
-                  ),
-                ],
+            ),
+            Text(
+              '$total ${total == 1 ? 'team' : 'teams'}',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: DefensysTokens.textSecondaryOf(context),
               ),
             ),
           ],
-        ],
-      ),
-    );
-  }
-
-  Widget _triageStatPill({
-    required String label,
-    required int count,
-    required IconData icon,
-    required bool isActive,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-          decoration: BoxDecoration(
-            color: isActive
-                ? color.withValues(alpha: 0.08)
-                : Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isActive ? color : Colors.grey.shade200,
-              width: isActive ? 1.5 : 1,
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(icon, size: 14, color: color),
-                  const SizedBox(width: 4),
-                  Text(
-                    '$count',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                      color: color,
-                    ),
-                  ),
-                ],
+        ),
+        const SizedBox(height: 10),
+        LayoutBuilder(
+          builder: (context, constraints) => PanelistSegmentedTabs<String>(
+            key: const ValueKey('assignment-status-tabs'),
+            value: _statusFilter,
+            stacked: constraints.maxWidth < 560,
+            secondary: true,
+            onChanged: (value) => setState(() => _statusFilter = value),
+            segments: [
+              PanelistSegment(
+                value: 'all',
+                label: 'All Teams',
+                icon: Icons.view_list_outlined,
+                count: '$total',
               ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                  color: isActive ? color : Colors.grey.shade700,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              PanelistSegment(
+                value: 'upcoming',
+                label: 'Upcoming',
+                icon: Icons.event_outlined,
+                count: '$upcoming',
+              ),
+              PanelistSegment(
+                value: 'pending',
+                label: 'Needs Grading',
+                icon: Icons.rate_review_outlined,
+                count: '$pending',
+              ),
+              PanelistSegment(
+                value: 'submitted',
+                label: 'Submitted',
+                icon: Icons.check_circle_outline_rounded,
+                count: '$submitted',
               ),
             ],
           ),
         ),
-      ),
+        if (chairCount > 0) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(
+                Icons.gavel_rounded,
+                size: 14,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Panel Chair for $chairCount ${chairCount == 1 ? 'team' : 'teams'}',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 
@@ -638,29 +573,13 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
 
   Widget _buildTimelineCard(int originalIndex, TeamData t) {
     final isPosted = t.isPosted;
-    final isCapstone = t.scope == 'capstone';
-    final accentColor = isCapstone
-        ? DefensysTokens.maroon
-        : const Color(0xFF006666);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-        border: Border.all(
-          color: isPosted
-              ? Colors.grey.shade200
-              : accentColor.withValues(alpha: 0.25),
-          width: 1,
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x08000000),
-            blurRadius: 4,
-            offset: Offset(0, 1.5),
-          ),
-        ],
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       clipBehavior: Clip.antiAlias,
       child: IntrinsicHeight(
@@ -672,25 +591,18 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
               width: 76,
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
               decoration: BoxDecoration(
-                color: isPosted
-                    ? Colors.grey.shade50
-                    : accentColor.withValues(alpha: 0.05),
+                color: DefensysTokens.surfaceOf(context),
                 border: Border(
-                  right: BorderSide(
-                    color: isPosted
-                        ? Colors.grey.shade200
-                        : accentColor.withValues(alpha: 0.15),
-                    width: 1,
-                  ),
+                  right: BorderSide(color: DefensysTokens.borderOf(context)),
                 ),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    Icons.access_time_filled,
+                    Icons.access_time_outlined,
                     size: 14,
-                    color: isPosted ? Colors.grey.shade500 : accentColor,
+                    color: DefensysTokens.textSecondaryOf(context),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -698,32 +610,21 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                     style: TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w800,
-                      color: isPosted ? Colors.grey.shade700 : accentColor,
+                      color: DefensysTokens.textPrimaryOf(context),
                     ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 1.5,
+                  Text(
+                    t.displayRoom,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                      color: DefensysTokens.textSecondaryOf(context),
                     ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: Text(
-                      t.displayRoom,
-                      style: TextStyle(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey.shade700,
-                      ),
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -737,41 +638,14 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // Top Badge Row
+                    // Role, verdict and evaluation state
                     Wrap(
                       spacing: 4,
                       runSpacing: 4,
                       children: [
-                        // Program Pill
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: accentColor,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            t.scopeLabel.toUpperCase(),
-                            style: const TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
+                        if (t.isChair) ...[_chairBadge()],
 
-                        if (t.isChair) ...[
-                          const SizedBox(width: 4),
-                          _chairBadge(),
-                        ],
-
-                        if (t.hasVerdict) ...[
-                          const SizedBox(width: 4),
-                          _verdictBadge(t.verdict),
-                        ],
+                        if (t.hasVerdict) ...[_verdictBadge(t.verdict)],
 
                         // Status Pill (Draft vs Posted vs Scheduled)
                         _statusBadge(t.evaluationStatus),
@@ -787,7 +661,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                         Text(
                           t.name,
                           style: const TextStyle(
-                            fontSize: 14.5,
+                            fontSize: 15.5,
                             fontWeight: FontWeight.w700,
                             color: DefensysTokens.textDark,
                           ),
@@ -799,7 +673,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                               : t.project,
                           style: TextStyle(
                             fontSize: 12,
-                            color: Colors.grey.shade700,
+                            color: DefensysTokens.textSecondaryOf(context),
                             height: 1.25,
                           ),
                           maxLines: 2,
@@ -817,44 +691,31 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         // Roster button (opens modal)
-                        InkWell(
-                          onTap: () => _showMembersSheet(t),
-                          borderRadius: BorderRadius.circular(6),
-                          child: Container(
-                            constraints: const BoxConstraints(minHeight: 44),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 3,
+                        OutlinedButton.icon(
+                          onPressed: () => _showMembersSheet(t),
+                          icon: const Icon(Icons.people_outline, size: 14),
+                          label: Text('${t.members.length} Members'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: DefensysTokens.textSecondaryOf(
+                              context,
                             ),
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: Colors.grey.shade300),
+                            side: BorderSide(
+                              color: DefensysTokens.borderOf(context),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.people_outline,
-                                  size: 13,
-                                  color: Colors.grey.shade700,
-                                ),
-                                const SizedBox(width: 3),
-                                Text(
-                                  '${t.members.length} Members',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.grey.shade800,
-                                  ),
-                                ),
-                              ],
+                            minimumSize: const Size(0, 44),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            textStyle: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
                             ),
                           ),
                         ),
 
                         // Primary Action Button
-                        if (!t.gradingAvailable && !isPosted)
+                        if (!t.gradingAvailable && !isPosted && !t.isCompleted)
                           OutlinedButton.icon(
                             icon: const Icon(
                               Icons.visibility_outlined,
@@ -867,7 +728,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                             onPressed: () =>
                                 widget.onOpenGradeSheet(originalIndex),
                           )
-                        else if (isPosted)
+                        else if (isPosted || t.isCompleted)
                           OutlinedButton.icon(
                             icon: const Icon(
                               Icons.visibility_outlined,
@@ -878,9 +739,11 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                               style: TextStyle(fontSize: 11.5),
                             ),
                             style: OutlinedButton.styleFrom(
-                              foregroundColor: accentColor,
+                              foregroundColor: DefensysTokens.maroonTextOf(
+                                context,
+                              ),
                               side: BorderSide(
-                                color: accentColor.withValues(alpha: 0.5),
+                                color: DefensysTokens.borderOf(context),
                               ),
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -905,7 +768,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                               ),
                             ),
                             style: FilledButton.styleFrom(
-                              backgroundColor: accentColor,
+                              backgroundColor: DefensysTokens.maroonOf(context),
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -1093,8 +956,8 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
       decoration: BoxDecoration(
-        color: DefensysTokens.surfaceHigherOf(context),
-        borderRadius: BorderRadius.circular(4),
+        color: DefensysTokens.surfaceOf(context),
+        borderRadius: BorderRadius.circular(7),
         border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: Row(
@@ -1124,7 +987,11 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     if (verdict == null || verdict.isEmpty) return const SizedBox.shrink();
     final isApproved = verdict == 'approved';
     final isRevisions = verdict == 'approved_with_revisions';
-    final isForRedefense = ['for_redefense', 'failed', 'project_rejected'].contains(verdict);
+    final isForRedefense = [
+      'for_redefense',
+      'failed',
+      'project_rejected',
+    ].contains(verdict);
 
     final Color color = isApproved
         ? const Color(0xFF10B981)
@@ -1139,7 +1006,9 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
         : isRevisions
         ? 'REVISIONS'
         : isForRedefense
-        ? (verdict == 'for_redefense' ? 'RE-DEFENSE' : verdict.replaceAll('_', ' ').toUpperCase())
+        ? (verdict == 'for_redefense'
+              ? 'RE-DEFENSE'
+              : verdict.replaceAll('_', ' ').toUpperCase())
         : verdict.toUpperCase();
 
     final IconData icon = isApproved
@@ -1181,25 +1050,24 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     final isScheduled = label == 'Upcoming';
 
     final badgeColor = isPosted
-        ? Colors.green.shade700
+        ? DefensysTokens.successText
         : isScheduled
-        ? Colors.orange.shade800
-        : Colors.amber.shade900;
+        ? DefensysTokens.warningText
+        : DefensysTokens.maroonTextOf(context);
 
     final badgeBg = isPosted
-        ? Colors.green.shade50
+        ? DefensysTokens.successBg
         : isScheduled
-        ? Colors.orange.shade50
-        : Colors.amber.shade50;
+        ? DefensysTokens.warningBg
+        : DefensysTokens.maroonOf(context).withValues(alpha: .08);
 
     final displayLabel = label;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
         color: badgeBg,
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: badgeColor.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(7),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1210,16 +1078,18 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                 : isScheduled
                 ? Icons.access_time
                 : Icons.edit_note,
-            size: 11,
+            size: 12,
             color: badgeColor,
           ),
           const SizedBox(width: 3),
-          Text(
-            displayLabel,
-            style: TextStyle(
-              fontSize: 9.5,
-              color: badgeColor,
-              fontWeight: FontWeight.bold,
+          Flexible(
+            child: Text(
+              displayLabel,
+              style: TextStyle(
+                fontSize: 10,
+                color: badgeColor,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],

@@ -92,11 +92,12 @@ class _FakeAuthNotifier extends AuthNotifier {
 }
 
 class _FakeNotificationsNotifier extends NotificationsNotifier {
+  _FakeNotificationsNotifier([super.workspace = 'admin']);
   @override
   NotificationsState build() => const NotificationsState(notifications: [], unreadCount: 0);
 
   @override
-  Future<void> fetchNotifications() async {}
+  Future<void> fetchNotifications({bool? unreadOnly, bool loadMore = false}) async {}
 }
 
 class _FakeAdviserDeliverablesNotifier extends CapstoneDeliverablesNotifier {
@@ -130,7 +131,7 @@ void main() {
         dashboardProvider('faculty').overrideWith(_FakeBaseFacultyDashboardNotifier.new),
         repositoryProvider.overrideWith(_FakePublicRepositoryNotifier.new),
         authProvider.overrideWith(_FakeAuthNotifier.new),
-        notificationsProvider.overrideWith(_FakeNotificationsNotifier.new),
+        notificationsProvider.overrideWith2(_FakeNotificationsNotifier.new),
       ],
     );
     addTearDown(container.dispose);
@@ -178,11 +179,8 @@ void main() {
 
     // Verify public e-library repository content is rendered
     expect(find.text('USTP Research Library'), findsOneWidget);
-    expect(find.text('Digital Manuscripts & Defense Archives'), findsOneWidget);
-    expect(
-      find.text('Institutional Research Library · Read manuscripts, view peer remarks & leave reviews.'),
-      findsOneWidget,
-    );
+    expect(find.text('Explore projects'), findsOneWidget);
+    expect(find.text('Digital manuscripts, posters, and public project outputs.'), findsOneWidget);
 
     // Verify book from public repository is visible
     expect(find.text('Team AquaTech'), findsWidgets);
@@ -213,7 +211,7 @@ void main() {
           () => _FakeMultiRoleFacultyDashboardNotifier(),
         ),
         authProvider.overrideWith(_FakeAuthNotifier.new),
-        notificationsProvider.overrideWith(_FakeNotificationsNotifier.new),
+        notificationsProvider.overrideWith2(_FakeNotificationsNotifier.new),
         capstoneDeliverablesProvider.overrideWith(
           _FakeAdviserDeliverablesNotifier.new,
         ),

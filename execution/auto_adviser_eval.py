@@ -94,6 +94,9 @@ def parse_args():
         default=0.1,
         help="Delay in seconds between requests (default: 0.1s)",
     )
+    parser.add_argument('--stage', help='Only grade this defense stage.')
+    parser.add_argument('--session-id', help='Only grade teams in this scheduled session UUID.')
+    parser.add_argument('--semester-id', type=int, help='Only grade teams in this academic term.')
     return parser.parse_args()
 
 
@@ -197,12 +200,24 @@ def run():
         print(f"\n[{idx}/{len(adviser_usernames)}] Adviser: {username} (Advised Teams: {len(results)})")
 
         for grade_row in results:
+            if args.stage and str(grade_row.get('stage_label') or '').strip().casefold() != args.stage.strip().casefold():
+                continue
+            if args.session_id and str(grade_row.get('session_id') or '') != args.session_id:
+                continue
+            if args.semester_id and grade_row.get('semester_id') != args.semester_id:
+                continue
             grade_id = grade_row.get("id")
             team_name = grade_row.get("team_name") or grade_row.get("team") or f"Grade #{grade_id}"
             adviser_score = grade_row.get("adviser_score")
 
             if adviser_score is not None:
                 print(f"  [-] {team_name} already graded ({float(adviser_score):.2f}%). Skipping.")
+                total_skipped += 1
+                continue
+
+            if grade_row.get("adviser_grading_available") is not True:
+                reason = grade_row.get("adviser_grading_unavailable_reason") or "Adviser grading is not open for this team."
+                print(f"  [SKIP] {team_name}: {reason}")
                 total_skipped += 1
                 continue
 

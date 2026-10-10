@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:go_router/go_router.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
@@ -45,10 +46,17 @@ class UserManagementScreen extends ConsumerStatefulWidget {
     super.key,
     this.initialBulkImport = false,
     this.initialUserTab = UserManagementTab.students,
+    this.initialPanelistAccess = false,
+    this.initialPanelistTab = 'faculty',
+    this.initialPanelistRequestId,
+    this.initialAccessUserId,
   });
 
   final bool initialBulkImport;
   final UserManagementTab initialUserTab;
+  final bool initialPanelistAccess;
+  final String initialPanelistTab;
+  final int? initialPanelistRequestId, initialAccessUserId;
 
   @override
   ConsumerState<UserManagementScreen> createState() =>
@@ -62,11 +70,20 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   StudentHubMode _studentHubInitialMode = StudentHubMode.freshIntake;
 
   Map<String, dynamic>? _accessControlUser;
+  bool _accessLoading = false;
+  String? _accessError;
+  int _accessRequest = 0;
+  int? _loadingAccessId;
 
   @override
   void initState() {
     super.initState();
     _currentTab = widget.initialUserTab;
+    if (widget.initialPanelistAccess) _subView = _SubView.panelistEligibility;
+    if (widget.initialAccessUserId != null) {
+      _subView = _SubView.accessControl;
+      Future.microtask(() => _loadAccessUser(widget.initialAccessUserId!));
+    }
     if (widget.initialBulkImport) {
       _subView = _SubView.bulkImport;
       _currentTab = UserManagementTab.faculty;
@@ -93,6 +110,84 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     });
   }
 
+  @override
+  void didUpdateWidget(covariant UserManagementScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialPanelistAccess != widget.initialPanelistAccess ||
+        oldWidget.initialAccessUserId != widget.initialAccessUserId ||
+        oldWidget.initialUserTab != widget.initialUserTab) {
+      _currentTab = widget.initialUserTab;
+      _subView = widget.initialPanelistAccess
+          ? _SubView.panelistEligibility
+          : widget.initialAccessUserId != null
+          ? _SubView.accessControl
+          : _SubView.none;
+      if (widget.initialAccessUserId != null &&
+          _accessControlUser?['id'] != widget.initialAccessUserId) {
+        Future.microtask(() => _loadAccessUser(widget.initialAccessUserId!));
+      } else if (widget.initialAccessUserId == null) {
+        ++_accessRequest;
+        _accessControlUser = null;
+        _accessLoading = false;
+      }
+    }
+  }
+
+  Future<void> _loadAccessUser(int id) async {
+    _loadingAccessId = id;
+    final request = ++_accessRequest;
+    if (!mounted) return;
+    setState(() {
+      _accessLoading = true;
+      _accessError = null;
+      _accessControlUser = null;
+    });
+    try {
+      final user = await ref
+          .read(userManagementProvider.notifier)
+          .fetchManagedUser(id);
+      if (mounted && request == _accessRequest) {
+        setState(() => _accessControlUser = user);
+      }
+    } catch (_) {
+      if (mounted && request == _accessRequest) {
+        setState(
+          () => _accessError =
+              'This user could not be loaded. Refresh to try again.',
+        );
+      }
+    } finally {
+      if (mounted && request == _accessRequest) {
+        setState(() => _accessLoading = false);
+      }
+    }
+  }
+
+  bool _navigateUserView(Map<String, String> query) {
+    final router = GoRouter.maybeOf(context);
+    if (router == null) return false;
+    router.go(
+      Uri(
+        path: '/admin/users',
+        queryParameters: {'tab': 'faculty', ...query},
+      ).toString(),
+    );
+    return true;
+  }
+
+  void _openPanelistAccess() {
+    if (!_navigateUserView({'view': 'panelists'})) {
+      setState(() => _subView = _SubView.panelistEligibility);
+    }
+  }
+
+  void _openRoleId(int id) {
+    if (!_navigateUserView({'view': 'roles', 'user': '$id'})) {
+      setState(() => _subView = _SubView.accessControl);
+      _loadAccessUser(id);
+    }
+  }
+
   void _openStudentBatchHub([
     StudentHubMode mode = StudentHubMode.freshIntake,
   ]) {
@@ -110,6 +205,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   }
 
   void _openAccessControl(Map<String, dynamic> user) {
+    if (_navigateUserView({'view': 'roles', 'user': '${user['id']}'})) return;
     setState(() {
       _accessControlUser = Map<String, dynamic>.from(user);
       _subView = _SubView.accessControl;
@@ -117,6 +213,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   }
 
   void _closeSubView() {
+    if (_navigateUserView({})) return;
     setState(() {
       _subView = _SubView.none;
       _accessControlUser = null;
@@ -417,49 +514,33 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     }
 
     if (_currentTab == UserManagementTab.faculty) {
-      return DefensysShadcnScope(
-        child: Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          alignment: WrapAlignment.end,
-          children: [
-            ShadButton.outline(
-              onPressed: state.isSaving
-                  ? null
-                  : () =>
-                        setState(() => _subView = _SubView.panelistEligibility),
-              leading: const Icon(LucideIcons.shieldCheck, size: 16),
-              child: const Text('Panelist eligibility'),
-            ),
-            OutlinedButton.icon(
-              onPressed: state.isSaving
-                  ? null
-                  : () => _openBulkImport('faculty'),
-              icon: const Icon(Icons.file_upload_outlined, size: 16),
-              label: const Text('Bulk Import Faculty'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: DefensysUi.primaryMaroon,
-                side: const BorderSide(color: DefensysUi.primaryMaroon),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 10,
-                ),
-              ),
-            ),
-            ElevatedButton.icon(
-              onPressed: state.isSaving ? null : () => _showUserDialog(),
-              icon: const Icon(Icons.person_add_alt_1_rounded, size: 16),
-              label: const Text('Add Single Faculty'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: DefensysUi.primaryMaroon,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ],
-        ),
+      return Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        alignment: WrapAlignment.end,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          OutlinedButton.icon(
+            onPressed: state.isSaving ? null : _openPanelistAccess,
+            icon: const Icon(LucideIcons.shieldCheck),
+            label: const Text('Panelist access'),
+            style: DefensysButtonStyles.secondary(context),
+          ),
+          OutlinedButton.icon(
+            onPressed: state.isSaving
+                ? null
+                : () => _openBulkImport('faculty'),
+            icon: const Icon(Icons.file_upload_outlined),
+            label: const Text('Bulk Import Faculty'),
+            style: DefensysButtonStyles.secondary(context),
+          ),
+          ElevatedButton.icon(
+            onPressed: state.isSaving ? null : () => _showUserDialog(),
+            icon: const Icon(Icons.person_add_alt_1_rounded),
+            label: const Text('Add Single Faculty'),
+            style: DefensysButtonStyles.primary(context),
+          ),
+        ],
       );
     }
 
@@ -551,7 +632,53 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     }
 
     if (_subView == _SubView.panelistEligibility) {
-      return PanelistEligibilityView(onBack: _closeSubView);
+      return PanelistEligibilityView(
+        onBack: _closeSubView,
+        initialTab: widget.initialPanelistTab,
+        initialRequestId: widget.initialPanelistRequestId,
+        onEditRoles: _openRoleId,
+        onTabChanged: GoRouter.maybeOf(context) == null
+            ? null
+            : (tab) => _navigateUserView({'view': 'panelists', 'section': tab}),
+        onSelectRequest: GoRouter.maybeOf(context) == null
+            ? null
+            : (id) => _navigateUserView({
+                'view': 'panelists',
+                'section': widget.initialPanelistTab == 'history'
+                    ? 'history'
+                    : 'requests',
+                'request': '$id',
+              }),
+        onRequestClosed: GoRouter.maybeOf(context) == null
+            ? null
+            : () => _navigateUserView({
+                'view': 'panelists',
+                'section': widget.initialPanelistTab,
+              }),
+      );
+    }
+
+    if (_subView == _SubView.accessControl &&
+        (_accessLoading || _accessError != null)) {
+      return Center(
+        child: _accessLoading
+            ? const CircularProgressIndicator()
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_accessError!),
+                  const SizedBox(height: 12),
+                  OutlinedButton(
+                    onPressed: () => _loadAccessUser(_loadingAccessId!),
+                    child: const Text('Retry'),
+                  ),
+                  TextButton(
+                    onPressed: _closeSubView,
+                    child: const Text('Back to Users'),
+                  ),
+                ],
+              ),
+      );
     }
 
     if (_subView == _SubView.accessControl && _accessControlUser != null) {
@@ -559,6 +686,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         user: _accessControlUser!,
         state: state,
         onBack: _closeSubView,
+        onOpenPanelistAccess: _openPanelistAccess,
         onEditProfile: () => _showUserDialog(_accessControlUser),
         onResetPassword: () => _confirmResetPassword(_accessControlUser!),
         onSaveRoles: (payload) async {

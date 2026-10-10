@@ -6,10 +6,29 @@ import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/widgets/table/defensys_data_table.dart';
 import 'package:defensys/widgets/table/defensys_table_column.dart';
+import 'package:go_router/go_router.dart';
+import 'package:defensys/notifications/notification_request_screen.dart';
+import 'package:defensys/services/admin/panelist_requests_provider.dart';
+import 'package:defensys/services/auth_provider.dart';
+import 'panelist_requests_view.dart';
 
 class PanelistEligibilityView extends StatelessWidget {
-  const PanelistEligibilityView({super.key, required this.onBack});
+  const PanelistEligibilityView({
+    super.key,
+    required this.onBack,
+    this.initialTab = 'faculty',
+    this.initialRequestId,
+    this.onEditRoles,
+    this.onSelectRequest,
+    this.onRequestClosed,
+    this.onTabChanged,
+  });
   final VoidCallback onBack;
+  final String initialTab;
+  final int? initialRequestId;
+  final ValueChanged<int>? onEditRoles, onSelectRequest;
+  final VoidCallback? onRequestClosed;
+  final ValueChanged<String>? onTabChanged;
 
   @override
   Widget build(BuildContext context) => DefensysShadcnScope(
@@ -35,7 +54,15 @@ class PanelistEligibilityView extends StatelessWidget {
                 border: Border.all(color: DefensysTokens.borderOf(context)),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const PanelistEligibilityDirectory(),
+              child: PanelistEligibilityDirectory(
+                centralized: true,
+                initialTab: initialTab,
+                initialRequestId: initialRequestId,
+                onEditRoles: onEditRoles,
+                onSelectRequest: onSelectRequest,
+                onRequestClosed: onRequestClosed,
+                onTabChanged: onTabChanged,
+              ),
             ),
           ),
         ],
@@ -46,8 +73,24 @@ class PanelistEligibilityView extends StatelessWidget {
 
 /// The same RBAC duty editor is used by scheduling and Faculty & Staff.
 class PanelistEligibilityDirectory extends ConsumerStatefulWidget {
-  const PanelistEligibilityDirectory({super.key, this.onClose});
+  const PanelistEligibilityDirectory({
+    super.key,
+    this.onClose,
+    this.centralized = false,
+    this.initialTab = 'faculty',
+    this.initialRequestId,
+    this.onEditRoles,
+    this.onSelectRequest,
+    this.onRequestClosed,
+    this.onTabChanged,
+  });
   final VoidCallback? onClose;
+  final bool centralized;
+  final String initialTab;
+  final int? initialRequestId;
+  final ValueChanged<int>? onEditRoles, onSelectRequest;
+  final VoidCallback? onRequestClosed;
+  final ValueChanged<String>? onTabChanged;
   @override
   ConsumerState<PanelistEligibilityDirectory> createState() =>
       _PanelistEligibilityDirectoryState();
@@ -56,20 +99,177 @@ class PanelistEligibilityDirectory extends ConsumerStatefulWidget {
 class _PanelistEligibilityDirectoryState
     extends ConsumerState<PanelistEligibilityDirectory> {
   String _search = '';
-  String _tab = 'faculty';
+  late String _tab =
+      widget.initialRequestId != null && widget.initialTab == 'faculty'
+      ? 'requests'
+      : widget.initialTab;
+  final _contentKey = GlobalKey();
+  BuildContext? _activeSheet;
+  bool _sheetOpen = false, _openingRoles = false;
   bool _busy = false;
   String? _error;
+  GoRouter? _router;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final router = GoRouter.maybeOf(context);
+    if (_router == router) return;
+    _router?.routerDelegate.removeListener(_reopenDestination);
+    _router = router;
+    _router?.routerDelegate.addListener(_reopenDestination);
+  }
+
+  void _reopenDestination() {
+    final uri = _router?.routerDelegate.currentConfiguration.uri;
+    final id = widget.initialRequestId;
+    if (id == null || uri == null || _sheetOpen) return;
+    final requestedId = int.tryParse(
+      uri.queryParameters[widget.centralized ? 'request' : 'panelistRequest'] ??
+          '',
+    );
+    final expectedPath = widget.centralized
+        ? '/admin/users'
+        : '/faculty/defense-board';
+    if (uri.path != expectedPath || requestedId != id) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showRequest(id);
+    });
+  }
+
+  @override
+  void dispose() {
+    _router?.routerDelegate.removeListener(_reopenDestination);
+    super.dispose();
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _refresh();
+      if (mounted && widget.initialRequestId != null) {
+        _showRequest(widget.initialRequestId!);
+      }
     });
   }
 
+  @override
+  void didUpdateWidget(covariant PanelistEligibilityDirectory oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialTab != widget.initialTab) _tab = widget.initialTab;
+    if (oldWidget.initialRequestId != widget.initialRequestId) {
+      if (widget.initialRequestId != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _showRequest(widget.initialRequestId!);
+        });
+      } else if (_sheetOpen && _activeSheet?.mounted == true) {
+        Navigator.of(_activeSheet!).pop();
+      }
+    }
+  }
+
+  void _editRoles(int id) {
+    if (widget.onEditRoles != null) {
+      widget.onEditRoles!(id);
+      return;
+    }
+    final router = GoRouter.maybeOf(context);
+    widget.onClose?.call();
+    router?.go('/admin/users?tab=faculty&view=roles&user=$id');
+  }
+
+  void _openRequest(int id) {
+    if (widget.onSelectRequest != null) {
+      widget.onSelectRequest!(id);
+    } else {
+      _showRequest(id);
+    }
+  }
+
+  Future<void> _showRequest(int id) async {
+    if (_sheetOpen || !mounted) return;
+    final sheetHost = _contentKey.currentContext;
+    if (sheetHost == null) return;
+    final canEditRoles =
+        ref.read(defenseSchedulerProvider).canApprovePanelists ||
+        ref.read(authProvider).user?['role'] == 'admin';
+    final router = GoRouter.maybeOf(context);
+    final openingUri = router?.routeInformationProvider.value.uri;
+    NavigatorState? sheetNavigator;
+    ModalRoute<void>? sheetRoute;
+    var leftDestination = false;
+    void closeOnNavigation() {
+      if (router?.routeInformationProvider.value.uri == openingUri) return;
+      leftDestination = true;
+      if (sheetRoute?.isActive == true && sheetNavigator?.mounted == true) {
+        sheetNavigator!.removeRoute(sheetRoute!);
+      }
+    }
+
+    router?.routeInformationProvider.addListener(closeOnNavigation);
+    _sheetOpen = true;
+    _openingRoles = false;
+    await showShadSheet<void>(
+      context: sheetHost,
+      side: ShadSheetSide.right,
+      barrierColor: Colors.black.withValues(alpha: .18),
+      builder: (sheetContext) {
+        _activeSheet = sheetContext;
+        sheetNavigator = Navigator.of(sheetContext);
+        sheetRoute = ModalRoute.of<void>(sheetContext);
+        return DefensysShadcnScope(
+          child: ShadSheet(
+            key: const ValueKey('panelist-request-sheet'),
+            title: Text('Request #$id'),
+            isScrollControlled: true,
+            scrollable: true,
+            expandCrossSide: true,
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.sizeOf(sheetContext).width.clamp(0, 540),
+            ),
+            actions: [
+              ShadButton.outline(
+                onPressed: () => Navigator.pop(sheetContext),
+                child: const Text('Close request'),
+              ),
+            ],
+            child: NotificationRequestScreen(
+              kind: 'panelist',
+              requestId: id,
+              embedded: true,
+              onBack: () => Navigator.pop(sheetContext),
+              onOpenRoles: !canEditRoles
+                  ? null
+                  : (facultyId) {
+                      _openingRoles = true;
+                      Navigator.pop(sheetContext);
+                      _editRoles(facultyId);
+                    },
+            ),
+          ),
+        );
+      },
+    );
+    router?.routeInformationProvider.removeListener(closeOnNavigation);
+    _sheetOpen = false;
+    _activeSheet = null;
+    if (mounted && !_openingRoles && !leftDestination) {
+      widget.onRequestClosed?.call();
+    }
+  }
+
   Future<void> _refresh() => _mutate(() async {
+    if (widget.centralized || _tab != 'faculty') {
+      await ref.read(panelistRequestsProvider('pending').notifier).fetch();
+      if (!mounted) return false;
+      if (_tab == 'history') {
+        await ref.read(panelistRequestsProvider('reviewed').notifier).fetch();
+        if (!mounted) return false;
+      }
+    }
     await ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
+    if (!mounted) return false;
     return ref.read(defenseSchedulerProvider).error == null;
   });
 
@@ -141,67 +341,6 @@ class _PanelistEligibilityDirectoryState
       () => ref
           .read(defenseSchedulerProvider.notifier)
           .requestPanelistEligibility((faculty['id'] as num).toInt(), note),
-    );
-  }
-
-  Future<void> _review(Map<String, dynamic> request, bool approve) async {
-    var note = '';
-    if (!approve) {
-      final result = await _noteDialog(
-        title: 'Decline eligibility request',
-        description: 'You can include a reason for the PIT lead.',
-        action: 'Decline request',
-      );
-      if (result == null || !mounted) return;
-      note = result;
-    }
-    await _mutate(
-      () => ref
-          .read(defenseSchedulerProvider.notifier)
-          .reviewPanelistEligibility(
-            (request['id'] as num).toInt(),
-            approve: approve,
-            note: note,
-          ),
-    );
-  }
-
-  Future<void> _setEligibility(
-    Map<String, dynamic> person,
-    bool eligible,
-  ) async {
-    if (!eligible) {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => DefensysShadcnScope(
-          child: ShadDialog(
-            title: const Text('Remove panelist eligibility?'),
-            description: Text(
-              '${person['name']} will be removed from the eligible panelist pool. This also updates their role access.',
-            ),
-            constraints: const BoxConstraints(maxWidth: 460),
-            actions: [
-              ShadButton.outline(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('Cancel'),
-              ),
-              ShadButton.destructive(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('Remove eligibility'),
-              ),
-            ],
-          ),
-        ),
-      );
-      if (confirmed != true || !mounted) return;
-    }
-    await _mutate(
-      () => ref
-          .read(defenseSchedulerProvider.notifier)
-          .setPanelistEligibility(
-            (person['id'] as num).toInt(),
-            eligible: eligible,
-          ),
     );
   }
 
@@ -300,14 +439,11 @@ class _PanelistEligibilityDirectoryState
       return ShadButton.outline(
         key: ValueKey('panelist-eligibility-$id'),
         size: ShadButtonSize.sm,
-        onPressed: _busy ? null : () => _setEligibility(person, !eligible),
-        leading: Icon(
-          eligible ? LucideIcons.minus : LucideIcons.plus,
-          size: 14,
-        ),
+        onPressed: _busy ? null : () => _editRoles(id),
+        leading: Icon(LucideIcons.shieldCheck, size: 14),
         child: Flexible(
           child: Text(
-            eligible ? 'Remove eligibility' : 'Grant eligibility',
+            'Edit roles',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -383,64 +519,12 @@ class _PanelistEligibilityDirectoryState
     );
   }
 
-  Widget _requestList(List<Map<String, dynamic>> requests) => Column(
-    children: requests
-        .map(
-          (request) => Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 18),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: DefensysTokens.borderOf(context)),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  request['faculty_name']?.toString() ?? 'Faculty member',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Requested by ${request['requested_by_name']} · ${request['pit_year']}',
-                  style: TextStyle(
-                    color: DefensysTokens.textSecondaryOf(context),
-                    fontSize: 12,
-                  ),
-                ),
-                if ((request['reason'] ?? '').toString().isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 10),
-                    child: Text(request['reason'].toString()),
-                  ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    ShadButton(
-                      size: ShadButtonSize.sm,
-                      onPressed: _busy ? null : () => _review(request, true),
-                      child: const Text('Approve eligibility'),
-                    ),
-                    ShadButton.outline(
-                      size: ShadButtonSize.sm,
-                      onPressed: _busy ? null : () => _review(request, false),
-                      child: const Text('Decline'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        )
-        .toList(),
-  );
-
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(defenseSchedulerProvider);
+    final queue = widget.centralized || _tab != 'faculty'
+        ? ref.watch(panelistRequestsProvider('pending'))
+        : null;
     final pool = state.faculty.isNotEmpty ? state.faculty : state.panelists;
     final query = _search.trim().toLowerCase();
     final people = pool
@@ -451,21 +535,14 @@ class _PanelistEligibilityDirectoryState
     final pending = state.panelistRequests
         .where((r) => r['status'] == 'pending')
         .toList();
-    final requests = pending
-        .where(
-          (r) =>
-              '${r['faculty_name']} ${r['requested_by_name']} ${r['pit_year']}'
-                  .toLowerCase()
-                  .contains(query),
-        )
-        .toList();
-    final showRequests = state.canApprovePanelists && _tab == 'requests';
+    final showRequests = _tab == 'requests' || _tab == 'history';
     final eligibleCount = pool
         .where((p) => state.isEligiblePanelist((p['id'] as num).toInt()))
         .length;
     return DefensysShadcnScope(
       child: LayoutBuilder(
         builder: (context, constraints) => Column(
+          key: _contentKey,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
@@ -476,7 +553,9 @@ class _PanelistEligibilityDirectoryState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Panelist eligibility',
+                        widget.centralized
+                            ? 'Panelist access'
+                            : 'Panelist pool',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w600,
@@ -486,7 +565,7 @@ class _PanelistEligibilityDirectoryState
                       const SizedBox(height: 6),
                       Text(
                         state.canApprovePanelists
-                            ? 'Manage the reusable panelist pool and review eligibility requests.'
+                            ? 'Panelist eligibility follows the assigned RBAC role. Review nominations and past decisions here.'
                             : 'Browse eligible faculty or request approval for a new panelist.',
                         style: TextStyle(
                           color: DefensysTokens.textSecondaryOf(context),
@@ -515,14 +594,17 @@ class _PanelistEligibilityDirectoryState
               runSpacing: 8,
               children: [
                 SizedBox(
-                  width: constraints.maxWidth < 400
-                      ? constraints.maxWidth - 52
-                      : 290,
+                  width: constraints.maxWidth < 600
+                      ? constraints.maxWidth - 44
+                      : 440,
                   child: ShadTabs<String>(
                     scrollable: false,
                     gap: 0,
                     value: _tab,
-                    onChanged: (tab) => setState(() => _tab = tab),
+                    onChanged: (tab) {
+                      setState(() => _tab = tab);
+                      widget.onTabChanged?.call(tab);
+                    },
                     tabs: [
                       ShadTab(
                         value: 'faculty',
@@ -534,17 +616,26 @@ class _PanelistEligibilityDirectoryState
                           ),
                         ),
                       ),
-                      if (state.canApprovePanelists)
-                        ShadTab(
-                          value: 'requests',
-                          child: Flexible(
-                            child: Text(
-                              'Requests (${pending.length})',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                      ShadTab(
+                        value: 'requests',
+                        child: Flexible(
+                          child: Text(
+                            'Requests (${queue?.pending ?? pending.length})',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                      ),
+                      ShadTab(
+                        value: 'history',
+                        child: Flexible(
+                          child: Text(
+                            'History',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -564,13 +655,16 @@ class _PanelistEligibilityDirectoryState
               ],
             ),
             const SizedBox(height: 16),
-            ShadInput(
-              placeholder: Text(
-                showRequests ? 'Search requests' : 'Search faculty name or ID',
+            if (!showRequests)
+              ShadInput(
+                placeholder: Text(
+                  showRequests
+                      ? 'Search requests'
+                      : 'Search faculty name or ID',
+                ),
+                leading: const Icon(LucideIcons.search, size: 16),
+                onChanged: (value) => setState(() => _search = value),
               ),
-              leading: const Icon(LucideIcons.search, size: 16),
-              onChanged: (value) => setState(() => _search = value),
-            ),
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 12),
@@ -581,13 +675,17 @@ class _PanelistEligibilityDirectoryState
               ),
             const SizedBox(height: 16),
             Expanded(
-              child: _busy && pool.isEmpty
+              child: showRequests
+                  ? PanelistRequestsView(
+                      key: ValueKey(_tab),
+                      reviewed: _tab == 'history',
+                      onOpen: _openRequest,
+                    )
+                  : _busy && pool.isEmpty
                   ? const Center(child: CircularProgressIndicator())
                   : ListView(
                       children: [
-                        if (showRequests && requests.isNotEmpty)
-                          _requestList(requests)
-                        else if (!showRequests && people.isNotEmpty)
+                        if (people.isNotEmpty)
                           _facultyList(
                             people,
                             state,

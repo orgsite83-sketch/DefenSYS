@@ -58,5 +58,8 @@ def schedule_progress(schedule):
     else:
         display = 'assessed' if schedule.status == 'done' else 'scheduled' if schedule.scheduled_date > timezone.localdate() else 'awaiting_evaluation'
     result['display_status'] = display
+    # Preserve an explicitly completed defense when its schedule is archived.
+    # A submitted score or assessed attempt is not completion.
+    result['is_completed'] = bool(grade and grade.status == TeamGrade.STATUS_PUBLISHED and grade.result == 'passed')
     schedule._workflow_progress = result
     return result

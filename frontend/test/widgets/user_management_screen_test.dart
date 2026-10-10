@@ -14,13 +14,17 @@ import 'package:defensys/notifications/notifications_provider.dart';
 import '../helpers/pump_app.dart';
 
 class FakeNotificationsNotifier extends NotificationsNotifier {
+  FakeNotificationsNotifier([super.workspace = 'admin']);
   @override
   NotificationsState build() {
     return const NotificationsState(notifications: [], unreadCount: 0);
   }
 
   @override
-  Future<void> fetchNotifications() async {}
+  Future<void> fetchNotifications({
+    bool? unreadOnly,
+    bool loadMore = false,
+  }) async {}
 }
 
 class FakeEligibilityNotifier extends DefenseSchedulerNotifier {
@@ -47,6 +51,13 @@ class FakeEligibilityNotifier extends DefenseSchedulerNotifier {
 }
 
 class FakeUserManagementNotifier extends UserManagementNotifier {
+  @override
+  Future<Map<String, dynamic>> fetchManagedUser(int id) async =>
+      state.users.firstWhere((u) => u['id'] == id);
+  @override
+  Future<List<Map<String, dynamic>>> fetchRoleAssignmentHistory(
+    int userId,
+  ) async => [];
   @override
   UserManagementState build() {
     return const UserManagementState(
@@ -201,7 +212,9 @@ void main() {
         tester,
         const UserManagementScreen(initialUserTab: UserManagementTab.faculty),
         overrides: [
-          notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+          notificationsProvider.overrideWith2(
+            (workspace) => FakeNotificationsNotifier(workspace),
+          ),
           userManagementProvider.overrideWith(
             () => FakeUserManagementNotifier(),
           ),
@@ -216,9 +229,9 @@ void main() {
           ),
         ],
       );
-      await tester.tap(find.text('Panelist eligibility'));
+      await tester.tap(find.text('Panelist access'));
       await tester.pumpAndSettle();
-      expect(find.text('Grant eligibility'), findsOneWidget);
+      expect(find.text('Edit roles'), findsOneWidget);
       expect(find.text('ID: admin'), findsOneWidget);
       await tester.tap(find.text('Faculty & Staff'));
       await tester.pumpAndSettle();
@@ -238,7 +251,9 @@ void main() {
       tester,
       const Scaffold(body: UserManagementScreen()),
       overrides: [
-        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+        notificationsProvider.overrideWith2(
+          (workspace) => FakeNotificationsNotifier(workspace),
+        ),
         userManagementProvider.overrideWith(() => FakeUserManagementNotifier()),
         academicPeriodProvider.overrideWith(() => FakeAcademicPeriodNotifier()),
         studentAcademicRecordsProvider.overrideWith(
@@ -268,7 +283,9 @@ void main() {
           body: UserManagementScreen(initialUserTab: UserManagementTab.faculty),
         ),
         overrides: [
-          notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+          notificationsProvider.overrideWith2(
+            (workspace) => FakeNotificationsNotifier(workspace),
+          ),
           userManagementProvider.overrideWith(
             () => FakeUserManagementNotifier(),
           ),
@@ -316,7 +333,9 @@ void main() {
           body: UserManagementScreen(initialUserTab: UserManagementTab.faculty),
         ),
         overrides: [
-          notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+          notificationsProvider.overrideWith2(
+            (workspace) => FakeNotificationsNotifier(workspace),
+          ),
           userManagementProvider.overrideWith(
             () => FakeUserManagementNotifier(),
           ),
@@ -488,7 +507,9 @@ Student Number,Full Name,Email,Year Level
           ),
         ),
         overrides: [
-          notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+          notificationsProvider.overrideWith2(
+            (workspace) => FakeNotificationsNotifier(workspace),
+          ),
           userManagementProvider.overrideWith(
             () => FakeUserManagementNotifier(),
           ),
@@ -573,7 +594,9 @@ Student Number,Full Name,Email,Year Level
           ),
         ),
         overrides: [
-          notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+          notificationsProvider.overrideWith2(
+            (workspace) => FakeNotificationsNotifier(workspace),
+          ),
           userManagementProvider.overrideWith(
             () => FakeUserManagementNotifier(),
           ),

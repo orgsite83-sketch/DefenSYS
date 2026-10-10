@@ -130,6 +130,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
     scheduled_stages = serializers.SerializerMethodField()
     redefense_stages = serializers.SerializerMethodField()
     stage_progress = serializers.SerializerMethodField()
+    stage_verdicts = serializers.SerializerMethodField()
     eligible_stages = serializers.SerializerMethodField()
 
     class Meta:
@@ -153,6 +154,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             'scheduled_stages',
             'redefense_stages',
             'stage_progress',
+            'stage_verdicts',
             'eligible_stages',
             'project_version',
         ]
@@ -182,20 +184,22 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
         from grading.grades.models import TeamGrade
         completed = set()
         for prog in obj.stage_progress.all():
+            if prog.semester_id != obj.semester_id or prog.project_version != obj.project_version:
+                continue
             if prog.status in [TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_ARCHIVED]:
                 if prog.defense_stage:
                     completed.add(prog.defense_stage.label)
         for grade in TeamGrade.objects.filter(team=obj, semester=obj.semester):
             if grade.status == TeamGrade.STATUS_PUBLISHED and grade.result == 'passed' and grade.defense_stage:
                 completed.add(grade.defense_stage.label)
-            elif grade.scope == TeamGrade.SCOPE_PIT and grade.result == 'passed' and grade.stage_label:
+            elif grade.scope == TeamGrade.SCOPE_PIT and grade.status == TeamGrade.STATUS_PUBLISHED and grade.result == 'passed' and grade.stage_label:
                 completed.add(grade.stage_label)
         return sorted(list(completed))
 
     def get_scheduled_stages(self, obj):
         scheduled = set()
         for sched in obj.defense_schedules.all():
-            if sched.status == DefenseSchedule.STATUS_SCHEDULED and sched.project_version == obj.project_version:
+            if sched.status == DefenseSchedule.STATUS_SCHEDULED and sched.project_version == obj.project_version and sched.semester_id == obj.semester_id:
                 stage_label = sched.stage_label
                 if stage_label:
                     scheduled.add(stage_label)
@@ -213,18 +217,52 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
         return sorted(list(redefense))
 
     def get_stage_progress(self, obj):
-        result = {}
+        from .progress import schedule_progress
+
+        # Endorsement remains historical evidence after an assessment. Display
+        # the current attempt's workflow instead of falling back to that flag.
+        progress_statuses = {
+            TeamStageProgress.STATUS_LOCKED: 'pending',
+            TeamStageProgress.STATUS_READY: 'ready',
+            TeamStageProgress.STATUS_SCHEDULED: 'scheduled',
+            TeamStageProgress.STATUS_GRADING: 'grading_incomplete',
+            TeamStageProgress.STATUS_PASSED: 'completed',
+            TeamStageProgress.STATUS_ARCHIVED: 'completed',
+            TeamStageProgress.STATUS_REVISIONS: 'revisions_pending',
+            TeamStageProgress.STATUS_REDEFENSE: 'redefense_required',
+            TeamStageProgress.STATUS_FAILED: 'failed',
+        }
+        result = {
+            progress.defense_stage.label: progress_statuses.get(progress.status, 'pending')
+            for progress in obj.stage_progress.all()
+            if progress.semester_id == obj.semester_id
+            and progress.project_version == obj.project_version
+        }
+        schedules = sorted(
+            (schedule for schedule in obj.defense_schedules.all()
+             if schedule.semester_id == obj.semester_id
+             and schedule.project_version == obj.project_version
+             and schedule.status != DefenseSchedule.STATUS_CANCELLED),
+            key=lambda schedule: (schedule.status == DefenseSchedule.STATUS_SCHEDULED,
+                                  schedule.created_at, schedule.pk),
+            reverse=True,
+        )
+        seen = set()
+        for schedule in schedules:
+            label = schedule.stage_label
+            if not label or label in seen:
+                continue
+            seen.add(label)
+            workflow = schedule_progress(schedule)
+            result[label] = 'completed' if workflow['is_completed'] else workflow['display_status']
+
         completed = set(self.get_completed_stages(obj))
-        scheduled = set(self.get_scheduled_stages(obj))
         redefense = set(self.get_redefense_stages(obj))
         for c in completed:
             result[c] = 'completed'
         for r in redefense:
             if r not in result:
-                result[r] = 'for_redefense'
-        for s in scheduled:
-            if s not in result:
-                result[s] = 'scheduled'
+                result[r] = 'redefense_required'
         if obj.ready_for_stage and obj.ready_for_stage not in result:
             result[obj.ready_for_stage] = 'ready'
         return result
@@ -233,6 +271,17 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
         if not obj.is_capstone:
             return []
         return [stage.label for stage in DefenseStage.objects.filter(is_active=True) if is_stage_ready(obj, stage)]
+
+    def get_stage_verdicts(self, obj):
+        from grading.grades.models import TeamGrade
+
+        # The current grade's verdict is cleared when a new attempt starts.
+        # Do not reuse the previous attempt's outcome for that new defense.
+        return {
+            grade.stage_label: grade.verdict
+            for grade in TeamGrade.objects.filter(team=obj, semester=obj.semester)
+            if grade.verdict and grade.stage_label
+        }
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -244,6 +293,12 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             data['ready_for_stage'] = next(iter(redefense))
         if instance.is_capstone:
             data['ready_for_stage'] = next(iter(data['eligible_stages']), None)
+            eligible = set(data['eligible_stages'])
+            for label, progress in data['stage_progress'].items():
+                if progress == 'ready' and label not in eligible:
+                    data['stage_progress'][label] = 'pending'
+            for label in eligible:
+                data['stage_progress'].setdefault(label, 'ready')
         return data
 
 
@@ -1428,7 +1483,9 @@ def send_documenter_assignment_notification(schedule):
         message=message,
         sender=schedule.created_by,
         category=NotificationCategory.DEFENSE,
-        action_route="/faculty/defense_board",
+        workspace='admin' if schedule.documenter.role == 'admin' else 'documenter',
+        action_route=f'/admin/defense-board/minutes/{schedule.pk}' if schedule.documenter.role == 'admin' else f'/documenter/minutes/{schedule.pk}',
+        action_payload={'schedule_id': schedule.pk, 'action_kind': 'minutes_documenter'},
     )
 
 
@@ -1604,7 +1661,10 @@ def schedule_options_payload(user=None, semester=None, pit_lead_only=None):
         teams = teams.filter(semester=semester)
     else:
         teams = teams.none()
-    teams = teams.prefetch_related('stage_progress__defense_stage', 'defense_schedules')
+    teams = teams.prefetch_related(
+        'stage_progress__defense_stage', 'defense_schedules__grade_records',
+        'defense_schedules__panel_assignments',
+    )
 
     from .models import PitEventGradingConfig
     from .pit_config import pit_event_config_payload

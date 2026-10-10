@@ -5,8 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../l10n/l10n_ext.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/offline_banner.dart';
-import '../../../../notifications/notifications_modal.dart';
-import '../../../../notifications/notifications_provider.dart';
+import '../../../../notifications/notifications_bell.dart';
 import '../../../../services/auth_provider.dart';
 import '../../../../config/api_config.dart';
 import '../../../../widgets/defensys_logo_mark.dart';
@@ -347,64 +346,10 @@ class _TopNav extends StatelessWidget {
           const Spacer(),
           _SemesterPill(label: activeSemesterLabel),
           const SizedBox(width: 16),
-          const _NotificationsBell(),
+          const NotificationsBell(workspace: 'admin', workspaceLabel: 'Administrator'),
           const SizedBox(width: 10),
           const DefensysThemeToggle(),
         ],
-      ),
-    );
-  }
-}
-
-class _NotificationsBell extends ConsumerStatefulWidget {
-  const _NotificationsBell();
-
-  @override
-  ConsumerState<_NotificationsBell> createState() => _NotificationsBellState();
-}
-
-class _NotificationsBellState extends ConsumerState<_NotificationsBell> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(notificationsProvider.notifier).fetchNotifications();
-    });
-  }
-
-  void _showNotifications(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => const NotificationsModal(),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final state = ref.watch(notificationsProvider);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Badge(
-      isLabelVisible: state.unreadCount > 0,
-      label: Text(
-        state.unreadCount.toString(),
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 9.5,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      backgroundColor: isDark ? DefensysTokens.mistMaroon : DefensysUi.primaryMaroon,
-      child: IconButton(
-        icon: Icon(
-          Icons.notifications_outlined,
-          color: isDark ? const Color(0xFFA1A1AA) : DefensysUi.steelGrey,
-          size: 23,
-        ),
-        tooltip: 'Notifications',
-        onPressed: () => _showNotifications(context),
       ),
     );
   }

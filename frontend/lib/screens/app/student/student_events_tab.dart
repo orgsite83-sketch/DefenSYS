@@ -11,12 +11,14 @@ class StudentEventsTab extends ConsumerStatefulWidget {
   final bool isCapstone;
   final Map<String, dynamic>? studentData;
   final ValueNotifier<int>? subTabNotifier;
+  final String? initialStage;
 
   const StudentEventsTab({
     super.key,
     required this.isCapstone,
     required this.studentData,
     this.subTabNotifier,
+    this.initialStage,
   });
 
   @override
@@ -40,6 +42,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
   @override
   void initState() {
     super.initState();
+    _selectedStageForView = widget.initialStage;
     final initialIdx = (widget.subTabNotifier?.value ?? 0).clamp(0, 2);
     _subTabController = TabController(
       length: 3,
@@ -61,6 +64,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
             scope: widget.isCapstone ? 'capstone' : 'pit',
+            selectedStage: widget.initialStage,
             yearLevel: widget.isCapstone ? null : _studentYearLevel,
           );
     });
@@ -635,9 +639,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                   ? (widget.studentData?['peerCriteria'] as List? ?? [])
                                   : []))
                           .cast<Map<String, dynamic>>();
-                      final stagePeerEvalAllowed = stageInfo['peer_eval_allowed'] == true ||
-                          (isSelectedStageActive && peerEvalAllowed) ||
-                          (stageInfo['grade']?['status'] == 'awaiting_peers' && peerEvalAllowed);
+                      final stagePeerEvalAllowed = stageInfo.containsKey('peer_eval_allowed')
+                          ? stageInfo['peer_eval_allowed'] == true
+                          : (isSelectedStageActive && peerEvalAllowed);
                       final stageHideHistory = !isSelectedStageActive &&
                           stageMySubmissions.isEmpty &&
                           stageInfo['peer_eval_allowed'] != true &&
@@ -646,6 +650,11 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                       return PeerEvalTab(
                         isCapstone: isCapstone,
                         peerEvalAllowed: stagePeerEvalAllowed,
+                        peerEvalUnavailableReason:
+                            stageInfo['peer_eval_unavailable_reason']?.toString() ??
+                            (isSelectedStageActive
+                                ? (widget.studentData?['peerEvalUnavailableReason'])?.toString()
+                                : null),
                         teammates: teammates,
                         peerCriteria: stagePeerCriteria,
                         myPeerSubmissions: effectiveSubmissions,

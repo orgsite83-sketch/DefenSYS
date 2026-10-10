@@ -392,6 +392,10 @@ class _GuestInvitationDialogState extends State<GuestInvitationDialog> {
         .toList();
     final code = invitation['code']?.toString() ?? '';
     final link = guestInvitationUrl(code, portal: portal);
+    final unavailable = const [
+      'Expired',
+      'Revoked',
+    ].contains(invitation['status']);
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(16),
@@ -429,6 +433,15 @@ class _GuestInvitationDialogState extends State<GuestInvitationDialog> {
             ),
           ],
           const SizedBox(height: 12),
+          if (unavailable) ...[
+            Text(
+              '${invitation['status']} access. Renew this invitation before sharing.',
+              style: DefensysTokens.caption.copyWith(
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (link.isNotEmpty) ...[
             Text(
               'Login link',

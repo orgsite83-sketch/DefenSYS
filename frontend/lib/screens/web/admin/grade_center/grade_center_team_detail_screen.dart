@@ -19,11 +19,13 @@ class GradeCenterTeamDetailScreen extends ConsumerStatefulWidget {
     required this.gradeId,
     required this.isLocked,
     required this.onBack,
+    this.returnToTeam = false,
   });
 
   final int gradeId;
   final bool isLocked;
   final VoidCallback onBack;
+  final bool returnToTeam;
 
   @override
   ConsumerState<GradeCenterTeamDetailScreen> createState() =>
@@ -272,16 +274,22 @@ class _GradeCenterTeamDetailScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (widget.returnToTeam) ...[
+            _teamReturnLink(grade),
+            const SizedBox(height: 8),
+          ],
           // Detail Header Bar
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              IconButton(
-                onPressed: widget.onBack,
-                icon: const Icon(Icons.arrow_back_rounded),
-                tooltip: 'Back to Grade Center',
-              ),
-              const SizedBox(width: 8),
+              if (!widget.returnToTeam) ...[
+                IconButton(
+                  onPressed: widget.onBack,
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  tooltip: 'Back to Grade Center',
+                ),
+                const SizedBox(width: 8),
+              ],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2327,27 +2335,52 @@ class _GradeCenterTeamDetailScreenState
     return (totalScore / totalMax * 100.0).clamp(0.0, 100.0);
   }
 
+  Widget _teamReturnLink(Map<String, dynamic>? grade) {
+    final teamName = grade?['team_name']?.toString().trim() ?? '';
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        onPressed: widget.onBack,
+        icon: const Icon(Icons.arrow_back_rounded, size: 18),
+        label: Text(
+          teamName.isEmpty ? 'Back to team profile' : 'Back to $teamName',
+        ),
+      ),
+    );
+  }
+
   Widget _detailHeader({
     required String title,
     required String subtitle,
     required VoidCallback onBack,
   }) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        IconButton(
-          onPressed: onBack,
-          icon: const Icon(Icons.arrow_back_rounded),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: DefensysUi.pageTitle),
-              if (subtitle.isNotEmpty)
-                Text(subtitle, style: DefensysUi.subtitle),
+        if (widget.returnToTeam) ...[
+          _teamReturnLink(null),
+          const SizedBox(height: 8),
+        ],
+        Row(
+          children: [
+            if (!widget.returnToTeam) ...[
+              IconButton(
+                onPressed: onBack,
+                icon: const Icon(Icons.arrow_back_rounded),
+              ),
+              const SizedBox(width: 8),
             ],
-          ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: DefensysUi.pageTitle),
+                  if (subtitle.isNotEmpty)
+                    Text(subtitle, style: DefensysUi.subtitle),
+                ],
+              ),
+            ),
+          ],
         ),
       ],
     );

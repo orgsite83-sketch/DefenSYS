@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -20,6 +19,7 @@ import '../../../services/theme_provider.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../toasts/feedback_toast.dart';
 import '../../../widgets/confirm_dialog.dart';
+import '../../../widgets/signature_draw_dialog.dart';
 import '../../about_screen.dart';
 import '../../privacy_screen.dart';
 import '../../terms_screen.dart';
@@ -58,10 +58,14 @@ class StudentProfile {
 class ProfileScreen extends ConsumerStatefulWidget {
   final bool? showAppBar;
   final bool includeAppSettings;
+  final bool compactInstallation;
+  final bool compactPanelistHeader;
   const ProfileScreen({
     super.key,
     this.showAppBar,
     this.includeAppSettings = false,
+    this.compactInstallation = false,
+    this.compactPanelistHeader = false,
   });
 
   @override
@@ -346,7 +350,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       builder: (context) => const SignatureDrawDialog(),
     );
 
-    if (signatureBytes != null && signatureBytes.isNotEmpty) {
+    if (mounted && signatureBytes != null && signatureBytes.isNotEmpty) {
       await _uploadSignatureBytes(signatureBytes, 'drawn_signature.png');
     }
   }
@@ -494,7 +498,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Top Hero Card Banner
-            _buildHeroBanner(displayName, username, email, roleLabel, user, isWide),
+            widget.compactPanelistHeader
+                ? _buildPanelistHero(displayName, username, email, roleLabel, user)
+                : _buildHeroBanner(displayName, username, email, roleLabel, user, isWide),
             const SizedBox(height: 16),
             if (isStudent) ...[
               const LibraryActivityPanel(),
@@ -526,7 +532,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     child: Column(
                       children: [
                         if (widget.includeAppSettings) ...[
-                          const AppSettingsContent(),
+                          AppSettingsContent(
+                            compactInstallation: widget.compactInstallation,
+                          ),
                           const SizedBox(height: 20),
                         ],
                         _buildChangePasswordCard(username, email),
@@ -543,7 +551,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               Column(
                 children: [
                   if (widget.includeAppSettings) ...[
-                    const AppSettingsContent(),
+                    AppSettingsContent(
+                      compactInstallation: widget.compactInstallation,
+                    ),
                     const SizedBox(height: 16),
                   ],
                   _buildIdentityCard(displayName, username, email, roleLabel, user),
@@ -566,6 +576,151 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   // --- HERO BANNER ---
+
+  Widget _buildPanelistHero(
+    String displayName,
+    String username,
+    String email,
+    String roleLabel,
+    Map<String, dynamic> user,
+  ) {
+    final avatarUrl = user['avatar'] != null
+        ? ApiConfig.publicMediaUrl(user['avatar'] as String)
+        : null;
+    final facultyRoles = user['facultyRoles'] as Map<String, dynamic>? ?? {};
+    final roles = <String>[
+      roleLabel,
+      if (facultyRoles['panelist'] == true || user['is_panelist'] == true)
+        'Panelist',
+      if (facultyRoles['adviser'] == true || user['is_adviser'] == true)
+        'Adviser',
+      if (facultyRoles['pitLead'] == true || user['is_pit_lead'] == true)
+        'PIT Leader',
+    ];
+    final accent = DefensysTokens.maroonOf(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: DefensysTokens.surfaceOf(context),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 29,
+                backgroundColor: accent.withValues(alpha: .10),
+                backgroundImage:
+                    avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                child: avatarUrl == null
+                    ? Text(
+                        displayName.isNotEmpty
+                            ? displayName[0].toUpperCase()
+                            : 'U',
+                        style: TextStyle(
+                          fontSize: 23,
+                          fontWeight: FontWeight.w700,
+                          color: DefensysTokens.maroonTextOf(context),
+                        ),
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: DefensysTokens.textPrimaryOf(context),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      email.isNotEmpty ? email : 'No email provided',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'ID: $username',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final role in roles.toSet())
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: DefensysTokens.surfaceHigherOf(context),
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: Text(
+                    role,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: DefensysTokens.textSecondaryOf(context),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _isUploadingAvatar ? null : _pickAndUploadAvatar,
+                icon: _isUploadingAvatar
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.camera_alt_outlined, size: 17),
+                label: const Text('Change Photo'),
+              ),
+              if (avatarUrl != null)
+                TextButton.icon(
+                  onPressed: _isUploadingAvatar ? null : _deleteAvatar,
+                  icon: const Icon(Icons.delete_outline, size: 17),
+                  label: const Text('Remove photo'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildHeroBanner(
     String displayName,
@@ -2312,306 +2467,4 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
   }
-}
-
-// ==========================================
-// INTERACTIVE SIGNATURE DRAWING PAD DIALOG
-// ==========================================
-
-class SignatureDrawDialog extends StatefulWidget {
-  const SignatureDrawDialog({super.key});
-
-  @override
-  State<SignatureDrawDialog> createState() => _SignatureDrawDialogState();
-}
-
-class _SignatureDrawDialogState extends State<SignatureDrawDialog> {
-  final List<List<Offset>> _strokes = [];
-  List<Offset> _currentStroke = [];
-  bool _isSaving = false;
-
-  void _clear() {
-    setState(() {
-      _strokes.clear();
-      _currentStroke = [];
-    });
-  }
-
-  Future<Uint8List?> _renderPngBytes() async {
-    if (_strokes.isEmpty && _currentStroke.isEmpty) return null;
-
-    const width = 600.0;
-    const height = 240.0;
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, width, height));
-
-    final paint = Paint()
-      ..color = const Color(0xFF0F172A) // Dark slate ink
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..strokeWidth = 3.5
-      ..style = PaintingStyle.stroke;
-
-    final allStrokes = [..._strokes];
-    if (_currentStroke.isNotEmpty) {
-      allStrokes.add(_currentStroke);
-    }
-
-    for (final stroke in allStrokes) {
-      if (stroke.length < 2) {
-        if (stroke.isNotEmpty) {
-          canvas.drawCircle(stroke.first, 1.75, paint..style = PaintingStyle.fill);
-          paint.style = PaintingStyle.stroke;
-        }
-        continue;
-      }
-      final path = Path();
-      path.moveTo(stroke.first.dx, stroke.first.dy);
-      for (int i = 1; i < stroke.length; i++) {
-        path.lineTo(stroke[i].dx, stroke[i].dy);
-      }
-      canvas.drawPath(path, paint);
-    }
-
-    final picture = recorder.endRecording();
-    final img = await picture.toImage(width.toInt(), height.toInt());
-    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-    return byteData?.buffer.asUint8List();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final hasStrokes = _strokes.isNotEmpty || _currentStroke.isNotEmpty;
-
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 8,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Row(
-                    children: [
-                      Icon(Icons.draw_rounded, color: DefensysTokens.maroon),
-                      SizedBox(width: 10),
-                      Text(
-                        'Digital E-Signature Pad',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF0F172A),
-                        ),
-                      ),
-                    ],
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context, null),
-                    icon: const Icon(Icons.close_rounded),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Use your mouse or touchscreen to draw your signature in the box below.',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-              ),
-              const SizedBox(height: 16),
-
-              // Canvas pad container
-              Container(
-                width: double.infinity,
-                height: 240,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Stack(
-                    children: [
-                      // Dashed baseline
-                      Positioned(
-                        left: 20,
-                        right: 20,
-                        bottom: 45,
-                        child: Container(height: 1, color: const Color(0xFFCBD5E1)),
-                      ),
-                      Positioned(
-                        right: 20,
-                        bottom: 16,
-                        child: Text(
-                          'SIGNATURE LINE',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.grey.shade400,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                      ),
-                      // Interactive Drawing Area
-                      GestureDetector(
-                        onPanStart: (details) {
-                          setState(() {
-                            _currentStroke = [details.localPosition];
-                          });
-                        },
-                        onPanUpdate: (details) {
-                          setState(() {
-                            _currentStroke.add(details.localPosition);
-                          });
-                        },
-                        onPanEnd: (details) {
-                          setState(() {
-                            if (_currentStroke.isNotEmpty) {
-                              _strokes.add(List.from(_currentStroke));
-                              _currentStroke = [];
-                            }
-                          });
-                        },
-                        child: CustomPaint(
-                          size: Size.infinite,
-                          painter: _SignaturePainter(
-                            strokes: _strokes,
-                            currentStroke: _currentStroke,
-                          ),
-                        ),
-                      ),
-                      if (!hasStrokes)
-                        IgnorePointer(
-                          child: Center(
-                            child: Text(
-                              'Sign here',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontStyle: FontStyle.italic,
-                                color: Colors.grey.shade400,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Action Buttons
-              Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
-                runSpacing: 10,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: hasStrokes ? _clear : null,
-                    icon: const Icon(Icons.refresh_rounded, size: 16),
-                    label: const Text('Clear Pad'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF475569),
-                      side: const BorderSide(color: Color(0xFFCBD5E1)),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    ),
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, null),
-                        child: const Text('Cancel'),
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton.icon(
-                        onPressed: hasStrokes && !_isSaving
-                            ? () async {
-                                setState(() => _isSaving = true);
-                                final bytes = await _renderPngBytes();
-                                if (context.mounted) {
-                                  Navigator.pop(context, bytes);
-                                }
-                              }
-                            : null,
-                        icon: const Icon(Icons.check_rounded, size: 16),
-                        label: _isSaving
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text('Save & Apply'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: DefensysTokens.maroon,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          elevation: 0,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SignaturePainter extends CustomPainter {
-  final List<List<Offset>> strokes;
-  final List<Offset> currentStroke;
-
-  _SignaturePainter({required this.strokes, required this.currentStroke});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF0F172A)
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..strokeWidth = 3.5
-      ..style = PaintingStyle.stroke;
-
-    final allStrokes = [...strokes];
-    if (currentStroke.isNotEmpty) {
-      allStrokes.add(currentStroke);
-    }
-
-    for (final stroke in allStrokes) {
-      if (stroke.length < 2) {
-        if (stroke.isNotEmpty) {
-          canvas.drawCircle(stroke.first, 1.75, paint..style = PaintingStyle.fill);
-          paint.style = PaintingStyle.stroke;
-        }
-        continue;
-      }
-      final path = Path();
-      path.moveTo(stroke.first.dx, stroke.first.dy);
-      for (int i = 1; i < stroke.length; i++) {
-        path.lineTo(stroke[i].dx, stroke[i].dy);
-      }
-      canvas.drawPath(path, paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _SignaturePainter oldDelegate) => true;
 }

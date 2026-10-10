@@ -40,6 +40,7 @@ from user_management.academic_records.models import StudentAcademicRecord
 from user_management.academic_records.rollover import next_academic_step
 from user_management.academic_records.serializers import StudentAcademicRecordSerializer
 from student_teams.models import StudentTeam, TeamMembership
+from student_teams.services import is_stage_ready
 from student_teams.term_scope import (
     apply_team_scope,
     get_active_semester,
@@ -893,10 +894,6 @@ class AdminDashboardView(APIView):
         analytics_entry_count = analytics_entries_count()
         analytics_year_count = analytics_academic_year_count()
         analytics_top_technology = analytics_top_tech()
-        ready_capstone_count = StudentTeam.objects.filter(
-            level__icontains='Capstone',
-            ready_for_stage__isnull=False,
-        ).exclude(ready_for_stage='').count()
         active_sem = active_semester()
         active_label = _active_semester_label(active_sem)
         period_configured = active_label != 'Not configured'
@@ -963,6 +960,11 @@ class AdminDashboardView(APIView):
             })
 
         capstone_teams = StudentTeam.objects.filter(level__icontains='Capstone')
+        schedulable_teams = capstone_teams.filter(semester=active_sem) if active_sem else capstone_teams.none()
+        ready_capstone_count = sum(
+            any(is_stage_ready(team, stage) for stage in active_stages)
+            for team in schedulable_teams
+        )
         teams_with_adviser = capstone_teams.filter(adviser__isnull=False).count()
         teams_without_adviser = capstone_teams.filter(adviser__isnull=True).count()
         capstone_teams_count = capstone_teams.count()
@@ -1078,15 +1080,9 @@ class AdminDashboardView(APIView):
                 'button_label': 'Assign',
             })
 
-        scheduled_team_ids = set(
-            DefenseSchedule.objects.filter(
-                status=DefenseSchedule.STATUS_SCHEDULED
-            ).values_list('team_id', flat=True)
-        )
-        unscheduled_ready_count = StudentTeam.objects.filter(
-            level__icontains='Capstone',
-            ready_for_stage__isnull=False,
-        ).exclude(ready_for_stage='').exclude(id__in=scheduled_team_ids).count()
+        # Match scheduler eligibility, including approved re-defense attempts.
+        # A retained endorsement is not a request to schedule an assessed team.
+        unscheduled_ready_count = ready_capstone_count
         if unscheduled_ready_count > 0:
             action_items.append({
                 'id': 'unscheduled_ready_teams',
@@ -1460,6 +1456,8 @@ class StudentDashboardView(APIView):
         from grading.grades.services import peer_grading_allowed_for_grade
 
         peer_eval_on = bool(peer_grade_row and peer_grading_allowed_for_grade(peer_grade_row))
+        from grading.grades.availability import peer_grading_unavailable_reason
+        peer_eval_reason = peer_grading_unavailable_reason(peer_grade_row)
         from grading.grades.peer_eval import (
             is_evaluator_peer_complete,
             is_team_peer_eval_complete,
@@ -1542,6 +1540,12 @@ class StudentDashboardView(APIView):
             'members': team_payload['members'] if team_payload else [],
             'weights': weights,
             'peerEvalEnabled': peer_eval_on,
+            'peerEvalUnavailableReason': peer_eval_reason,
+            'peerEvalContext': {
+                'grade_id': peer_grade_row.pk, 'semester_id': peer_grade_row.semester_id,
+                'schedule_id': peer_grade_row.schedule_id, 'stage_label': peer_grade_row.stage_label,
+                'session_id': str(peer_grade_row.schedule.session_id) if peer_grade_row.schedule_id else None,
+            } if peer_grade_row else None,
             'peerEvalComplete': peer_eval_complete,
             'myPeerEvalComplete': my_peer_eval_complete,
             'adviserGradingEnabled': adviser_grading_on,

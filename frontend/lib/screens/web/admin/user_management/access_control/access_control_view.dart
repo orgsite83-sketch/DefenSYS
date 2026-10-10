@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/services/user_management_provider.dart';
-import 'package:defensys/widgets/widgets.dart';
+import 'package:defensys/services/unsaved_changes_provider.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
+import 'package:defensys/utils/unsaved_changes.dart';
+import 'package:defensys/widgets/confirm_dialog.dart';
+import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 
-/// Access Control & Dynamic Role Assignment page component matching canonical design.
 class AccessControlView extends ConsumerStatefulWidget {
   const AccessControlView({
     super.key,
@@ -14,141 +17,146 @@ class AccessControlView extends ConsumerStatefulWidget {
     required this.onSaveRoles,
     required this.onEditProfile,
     required this.onResetPassword,
+    this.onOpenPanelistAccess,
     this.pitLeadYearOptions = const ['1st Year', '2nd Year', '3rd Year'],
   });
-
   final Map<String, dynamic> user;
   final UserManagementState state;
-  final VoidCallback onBack;
+  final VoidCallback onBack, onEditProfile, onResetPassword;
+  final VoidCallback? onOpenPanelistAccess;
   final ValueChanged<Map<String, dynamic>> onSaveRoles;
-  final VoidCallback onEditProfile;
-  final VoidCallback onResetPassword;
   final List<String> pitLeadYearOptions;
-
   @override
   ConsumerState<AccessControlView> createState() => _AccessControlViewState();
 }
 
 class _AccessControlViewState extends ConsumerState<AccessControlView> {
-  static const Color _ink = DefensysUi.textDark;
-  static const Color _line = Color(0xFFE5E7EB);
-  static const Color _maroon = DefensysUi.primaryMaroon;
-  static const Color _muted = DefensysUi.steelGrey;
-
-  late String _role;
-  late bool _isAdmin;
-  late bool _isPanelist;
-  late bool _isPitLead;
-  late bool _isAdviser;
-  late bool _isDocumenter;
-  String? _pitLeadYear;
-
-  bool _roleAssignmentsLoading = false;
-  List<Map<String, dynamic>> _roleAssignments = [];
-
-  static const _histHead = TextStyle(
-    fontSize: 10,
-    fontWeight: FontWeight.w800,
-    letterSpacing: 1.1,
-    color: Color(0xFF9CA3AF),
-  );
-
-  static const Map<int, TableColumnWidth> _roleHistoryColumnWidths = {
-    0: FlexColumnWidth(2.1),
-    1: FlexColumnWidth(2.4),
-    2: FlexColumnWidth(1.1),
-    3: FlexColumnWidth(1.3),
-    4: FlexColumnWidth(1.1),
-  };
+  late bool _isAdmin, _isPanelist, _isPitLead, _isAdviser, _isDocumenter;
+  String? _pitLeadYear, _validationError, _historyError;
+  String _tab = 'roles';
+  bool _historyLoading = false;
+  List<Map<String, dynamic>> _history = [];
+  UnsavedChangesNotifier? _dirtyGuard;
+  UnsavedChangesSaveDraftNotifier? _draftGuard;
+  int _historyGeneration = 0;
+  bool get _hasChanges =>
+      _isAdmin != (widget.user['role'] == 'admin') ||
+      _isPanelist != (widget.user['is_panelist'] == true) ||
+      _isPitLead != (widget.user['is_pit_lead'] == true) ||
+      _isAdviser != (widget.user['is_adviser'] == true) ||
+      _isDocumenter != (widget.user['is_documenter'] == true) ||
+      (_isPitLead && _pitLeadYear != widget.user['pit_lead_year']);
+  void _reset() {
+    _isAdmin = widget.user['role'] == 'admin';
+    _isPanelist = widget.user['is_panelist'] == true;
+    _isPitLead = widget.user['is_pit_lead'] == true;
+    _isAdviser = widget.user['is_adviser'] == true;
+    _isDocumenter = widget.user['is_documenter'] == true;
+    final year = widget.user['pit_lead_year']?.toString();
+    _pitLeadYear = widget.pitLeadYearOptions.contains(year) ? year : null;
+    _validationError = null;
+  }
 
   @override
   void initState() {
     super.initState();
-    final u = widget.user;
-    _role = u['role']?.toString() ?? 'student';
-    _isAdmin = _role == 'admin';
-    _isPanelist = u['is_panelist'] == true;
-    _isPitLead = u['is_pit_lead'] == true;
-    _isAdviser = u['is_adviser'] == true;
-    _isDocumenter = u['is_documenter'] == true;
-
-    final rawYear = u['pit_lead_year']?.toString().trim() ?? '';
-    if (widget.pitLeadYearOptions.contains(rawYear)) {
-      _pitLeadYear = rawYear;
-    }
-
-    _loadRoleAssignments();
-  }
-
-  int? _asInt(dynamic value) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '');
-  }
-
-  Future<void> _loadRoleAssignments() async {
-    final userId = _asInt(widget.user['id']);
-    if (userId == null) return;
-    setState(() => _roleAssignmentsLoading = true);
-    final rows = await ref
-        .read(userManagementProvider.notifier)
-        .fetchRoleAssignmentHistory(userId);
-    if (!mounted) return;
-    setState(() {
-      _roleAssignments = rows;
-      _roleAssignmentsLoading = false;
+    _reset();
+    _dirtyGuard = ref.read(unsavedChangesProvider.notifier);
+    _draftGuard = ref.read(unsavedChangesSaveDraftProvider.notifier);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _dirtyGuard?.setDirty(false);
+      _draftGuard?.setCallback(null);
+      _loadHistory();
     });
   }
 
-  Future<void> _onToggleAdmin(bool value) async {
-    final name = (widget.user['name']?.toString().trim().isNotEmpty == true)
-        ? widget.user['name']!.toString().trim()
-        : '${widget.user['first_name'] ?? ''} ${widget.user['last_name'] ?? ''}'
-              .trim();
-    final displayName = name.isNotEmpty ? name : 'this faculty member';
+  @override
+  void didUpdateWidget(covariant AccessControlView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.user['id'] != widget.user['id']) {
+      _reset();
+      _tab = 'roles';
+      _history = [];
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _dirtyGuard?.setDirty(false);
+          _loadHistory();
+        }
+      });
+    }
+  }
 
-    if (value) {
-      final confirmed = await showConfirmDialog(
-        context,
-        title: 'Grant Administrator Privileges?',
-        message:
-            'You are granting $displayName full administrator access to DefenSYS. This user will have complete access to system settings, defense rubrics, schedules, grades, and user management.',
-        confirmLabel: 'Grant Admin Access',
-        destructive: false,
-        icon: Icons.admin_panel_settings_rounded,
-      );
-      if (confirmed == true && mounted) {
-        setState(() {
-          _isAdmin = true;
-        });
+  @override
+  void dispose() {
+    releaseUnsavedChangesAfterFrame(_dirtyGuard, _draftGuard);
+    super.dispose();
+  }
+
+  void _change(VoidCallback change) {
+    setState(() {
+      change();
+      _validationError = null;
+    });
+    _dirtyGuard?.setDirty(_hasChanges);
+  }
+
+  Future<void> _loadHistory() async {
+    final id = int.tryParse(widget.user['id'].toString());
+    if (id == null) return;
+    final generation = ++_historyGeneration;
+    setState(() {
+      _historyLoading = true;
+      _historyError = null;
+    });
+    try {
+      final history = await ref
+          .read(userManagementProvider.notifier)
+          .fetchRoleAssignmentHistory(id);
+      if (mounted && generation == _historyGeneration) {
+        setState(() => _history = history);
       }
-    } else {
-      final confirmed = await showConfirmDialog(
-        context,
-        title: 'Revoke Administrator Privileges?',
-        message:
-            'Are you sure you want to remove administrator privileges for $displayName? Their account will return to standard Faculty permissions.',
-        confirmLabel: 'Revoke Admin Access',
-        destructive: true,
-        icon: Icons.shield_outlined,
-      );
-      if (confirmed == true && mounted) {
-        setState(() {
-          _isAdmin = false;
-        });
+    } catch (_) {
+      if (mounted && generation == _historyGeneration) {
+        setState(
+          () => _historyError = 'Could not load role history. Try again.',
+        );
+      }
+    } finally {
+      if (mounted && generation == _historyGeneration) {
+        setState(() => _historyLoading = false);
       }
     }
   }
 
-  void _onSave() {
-    if (_isPitLead && (_pitLeadYear == null || _pitLeadYear!.trim().isEmpty)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'A PIT Lead year level (1st, 2nd, or 3rd Year) is required when assigning a user as PIT Lead.',
-          ),
-          backgroundColor: Color(0xFFDC2626),
-        ),
+  Future<void> _toggleAdmin(bool value) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: value
+          ? 'Grant Administrator Privileges?'
+          : 'Revoke Administrator Privileges?',
+      message: value
+          ? 'This grants full access to system settings, schedules, grades and user management.'
+          : 'This returns the account to Faculty access. Operational duties remain assigned.',
+      confirmLabel: value ? 'Grant Admin Access' : 'Revoke Admin Access',
+      destructive: !value,
+      icon: Icons.admin_panel_settings_outlined,
+    );
+    if (confirmed && mounted) _change(() => _isAdmin = value);
+  }
+
+  Future<void> _leave(VoidCallback action) => guardUnsavedExit(
+    context,
+    isDirty: _hasChanges,
+    onExit: () {
+      _dirtyGuard?.setDirty(false);
+      action();
+    },
+  );
+  void _save() {
+    if (_isPitLead && (_pitLeadYear == null || _pitLeadYear!.isEmpty)) {
+      setState(
+        () => _validationError = 'Choose a year level for the PIT Lead.',
       );
       return;
     }
@@ -162,664 +170,603 @@ class _AccessControlViewState extends ConsumerState<AccessControlView> {
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final u = widget.user;
-    final name = (u['name']?.toString().trim().isNotEmpty == true)
-        ? u['name']!.toString().trim()
-        : '${u['first_name'] ?? ''} ${u['last_name'] ?? ''}'.trim();
-    final email = u['email']?.toString() ?? '';
-    final isFaculty = _role == 'admin' || _role == 'faculty';
-
-    return SingleChildScrollView(
-      padding: DefensysUi.contentPadding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          DefensysPageHeader(
-            icon: Icons.shield_outlined,
-            title: 'Access Control & Role Assignment',
-            subtitle:
-                'Configure primary access roles and operational duties for this user account.',
-            actions: OutlinedButton.icon(
-              onPressed: widget.state.isSaving ? null : widget.onBack,
-              icon: const Icon(Icons.arrow_back_rounded, size: 16),
-              label: const Text('Back to Users'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _maroon,
-                side: const BorderSide(color: Color(0xFFD1D5DB)),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
+  Widget _role({
+    required String id,
+    required String title,
+    required String description,
+    required IconData icon,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    Widget? extra,
+  }) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              icon,
+              size: 19,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: DefensysTokens.textPrimaryOf(context),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.5,
+                      color: DefensysTokens.textSecondaryOf(context),
+                    ),
+                  ),
+                ],
               ),
             ),
+            const SizedBox(width: 16),
+            Semantics(
+              label: title,
+              toggled: value,
+              child: ShadSwitch(
+                key: ValueKey('role-$id'),
+                value: value,
+                enabled: !widget.state.isSaving,
+                onChanged: onChanged,
+                checkedTrackColor: DefensysTokens.maroonOf(context),
+              ),
+            ),
+          ],
+        ),
+        if (extra != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 12, left: 31),
+            child: extra,
           ),
-          const SizedBox(height: 22),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // User Profile Summary Card
-              Expanded(
-                flex: 1,
-                child: DefensysCard(
-                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 22),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+      ],
+    ),
+  );
+  Widget _sectionLabel(String label, String description) => Padding(
+    padding: const EdgeInsets.only(top: 8, bottom: 4),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: DefensysTokens.textPrimaryOf(context),
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          description,
+          style: TextStyle(
+            fontSize: 12,
+            height: 1.5,
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+        ),
+      ],
+    ),
+  );
+  @override
+  Widget build(BuildContext context) {
+    final user = widget.user;
+    final name =
+        (user['name'] ??
+                '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}')
+            .toString()
+            .trim();
+    final staff = user['role'] == 'admin' || user['role'] == 'faculty';
+    final secondary = DefensysTokens.textSecondaryOf(context);
+    final busy = widget.state.isSaving;
+    final badges = <String>[
+      if (user['role'] == 'admin') 'Administrator',
+      if (user['is_panelist'] == true) 'Panelist',
+      if (user['is_pit_lead'] == true)
+        'PIT Lead · ${user['pit_lead_year'] ?? ''}',
+      if (user['is_adviser'] == true) 'Adviser',
+      if (user['is_documenter'] == true) 'Documenter',
+    ];
+    return DefensysShadcnScope(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.all(
+          MediaQuery.sizeOf(context).width < 600 ? 16 : 32,
+        ),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1120),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                LayoutBuilder(
+                  builder: (context, constraints) => Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    spacing: 16,
+                    runSpacing: 12,
                     children: [
-                      const CircleAvatar(
-                        radius: 30,
-                        backgroundColor: _maroon,
-                        child: Icon(
-                          Icons.person_rounded,
-                          color: Colors.white,
-                          size: 30,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        name.isNotEmpty ? name : '—',
-                        style: const TextStyle(
-                          color: _ink,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        email.isNotEmpty ? email : '—',
-                        style: const TextStyle(
-                          color: _muted,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'ID: ${u['username']?.toString() ?? '—'}',
-                        style: const TextStyle(
-                          color: _muted,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
                       SizedBox(
-                        width: double.infinity,
-                        height: 42,
-                        child: OutlinedButton.icon(
-                          onPressed: widget.state.isSaving
-                              ? null
-                              : widget.onEditProfile,
-                          icon: const Icon(Icons.person_outline, size: 18),
-                          label: const Text('Edit User Profile'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: _maroon,
-                            side: const BorderSide(
-                              color: Color(0xFFD1D5DB),
-                              width: 1,
+                        width: constraints.maxWidth < 600
+                            ? constraints.maxWidth
+                            : constraints.maxWidth - 180,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Roles & access',
+                              style: TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.w700,
+                                color: DefensysTokens.maroonTextOf(context),
+                              ),
                             ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Manage access and operational responsibilities.',
+                              style: TextStyle(fontSize: 13, color: secondary),
                             ),
-                            textStyle: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 42,
-                        child: OutlinedButton.icon(
-                          onPressed: widget.state.isSaving
-                              ? null
-                              : widget.onResetPassword,
-                          icon: const Icon(Icons.lock_reset_outlined, size: 18),
-                          label: const Text('Reset Password'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.red,
-                            side: const BorderSide(color: Colors.red, width: 1),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            textStyle: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
+                      ShadButton.ghost(
+                        enabled: !busy,
+                        onPressed: busy ? null : () => _leave(widget.onBack),
+                        leading: const Icon(LucideIcons.arrowLeft, size: 15),
+                        child: const Text('Back to Users'),
                       ),
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(width: 20),
-              // Dynamic Role Assignment Controls
-              Expanded(
-                flex: 3,
-                child: DefensysCard(
-                  padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
+                const SizedBox(height: 22),
+                ShadCard(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final identity = Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.shield_outlined, color: _maroon, size: 22),
-                          SizedBox(width: 10),
+                          Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              color: DefensysTokens.maroonOf(context),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              LucideIcons.userRound,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                          ),
+                          const SizedBox(width: 14),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Dynamic Role Assignment',
+                                  name.isEmpty
+                                      ? user['username'].toString()
+                                      : name,
                                   style: TextStyle(
-                                    color: _ink,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w800,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    color: DefensysTokens.textPrimaryOf(
+                                      context,
+                                    ),
                                   ),
                                 ),
-                                SizedBox(height: 4),
+                                const SizedBox(height: 5),
                                 Text(
-                                  'Assign operational responsibilities alongside the account\'s primary role permissions. Users can hold multiple roles simultaneously.',
+                                  '${user['email'] ?? ''} · ID ${user['username'] ?? user['id']}',
                                   style: TextStyle(
-                                    color: _muted,
-                                    fontSize: 12.5,
-                                    height: 1.45,
-                                    fontWeight: FontWeight.w500,
+                                    fontSize: 12,
+                                    color: secondary,
                                   ),
                                 ),
+                                if (badges.isNotEmpty) ...[
+                                  const SizedBox(height: 12),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 6,
+                                    children: [
+                                      for (final badge in badges)
+                                        ShadBadge.outline(child: Text(badge)),
+                                    ],
+                                  ),
+                                ],
                               ],
                             ),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 16),
-                      if (isFaculty) ...[
-                        Container(
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: _line),
+                      );
+                      final actions = Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          ShadButton.ghost(
+                            enabled: !busy,
+                            onPressed: busy ? null : widget.onEditProfile,
+                            leading: const Icon(LucideIcons.pencil, size: 14),
+                            child: const Text('Edit User Profile'),
                           ),
-                          clipBehavior: Clip.antiAlias,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
-                                ),
-                                decoration: const BoxDecoration(
-                                  border: Border(
-                                    bottom: BorderSide(color: _line),
-                                  ),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      flex: 3,
-                                      child: Text(
-                                        'ROLE',
-                                        style: _histHead.copyWith(
-                                          fontSize: 10.5,
+                          ShadButton.ghost(
+                            enabled: !busy,
+                            onPressed: busy ? null : widget.onResetPassword,
+                            foregroundColor: DefensysTokens.danger,
+                            child: const Text('Reset Password'),
+                          ),
+                        ],
+                      );
+                      return constraints.maxWidth < 720
+                          ? Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                identity,
+                                const SizedBox(height: 14),
+                                actions,
+                              ],
+                            )
+                          : Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(child: identity),
+                                const SizedBox(width: 16),
+                                actions,
+                              ],
+                            );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 20),
+                ShadTabs<String>(
+                  value: _tab,
+                  onChanged: (value) => setState(() => _tab = value),
+                  tabs: const [
+                    ShadTab(value: 'roles', child: Text('Assigned roles')),
+                    ShadTab(value: 'history', child: Text('Role history')),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                if (_tab == 'history')
+                  _historyView()
+                else
+                  ShadCard(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (staff) ...[
+                          _sectionLabel(
+                            'Account access',
+                            'The primary role controls access to administration.',
+                          ),
+                          _role(
+                            id: 'admin',
+                            title: 'System Administrator',
+                            description:
+                                'Full access to configuration, users, schedules and grades.',
+                            icon: LucideIcons.shieldCheck,
+                            value: _isAdmin,
+                            onChanged: _toggleAdmin,
+                          ),
+                          Divider(
+                            color: DefensysTokens.borderOf(context),
+                            height: 24,
+                          ),
+                          _sectionLabel(
+                            'Operational duties',
+                            'A faculty member can hold several duties, each with its own workspace.',
+                          ),
+                          _role(
+                            id: 'panelist',
+                            title: 'Defense Panelist',
+                            description:
+                                'Eligible for the reusable panelist pool. Defense assignments are made in scheduling.',
+                            icon: LucideIcons.usersRound,
+                            value: _isPanelist,
+                            onChanged: (v) => _change(() => _isPanelist = v),
+                            extra: widget.onOpenPanelistAccess == null
+                                ? null
+                                : Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: ShadButton.ghost(
+                                      size: ShadButtonSize.sm,
+                                      enabled: !busy,
+                                      onPressed: busy
+                                          ? null
+                                          : () => _leave(
+                                              widget.onOpenPanelistAccess!,
+                                            ),
+                                      trailing: const Icon(
+                                        LucideIcons.arrowUpRight,
+                                        size: 13,
+                                      ),
+                                      child: const Flexible(
+                                        child: Text(
+                                          'View panelist requests & history',
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
                                     ),
-                                    Text(
-                                      'ASSIGNED',
-                                      style: _histHead.copyWith(fontSize: 10.5),
-                                    ),
-                                  ],
+                                  ),
+                          ),
+                          Divider(
+                            color: DefensysTokens.borderOf(context),
+                            height: 1,
+                          ),
+                          _role(
+                            id: 'pit-lead',
+                            title: 'PIT Lead',
+                            description:
+                                'Coordinates PIT activities and nominations for the assigned year.',
+                            icon: LucideIcons.flag,
+                            value: _isPitLead,
+                            onChanged: (v) => _change(() {
+                              _isPitLead = v;
+                              if (!v) _pitLeadYear = null;
+                            }),
+                            extra: !_isPitLead
+                                ? null
+                                : Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'PIT Lead Year',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: secondary,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      ShadSelect<String>(
+                                        key: ValueKey('pit-year-$_pitLeadYear'),
+                                        initialValue: _pitLeadYear,
+                                        placeholder: const Text(
+                                          'Choose a year level',
+                                        ),
+                                        enabled: !busy,
+                                        minWidth: 180,
+                                        options: [
+                                          for (final year
+                                              in widget.pitLeadYearOptions)
+                                            ShadOption(
+                                              value: year,
+                                              child: Text(year),
+                                            ),
+                                        ],
+                                        selectedOptionBuilder: (_, year) =>
+                                            Text(year),
+                                        onChanged: (year) =>
+                                            _change(() => _pitLeadYear = year),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                          Divider(
+                            color: DefensysTokens.borderOf(context),
+                            height: 1,
+                          ),
+                          _role(
+                            id: 'adviser',
+                            title: 'Project Adviser',
+                            description:
+                                'Advises assigned capstone teams and reviews their requirements.',
+                            icon: LucideIcons.graduationCap,
+                            value: _isAdviser,
+                            onChanged: (v) => _change(() => _isAdviser = v),
+                          ),
+                          Divider(
+                            color: DefensysTokens.borderOf(context),
+                            height: 1,
+                          ),
+                          _role(
+                            id: 'documenter',
+                            title: 'Documenter',
+                            description:
+                                'Records and signs minutes for assigned capstone defenses.',
+                            icon: LucideIcons.filePenLine,
+                            value: _isDocumenter,
+                            onChanged: (v) => _change(() => _isDocumenter = v),
+                          ),
+                        ] else
+                          Text(
+                            'Student access follows academic records and team memberships.',
+                            style: TextStyle(color: secondary),
+                          ),
+                        if (_validationError != null ||
+                            widget.state.error != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Text(
+                              _validationError ?? widget.state.error!,
+                              style: TextStyle(color: DefensysTokens.danger),
+                            ),
+                          ),
+                        if (staff) ...[
+                          Divider(
+                            color: DefensysTokens.borderOf(context),
+                            height: 32,
+                          ),
+                          Wrap(
+                            alignment: WrapAlignment.spaceBetween,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 16,
+                            runSpacing: 12,
+                            children: [
+                              Text(
+                                _hasChanges
+                                    ? 'Unsaved role changes'
+                                    : 'All role changes saved',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: secondary,
                                 ),
                               ),
-                              Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    _accessRoleCard(
-                                      accent: _maroon,
-                                      icon: Icons.admin_panel_settings_rounded,
-                                      title: 'System Administrator',
-                                      subtitle:
-                                          'Grants full administrative privileges over system configuration, user accounts, and defense rubrics.',
-                                      value: _isAdmin,
-                                      enabled: !widget.state.isSaving,
-                                      onChanged: (v) => _onToggleAdmin(v),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  if (_hasChanges)
+                                    ShadButton.outline(
+                                      enabled: !busy,
+                                      onPressed: busy
+                                          ? null
+                                          : () => _change(_reset),
+                                      child: const Text('Discard changes'),
                                     ),
-                                    const Divider(
-                                      height: 1,
-                                      thickness: 1,
-                                      color: _line,
+                                  ShadButton(
+                                    enabled: _hasChanges && !busy,
+                                    onPressed: _hasChanges && !busy
+                                        ? _save
+                                        : null,
+                                    backgroundColor: DefensysTokens.maroonOf(
+                                      context,
                                     ),
-                                    _accessRoleCard(
-                                      accent: const Color(0xFF9333EA),
-                                      icon: Icons.groups_2_outlined,
-                                      title: 'Defense Panelist',
-                                      subtitle:
-                                          'Eligible for the reusable defense panelist pool. Managed here or in Panelist eligibility under Faculty & Staff.',
-                                      value: _isPanelist,
-                                      enabled: !widget.state.isSaving,
-                                      onChanged: (v) =>
-                                          setState(() => _isPanelist = v),
+                                    leading: const Icon(
+                                      LucideIcons.save,
+                                      size: 15,
                                     ),
-                                    const Divider(
-                                      height: 1,
-                                      thickness: 1,
-                                      color: _line,
+                                    child: Text(
+                                      busy
+                                          ? 'Saving…'
+                                          : 'Save Role Configuration',
                                     ),
-                                    _accessRoleCard(
-                                      accent: const Color(0xFF2563EB),
-                                      icon: Icons.flag_outlined,
-                                      title: 'PIT Lead',
-                                      subtitle:
-                                          'Coordinates PIT activities and dependent roles.',
-                                      value: _isPitLead,
-                                      enabled: !widget.state.isSaving,
-                                      onChanged: (v) {
-                                        setState(() {
-                                          _isPitLead = v;
-                                          if (!_isPitLead) {
-                                            _pitLeadYear = null;
-                                          }
-                                        });
-                                      },
-                                      below: _isPitLead
-                                          ? [
-                                              const Text(
-                                                'PIT Lead Year',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: _ink,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 6),
-                                              DropdownButtonFormField<String?>(
-                                                initialValue: _pitLeadYear,
-                                                isExpanded: true,
-                                                style: const TextStyle(
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: _ink,
-                                                ),
-                                                decoration: InputDecoration(
-                                                  contentPadding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 12,
-                                                        vertical: 10,
-                                                      ),
-                                                  border: OutlineInputBorder(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          8,
-                                                        ),
-                                                    borderSide:
-                                                        const BorderSide(
-                                                          color: Color(
-                                                            0xFFD1D5DB,
-                                                          ),
-                                                        ),
-                                                  ),
-                                                  filled: true,
-                                                  fillColor: Colors.white,
-                                                ),
-                                                dropdownColor: Colors.white,
-                                                items: [
-                                                  const DropdownMenuItem<
-                                                    String?
-                                                  >(
-                                                    value: null,
-                                                    child: Text(
-                                                      '— Select year level —',
-                                                    ),
-                                                  ),
-                                                  ...widget.pitLeadYearOptions
-                                                      .map(
-                                                        (y) =>
-                                                            DropdownMenuItem<
-                                                              String?
-                                                            >(
-                                                              value: y,
-                                                              child: Text(y),
-                                                            ),
-                                                      ),
-                                                ],
-                                                onChanged: widget.state.isSaving
-                                                    ? null
-                                                    : (v) => setState(
-                                                        () => _pitLeadYear = v,
-                                                      ),
-                                              ),
-                                            ]
-                                          : null,
-                                    ),
-                                    const Divider(
-                                      height: 1,
-                                      thickness: 1,
-                                      color: _line,
-                                    ),
-                                    _accessRoleCard(
-                                      accent: const Color(0xFF059669),
-                                      icon: Icons.school_outlined,
-                                      title: 'Project Adviser',
-                                      subtitle:
-                                          'Capstone advising responsibilities.',
-                                      value: _isAdviser,
-                                      enabled: !widget.state.isSaving,
-                                      onChanged: (v) =>
-                                          setState(() => _isAdviser = v),
-                                    ),
-                                    const Divider(
-                                      height: 1,
-                                      thickness: 1,
-                                      color: _line,
-                                    ),
-                                    _accessRoleCard(
-                                      accent: const Color(0xFF0284C7),
-                                      icon: Icons.assignment_outlined,
-                                      title: 'Documenter',
-                                      subtitle:
-                                          'Records minutes of defense for capstone teams.',
-                                      value: _isDocumenter,
-                                      enabled: !widget.state.isSaving,
-                                      onChanged: (v) =>
-                                          setState(() => _isDocumenter = v),
-                                    ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                        ),
-                      ] else ...[
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 20),
-                          child: Text(
-                            'Student account role permissions are tied to capstone team memberships.',
-                            style: TextStyle(color: _muted, fontSize: 13),
+                        ],
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _historyView() => ShadCard(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Role assignment history',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: DefensysTokens.textPrimaryOf(context),
+                ),
+              ),
+            ),
+            ShadButton.ghost(
+              size: ShadButtonSize.sm,
+              enabled: !_historyLoading,
+              onPressed: _historyLoading ? null : _loadHistory,
+              leading: const Icon(LucideIcons.refreshCw, size: 14),
+              child: const Text('Refresh'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (_historyLoading)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            ),
+          )
+        else if (_historyError != null)
+          Text(_historyError!, style: TextStyle(color: DefensysTokens.danger))
+        else if (_history.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Text(
+              'No role assignments recorded yet.',
+              style: TextStyle(color: DefensysTokens.textSecondaryOf(context)),
+            ),
+          )
+        else
+          for (final row in _history)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    row['action'] == 'assigned'
+                        ? LucideIcons.circleCheck
+                        : LucideIcons.circleMinus,
+                    size: 17,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${row['role_label'] ?? row['role_key']}${(row['role_detail'] ?? '').toString().isEmpty ? '' : ' · ${row['role_detail']}'}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: DefensysTokens.textPrimaryOf(context),
                           ),
                         ),
-                      ],
-                      const SizedBox(height: 20),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: DefensysSaveButton(
-                          height: 46,
-                          onPressed: _onSave,
-                          isSaving: widget.state.isSaving,
-                          label: 'Save Role Configuration',
-                          savingLabel: 'Saving Role Configuration…',
-                          isPill: false,
-                          fontSize: 14,
+                        const SizedBox(height: 5),
+                        Text(
+                          '${row['changed_by_name'] ?? 'System'} · ${_date(row['changed_at'])}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: DefensysTokens.textSecondaryOf(context),
+                          ),
                         ),
-                      ),
-                    ],
+                        if (row['semester'] != null)
+                          Text(
+                            row['semester'].toString(),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: DefensysTokens.textSecondaryOf(context),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 22),
-          _roleAssignmentHistoryCard(),
-        ],
-      ),
-    );
-  }
-
-  Widget _accessRoleCard({
-    required Color accent,
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required bool value,
-    required bool enabled,
-    required ValueChanged<bool> onChanged,
-    List<Widget>? below,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, color: accent, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        color: _ink,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w800,
-                      ),
+                  const SizedBox(width: 8),
+                  ShadBadge.outline(
+                    child: Text(
+                      row['action'] == 'assigned' ? 'Assigned' : 'Revoked',
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        color: _muted,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Switch(
-                value: value,
-                activeThumbColor: _maroon,
-                onChanged: enabled ? onChanged : null,
-              ),
-            ],
-          ),
-          if (below != null) ...[
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.only(left: 50),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: below,
+                  ),
+                ],
               ),
             ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _roleAssignmentHistoryCard() {
-    return DefensysCard(
-      padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Icon(Icons.history_rounded, color: _maroon, size: 22),
-              SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Role Assignment History',
-                      style: TextStyle(
-                        color: _ink,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Capability toggles: Panelist, PIT Lead, Project Adviser, etc.',
-                      style: TextStyle(
-                        color: _muted,
-                        fontSize: 12.5,
-                        height: 1.4,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          if (_roleAssignmentsLoading)
-            const SizedBox(
-              height: 72,
-              child: Center(child: CircularProgressIndicator(color: _maroon)),
-            )
-          else if (_roleAssignments.isEmpty)
-            SizedBox(
-              height: 72,
-              width: double.infinity,
-              child: Center(
-                child: Text(
-                  'No role assignments recorded yet.',
-                  style: TextStyle(
-                    color: _muted.withValues(alpha: 0.95),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            )
-          else
-            _roleHistoryTable(),
-        ],
-      ),
-    );
-  }
-
-  Widget _roleHistoryTable() {
-    return Table(
-      columnWidths: _roleHistoryColumnWidths,
-      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-      children: [
-        TableRow(
-          decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: _line)),
-          ),
-          children: [
-            _roleHistoryHeaderCell('ROLE'),
-            _roleHistoryHeaderCell('SEMESTER'),
-            _roleHistoryHeaderCell('YEAR LEVEL'),
-            _roleHistoryHeaderCell('CHANGED'),
-            _roleHistoryHeaderCell('ACTION'),
-          ],
-        ),
-        ..._roleAssignments.map(_roleAssignmentHistoryTableRow),
       ],
-    );
-  }
-
-  Widget _roleHistoryHeaderCell(String text) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-      child: Text(text, style: _histHead),
-    );
-  }
-
-  Widget _roleHistoryCell(
-    String text, {
-    FontWeight fontWeight = FontWeight.w500,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-      child: Text(
-        text.isEmpty ? '—' : text,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: _ink, fontSize: 12.5, fontWeight: fontWeight),
-      ),
-    );
-  }
-
-  String _roleHistoryLabel(Map<String, dynamic> row) {
-    final label = row['role_label']?.toString() ?? '—';
-    final detail = row['role_detail']?.toString();
-    if (detail == null || detail.isEmpty) {
-      return label;
-    }
-    return '$label ($detail)';
-  }
-
-  String _formatAssignmentTimestamp(dynamic value) {
-    final raw = value?.toString() ?? '';
-    if (raw.isEmpty) return '—';
-    final dt = DateTime.tryParse(raw);
-    if (dt == null) return raw;
-    final local = dt.toLocal();
-    final y = local.year.toString().padLeft(4, '0');
-    final m = local.month.toString().padLeft(2, '0');
-    final d = local.day.toString().padLeft(2, '0');
-    return '$y-$m-$d';
-  }
-
-  TableRow _roleAssignmentHistoryTableRow(Map<String, dynamic> row) {
-    final isAssigned = row['action']?.toString() == 'assigned';
-
-    return TableRow(
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
-      ),
-      children: [
-        _roleHistoryCell(_roleHistoryLabel(row), fontWeight: FontWeight.w700),
-        _roleHistoryCell(row['semester_name']?.toString() ?? '—'),
-        _roleHistoryCell(row['year_level']?.toString() ?? '—'),
-        _roleHistoryCell(_formatAssignmentTimestamp(row['created_at'])),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: isAssigned
-                    ? const Color(0xFFDEF7EC)
-                    : const Color(0xFFFDE8E8),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                isAssigned ? 'Assigned' : 'Revoked',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: isAssigned
-                      ? const Color(0xFF03543F)
-                      : const Color(0xFF9B1C1C),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
+    ),
+  );
+  String _date(dynamic value) {
+    final date = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
+    return date == null
+        ? 'Date unavailable'
+        : DateFormat('MMM d, y · h:mm a').format(date);
   }
 }

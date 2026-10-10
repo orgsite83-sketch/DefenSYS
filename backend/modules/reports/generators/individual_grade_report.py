@@ -3,7 +3,7 @@ from reportlab.lib.units import inch
 from reports.pdf_builder import DefensysPdfReportBuilder
 
 
-def generate_individual_grade_pdf(student, student_grade, team_grade, generated_by_user, signatories=None, include_signatures=True):
+def generate_individual_grade_pdf(student, student_grade, team_grade, generated_by_user, signatories=None, include_signatures=False):
     """
     Generate an official USTP DIT confidential PDF report detailing an individual student's grades,
     peer evaluation score contribution, panel assessment, and official audit summary.

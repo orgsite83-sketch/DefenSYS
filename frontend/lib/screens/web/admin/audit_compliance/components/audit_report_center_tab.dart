@@ -676,6 +676,8 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
               track: params['track'],
               startDate: params['startDate'],
               endDate: params['endDate'],
+              includeSignatures: params['include_signatures'],
+              signatories: params['signatories'],
             );
           },
           onOpenStudentPicker: (currId) => _showStudentPickerDialog(
@@ -714,9 +716,18 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
     String? track,
     String? startDate,
     String? endDate,
+    String? includeSignatures,
+    String? signatories,
   }) async {
     final endpoint = report['endpoint'] as String;
     final queryParams = <String, String>{};
+
+    if (includeSignatures != null && includeSignatures.isNotEmpty) {
+      queryParams['include_signatures'] = includeSignatures;
+    }
+    if (signatories != null && signatories.isNotEmpty) {
+      queryParams['signatories'] = signatories;
+    }
 
     if (endpoint == 'team-grade') {
       final tId = teamId ?? _selectedTeamId;
@@ -1954,8 +1965,9 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
   bool _isDownloading = false;
   bool _isLoadingPreview = false;
   ReportPreviewData? _previewData;
+  int _previewRequestId = 0;
 
-  bool _includeSignatures = true;
+  bool _includeSignatures = false;
   List<Map<String, String>> _signatories = [];
 
   void _initSignatories() {
@@ -2024,6 +2036,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
           _signatories = updatedSigners.map((s) => s.toJson()).toList();
           _includeSignatures = updatedToggle;
         });
+        _loadPreview();
       },
     );
   }
@@ -2087,26 +2100,43 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
   }
 
   Future<void> _loadPreview() async {
+    final requestId = ++_previewRequestId;
     final endpoint = widget.report['endpoint'] as String;
 
     // Check if required selection is missing
     if (endpoint == 'individual-grade' && _selectedStudentId == null) {
-      if (mounted) setState(() => _previewData = null);
+      if (mounted) {
+        setState(() {
+          _previewData = null;
+          _isLoadingPreview = false;
+        });
+      }
       return;
     }
     if (endpoint == 'team-grade' && _selectedTeamId == null) {
-      if (mounted) setState(() => _previewData = null);
+      if (mounted) {
+        setState(() {
+          _previewData = null;
+          _isLoadingPreview = false;
+        });
+      }
       return;
     }
 
     setState(() => _isLoadingPreview = true);
 
-    final preview = await widget.onFetchPreview(_buildCurrentParams());
-
-    if (mounted) {
+    try {
+      final preview = await widget.onFetchPreview(_buildCurrentParams());
+      if (!mounted || requestId != _previewRequestId) return;
       setState(() {
         _isLoadingPreview = false;
         _previewData = preview;
+      });
+    } catch (_) {
+      if (!mounted || requestId != _previewRequestId) return;
+      setState(() {
+        _isLoadingPreview = false;
+        _previewData = null;
       });
     }
   }
@@ -3221,6 +3251,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
               ))
           .toList(),
       includeSignatures: _includeSignatures,
+      selectedFormat: _selectedFormat,
     );
   }
 

@@ -18,11 +18,15 @@ def evaluator_payload(item):
         'is_active': item.is_active, 'pit_year': item.pit_year,
         'requested_by_name': (item.created_by.get_full_name() or item.created_by.username) if item.created_by else '',
         'review_note': item.review_note,
+        'requested_by_id': item.created_by_id,
+        'created_at': item.created_at.isoformat(),
+        'reviewed_at': item.reviewed_at.isoformat() if item.reviewed_at else None,
+        'reviewed_by_name': (item.reviewed_by.get_full_name() or item.reviewed_by.username) if item.reviewed_by else None,
     }
 
 
 def visible_evaluators(actor):
-    items = ExternalEvaluator.objects.select_related('created_by')
+    items = ExternalEvaluator.objects.select_related('created_by', 'reviewed_by')
     return items if is_admin_user(actor) else items.filter(Q(status=ExternalEvaluator.APPROVED, is_active=True) | Q(created_by=actor))
 
 
@@ -95,9 +99,11 @@ def management_payload(actor):
 def _notify(recipient, actor, evaluator, title):
     from notifications.models import Notification, NotificationCategory
     Notification.objects.create(recipient=recipient, sender=actor, title=title,
-        message=f'{evaluator.name}: review external evaluator access in Defense Operations.',
+        message=f'{evaluator.name}: external evaluator approval {evaluator.status}.',
         category=NotificationCategory.DEFENSE,
-        action_route='/admin/defense-board' if is_admin_user(recipient) else '/faculty/defense_board')
+        workspace='admin' if is_admin_user(recipient) else 'pit_lead',
+        action_route=f"/{'admin' if is_admin_user(recipient) else 'faculty'}/defense-board/requests/external/{evaluator.pk}",
+        action_payload={'action_kind': 'external_evaluator', 'evaluator_id': evaluator.pk})
 
 
 @transaction.atomic

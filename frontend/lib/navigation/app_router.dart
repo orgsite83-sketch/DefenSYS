@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../screens/app/panelist_dashboard.dart';
+import '../notifications/notification_request_screen.dart';
+import '../screens/web/shared/team_deliverables/team_deliverables_screen.dart';
 import '../screens/app/documenter_dashboard.dart';
 import '../screens/web/faculty/documenter/minutes_form_screen.dart';
 import '../screens/app/student_dashboard.dart';
@@ -175,7 +177,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               if (auth.user?['role'] != 'student' || auth.token == null) {
                 return const SizedBox.shrink();
               }
-              return StudentDashboard(userData: auth.user);
+              return StudentDashboard(
+                key: ValueKey(state.uri.toString()),
+                userData: auth.user,
+                initialStage: state.uri.queryParameters['stage'],
+                openDeliverables: state.uri.queryParameters['subtab'] == 'deliverables',
+              );
             },
           );
         },
@@ -319,6 +326,30 @@ List<RouteBase> _adminRoutes() {
 Map<String, dynamic>? _routeUser(BuildContext context) =>
     ProviderScope.containerOf(context, listen: false).read(authProvider).user;
 
+List<GoRoute> _notificationActionRoutes(String workspace) => [
+  GoRoute(path: 'requests/panelist/:requestId', redirect: (_, state) {
+    final id = state.pathParameters['requestId']!;
+    return workspace == 'admin' ? '/admin/users?tab=faculty&view=panelists&section=requests&request=$id' :
+      '/faculty/defense-board?panelistRequest=$id';
+  }),
+    GoRoute(
+      path: 'requests/external/:requestId',
+      builder: (context, state) => NotificationRequestScreen(
+        key: ValueKey(state.uri.path),
+        kind: 'external',
+        requestId: int.parse(state.pathParameters['requestId']!),
+        onBack: () => context.go('/$workspace/defense-board'),
+      ),
+    ),
+  GoRoute(
+    path: 'minutes/:scheduleId',
+    builder: (context, state) => MinutesFormScreen(
+      scheduleId: int.parse(state.pathParameters['scheduleId']!),
+      onBack: () => context.go('/$workspace/defense-board'),
+    ),
+  ),
+];
+
 List<GoRoute> _adminSectionRoutes() {
   return [
     GoRoute(path: 'overview', pageBuilder: _adminSectionPage),
@@ -348,7 +379,10 @@ List<GoRoute> _adminSectionRoutes() {
           path: ':teamId',
           builder: (_, state) {
             final id = int.parse(state.pathParameters['teamId']!);
-            return AdminTeamDetailRoute(teamId: id);
+            return AdminTeamDetailRoute(
+              key: ValueKey(state.uri.toString()), teamId: id,
+              initialDeliverableStage: state.uri.queryParameters['tab'] == 'deliverables' ? state.uri.queryParameters['stage'] : null,
+            );
           },
         ),
       ],
@@ -392,7 +426,7 @@ List<GoRoute> _adminSectionRoutes() {
     GoRoute(path: 'curriculum-analytics', pageBuilder: _adminSectionPage),
     GoRoute(path: 'audit-compliance', pageBuilder: _adminSectionPage),
     GoRoute(path: 'defense-scheduler', pageBuilder: _adminSectionPage),
-    GoRoute(path: 'defense-board', pageBuilder: _adminSectionPage),
+    GoRoute(path: 'defense-board', pageBuilder: _adminSectionPage, routes: _notificationActionRoutes('admin')),
     GoRoute(
       path: 'defense-stages',
       pageBuilder: _adminSectionPage,
@@ -447,6 +481,12 @@ List<GoRoute> _facultySectionRoutes() {
   return [
     GoRoute(path: 'dashboard', pageBuilder: _facultySectionPage),
     GoRoute(
+      path: 'profile',
+      pageBuilder: (_, __) => const NoTransitionPage(
+        child: ProfileScreen(showAppBar: false),
+      ),
+    ),
+    GoRoute(
       path: 'cohort',
       pageBuilder: _facultySectionPage,
       routes: [
@@ -475,7 +515,7 @@ List<GoRoute> _facultySectionRoutes() {
     ),
     GoRoute(path: 'pit-instructors', pageBuilder: _facultySectionPage),
     GoRoute(path: 'defense-scheduler', pageBuilder: _facultySectionPage),
-    GoRoute(path: 'defense-board', pageBuilder: _facultySectionPage),
+    GoRoute(path: 'defense-board', pageBuilder: _facultySectionPage, routes: _notificationActionRoutes('faculty')),
     GoRoute(
       path: 'grade-center',
       pageBuilder: _facultySectionPage,
@@ -500,7 +540,16 @@ List<GoRoute> _facultySectionRoutes() {
     GoRoute(path: 'project-archive', pageBuilder: _facultySectionPage),
     GoRoute(path: 'repository-audit', pageBuilder: _facultySectionPage),
     GoRoute(path: 'audit-compliance', pageBuilder: _facultySectionPage),
-    GoRoute(path: 'deliverables', pageBuilder: _facultySectionPage),
+    GoRoute(path: 'deliverables', pageBuilder: _facultySectionPage, routes: [
+      GoRoute(path: 'teams/:teamId', builder: (_, state) => TeamDeliverablesScreen(
+        key: ValueKey(state.uri.toString()),
+        initialTeamId: int.parse(state.pathParameters['teamId']!),
+        initialStage: state.uri.queryParameters['stage'],
+        initialScope: state.uri.queryParameters['scope'],
+        isAdviser: state.uri.queryParameters['scope'] != 'pit',
+        initialTab: 0,
+      )),
+    ]),
     GoRoute(path: 'weekly-reports', pageBuilder: _facultySectionPage),
     GoRoute(path: 'adviser-grading', pageBuilder: _facultySectionPage),
     GoRoute(path: 'uploader', pageBuilder: _facultySectionPage),
@@ -519,6 +568,7 @@ Page<void> _adminSectionPage(
   child: AdminSectionContent(
     section: AdminRoutes.sectionForLocation(state.uri.path)!,
     isImport: state.uri.path == AdminRoutes.defenseScheduleBulkImport,
+    userQuery: state.uri.queryParameters,
   ),
 );
 

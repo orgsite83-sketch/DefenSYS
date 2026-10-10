@@ -11,6 +11,7 @@ import '../../../toasts/feedback_toast.dart';
 class PeerEvalTab extends ConsumerStatefulWidget {
   final bool isCapstone;
   final bool peerEvalAllowed;
+  final String? peerEvalUnavailableReason;
   final List<Map<String, dynamic>> teammates; // from studentData members (excluding self)
   final List<Map<String, dynamic>> peerCriteria; // from peer rubric
   final String studentId;
@@ -27,6 +28,7 @@ class PeerEvalTab extends ConsumerStatefulWidget {
     super.key,
     required this.isCapstone,
     required this.peerEvalAllowed,
+    this.peerEvalUnavailableReason,
     required this.teammates,
     required this.peerCriteria,
     this.myPeerSubmissions = const [],
@@ -249,7 +251,10 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'It will open once enabled by your $roleLead.',
+                          widget.peerEvalUnavailableReason ??
+                              (widget.isCapstone
+                                  ? 'It opens after your team is endorsed, scheduled, and every assigned panelist finishes grading.'
+                                  : 'It will open once enabled by your $roleLead.'),
                           style: TextStyle(color: Colors.grey.shade600, fontSize: 12.5),
                         ),
                       ],
@@ -515,7 +520,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                 (x) => (x['name'] as String?) == c,
                 orElse: () => <String, Object>{'maxScore': 5},
               )['maxScore'] as num? ?? 5;
-              return _criterionRatingRow(teammateId, c, scores[c] ?? 0, cMax.toDouble(), isPosted);
+              return _criterionRatingRow(teammateId, c, scores[c] ?? 0, cMax.toDouble(), isPosted || !widget.peerEvalAllowed);
             }),
             const Divider(height: 20, color: Color(0xFFF1F5F9)),
             _evaluationSummaryRow(avg, maxScore),
@@ -529,7 +534,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                   savingLabel: 'Submitting…',
                   isPill: true,
                   isSaving: _submitting[teammateId] == true,
-                  onPressed: _submitting[teammateId] == true
+                  onPressed: !widget.peerEvalAllowed || _submitting[teammateId] == true
                       ? null
                       : () => _confirmPost(teammateId, name, scores),
                 ),
@@ -552,6 +557,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
   }
 
   Future<void> _confirmPost(String teammateId, String name, Map<String, double> scores) async {
+    if (!widget.peerEvalAllowed) return;
     if (_hasUnratedCriteria(scores)) {
       showValidationToast(
         context,

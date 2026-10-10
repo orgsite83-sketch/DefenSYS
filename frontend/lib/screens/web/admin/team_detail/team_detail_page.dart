@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
 import '../../../../config/api_config.dart';
+import '../../../../navigation/admin_route_paths.dart';
 import '../../../../services/authenticated_client.dart';
 import '../../../../services/student_teams_provider.dart';
 import '../../../../services/team_detail_provider.dart';
 import '../../../../services/auth_provider.dart';
+import '../../../../services/app/data_refresh_provider.dart';
 import '../../../../utils/universal_file_viewer.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/widgets.dart';
 import '../widgets/defensys_admin_shell.dart';
 import '../grade_center_shared.dart';
+import 'academic_progress_card.dart';
 
 class TeamDetailPage extends ConsumerStatefulWidget {
   const TeamDetailPage({
@@ -20,6 +25,7 @@ class TeamDetailPage extends ConsumerStatefulWidget {
     required this.isPitLead,
     this.pitLeadYear,
     this.onDeleted,
+    this.initialDeliverableStage,
   });
 
   final int teamId;
@@ -28,6 +34,7 @@ class TeamDetailPage extends ConsumerStatefulWidget {
   final bool isPitLead;
   final String? pitLeadYear;
   final VoidCallback? onDeleted;
+  final String? initialDeliverableStage;
 
   @override
   ConsumerState<TeamDetailPage> createState() => _TeamDetailPageState();
@@ -54,12 +61,33 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
   int? _selectedReportIndex;
   bool _isEditing = false;
   String _studentFilter = '';
+  bool _refreshAfterEvaluation = false;
+  int _teamRevision = 0;
 
   @override
   void initState() {
     super.initState();
+    _selectedDeliverableStage = widget.initialDeliverableStage ?? '';
+    _teamRevision = ref.read(dataRefreshProvider)[DataArea.teams] ?? 0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(teamDetailProvider(widget.teamId).notifier).load();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final isActive = TickerMode.of(context);
+    final revision = ref.read(dataRefreshProvider)[DataArea.teams] ?? 0;
+    if (!isActive || (!_refreshAfterEvaluation && revision == _teamRevision)) {
+      return;
+    }
+    _refreshAfterEvaluation = false;
+    _teamRevision = revision;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && TickerMode.of(context)) {
+        ref.read(teamDetailProvider(widget.teamId).notifier).load();
+      }
     });
   }
 
@@ -159,6 +187,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
 
     return DefaultTabController(
       length: tabCount,
+      initialIndex: widget.initialDeliverableStage == null ? 0 : isCapstone ? 2 : 1,
       child: Padding(
         padding: DefensysUi.contentPadding,
         child: Column(
@@ -429,6 +458,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
   }
 
   Widget _buildLeftOverviewColumn(
+    TeamDetailState detailState,
     Map<String, dynamic> team,
     bool isCapstone,
     String programLabel,
@@ -570,8 +600,42 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
             ],
           ),
         ),
+        const SizedBox(height: 20),
+        AcademicProgressCard(
+          grades: detailState.grades,
+          stageLabels: (detailState.deliverableTeam?['stages'] as List? ?? const [])
+              .whereType<Map>()
+              .map((stage) => stage['stage_label']?.toString() ?? '')
+              .where((label) => label.isNotEmpty)
+              .toList(),
+          currentStage: detailState.deliverableTeam?['current_stage']?.toString(),
+          isCapstone: isCapstone,
+          isLoading: detailState.isLoading,
+          error: detailState.gradesError,
+          onRetry: () =>
+              ref.read(teamDetailProvider(widget.teamId).notifier).load(),
+          onViewEvaluation: _openEvaluation,
+        ),
       ],
     );
+  }
+
+  void _openEvaluation(Map<String, dynamic> grade) {
+    final gradeId = asInt(grade['id']);
+    if (gradeId == null) return;
+    final router = GoRouter.of(context);
+    final isFaculty = router.routeInformationProvider.value.uri.path.startsWith(
+      '/faculty/',
+    );
+    final path = isFaculty
+        ? FacultyRoutes.gradeDetail(gradeId)
+        : AdminRoutes.gradeDetail(gradeId);
+    final locked =
+        grade['is_officially_complete'] == true || grade['status'] == 'published';
+    _refreshAfterEvaluation = true;
+    // Cross-section pushes belong to the source branch's Navigator. Switch
+    // branches instead, and retain an explicit destination for the Back link.
+    router.go('$path?locked=${locked ? 1 : 0}&fromTeam=${widget.teamId}');
   }
 
   Widget _buildRightOverviewColumn(
@@ -790,7 +854,13 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
       builder: (context, constraints) {
         final isWide = constraints.maxWidth > 850;
 
-        final leftColumn = _buildLeftOverviewColumn(team, isCapstone, programLabel, adviserName);
+        final leftColumn = _buildLeftOverviewColumn(
+          detailState,
+          team,
+          isCapstone,
+          programLabel,
+          adviserName,
+        );
         final rightColumn = _buildRightOverviewColumn(detailState, team, isCapstone, members, leaderId);
 
         if (isWide) {
@@ -2120,6 +2190,14 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
   }
 
   Widget _buildGradesTab(TeamDetailState detailState) {
+    if (detailState.gradesError != null) {
+      return ErrorBanner(
+        title: 'Grades could not be loaded',
+        message: detailState.gradesError!,
+        onRetry: () =>
+            ref.read(teamDetailProvider(widget.teamId).notifier).load(),
+      );
+    }
     final grades = detailState.grades;
     if (grades.isEmpty) {
       return _emptyTab('No grades or evaluation events recorded yet.');

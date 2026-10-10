@@ -13,12 +13,14 @@ class DefensysActionMenu extends StatefulWidget {
     this.enabled = true,
     this.triggerLabel,
     this.triggerIcon,
+    this.triggerForegroundColor,
   });
   final String label;
   final List<Widget> items;
   final bool enabled;
   final String? triggerLabel;
   final IconData? triggerIcon;
+  final Color? triggerForegroundColor;
 
   @override
   State<DefensysActionMenu> createState() => _DefensysActionMenuState();
@@ -84,6 +86,10 @@ class _DefensysActionMenuState extends State<DefensysActionMenu> {
                 ? ShadButton.outline(
                     enabled: widget.enabled,
                     height: 36,
+                    foregroundColor: widget.triggerForegroundColor,
+                    hoverForegroundColor: widget.triggerForegroundColor,
+                    hoverBackgroundColor: widget.triggerForegroundColor
+                        ?.withValues(alpha: .10),
                     onPressed: widget.enabled ? _controller.toggle : null,
                     trailing: Icon(
                       widget.triggerIcon ?? LucideIcons.ellipsis,

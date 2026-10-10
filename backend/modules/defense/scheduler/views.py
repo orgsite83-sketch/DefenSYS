@@ -1,5 +1,5 @@
 from django.core.exceptions import ValidationError
-from django.db.models import Q
+from django.db.models import F, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, serializers as drf_serializers
@@ -14,6 +14,7 @@ from grading.grades.services import (
     guest_panelist_remark_key,
     panelist_remark_key_for_user,
     panelist_result_payload,
+    previous_panel_attempt_results,
     require_grade_editable,
     submit_panelist_grade,
     weights_for_schedule,
@@ -461,11 +462,20 @@ def _panel_rubric_payload(rubric, grade_weights):
     }
 
 
-def _panelist_has_schedule_assignment(user, team_id, schedule_id=None):
+# Verdicts close schedules without removing the panel's assignment or read access.
+PANELIST_ASSIGNMENT_STATUSES = (
+    DefenseSchedule.STATUS_SCHEDULED,
+    DefenseSchedule.STATUS_DONE,
+    DefenseSchedule.STATUS_ARCHIVED,
+)
+
+
+def _panelist_has_schedule_assignment(user, team_id, schedule_id=None, *, include_completed=False):
     qs = SchedulePanelist.objects.filter(
         panelist=user,
         schedule__team_id=team_id,
-        schedule__status=DefenseSchedule.STATUS_SCHEDULED,
+        schedule__status__in=(PANELIST_ASSIGNMENT_STATUSES if include_completed
+                             else (DefenseSchedule.STATUS_SCHEDULED,)),
     )
     if schedule_id is not None:
         qs = qs.filter(schedule_id=schedule_id)
@@ -499,7 +509,7 @@ class PanelistAssignmentsView(APIView):
             schedule_queryset()
             .filter(
                 panel_assignments__panelist_id=panelist_id,
-                status=DefenseSchedule.STATUS_SCHEDULED,
+                status__in=PANELIST_ASSIGNMENT_STATUSES,
             )
             .select_related('rubric__semester', 'semester', 'defense_stage')
             .prefetch_related('team__memberships__student', 'rubric__criteria')
@@ -508,7 +518,7 @@ class PanelistAssignmentsView(APIView):
         )
 
         submitted_subs = (
-            PanelistGradeSubmission.objects.filter(panelist_id=panelist_id)
+            PanelistGradeSubmission.objects.filter(panelist_id=panelist_id, is_void=False)
             .select_related('schedule')
             .prefetch_related('criterion_scores')
         )
@@ -596,6 +606,7 @@ class PanelistResultsView(APIView):
         grade_ids = (
             GradeBreakdown.objects.filter(
                 evaluation_type=GradeBreakdown.EVAL_PANEL,
+                is_void=False,
                 remarks__startswith=panelist_key,
             )
             .values_list('team_grade_id', flat=True)
@@ -620,12 +631,20 @@ class PanelistResultsView(APIView):
                 request.user,
                 grade.team_id,
                 grade.schedule_id,
+                include_completed=True,
             ):
                 continue
             item = panelist_result_payload(grade, panelist_key)
             if item:
                 results.append(item)
 
+        previous = PanelistGradeSubmission.objects.filter(
+            panelist=request.user, schedule__panel_assignments__panelist=request.user,
+            schedule__status__in=PANELIST_ASSIGNMENT_STATUSES, is_void=False,
+        ).exclude(schedule_id=F('team_grade__schedule_id')).select_related(
+            'schedule__team', 'schedule__semester__school_year', 'schedule__defense_stage', 'student',
+        ).prefetch_related('criterion_scores').distinct()
+        results.extend(previous_panel_attempt_results(previous))
         results.sort(
             key=lambda row: (
                 row.pop('_sort_date', None) or '',
@@ -857,7 +876,9 @@ class PanelistGradeSubmissionView(APIView):
 
 def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_chair=False, team_grade=None):
     from grading.grades.serializers import TeamGradeSerializer
+    from .progress import schedule_progress
     team = schedule.team
+    progress = schedule_progress(schedule)
     unavailable_reason = grading_unavailable_reason(schedule, team_grade)
     verdict_reason = verdict_unavailable_reason(schedule, team_grade)
     raw_weights = weights_for_schedule(schedule)
@@ -870,21 +891,23 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
     revision_deadline = None
     attempt_count = 1
     grade_id = None
-    if team_grade:
-        verdict = team_grade.verdict or ''
-        verdict_remarks = team_grade.verdict_remarks or ''
-        if team_grade.verdict_by:
+    from grading.grades.models import GradeAttemptHistory
+    attempt = team_grade or GradeAttemptHistory.objects.filter(schedule=schedule).select_related('verdict_by').order_by('-pk').first()
+    if attempt:
+        verdict = attempt.verdict or ''
+        verdict_remarks = attempt.verdict_remarks or ''
+        if attempt.verdict_by:
             verdict_by_name = (
-                f"{team_grade.verdict_by.first_name} {team_grade.verdict_by.last_name}".strip()
-                or team_grade.verdict_by.username
+                f"{attempt.verdict_by.first_name} {attempt.verdict_by.last_name}".strip()
+                or attempt.verdict_by.username
             )
         revision_deadline = (
-            team_grade.revision_deadline.isoformat()
-            if team_grade.revision_deadline
+            attempt.revision_deadline.isoformat()
+            if attempt.revision_deadline
             else None
         )
-        attempt_count = team_grade.attempt_count or 1
-        grade_id = team_grade.id
+        attempt_count = (team_grade.attempt_count if team_grade else attempt.attempt_number) or 1
+        grade_id = team_grade.id if team_grade else attempt.team_grade_id
 
     from repository.deliverables.services import stage_payload
     stage_info = stage_payload(team, schedule.stage_label)
@@ -939,11 +962,15 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
     return {
         'id': team.id,
         'schedule_id': schedule.id,
+        'session_id': str(schedule.session_id),
+        'semester_id': schedule.semester_id,
+        'display_semester': schedule.semester.display_name,
+        'defense_stage_id': schedule.defense_stage_id,
         'scope': schedule.scope,
         'is_capstone': schedule.scope == DefenseSchedule.SCOPE_CAPSTONE,
         'event_name': schedule.event_name or '',
         'name': team.name,
-        'project_title': team.project_title or '',
+        'project_title': schedule.project_title_snapshot or team.project_title or '',
         'leader_name': leader_name,
         'leader_id': getattr(team, 'leader_id', None),
         'adviser_name': adviser_name,
@@ -959,6 +986,8 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
         'is_posted': is_posted,
         'is_submitted': is_posted,
         'schedule_status': schedule.status,
+        'display_status': progress['display_status'],
+        'is_completed': progress['is_completed'],
         'server_date': timezone.localdate().isoformat(),
         'grading_available': not is_posted and not unavailable_reason,
         'grading_unavailable_reason': unavailable_reason,
@@ -1025,6 +1054,10 @@ class GuestPanelistResultsView(APIView):
             if item:
                 results.append(item)
 
+        previous = submissions.filter(is_void=False).exclude(schedule_id=F('team_grade__schedule_id')).select_related(
+            'schedule__team', 'schedule__semester__school_year', 'schedule__defense_stage', 'student',
+        ).prefetch_related('criterion_scores')
+        results.extend(previous_panel_attempt_results(previous))
         return Response({'results': results})
 
 
@@ -1040,7 +1073,7 @@ class GuestPanelistAssignmentsView(APIView):
             schedule_queryset()
             .filter(
                 pk__in=principal.schedule_ids,
-                status=DefenseSchedule.STATUS_SCHEDULED,
+                status__in=PANELIST_ASSIGNMENT_STATUSES,
             )
             .select_related('rubric__semester', 'semester', 'defense_stage', 'team')
             .prefetch_related('team__memberships__student', 'rubric__criteria')
@@ -1054,6 +1087,7 @@ class GuestPanelistAssignmentsView(APIView):
             PanelistGradeSubmission.objects.filter(
                 schedule=schedule,
                 guest_code_id=principal.guest_code_id,
+                is_void=False,
             ).prefetch_related('criterion_scores')
         )
         is_posted = bool(subs)

@@ -49,7 +49,7 @@ def _parse_signature_params(request):
     Extracts include_signatures (bool) and signatories (list of dicts) from request query params.
     """
     raw_inc = request.query_params.get('include_signatures')
-    include_signatures = True
+    include_signatures = False
     if raw_inc is not None:
         include_signatures = str(raw_inc).strip().lower() in ('true', '1', 'yes')
 

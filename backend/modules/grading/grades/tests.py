@@ -199,6 +199,7 @@ class GradeCenterApiTests(APITestCase):
         }
 
     def _submit_all_capstone_peer_evaluations(self):
+        self._complete_capstone_panel_grading()
         self._enable_capstone_peer_grading()
         self.client.force_authenticate(user=self.student)
         self.client.post(
@@ -213,6 +214,13 @@ class GradeCenterApiTests(APITestCase):
             format='json',
         )
         self.client.force_authenticate(user=self.admin)
+
+    def _complete_capstone_panel_grading(self):
+        from .services import GradeContextService, submit_panelist_grade
+        grade = GradeContextService.get_or_create_for_schedule(self.capstone_schedule)[0]
+        if not grade.panelist_submissions.filter(schedule=self.capstone_schedule, panelist=self.panelist).exists():
+            submit_panelist_grade(self.capstone_schedule, grade,
+                [{'criterion_id': self.panel_rubric.criteria.first().pk, 'score': 8}], panelist=self.panelist)
 
     def test_adviser_save_response_contains_new_breakdowns_and_student_scores(self):
         grade = self._capstone_grade()
@@ -1497,6 +1505,7 @@ class GradeCenterApiTests(APITestCase):
         self.assertEqual(grade.status, TeamGrade.STATUS_PUBLISHED)
 
     def test_partial_peer_submission_does_not_set_peer_score(self):
+        self._complete_capstone_panel_grading()
         grade = self._capstone_grade()
         self._enable_capstone_peer_grading()
         self.client.force_authenticate(user=self.student)
@@ -1841,6 +1850,7 @@ class GradeCenterApiTests(APITestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_peer_submit_requires_term_peer_evaluation_enabled(self):
+        self._complete_capstone_panel_grading()
         grade = self._capstone_grade()
         self._disable_capstone_peer_grading()
         self.client.force_authenticate(user=self.student)
@@ -1885,6 +1895,7 @@ class GradeCenterApiTests(APITestCase):
         )
 
     def test_student_can_submit_peer_evaluation(self):
+        self._complete_capstone_panel_grading()
         grade = self._capstone_grade()
         self._enable_capstone_peer_grading()
         self.client.force_authenticate(user=self.student)
@@ -1919,6 +1930,7 @@ class GradeCenterApiTests(APITestCase):
         )
 
     def test_peer_submit_uses_evaluatee_id_when_names_duplicate(self):
+        self._complete_capstone_panel_grading()
         grade = self._capstone_grade()
         self._enable_capstone_peer_grading()
         duplicate_name_student = User.objects.create_user(
@@ -2049,6 +2061,7 @@ class GradeCenterApiTests(APITestCase):
             rebuild_component_breakdown(grade, Rubric.EVAL_ADVISER, Decimal('0.90'))
 
     def test_student_dashboard_includes_peer_criteria(self):
+        self._complete_capstone_panel_grading()
         self._capstone_grade()
         self._enable_capstone_peer_grading()
         self.client.force_authenticate(user=self.student)
@@ -2060,6 +2073,7 @@ class GradeCenterApiTests(APITestCase):
         self.assertTrue(response.data['peerEvalEnabled'])
 
     def test_peer_submit_requires_configured_peer_rubric(self):
+        self._complete_capstone_panel_grading()
         grade = self._capstone_grade()
         self._enable_capstone_peer_grading()
         config = get_or_create_stage_grading_config(self.stage, self.semester)
@@ -2078,6 +2092,7 @@ class GradeCenterApiTests(APITestCase):
         self.assertFalse(PeerEvaluationSubmission.objects.filter(team_grade=grade).exists())
 
     def test_peer_submit_with_stale_row_appears_on_canonical_grade(self):
+        self._complete_capstone_panel_grading()
         sync_missing_grade_rows(user=self.admin, repair_placeholders=False)
         canonical = TeamGrade.objects.get(team=self.capstone_team, schedule=self.capstone_schedule)
         stale = TeamGrade.objects.create(

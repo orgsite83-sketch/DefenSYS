@@ -18,11 +18,14 @@ import '../../widgets/confirm_dialog.dart';
 import '../../widgets/defensys_skeleton.dart';
 import '../../widgets/offline_banner.dart';
 import '../../notifications/notifications_modal.dart';
+import '../../notifications/notifications_bell.dart';
 import '../../notifications/notifications_provider.dart';
 
 class StudentDashboard extends ConsumerStatefulWidget {
   final Map<String, dynamic>? userData;
-  const StudentDashboard({super.key, this.userData});
+  final String? initialStage;
+  final bool openDeliverables;
+  const StudentDashboard({super.key, this.userData, this.initialStage, this.openDeliverables = false});
 
   @override
   ConsumerState<StudentDashboard> createState() => _StudentDashboardState();
@@ -36,6 +39,8 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialStage != null || widget.openDeliverables) _selectedIndex = 1;
+    if (widget.openDeliverables) _eventsSubTabNotifier.value = 1;
     final u = widget.userData;
     _profile = StudentProfile(
       name: u?['name'] ?? u?['first_name'] ?? 'Student',
@@ -45,7 +50,6 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(dashboardProvider('student').notifier).fetchDashboardData();
-      ref.read(notificationsProvider.notifier).fetchNotifications();
     });
   }
 
@@ -62,10 +66,11 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
 
     await Future.wait([
       ref.read(dashboardProvider('student').notifier).fetchDashboardData(),
-      ref.read(notificationsProvider.notifier).fetchNotifications(),
+      ref.read(notificationsProvider('student').notifier).fetchNotifications(),
       if (team != null)
         ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
           scope: isCapstone ? 'capstone' : 'pit',
+          selectedStage: widget.initialStage,
           yearLevel: isCapstone ? null : (yearLevel?.isNotEmpty == true ? yearLevel : null),
         ),
     ]);
@@ -80,6 +85,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         final yearLevel = next.data?['year_level']?.toString().trim();
         ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
           scope: isCapstone ? 'capstone' : 'pit',
+          selectedStage: widget.initialStage,
           yearLevel: isCapstone ? null : (yearLevel?.isNotEmpty == true ? yearLevel : null),
         );
       }
@@ -162,6 +168,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
       ),
       StudentEventsTab(
         isCapstone: isCapstone,
+        initialStage: widget.initialStage,
         studentData: dataToPass,
         subTabNotifier: _eventsSubTabNotifier,
       ),
@@ -280,36 +287,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
           ],
         ),
         actions: [
-          Consumer(
-            builder: (context, ref, child) {
-              final state = ref.watch(notificationsProvider);
-              return Badge(
-                isLabelVisible: state.unreadCount > 0,
-                label: Text(
-                  state.unreadCount.toString(),
-                  style: const TextStyle(
-                    color: DefensysTokens.maroon,
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                backgroundColor: Colors.white,
-                textColor: DefensysTokens.maroon,
-                child: IconButton(
-                  icon: const Icon(Icons.notifications_outlined, color: Colors.white),
-                  tooltip: 'Notifications',
-                  onPressed: () {
-                    showModalBottomSheet(
-                      context: context,
-                      backgroundColor: Colors.transparent,
-                      isScrollControlled: true,
-                      builder: (_) => const NotificationsModal(),
-                    );
-                  },
-                ),
-              );
-            },
-          ),
+          const NotificationsBell(workspace: 'student', workspaceLabel: 'Student', color: Colors.white),
           const SizedBox(width: 4),
         ],
       ),
@@ -398,7 +376,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         academicPeriod?['semester']?.toString() ??
         'AY 2026-2027';
 
-    final notifState = ref.watch(notificationsProvider);
+    final notifState = ref.watch(notificationsProvider('student'));
 
     return Drawer(
       backgroundColor: Colors.white,
@@ -596,12 +574,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                     badgeCount: notifState.unreadCount,
                     onTap: () {
                       Navigator.pop(context);
-                      showModalBottomSheet(
-                        context: context,
-                        backgroundColor: Colors.transparent,
-                        isScrollControlled: true,
-                        builder: (_) => const NotificationsModal(),
-                      );
+                      showNotificationsPanel(context, workspace: 'student', workspaceLabel: 'Student');
                     },
                   ),
 

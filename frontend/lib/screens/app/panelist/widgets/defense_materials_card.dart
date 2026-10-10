@@ -116,6 +116,11 @@ class DefenseMaterialsCard extends StatelessWidget {
   Widget build(BuildContext context) => ShadCard(
     backgroundColor: DefensysTokens.surfaceOf(context),
     radius: BorderRadius.circular(16),
+    border: ShadBorder.all(
+      color: DefensysTokens.borderOf(context),
+      radius: BorderRadius.circular(16),
+    ),
+    shadows: const [],
     padding: const EdgeInsets.all(18),
     width: double.infinity,
     child: Column(

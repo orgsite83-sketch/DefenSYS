@@ -40,12 +40,14 @@ class PanelistPoolButton extends ConsumerWidget {
 }
 
 class PanelistPoolDialog extends StatelessWidget {
-  const PanelistPoolDialog({super.key});
+  const PanelistPoolDialog({super.key, this.initialRequestId});
+  final int? initialRequestId;
 
-  static Future<void> show(BuildContext context) => showDialog<void>(
-    context: context,
-    builder: (_) => const PanelistPoolDialog(),
-  );
+  static Future<void> show(BuildContext context, {int? initialRequestId}) =>
+      showDialog<void>(
+        context: context,
+        builder: (_) => PanelistPoolDialog(initialRequestId: initialRequestId),
+      );
 
   @override
   Widget build(BuildContext context) => Dialog(
@@ -65,6 +67,7 @@ class PanelistPoolDialog extends StatelessWidget {
           MediaQuery.sizeOf(context).width < 600 ? 16 : 24,
         ),
         child: PanelistEligibilityDirectory(
+          initialRequestId: initialRequestId,
           onClose: () => Navigator.pop(context),
         ),
       ),

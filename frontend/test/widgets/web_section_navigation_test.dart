@@ -1,5 +1,10 @@
 import 'package:defensys/l10n/app_localizations.dart';
 import 'package:defensys/navigation/app_router.dart';
+import 'package:defensys/notifications/notification_request_screen.dart';
+import 'package:defensys/services/authenticated_client.dart';
+import 'package:defensys/screens/web/admin/user_management/user_management_screen.dart';
+import 'package:defensys/screens/web/admin/user_management/access_control/access_control_view.dart';
+import 'package:http/http.dart' as http;
 import 'package:defensys/notifications/notifications_provider.dart';
 import 'package:defensys/screens/web/admin/grade_center_team_detail_screen.dart';
 import 'package:defensys/screens/web/admin/defense_board_screen.dart';
@@ -16,10 +21,12 @@ import 'package:defensys/services/grade_center_provider.dart';
 import 'package:defensys/services/student_teams_provider.dart';
 import 'package:defensys/services/team_detail_provider.dart';
 import 'package:defensys/services/unsaved_changes_provider.dart';
+import 'package:defensys/services/app/data_refresh_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/capture_preview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _Board extends DefenseBoardNotifier {
@@ -37,6 +44,26 @@ class _Board extends DefenseBoardNotifier {
   }) async {
     loads++;
   }
+}
+
+class _ActionClient implements AuthenticatedHttpClient {
+  final calls = <Uri>[];
+  @override
+  Future<http.Response> get(Uri uri, {Map<String, String>? headers}) async {
+    calls.add(uri);
+    if (uri.path == '/api/users/1/')
+      return http.Response(
+        '{"user":{"id":1,"name":"Requested Faculty","role":"faculty","is_panelist":true,"is_adviser":true,"is_pit_lead":false,"is_documenter":false}}',
+        200,
+      );
+    return http.Response(
+      '{"request":{"id":42,"faculty_id":1,"faculty_name":"Requested Faculty","status":"approved","requested_by_name":"PIT Lead","reviewed_by_name":"Administrator"},"can_review":true}',
+      200,
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _Schedules extends DefenseSchedulerNotifier {
@@ -93,11 +120,15 @@ class _Periods extends AcademicPeriodNotifier {
 }
 
 class _Notifications extends NotificationsNotifier {
+  _Notifications([super.workspace = 'admin']);
   @override
   NotificationsState build() => const NotificationsState();
 
   @override
-  Future<void> fetchNotifications() async {}
+  Future<void> fetchNotifications({
+    bool? unreadOnly,
+    bool loadMore = false,
+  }) async {}
 }
 
 class _Stages extends DefenseStagesNotifier {
@@ -157,6 +188,17 @@ class _Team extends TeamDetailNotifier {
       'status': 'Approved',
       'member_ids': <int>[],
     },
+    grades: [
+      {
+        'id': 6,
+        'team_name': 'Team AgriSense',
+        'scope': 'capstone',
+        'stage_label': 'Concept Proposal',
+        'status': 'published',
+        'is_officially_complete': true,
+        'final_grade': '89.25',
+      },
+    ],
   );
 
   @override
@@ -209,7 +251,9 @@ void main() {
     String location, {
     bool faculty = false,
     double width = 1600,
+    AuthenticatedHttpClient? client,
   }) async {
+    await loadPreviewFonts(force: true);
     SharedPreferences.setMockInitialValues({});
     tester.view.physicalSize = Size(width, 1000);
     tester.view.devicePixelRatio = 1;
@@ -217,11 +261,13 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final container = ProviderContainer(
       overrides: [
+        if (client != null)
+          authenticatedHttpClientProvider.overrideWithValue(client),
         authProvider.overrideWith(() => _Auth(faculty)),
         dashboardProvider('admin').overrideWith(() => _Dashboard('admin')),
         dashboardProvider('faculty').overrideWith(() => _Dashboard('faculty')),
         academicPeriodProvider.overrideWith(_Periods.new),
-        notificationsProvider.overrideWith(_Notifications.new),
+        notificationsProvider.overrideWith2(_Notifications.new),
         defenseStagesProvider.overrideWith(_Stages.new),
         defenseBoardProvider.overrideWith(_Board.new),
         defenseSchedulerProvider.overrideWith(_Schedules.new),
@@ -252,6 +298,109 @@ void main() {
     await tester.pumpAndSettle();
     return container;
   }
+
+  testWidgets('request deep link opens its record in the actual admin router', (
+    tester,
+  ) async {
+    final client = _ActionClient();
+    final container = await pumpWorkspace(
+      tester,
+      '/admin/defense-board/requests/panelist/42',
+      client: client,
+    );
+    expect(find.byType(NotificationRequestScreen), findsOneWidget);
+    expect(find.byType(UserManagementScreen), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('panelist-request-sheet')),
+      findsOneWidget,
+    );
+    expect(
+      container.read(appRouterProvider).routeInformationProvider.value.uri.path,
+      '/admin/users',
+    );
+    expect(find.text('Requested Faculty'), findsOneWidget);
+    expect(
+      find.text('This request has already been reviewed.'),
+      findsOneWidget,
+    );
+    expect(
+      client.calls.any((u) => u.path == '/api/users/panelist-requests/42/'),
+      isTrue,
+    );
+    container.read(appRouterProvider).go('/admin/academic-periods');
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('panelist-request-sheet')), findsNothing);
+    container
+        .read(appRouterProvider)
+        .go('/admin/defense-board/requests/panelist/42');
+    await tester.pumpAndSettle();
+    expect(find.byType(NotificationRequestScreen), findsOneWidget);
+    await tester.tap(find.text('Open role editor'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AccessControlView), findsOneWidget);
+    expect(find.byKey(const ValueKey('panelist-request-sheet')), findsNothing);
+  });
+
+  testWidgets(
+    'legacy faculty request link opens its sheet in the existing workspace',
+    (tester) async {
+      final client = _ActionClient();
+      final container = await pumpWorkspace(
+        tester,
+        '/faculty/defense-board/requests/panelist/42',
+        faculty: true,
+        client: client,
+      );
+      expect(
+        container
+            .read(appRouterProvider)
+            .routeInformationProvider
+            .value
+            .uri
+            .path,
+        '/faculty/defense-board',
+      );
+      expect(
+        find.byKey(const ValueKey('panelist-request-sheet')),
+        findsOneWidget,
+      );
+      expect(find.text('Requested Faculty'), findsOneWidget);
+      await tester.tap(find.text('Close request'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Close'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DefenseBoardScreen), findsOneWidget);
+      expect(
+        container
+            .read(appRouterProvider)
+            .routeInformationProvider
+            .value
+            .uri
+            .queryParameters
+            .containsKey('panelistRequest'),
+        false,
+      );
+    },
+  );
+
+  testWidgets('deliverable deep link opens the specified team and inner tab', (
+    tester,
+  ) async {
+    await pumpWorkspace(
+      tester,
+      '/admin/student-teams/1?tab=deliverables&stage=Concept%20Proposal',
+    );
+    final detail = tester.widget<TeamDetailPage>(find.byType(TeamDetailPage));
+    expect(detail.initialDeliverableStage, 'Concept Proposal');
+    final context = tester.element(find.byType(TabBar).first);
+    expect(DefaultTabController.of(context).index, 2);
+    expect(
+      find.text(
+        'No capstone deliverable record for this team (non-capstone or not loaded).',
+      ),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('admin Teams restores detail, inner tab and list state lazily', (
     tester,
@@ -322,6 +471,97 @@ void main() {
   });
 
   for (final faculty in [false, true]) {
+    testWidgets(
+      '${faculty ? 'faculty' : 'admin'} team evaluation links preserve section navigation and return state',
+      (tester) async {
+        final prefix = faculty ? '/faculty' : '/admin';
+        final container = await pumpWorkspace(
+          tester,
+          '$prefix/student-teams/1',
+          faculty: faculty,
+        );
+        final router = container.read(appRouterProvider);
+        final teamState = tester.state(find.byType(TeamDetailPage));
+        final team = container.read(teamDetailProvider(1).notifier) as _Team;
+        expect(team.loads, 1);
+
+        await tester.ensureVisible(find.text('View evaluation details'));
+        await tester.tap(find.text('View evaluation details'));
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, '$prefix/grade-center/grades/6');
+        expect(router.state.uri.queryParameters, {
+          'locked': '1',
+          'fromTeam': '1',
+        });
+        final evaluationState = tester.state(
+          find.byType(GradeCenterTeamDetailScreen),
+        );
+        expect(
+          tester
+              .widget<GradeCenterTeamDetailScreen>(
+                find.byType(GradeCenterTeamDetailScreen),
+              )
+              .isLocked,
+          isTrue,
+        );
+        expect(find.text('Back to Team AgriSense'), findsOneWidget);
+        expect(find.text('Update Verdict'), findsNothing);
+        await tester.tap(find.text('Individual Rubric Breakdown'));
+        await tester.pumpAndSettle();
+        expect(find.text('Master Student Grade Sheet'), findsNothing);
+
+        await tester.tap(
+          find.text(faculty ? 'Dashboard' : 'Academic Periods').first,
+        );
+        await tester.pumpAndSettle();
+        expect(
+          router.state.uri.path,
+          faculty ? '/faculty/dashboard' : '/admin/academic-periods',
+        );
+        await tester.tap(find.text('Student Teams').first);
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, '$prefix/student-teams/1');
+        expect(tester.state(find.byType(TeamDetailPage)), same(teamState));
+        expect(team.loads, 2); // Refresh the summary after viewing evaluations.
+
+        await tester.tap(find.text('Evaluation & Grades').first);
+        await tester.pumpAndSettle();
+        expect(
+          tester.state(find.byType(GradeCenterTeamDetailScreen)),
+          same(evaluationState),
+        );
+        expect(find.text('Master Student Grade Sheet'), findsNothing);
+        // Later corrections also refresh the retained team on its next visit.
+        container.read(dataRefreshProvider.notifier).markChanged([
+          DataArea.teams,
+        ]);
+        await tester.tap(find.text('Back to Team AgriSense'));
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, '$prefix/student-teams/1');
+        expect(tester.state(find.byType(TeamDetailPage)), same(teamState));
+        expect(team.loads, 3);
+      },
+    );
+
+    testWidgets(
+      '${faculty ? 'faculty' : 'admin'} direct evaluation links retain the team return destination',
+      (tester) async {
+        final prefix = faculty ? '/faculty' : '/admin';
+        final container = await pumpWorkspace(
+          tester,
+          '$prefix/grade-center/grades/6?locked=1&fromTeam=1',
+          faculty: faculty,
+        );
+        await tester.tap(find.text('Back to Team AgriSense'));
+        await tester.pumpAndSettle();
+        expect(
+          container.read(appRouterProvider).state.uri.path,
+          '$prefix/student-teams/1',
+        );
+        expect(find.byType(TeamDetailPage), findsOneWidget);
+      },
+    );
+
     testWidgets(
       '${faculty ? 'faculty' : 'admin'} Cancel preserves a section and Discard resets only its own history',
       (tester) async {

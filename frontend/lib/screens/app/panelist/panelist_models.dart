@@ -15,6 +15,12 @@ class TeamData {
   final String name, project, defenseDate;
   final String teamId;
   final String scheduleId;
+  final String sessionId;
+  final String semesterId;
+  final String semesterLabel;
+  final String defenseStageId;
+  final String displayStatus;
+  final bool isCompleted;
   final String scope;
   final bool isCapstone;
   final List<String> members;
@@ -69,6 +75,12 @@ class TeamData {
     required this.defenseDate,
     required this.teamId,
     this.scheduleId = '',
+    this.sessionId = '',
+    this.semesterId = '',
+    this.semesterLabel = '',
+    this.defenseStageId = '',
+    this.displayStatus = '',
+    this.isCompleted = false,
     required this.scope,
     required this.isCapstone,
     required this.members,
@@ -121,12 +133,16 @@ class TeamData {
   }
 
   bool get isToday => scheduledDate == manilaToday;
+  bool get panelWorkFinished =>
+      isCompleted || (isPosted && (!isCapstone || !isChair || hasVerdict));
   bool get gradingAvailable =>
+      !isCompleted &&
       !isPosted &&
       !isLockedByDate &&
       scheduleStatus == 'scheduled' &&
       (serverGradingAvailable ?? true);
   bool get canIssueVerdict =>
+      !isCompleted &&
       isChair &&
       !isLockedByDate &&
       scheduleStatus == 'scheduled' &&
@@ -137,6 +153,7 @@ class TeamData {
         (s['remarks']?.toString().trim() ?? '').isNotEmpty,
   );
   String get evaluationStatus {
+    if (isCompleted) return 'Completed';
     if (isPosted) return 'Submitted';
     if (isLockedByDate && scheduledDate != null) return 'Upcoming';
     if (!gradingAvailable) return 'Unavailable';

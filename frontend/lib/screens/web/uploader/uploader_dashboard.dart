@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../../../config/api_config.dart';
+import '../../../navigation/admin_route_paths.dart';
+import '../../../notifications/notifications_bell.dart';
 import '../../../services/auth_provider.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../widgets/buttons/defensys_theme_toggle.dart';
 class UploaderDashboard extends ConsumerStatefulWidget {
-  const UploaderDashboard({super.key});
+  const UploaderDashboard({super.key, this.showNotificationBell = false});
+  final bool showNotificationBell;
 
   @override
   ConsumerState<UploaderDashboard> createState() => _UploaderDashboardState();
@@ -447,6 +451,11 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: DefensysTokens.backgroundOf(context),
+      appBar: widget.showNotificationBell ? AppBar(
+        automaticallyImplyLeading: false,
+        title: const Text('Uploader workspace'),
+        actions: const [NotificationsBell(workspace: 'uploader', workspaceLabel: 'Uploader')],
+      ) : null,
       body: Row(
         children: [
           // Permanent Sidebar
@@ -1280,6 +1289,13 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
             ),
           ),
           
+          _buildSidebarItem(
+            icon: Icons.person_outline_rounded,
+            label: 'Profile',
+            onTap: () => context.go(FacultyRoutes.profile),
+            isActive: false,
+          ),
+
           // Quick Theme Switcher
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),

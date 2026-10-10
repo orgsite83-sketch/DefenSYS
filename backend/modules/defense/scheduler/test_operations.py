@@ -25,6 +25,34 @@ class ScheduleOperationsTests(APITestCase):
         schedule.panel_assignments.filter(panelist=self.panelist).update(is_chair=True)
         return schedule
 
+    def test_multi_role_schedule_alerts_have_independent_read_state(self):
+        from notifications.models import Notification
+
+        schedule = self.schedule()
+        # The notification boundary follows duties, not just the account's base role.
+        self.panelist.is_adviser = True
+        self.panelist.save(update_fields=['is_adviser'])
+        other_team = self.create_ready_team()
+        other_team.adviser = self.panelist
+        other_team.save(update_fields=['adviser'])
+        other = self.schedule()
+        other.team = other_team
+        other.start_time = '10:00'
+        other.panel_assignments.filter(panelist=self.panelist).delete()
+        replacement = get_user_model().objects.create_user(username='notification-panel', role='faculty', is_panelist=True)
+        SchedulePanelist.objects.create(schedule=other, panelist=replacement, order=0, is_chair=True)
+        other.save()
+        response = self.operation(schedule, changes={'room': 'Room 402'})
+        self.assertEqual(response.status_code, 200, response.data)
+        response = self.operation(other, changes={'room': 'Room 403'})
+        self.assertEqual(response.status_code, 200, response.data)
+        alerts = Notification.objects.filter(recipient=self.panelist, title='Defense schedule updated')
+        self.assertEqual(set(alerts.values_list('workspace', flat=True)), {'panelist', 'adviser'})
+        self.assertEqual(alerts.count(), 2)
+        self.client.force_authenticate(self.panelist)
+        self.client.post('/api/notifications/read-all/?workspace=adviser')
+        self.assertEqual(set(alerts.filter(is_read=False).values_list('workspace', flat=True)), {'panelist'})
+
     def operation(self, schedule, **data):
         return self.client.post('/api/defense/board/operations/', {
             'action': 'update', 'anchor_id': schedule.pk,

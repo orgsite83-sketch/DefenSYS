@@ -3,27 +3,113 @@ import 'package:defensys/screens/web/admin/defense_scheduler/models/schedule_imp
 
 void main() {
   group('Team Stage Readiness & Completion Lifecycle Tests', () {
-    test('completed_stages correctly returns completed and overrides ready_for_stage', () {
+    for (final status in [
+      'awaiting_verdict',
+      'grading_incomplete',
+      'awaiting_completion',
+      'revisions_pending',
+      'failed',
+      'project_rejected',
+      'assessed',
+      'archived',
+    ]) {
+      test('$status overrides historical endorsement and scheduled flags', () {
+        final team = {
+          'level': '4th Year Capstone',
+          'ready_for_stage': 'Project Proposal',
+          'scheduled_stages': ['Project Proposal'],
+          'eligible_stages': <String>[],
+          'stage_progress': {'Project Proposal': status},
+        };
+        expect(getTeamStageStatus(team, 'Project Proposal'), status);
+        expect(isTeamStageReady(team, 'Project Proposal'), isFalse);
+        expect(isTeamStageCompleted(team, 'Project Proposal'), isFalse);
+      });
+    }
+
+    test('backend eligibility overrides stale ready progress', () {
       final team = {
-        'id': 1,
-        'name': 'Team SkyLedger',
+        'level': '4th Year Capstone',
         'ready_for_stage': 'Project Proposal',
-        'completed_stages': ['Concept Proposal', 'Project Proposal'],
-        'scheduled_stages': <String>[],
-        'stage_progress': {
-          'Concept Proposal': 'completed',
-          'Project Proposal': 'completed',
-        },
+        'eligible_stages': <String>[],
+        'stage_progress': {'Project Proposal': 'ready'},
       };
-
-      expect(getTeamStageStatus(team, 'Concept Proposal'), 'completed');
-      expect(isTeamStageCompleted(team, 'Concept Proposal'), isTrue);
-      expect(isTeamStageReady(team, 'Concept Proposal'), isFalse);
-
-      expect(getTeamStageStatus(team, 'Project Proposal'), 'completed');
-      expect(isTeamStageCompleted(team, 'Project Proposal'), isTrue);
+      expect(getTeamStageStatus(team, 'Project Proposal'), 'pending');
       expect(isTeamStageReady(team, 'Project Proposal'), isFalse);
     });
+
+    test(
+      'active schedule remains unavailable while waiting for its verdict',
+      () {
+        final team = {
+          'level': '4th Year Capstone',
+          'scheduled_stages': ['Project Proposal'],
+          'stage_progress': {'Project Proposal': 'awaiting_verdict'},
+          'eligible_stages': <String>[],
+        };
+        expect(
+          getTeamStageStatus(team, 'Project Proposal'),
+          'awaiting_verdict',
+        );
+        expect(isTeamStageScheduled(team, 'Project Proposal'), isTrue);
+        expect(isTeamStageReady(team, 'Project Proposal'), isFalse);
+      },
+    );
+
+    test(
+      're-defense keeps its outcome and uses explicit scheduling eligibility',
+      () {
+        final team = <String, dynamic>{
+          'level': '4th Year Capstone',
+          'ready_for_stage': 'Project Proposal',
+          'stage_progress': {'Project Proposal': 'for_redefense'},
+          'eligible_stages': <String>[],
+        };
+        expect(
+          getTeamStageStatus(team, 'Project Proposal'),
+          'redefense_required',
+        );
+        expect(isTeamStageReady(team, 'Project Proposal'), isFalse);
+        team['eligible_stages'] = ['Project Proposal'];
+        expect(isTeamStageReady(team, 'Project Proposal'), isTrue);
+        expect(isTeamStageCompleted(team, 'Project Proposal'), isFalse);
+      },
+    );
+
+    test('completed defense does not imply readiness for the next stage', () {
+      final team = {
+        'level': '4th Year Capstone',
+        'stage_progress': {'Concept Proposal': 'completed'},
+        'eligible_stages': <String>[],
+      };
+      expect(isTeamStageCompleted(team, 'Concept Proposal'), isTrue);
+      expect(isTeamStageReady(team, 'Project Proposal'), isFalse);
+    });
+
+    test(
+      'completed_stages correctly returns completed and overrides ready_for_stage',
+      () {
+        final team = {
+          'id': 1,
+          'name': 'Team SkyLedger',
+          'ready_for_stage': 'Project Proposal',
+          'completed_stages': ['Concept Proposal', 'Project Proposal'],
+          'scheduled_stages': <String>[],
+          'stage_progress': {
+            'Concept Proposal': 'completed',
+            'Project Proposal': 'completed',
+          },
+        };
+
+        expect(getTeamStageStatus(team, 'Concept Proposal'), 'completed');
+        expect(isTeamStageCompleted(team, 'Concept Proposal'), isTrue);
+        expect(isTeamStageReady(team, 'Concept Proposal'), isFalse);
+
+        expect(getTeamStageStatus(team, 'Project Proposal'), 'completed');
+        expect(isTeamStageCompleted(team, 'Project Proposal'), isTrue);
+        expect(isTeamStageReady(team, 'Project Proposal'), isFalse);
+      },
+    );
 
     test('ready_for_stage returns ready when not completed or scheduled', () {
       final team = {

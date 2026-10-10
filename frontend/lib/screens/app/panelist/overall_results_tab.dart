@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../models/defense_workflow_labels.dart';
+import '../../../widgets/shadcn/defensys_shadcn_scope.dart';
+import 'widgets/panelist_segmented_tabs.dart';
 
 import '../../../theme/defensys_tokens.dart';
 
@@ -9,6 +12,10 @@ class OverallResultsTab extends StatefulWidget {
   final String? error;
   final VoidCallback? onRetry;
   final Future<void> Function()? onRefresh;
+  final VoidCallback? onOpenGradeSheet;
+  final bool showStageFilters;
+  final bool initiallyExpanded;
+  final String emptyMessage;
 
   const OverallResultsTab({
     super.key,
@@ -17,6 +24,10 @@ class OverallResultsTab extends StatefulWidget {
     this.error,
     this.onRetry,
     this.onRefresh,
+    this.onOpenGradeSheet,
+    this.showStageFilters = true,
+    this.initiallyExpanded = true,
+    this.emptyMessage = 'No graded teams yet.',
   });
 
   @override
@@ -24,7 +35,8 @@ class OverallResultsTab extends StatefulWidget {
 }
 
 class _OverallResultsTabState extends State<OverallResultsTab> {
-  final Set<int> _expandedCards = {0};
+  final Set<String> _expandedCards = {};
+  bool _initialExpansionApplied = false;
   String _selectedStage = 'all';
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
@@ -35,7 +47,10 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
     super.dispose();
   }
 
-  void _toggleExpand(int index) {
+  String _resultKey(Map<String, dynamic> result) =>
+      '${result['schedule_id'] ?? result['grade_id'] ?? result['teamName']}|${result['stage']}|${result['scope']}';
+
+  void _toggleExpand(String index) {
     setState(() {
       if (_expandedCards.contains(index)) {
         _expandedCards.remove(index);
@@ -73,7 +88,9 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
   @override
   Widget build(BuildContext context) {
     if (widget.loading) {
-      return const Center(child: CircularProgressIndicator(color: DefensysTokens.maroon));
+      return const Center(
+        child: CircularProgressIndicator(color: DefensysTokens.maroon),
+      );
     }
 
     Widget refreshWrapper(Widget child) {
@@ -103,7 +120,11 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.error_outline, size: 48, color: DefensysTokens.danger),
+                const Icon(
+                  Icons.error_outline,
+                  size: 48,
+                  color: DefensysTokens.danger,
+                ),
                 const SizedBox(height: 16),
                 const Text(
                   'Failed to load results',
@@ -136,24 +157,80 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
 
     if (widget.results.isEmpty) {
       return refreshWrapper(
-        Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.bar_chart, size: 52, color: Colors.grey.shade300),
-              const SizedBox(height: 12),
-              const Text('No graded teams yet.',
-                  style: TextStyle(color: DefensysTokens.textSecondary, fontSize: 15, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 6),
-              const Text('Post grades to see evaluated scores and rankings here.',
-                  style: TextStyle(color: DefensysTokens.steelGrey, fontSize: 13)),
-            ],
+        Align(
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(28, 64, 28, 24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 340),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: DefensysTokens.maroonOf(
+                        context,
+                      ).withValues(alpha: .08),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Icon(
+                      Icons.bar_chart_rounded,
+                      size: 26,
+                      color: DefensysTokens.maroonTextOf(context),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    widget.emptyMessage,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: DefensysTokens.textPrimaryOf(context),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Submitted evaluations for this session will appear here.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: DefensysTokens.textSecondaryOf(context),
+                      fontSize: 13,
+                      height: 1.45,
+                    ),
+                  ),
+                  if (widget.onOpenGradeSheet != null) ...[
+                    const SizedBox(height: 20),
+                    OutlinedButton.icon(
+                      onPressed: widget.onOpenGradeSheet,
+                      icon: const Icon(Icons.rate_review_outlined, size: 18),
+                      label: const Text('Open grade sheet'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
       );
     }
 
     final filtered = _getFilteredResults();
+    if (!widget.showStageFilters) {
+      filtered.sort(
+        (a, b) => ((b['percentage'] as num?) ?? 0).compareTo(
+          (a['percentage'] as num?) ?? 0,
+        ),
+      );
+    }
+    if (!_initialExpansionApplied && filtered.isNotEmpty) {
+      if (widget.initiallyExpanded) {
+        _expandedCards.add(_resultKey(filtered.first));
+      }
+      _initialExpansionApplied = true;
+    }
     final uniqueStages = _getUniqueStages();
 
     final listContent = ListView(
@@ -166,7 +243,7 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
         const SizedBox(height: 14),
 
         // ── Multi-Stage Filter Chips (if multiple stages exist) ──
-        if (uniqueStages.length > 1) ...[
+        if (widget.showStageFilters && uniqueStages.length > 1) ...[
           _buildStageFilterChips(uniqueStages),
           const SizedBox(height: 12),
         ],
@@ -192,17 +269,22 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
           ...filtered.asMap().entries.map((e) {
             final rank = e.key + 1;
             final result = e.value;
-            final isExpanded = _expandedCards.contains(e.key);
-            return _teamCard(e.key, rank, result, isExpanded);
+            final key = _resultKey(result);
+            final isExpanded = _expandedCards.contains(key);
+            return _teamCard(key, rank, result, isExpanded);
           }),
       ],
     );
 
-    if (widget.onRefresh == null) return listContent;
-    return RefreshIndicator(
-      color: DefensysTokens.maroon,
-      onRefresh: widget.onRefresh!,
-      child: listContent,
+    if (widget.onRefresh == null) {
+      return DefensysShadcnScope(child: listContent);
+    }
+    return DefensysShadcnScope(
+      child: RefreshIndicator(
+        color: DefensysTokens.maroon,
+        onRefresh: widget.onRefresh!,
+        child: listContent,
+      ),
     );
   }
 
@@ -210,37 +292,26 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
   Widget _buildKpiSummary(List<Map<String, dynamic>> teams) {
     final total = teams.length;
     final avgScore = total > 0
-        ? (teams.fold<double>(0.0, (sum, r) => sum + ((r['percentage'] as num?)?.toDouble() ?? 0.0)) / total)
+        ? (teams.fold<double>(
+                0.0,
+                (sum, r) =>
+                    sum + ((r['percentage'] as num?)?.toDouble() ?? 0.0),
+              ) /
+              total)
         : 0.0;
     final topScore = teams.isNotEmpty
-        ? teams.map((r) => (r['percentage'] as num?)?.toDouble() ?? 0.0).reduce((a, b) => a > b ? a : b)
+        ? teams
+              .map((r) => (r['percentage'] as num?)?.toDouble() ?? 0.0)
+              .reduce((a, b) => a > b ? a : b)
         : 0.0;
-    final passedCount = teams.where((r) {
-      final st = (r['teamStatus'] ?? '').toString();
-      final pct = (r['percentage'] as num?)?.toDouble() ?? 0.0;
-      return st == 'Approved' || pct >= 75.0;
-    }).length;
-    final passRate = total > 0 ? (passedCount / total * 100) : 0.0;
 
-    return Container(
+    return ShadCard(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: DefensysTokens.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
       child: Row(
         children: [
           Expanded(
             child: _buildMetricTile(
-              label: 'Class Avg',
+              label: 'Panel average',
               value: '${avgScore.toStringAsFixed(1)}%',
               icon: Icons.query_stats_rounded,
               iconColor: DefensysTokens.maroon,
@@ -260,8 +331,8 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
           Container(width: 1, height: 36, color: DefensysTokens.border),
           Expanded(
             child: _buildMetricTile(
-              label: 'Pass Rate',
-              value: '${passRate.toStringAsFixed(0)}%',
+              label: 'Evaluated teams',
+              value: '$total',
               icon: Icons.check_circle_rounded,
               iconColor: DefensysTokens.success,
               iconBg: DefensysTokens.successBg,
@@ -291,12 +362,17 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
               child: Icon(icon, size: 14, color: iconColor),
             ),
             const SizedBox(width: 6),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: DefensysTokens.textPrimary,
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: DefensysTokens.textPrimary,
+                  ),
+                ),
               ),
             ),
           ],
@@ -304,6 +380,7 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
         const SizedBox(height: 3),
         Text(
           label,
+          textAlign: TextAlign.center,
           style: const TextStyle(
             fontSize: 11,
             color: DefensysTokens.steelGrey,
@@ -316,48 +393,28 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
 
   // ── Stage Filter Chips ──
   Widget _buildStageFilterChips(Set<String> stages) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          _buildStageChip('all', 'All Stages (${widget.results.length})'),
-          const SizedBox(width: 8),
-          ...stages.map((st) {
-            final count = widget.results.where((r) => (r['stage'] ?? '') == st).length;
-            return Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: _buildStageChip(st, '$st ($count)'),
-            );
-          }),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStageChip(String key, String label) {
-    final isSelected = _selectedStage == key;
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: () => setState(() => _selectedStage = key),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? DefensysTokens.maroon : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? DefensysTokens.maroon : DefensysTokens.border,
-          ),
+    return PanelistSegmentedTabs<String>(
+      key: const ValueKey('results-stage-tabs'),
+      value: _selectedStage,
+      scrollable: true,
+      secondary: true,
+      onChanged: (value) => setState(() => _selectedStage = value),
+      segments: [
+        PanelistSegment(
+          value: 'all',
+          label: 'All Stages',
+          icon: Icons.layers_outlined,
+          count: '${widget.results.length}',
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-            color: isSelected ? Colors.white : DefensysTokens.steelGrey,
+        for (final stage in stages)
+          PanelistSegment(
+            value: stage,
+            label: stage,
+            icon: Icons.school_outlined,
+            count:
+                '${widget.results.where((r) => (r['stage'] ?? '') == stage).length}',
           ),
-        ),
-      ),
+      ],
     );
   }
 
@@ -375,11 +432,22 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
         style: const TextStyle(fontSize: 13),
         decoration: InputDecoration(
           hintText: 'Search team or project title...',
-          hintStyle: const TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
-          prefixIcon: const Icon(Icons.search, size: 18, color: DefensysTokens.steelGrey),
+          hintStyle: const TextStyle(
+            fontSize: 12,
+            color: DefensysTokens.steelGrey,
+          ),
+          prefixIcon: const Icon(
+            Icons.search,
+            size: 18,
+            color: DefensysTokens.steelGrey,
+          ),
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
-                  icon: const Icon(Icons.clear, size: 16, color: DefensysTokens.steelGrey),
+                  icon: const Icon(
+                    Icons.clear,
+                    size: 16,
+                    color: DefensysTokens.steelGrey,
+                  ),
                   onPressed: () {
                     _searchController.clear();
                     setState(() => _searchQuery = '');
@@ -395,7 +463,12 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
   }
 
   // ── Team Card ──
-  Widget _teamCard(int index, int rank, Map<String, dynamic> result, bool isExpanded) {
+  Widget _teamCard(
+    String index,
+    int rank,
+    Map<String, dynamic> result,
+    bool isExpanded,
+  ) {
     final pct = (result['percentage'] as num?)?.toDouble() ?? 0;
     final total = (result['total'] as num?)?.toDouble() ?? 0;
     final max = (result['max'] as num?)?.toDouble() ?? 0;
@@ -403,10 +476,6 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
     final level = (result['level'] as String? ?? '').trim();
     final stage = (result['stage'] as String? ?? '').trim();
     final criteria = result['criteria'] as List? ?? [];
-    final memberGrades = result['memberGrades'] as List? ?? [];
-    final weights = result['weights'] as Map<String, dynamic>? ?? {};
-    final panelW = (weights['panel'] as num?)?.toInt() ?? 80;
-    final peerW = (weights['peer'] as num?)?.toInt() ?? 20;
 
     // Podium colors
     final isFirst = rank == 1;
@@ -416,56 +485,60 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
     final rankColor = isFirst
         ? const Color(0xFFD97706)
         : isSecond
-            ? const Color(0xFF475569)
-            : isThird
-                ? const Color(0xFFC2410C)
-                : DefensysTokens.maroon;
+        ? const Color(0xFF475569)
+        : isThird
+        ? const Color(0xFFC2410C)
+        : DefensysTokens.maroon;
 
     final rankBg = isFirst
         ? const Color(0xFFFEF3C7)
         : isSecond
-            ? const Color(0xFFF1F5F9)
-            : isThird
-                ? const Color(0xFFFFEDD5)
-                : const Color(0xFFF8FAFC);
+        ? const Color(0xFFF1F5F9)
+        : isThird
+        ? const Color(0xFFFFEDD5)
+        : const Color(0xFFF8FAFC);
 
     final rankBorder = isFirst
         ? const Color(0xFFF59E0B)
         : isSecond
-            ? const Color(0xFFCBD5E1)
-            : isThird
-                ? const Color(0xFFFB923C)
-                : DefensysTokens.border;
+        ? const Color(0xFFCBD5E1)
+        : isThird
+        ? const Color(0xFFFB923C)
+        : DefensysTokens.border;
 
-    final isApproved = teamStatus == 'Approved' || pct >= 75.0;
+    final isApproved = teamStatus == 'Approved';
     final isFailed = teamStatus == 'Failed';
     final statusColor = isApproved
         ? DefensysTokens.successText
         : isFailed
-            ? DefensysTokens.dangerText
-            : DefensysTokens.warningText;
+        ? DefensysTokens.dangerText
+        : DefensysTokens.warningText;
     final statusBg = isApproved
         ? DefensysTokens.successBg
         : isFailed
-            ? DefensysTokens.dangerBg
-            : DefensysTokens.warningBg;
+        ? DefensysTokens.dangerBg
+        : DefensysTokens.warningBg;
     final statusBorderColor = isApproved
         ? DefensysTokens.successBorder
         : isFailed
-            ? DefensysTokens.dangerBorder
-            : DefensysTokens.warningBorder;
+        ? DefensysTokens.dangerBorder
+        : DefensysTokens.warningBorder;
     final statusLabel = isApproved
         ? 'Passed'
         : isFailed
-            ? 'Failed'
-            : 'Pending';
+        ? 'Failed'
+        : 'Pending';
 
     final verdict = result['verdict']?.toString() ?? '';
     final verdictRemarks = result['verdict_remarks']?.toString() ?? '';
     final verdictByName = result['verdict_by_name']?.toString() ?? '';
     final attemptCount = result['attempt_count'] ?? 1;
     final hasVerdict = verdict.isNotEmpty;
-    final isForRedefense = ['for_redefense', 'failed', 'project_rejected'].contains(verdict);
+    final isForRedefense = [
+      'for_redefense',
+      'failed',
+      'project_rejected',
+    ].contains(verdict);
     final isRevisions = verdict == 'approved_with_revisions';
 
     // Separate shared vs member criteria
@@ -543,7 +616,10 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                       const SizedBox(height: 2),
                       Text(
                         result['projectTitle'] ?? '—',
-                        style: const TextStyle(fontSize: 12, color: DefensysTokens.textSecondary),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: DefensysTokens.textSecondary,
+                        ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -553,9 +629,17 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                         runSpacing: 4,
                         children: [
                           if (level.isNotEmpty)
-                            _buildMiniBadge(level, Colors.grey.shade100, DefensysTokens.steelGrey),
+                            _buildMiniBadge(
+                              level,
+                              Colors.grey.shade100,
+                              DefensysTokens.steelGrey,
+                            ),
                           if (stage.isNotEmpty)
-                            _buildMiniBadge(stage, DefensysTokens.maroon.withValues(alpha: 0.08), DefensysTokens.maroon),
+                            _buildMiniBadge(
+                              stage,
+                              DefensysTokens.maroon.withValues(alpha: 0.08),
+                              DefensysTokens.maroon,
+                            ),
                         ],
                       ),
                     ],
@@ -578,7 +662,10 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                     ),
                     const SizedBox(height: 4),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2.5,
+                      ),
                       decoration: BoxDecoration(
                         color: statusBg,
                         borderRadius: BorderRadius.circular(20),
@@ -610,15 +697,15 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                   color: isForRedefense
                       ? DefensysTokens.dangerBg
                       : isRevisions
-                          ? DefensysTokens.revisionBg
-                          : DefensysTokens.successBg,
+                      ? DefensysTokens.revisionBg
+                      : DefensysTokens.successBg,
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: isForRedefense
                         ? DefensysTokens.dangerBorder
                         : isRevisions
-                            ? DefensysTokens.revisionBorder
-                            : DefensysTokens.successBorder,
+                        ? DefensysTokens.revisionBorder
+                        : DefensysTokens.successBorder,
                   ),
                 ),
                 child: Column(
@@ -630,14 +717,14 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                           isForRedefense
                               ? Icons.replay_rounded
                               : isRevisions
-                                  ? Icons.edit_calendar
-                                  : Icons.check_circle,
+                              ? Icons.edit_calendar
+                              : Icons.check_circle,
                           size: 15,
                           color: isForRedefense
                               ? DefensysTokens.dangerText
                               : isRevisions
-                                  ? DefensysTokens.revisionText
-                                  : DefensysTokens.successText,
+                              ? DefensysTokens.revisionText
+                              : DefensysTokens.successText,
                         ),
                         const SizedBox(width: 6),
                         Expanded(
@@ -649,8 +736,8 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                               color: isForRedefense
                                   ? DefensysTokens.dangerText
                                   : isRevisions
-                                      ? DefensysTokens.revisionText
-                                      : DefensysTokens.successText,
+                                  ? DefensysTokens.revisionText
+                                  : DefensysTokens.successText,
                             ),
                           ),
                         ),
@@ -660,14 +747,20 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                       const SizedBox(height: 3),
                       Text(
                         'Rendered by Chair: $verdictByName',
-                        style: const TextStyle(fontSize: 10, color: DefensysTokens.steelGrey),
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: DefensysTokens.steelGrey,
+                        ),
                       ),
                     ],
                     if (verdictRemarks.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
                         'Directives: $verdictRemarks',
-                        style: const TextStyle(fontSize: 11, color: DefensysTokens.textDark),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: DefensysTokens.textDark,
+                        ),
                       ),
                     ],
                   ],
@@ -684,16 +777,24 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
               decoration: BoxDecoration(
                 color: DefensysTokens.maroon.withValues(alpha: 0.04),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.08)),
+                border: Border.all(
+                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                ),
               ),
               child: Column(
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 4,
+                    alignment: WrapAlignment.spaceBetween,
                     children: [
                       Text(
-                        'Panel Score ($panelW%)',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: DefensysTokens.textPrimary),
+                        'Your panel evaluation',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: DefensysTokens.textPrimary,
+                        ),
                       ),
                       Text(
                         '${total.toStringAsFixed(1)} / ${max.toStringAsFixed(0)} pts',
@@ -713,7 +814,11 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                       minHeight: 7,
                       backgroundColor: Colors.grey.shade200,
                       valueColor: AlwaysStoppedAnimation<Color>(
-                        pct >= 75 ? DefensysTokens.success : pct >= 60 ? DefensysTokens.gold : DefensysTokens.danger,
+                        pct >= 75
+                            ? DefensysTokens.success
+                            : pct >= 60
+                            ? DefensysTokens.gold
+                            : DefensysTokens.danger,
                       ),
                     ),
                   ),
@@ -753,7 +858,9 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                     ),
                   ),
                   Icon(
-                    isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                    isExpanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
                     color: DefensysTokens.maroon,
                     size: 18,
                   ),
@@ -800,9 +907,12 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                               children: [
                                 CircleAvatar(
                                   radius: 10,
-                                  backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.1),
+                                  backgroundColor: DefensysTokens.maroon
+                                      .withValues(alpha: 0.1),
                                   child: Text(
-                                    studentName.isNotEmpty ? studentName[0].toUpperCase() : '?',
+                                    studentName.isNotEmpty
+                                        ? studentName[0].toUpperCase()
+                                        : '?',
                                     style: const TextStyle(
                                       fontSize: 9,
                                       fontWeight: FontWeight.bold,
@@ -824,7 +934,9 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                               ],
                             ),
                             const SizedBox(height: 6),
-                            ...studentCriteriaList.map((c) => _buildCriteriaBar(c)),
+                            ...studentCriteriaList.map(
+                              (c) => _buildCriteriaBar(c),
+                            ),
                           ],
                         ),
                       );
@@ -833,35 +945,16 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
                   ],
 
                   // Fallback: If no student names were captured and no shared split
-                  if (sharedCriteria.isEmpty && memberCriteriaByStudent.isEmpty && criteria.isNotEmpty) ...[
+                  if (sharedCriteria.isEmpty &&
+                      memberCriteriaByStudent.isEmpty &&
+                      criteria.isNotEmpty) ...[
                     _subSectionLabel('Criteria Breakdown'),
                     const SizedBox(height: 6),
-                    ...criteria.map((c) => _buildCriteriaBar(Map<String, dynamic>.from(c))),
+                    ...criteria.map(
+                      (c) => _buildCriteriaBar(Map<String, dynamic>.from(c)),
+                    ),
                     const SizedBox(height: 12),
                   ],
-
-                  // 3. Member Final Grades Table
-                  if (memberGrades.isNotEmpty) ...[
-                    _subSectionLabel('Individual Final Grades'),
-                    const SizedBox(height: 8),
-                    _buildMemberGradesTable(memberGrades, panelW, peerW),
-                  ],
-
-                  const SizedBox(height: 10),
-
-                  // 4. Formula Footnote
-                  Row(
-                    children: [
-                      Icon(Icons.info_outline, size: 12, color: Colors.grey.shade500),
-                      const SizedBox(width: 5),
-                      Expanded(
-                        child: Text(
-                          'Formula: Panel ($panelW%) + Peer ($peerW%) = Final Grade  ·  Pass ≥ 75',
-                          style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
-                        ),
-                      ),
-                    ],
-                  ),
                 ],
               ),
             ),
@@ -893,8 +986,8 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
     final color = cPct >= 0.85
         ? DefensysTokens.success
         : cPct >= 0.65
-            ? DefensysTokens.gold
-            : DefensysTokens.danger;
+        ? DefensysTokens.gold
+        : DefensysTokens.danger;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3.5),
@@ -931,163 +1024,6 @@ class _OverallResultsTabState extends State<OverallResultsTab> {
               color: DefensysTokens.maroon,
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMemberGradesTable(List memberGrades, int panelW, int peerW) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: DefensysTokens.border),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(9)),
-            ),
-            child: Row(
-              children: [
-                const Expanded(
-                  flex: 3,
-                  child: Text('Member',
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: DefensysTokens.steelGrey)),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: Text('Panel ($panelW%)',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: DefensysTokens.steelGrey)),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: Text('Peer ($peerW%)',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: DefensysTokens.steelGrey)),
-                ),
-                const Expanded(
-                  flex: 2,
-                  child: Text('Final',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: DefensysTokens.steelGrey)),
-                ),
-              ],
-            ),
-          ),
-          ...memberGrades.map((m) {
-            final name = m['name'] ?? '';
-            final isLeader = m['isLeader'] == true;
-            final panelContrib = (m['panelContrib'] as num?)?.toDouble();
-            final peerScore = m['peerScore'];
-            final peerMax = m['peerMax'];
-            final finalGrade = m['finalGrade'];
-            final hasFinish = finalGrade != null;
-            final fg = hasFinish ? (finalGrade as num).toDouble() : 0.0;
-            final finalColor = hasFinish
-                ? (fg >= 75 ? DefensysTokens.success : DefensysTokens.danger)
-                : DefensysTokens.steelGrey;
-
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-              decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: Colors.grey.shade100, width: 0.5)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 11,
-                          backgroundColor: isLeader ? DefensysTokens.maroon : const Color(0xFFE2E8F0),
-                          child: Text(
-                            name.isNotEmpty ? name[0].toUpperCase() : '?',
-                            style: TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.bold,
-                              color: isLeader ? Colors.white : DefensysTokens.steelGrey,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                name,
-                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              if (isLeader)
-                                Container(
-                                  margin: const EdgeInsets.only(top: 1),
-                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0.5),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFEF3C7),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: const Text('Leader',
-                                      style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w700, color: Color(0xFF92400E))),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      panelContrib != null ? panelContrib.toStringAsFixed(1) : '—',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      peerScore != null
-                          ? '${(peerScore as num).toStringAsFixed(1)}/${(peerMax as num).toStringAsFixed(0)}'
-                          : '—',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: peerScore != null ? Colors.grey.shade700 : Colors.grey.shade400,
-                        fontStyle: peerScore != null ? FontStyle.normal : FontStyle.italic,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: hasFinish ? finalColor.withValues(alpha: 0.1) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        hasFinish ? fg.toStringAsFixed(1) : '—',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: finalColor,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }),
         ],
       ),
     );

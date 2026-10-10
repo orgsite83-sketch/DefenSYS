@@ -241,7 +241,7 @@ def submit_student_peer_evaluation(*, evaluator, team_id, evaluatee_id, breakdow
         raise ValidationError({'evaluateeId': 'You cannot evaluate yourself.'})
 
     target_stage = (stage_label or getattr(team, 'current_defense_stage', None) or getattr(team, 'ready_for_stage', None) or '').strip()
-    grade = _grade_for_team(team, stage_label=target_stage, create_if_missing=True)
+    grade = _grade_for_team(team, stage_label=target_stage, create_if_missing=False)
     if grade is None:
         raise ValidationError({'detail': 'Peer grading is not open for this team (no active defense stage or schedule).'})
 
@@ -249,9 +249,21 @@ def submit_student_peer_evaluation(*, evaluator, team_id, evaluatee_id, breakdow
         raise ValidationError({'detail': 'Grades for this team have already been finalized and cannot be changed.'})
     require_grade_editable(grade)
 
-    if not peer_grading_allowed_for_grade(grade):
-        raise ValidationError({'peer_eval': 'Peer grading is not currently enabled for this grade.'})
+    # Serialize with panel submission, verdicts, and replacement attempts.
+    team = StudentTeam.objects.select_for_update().get(pk=team.pk)
+    if grade.schedule_id:
+        from defense.scheduler.models import DefenseSchedule
+        DefenseSchedule.objects.select_for_update().get(pk=grade.schedule_id)
+    grade = TeamGrade.objects.select_for_update(of=('self',)).select_related(
+        'team', 'semester', 'schedule', 'defense_stage',
+    ).get(pk=grade.pk)
+    from .availability import peer_grading_unavailable_reason
+    reason = peer_grading_unavailable_reason(grade)
+    if reason:
+        raise ValidationError({'peer_eval': reason})
     require_matching_rubric(grade, Rubric.EVAL_PEER)
+    if PeerEvaluationSubmission.objects.filter(team_grade=grade, evaluator=evaluator, evaluatee=evaluatee).exists():
+        raise ValidationError({'peer_eval': 'This peer evaluation has already been submitted and is read-only.'})
 
     total_decimal = Decimal(str(total)).quantize(Decimal('0.01'))
     max_decimal = Decimal(str(max_score)).quantize(Decimal('0.01'))
@@ -295,18 +307,8 @@ def peer_criteria_payload(team, stage_label=None):
             return []
         rubric = find_matching_rubric(grade, Rubric.EVAL_PEER)
     else:
-        rubric = None
-        if target_stage:
-            if getattr(team, 'is_capstone', True):
-                from defense.stages.models import DefenseStage, StageGradingConfig
-                stage_obj = DefenseStage.objects.filter(label=target_stage).first()
-                if stage_obj:
-                    cfg = StageGradingConfig.objects.filter(defense_stage=stage_obj, semester=team.semester).first()
-                    if cfg and cfg.peer_rubric:
-                        rubric = cfg.peer_rubric
-            else:
-                from defense.scheduler.pit_config import peer_rubric_for_pit_event
-                rubric = peer_rubric_for_pit_event(team.semester, target_stage)
+        # A rubric definition does not grant submission access to an unscheduled team.
+        return []
 
     if rubric:
         return [

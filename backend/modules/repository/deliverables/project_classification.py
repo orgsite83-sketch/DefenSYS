@@ -51,7 +51,11 @@ def matches(text, term):
 
 @lru_cache(maxsize=512)
 def _term_pattern(term):
-    return re.compile(r'(?<![\w])' + re.escape(term) + r'(?![\w])', re.I)
+    # PDF line wraps and editorial hyphens must not turn the same phrase into
+    # different evidence. Preserve other punctuation (C++, Node.js, etc.).
+    parts = re.split(r'[\s\-\u2010-\u2015]+', term)
+    phrase = r'[\s\-\u2010-\u2015]+'.join(re.escape(part) for part in parts)
+    return re.compile(r'(?<![\w])' + phrase + r'(?![\w])', re.I)
 
 
 def section_chunks(text):
@@ -89,15 +93,26 @@ def section_chunks(text):
 
 def _signals(chunks, taxonomy):
     found = {}
-    ranked_chunks = sorted(chunks, key=lambda c: -c['weight'])
+    passages = []
+    for chunk in chunks:
+        if passages and (passages[-1]['section'], passages[-1]['weight']) == (chunk['section'], chunk['weight']):
+            passages[-1]['text'] += ' ' + chunk['text']
+        else:
+            passages.append(dict(chunk))
+    ranked_chunks = sorted(passages, key=lambda c: -c['weight'])
     for label, terms in taxonomy.items():
         evidence = []
         for term in terms:
             hit = next((c for c in ranked_chunks
                         if matches(c['text'], term)), None)
             if hit:
+                # Return a passage around the match, rather than the start of a
+                # long section that might not contain the supporting phrase.
+                match = _term_pattern(term).search(hit['text'])
+                start = max(0, match.start() - 120) if len(hit['text']) > 360 else 0
+                excerpt = hit['text'][start:start + 360]
                 evidence.append({'label': label, 'term': term,
-                                 'section': hit['section'], 'excerpt': hit['text'][:360]})
+                                 'section': hit['section'], 'excerpt': excerpt})
         if evidence:
             found[label] = evidence
     return found

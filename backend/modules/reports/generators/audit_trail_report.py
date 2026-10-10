@@ -2,7 +2,7 @@ from reportlab.lib.units import inch
 from reports.pdf_builder import DefensysPdfReportBuilder
 
 
-def generate_audit_trail_pdf(logs, filters_desc, generated_by_user, signatories=None, include_signatures=True):
+def generate_audit_trail_pdf(logs, filters_desc, generated_by_user, signatories=None, include_signatures=False):
     """
     Generate an official USTP DIT PDF audit trail compilation for official ISO compliance monitoring.
     """

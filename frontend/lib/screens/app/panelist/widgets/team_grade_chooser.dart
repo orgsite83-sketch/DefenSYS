@@ -4,6 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../panelist_models.dart';
+import 'defense_team_summary.dart';
 
 /// Browsing never activates another team's rubric. The named confirmation
 /// delegates persistence/availability checks to the grade sheet before closing.
@@ -14,10 +15,12 @@ class TeamGradeChooser extends StatefulWidget {
     required this.current,
     required this.onConfirm,
     this.initialPreview,
+    this.stageScoped = false,
   });
   final List<TeamData> teams;
   final TeamData current;
   final TeamData? initialPreview;
+  final bool stageScoped;
   final Future<String?> Function(TeamData) onConfirm;
 
   @override
@@ -39,6 +42,7 @@ class _TeamGradeChooserState extends State<TeamGradeChooser> {
   void initState() {
     super.initState();
     _preview = widget.initialPreview;
+    _stage = _stageKey(widget.initialPreview ?? widget.current);
   }
 
   @override
@@ -81,59 +85,13 @@ class _TeamGradeChooserState extends State<TeamGradeChooser> {
     return ShadBadge.outline(child: Text(label));
   }
 
-  Widget _identity(TeamData team) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(
-        team.name,
-        style: TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.w600,
-          color: DefensysTokens.textPrimaryOf(context),
-        ),
-      ),
-      const SizedBox(height: 6),
-      Text(
-        team.project,
-        style: TextStyle(
-          fontSize: 13,
-          color: DefensysTokens.textSecondaryOf(context),
-        ),
-      ),
-      const SizedBox(height: 12),
-      Wrap(
-        spacing: 6,
-        runSpacing: 6,
-        children: [
-          ShadBadge.outline(child: Text(team.displayStage)),
-          if (!team.isCapstone)
-            ShadBadge.outline(child: Text(team.displayEvent)),
-          ShadBadge.outline(
-            child: Text(team.isChair ? 'Panel Chair' : 'Panelist'),
-          ),
-        ],
-      ),
-      const SizedBox(height: 10),
-      Wrap(
-        spacing: 12,
-        runSpacing: 6,
-        children: [
-          if (team.scheduledDate != null)
-            Text(DateFormat('MMM d, yyyy').format(team.scheduledDate!)),
-          Text(team.formattedTime),
-          Text(team.displayRoom),
-          if (team.section.isNotEmpty) Text(team.section),
-        ],
-      ),
-    ],
-  );
-
   Widget _context(String message) => Container(
     width: double.infinity,
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(
-      color: DefensysTokens.surfaceHigherOf(context),
+      color: DefensysTokens.surfaceOf(context),
       borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: DefensysTokens.borderOf(context)),
     ),
     child: Text(
       message,
@@ -152,63 +110,162 @@ class _TeamGradeChooserState extends State<TeamGradeChooser> {
       ? 'Draft saved. Your scores stay with this team.'
       : 'No saved draft yet.';
 
-  Widget _teamCard(TeamData team) => Padding(
-    padding: const EdgeInsets.only(bottom: 12),
-    child: ShadCard(
-      padding: const EdgeInsets.all(16),
-      width: double.infinity,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_isCurrent(team)) ...[
-            const Text(
-              'Current sheet',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+  Widget _teamCard(TeamData team) {
+    final current = _isCurrent(team);
+    final borderColor = current
+        ? DefensysTokens.maroonOf(context).withValues(alpha: .42)
+        : DefensysTokens.borderOf(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: ShadCard(
+        backgroundColor: DefensysTokens.surfaceOf(context),
+        radius: BorderRadius.circular(12),
+        border: ShadBorder.all(
+          color: borderColor,
+          radius: BorderRadius.circular(12),
+        ),
+        shadows: const [],
+        padding: const EdgeInsets.all(14),
+        width: double.infinity,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (current)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.description_outlined,
+                        size: 14,
+                        color: DefensysTokens.maroonTextOf(context),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        'Current sheet',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: DefensysTokens.maroonTextOf(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                _status(team),
+                if (team.isChair)
+                  const ShadBadge.outline(child: Text('Panel Chair')),
+              ],
             ),
             const SizedBox(height: 8),
+            Text(
+              team.name,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -.25,
+                color: DefensysTokens.textPrimaryOf(context),
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              team.project,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 12,
+              runSpacing: 6,
+              children: [
+                if (!widget.stageScoped)
+                  _meta(Icons.school_outlined, team.displayStage),
+                if (team.scheduledDate != null)
+                  _meta(
+                    Icons.event_outlined,
+                    DateFormat('MMM d').format(team.scheduledDate!),
+                  ),
+                _meta(Icons.schedule_outlined, team.formattedTime),
+                _meta(Icons.place_outlined, team.displayRoom),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${team.memberDetails.length} members · Leader: ${team.displayLeader}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+            ),
+            if (current) ...[
+              const SizedBox(height: 4),
+              Text(
+                _currentDraftLabel,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            ShadButton.outline(
+              key: ValueKey('preview-team-${team.scheduleId}-${team.teamId}'),
+              height: 44,
+              expands: true,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              enabled: !_saving,
+              onPressed: _saving
+                  ? null
+                  : () {
+                      if (current) {
+                        _confirm(team);
+                      } else {
+                        setState(() {
+                          _preview = team;
+                          _error = null;
+                        });
+                      }
+                    },
+              child: Text(
+                current
+                    ? (team.isPosted
+                          ? 'View submitted scores'
+                          : 'Open current sheet')
+                    : team.isPosted
+                    ? 'View ${team.name}'
+                    : 'Preview ${team.name}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
-          _identity(team),
-          const SizedBox(height: 12),
-          Align(alignment: Alignment.centerLeft, child: _status(team)),
-          const SizedBox(height: 8),
-          Text(
-            '${team.memberDetails.length} members · Leader: ${team.displayLeader}',
-            style: TextStyle(
-              fontSize: 12,
-              color: DefensysTokens.textSecondaryOf(context),
-            ),
-          ),
-          const SizedBox(height: 12),
-          ShadButton.outline(
-            key: ValueKey('preview-team-${team.scheduleId}-${team.teamId}'),
-            height: 0,
-            expands: true,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            enabled: !_saving,
-            onPressed: _saving
-                ? null
-                : () {
-                    if (_isCurrent(team)) {
-                      _confirm(team);
-                    } else {
-                      setState(() {
-                        _preview = team;
-                        _error = null;
-                      });
-                    }
-                  },
-            child: Text(
-              _isCurrent(team)
-                  ? (team.isPosted ? 'View submitted scores' : 'Resume grading')
-                  : team.isPosted
-                  ? 'View ${team.name}'
-                  : 'Preview ${team.name}',
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ],
+        ),
       ),
-    ),
+    );
+  }
+
+  Widget _meta(IconData icon, String value) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(icon, size: 13, color: DefensysTokens.textSecondaryOf(context)),
+      const SizedBox(width: 4),
+      Text(
+        value,
+        style: TextStyle(
+          fontSize: 11,
+          color: DefensysTokens.textSecondaryOf(context),
+        ),
+      ),
+    ],
   );
 
   Widget _lineup() {
@@ -226,8 +283,51 @@ class _TeamGradeChooserState extends State<TeamGradeChooser> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _context('Open sheet: ${widget.current.name}\n$_currentDraftLabel'),
-        const SizedBox(height: 16),
+        if (widget.current.hasUnsavedChanges) ...[
+          Row(
+            children: [
+              const Icon(
+                Icons.cloud_upload_outlined,
+                size: 16,
+                color: DefensysTokens.warningText,
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  _currentDraftLabel,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (widget.stageScoped) ...[
+          Row(
+            children: [
+              Icon(
+                Icons.school_outlined,
+                size: 17,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  '${widget.current.scopeLabel} · ${widget.current.isCapstone ? widget.current.displayStage : widget.current.displayEvent}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: DefensysTokens.textPrimaryOf(context),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+        ],
         if (stages.length > 1) ...[
           DropdownButtonFormField<String>(
             key: const ValueKey('team-stage-filter'),
@@ -286,42 +386,31 @@ class _TeamGradeChooserState extends State<TeamGradeChooser> {
   Widget _previewTeam(TeamData team) => ListView(
     padding: const EdgeInsets.all(16),
     children: [
-      ShadButton.ghost(
-        height: 44,
-        enabled: !_saving,
-        onPressed: _saving
-            ? null
-            : () => setState(() {
-                _preview = null;
-                _error = null;
-              }),
-        child: const Text('Back to teams'),
+      DefenseTeamSummary(
+        team: team,
+        showDetailsInitially: true,
+        previewMode: true,
       ),
       const SizedBox(height: 12),
-      _identity(team),
-      const SizedBox(height: 20),
-      const Text(
-        'Presenting members',
-        style: TextStyle(fontWeight: FontWeight.w600),
-      ),
-      const SizedBox(height: 8),
-      for (final member in team.memberDetails)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 9),
-          child: Row(
-            children: [
-              Expanded(child: Text(member.name)),
-              if (member.isLeader)
-                const ShadBadge.outline(child: Text('Leader')),
-            ],
-          ),
-        ),
-      const Divider(height: 24),
       _context('Is this the team presenting? Match their project and members.'),
-      const SizedBox(height: 12),
-      Align(alignment: Alignment.centerLeft, child: _status(team)),
-      const SizedBox(height: 12),
-      _context('${widget.current.name}: $_currentDraftLabel'),
+      const SizedBox(height: 10),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          _status(team),
+          Text(
+            _isCurrent(team)
+                ? _currentDraftLabel
+                : 'Current: ${widget.current.name} · $_currentDraftLabel',
+            style: TextStyle(
+              fontSize: 11,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+        ],
+      ),
       if (!team.gradingAvailable && !team.isPosted) ...[
         const SizedBox(height: 12),
         _context(
@@ -372,10 +461,25 @@ class _TeamGradeChooserState extends State<TeamGradeChooser> {
         appBar: AppBar(
           title: Text(_preview == null ? 'Choose a team' : 'Team preview'),
           leading: IconButton(
-            icon: const Icon(Icons.close),
-            tooltip: 'Keep current team',
-            onPressed: _saving ? null : () => Navigator.pop(context),
+            icon: Icon(_preview == null ? Icons.close : Icons.arrow_back),
+            tooltip: _preview == null ? 'Keep current team' : 'Back to teams',
+            onPressed: _saving
+                ? null
+                : _preview == null
+                ? () => Navigator.pop(context)
+                : () => setState(() {
+                    _preview = null;
+                    _error = null;
+                  }),
           ),
+          actions: [
+            if (_preview != null)
+              IconButton(
+                tooltip: 'Keep current team',
+                icon: const Icon(Icons.close),
+                onPressed: _saving ? null : () => Navigator.pop(context),
+              ),
+          ],
         ),
         body: _preview == null ? _lineup() : _previewTeam(_preview!),
         bottomNavigationBar: _preview == null ? null : _confirmation(_preview!),

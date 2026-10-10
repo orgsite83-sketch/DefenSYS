@@ -1124,9 +1124,12 @@ def stage_payload(team, stage_label, evaluator=None):
         and stage_grade.status not in TeamGrade.LOCKED_STATUSES
         and peer_grading_allowed_for_grade(stage_grade)
     )
+    from grading.grades.availability import peer_grading_unavailable_reason
+    stage_peer_reason = peer_grading_unavailable_reason(stage_grade)
 
     return {
         'stage_label': stage_label,
+        'peer_eval_unavailable_reason': stage_peer_reason,
         'deliverables_configured': configured,
         'is_presentation_only': is_pres,
         'endorsed': is_endorsed,
@@ -1184,9 +1187,8 @@ def submission_payload(submission):
     if submission is None:
         return None
         
-    files_list = list(submission.files.all().order_by('-uploaded_at'))
-    # Preserve the existing latest-file presentation without deleting stored history.
-    files_list = files_list[:1]
+    latest_file = submission.latest_file
+    files_list = [latest_file] if latest_file else []
 
     files_data = []
     for f in files_list:

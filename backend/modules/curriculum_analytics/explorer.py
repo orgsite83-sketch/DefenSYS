@@ -14,6 +14,7 @@ import re
 from django.conf import settings
 from django.db.models import Prefetch
 from rest_framework.exceptions import NotFound, ValidationError
+from defensys_backend.file_urls import resolve_uploaded_file_url
 
 from academic_period_management.models import Semester
 from defense.scheduler.models import PitEventGradingConfig, PitEventDeliverable
@@ -25,6 +26,7 @@ from repository.deliverables.models import DeliverableSubmission
 from student_teams.models import StudentTeam
 from user_management.academic_records.models import StudentAcademicRecord
 from .services import ensure_admin
+from .project_profile import build_project_profile
 from repository.deliverables.project_classification import classification_for_document
 from repository.deliverables.classification_taxonomy import MODEL_VERSION
 
@@ -87,18 +89,21 @@ def _document(obj, label, source):
     topics = obj.topics if isinstance(obj.topics, list) else []
     text = re.sub(r'\s+', ' ', obj.extracted_text or '').strip()
     classification = classification_for_document(obj.extracted_text or '', getattr(obj, 'classification', {}))
-    try:
-        url = obj.file.url if obj.file else None
-    except (ValueError, AttributeError):
-        url = None
     return {
         'id': f'{source}:{obj.pk}', 'file_name': obj.file_name, 'label': label,
-        'url': url, 'category': obj.category or '',
+        'display_name': label, 'url': resolve_uploaded_file_url(None, obj.file) or None,
+        'category': obj.category or '',
         'model_score': _float(obj.category_confidence), 'topics': [str(t) for t in topics[:10]],
         'excerpt': text[:1000], 'readable': len(text) >= 40,
-        'classification': classification, '_text': text,
+        'classification': classification, '_text': text, '_raw_text': obj.extracted_text or '',
         'uploaded_at': obj.uploaded_at.isoformat(),
+        '_file_key': obj.file.name if obj.file else '',
     }
+
+
+def _source_reference(document):
+    return {'document_id': document['id'], 'file_name': document['file_name'],
+            'source_label': document['display_name']}
 
 
 class CurriculumExplorer:
@@ -199,9 +204,12 @@ class CurriculumExplorer:
         configs = cap_configs if self.scope == 'capstone' else pit_configs
         context_labels = {g.stage_label.casefold() for g in self.grades}
         context_labels.update(label for label, _ in configs)
+        post_submission_keys = set()
+        submission_keys = set()
+        file_keys = set()
         for submission in DeliverableSubmission.all_objects.filter(
             team_id__in={p['team'].pk for p in self.projects.values()},
-        ).prefetch_related('files'):
+        ).select_related('uploaded_by').prefetch_related('files'):
             project = self.projects.get((submission.team_id, submission.project_version))
             if not project:
                 continue
@@ -214,14 +222,28 @@ class CurriculumExplorer:
             # its existing project, never used to manufacture a past cohort.
             period_ids = [str(project['team'].semester_id)] if project['version'] == project['team'].project_version else [
                 str(g.semester_id) for g in project['grades'] if g.stage_label.casefold() == submission.stage_label.casefold()]
-            doc = _document(submission, submission.label, 'submission')
-            doc['period_ids'] = period_ids
+            # Repository displays one current upload per deliverable. The
+            # parent is a compatibility mirror, and child files retain history.
+            latest_file = submission.latest_file
+            doc = _document(latest_file or submission, submission.label,
+                            'file' if latest_file else 'submission')
+            doc.update({
+                'display_name': f'{submission.deliverable_id} · {submission.label}',
+                'submission_id': submission.pk, 'deliverable_id': submission.deliverable_id,
+                'stage': submission.stage_label, 'deliverable_type': submission.deliverable_type,
+                'status': {'pending': 'Pending Review', 'accepted': 'Approved',
+                           'rejected': 'Needs Revision'}.get(submission.status, submission.status),
+                'uploaded_by': _name(submission.uploaded_by), 'period_ids': period_ids,
+            })
             project['documents'].append(doc)
-            for f in submission.files.all():
-                doc = _document(f, submission.label, 'file')
-                doc['period_ids'] = period_ids
-                project['documents'].append(doc)
-        for entry in ArchiveEntry.objects.filter(entry_type=self.scope, team__isnull=False).select_related('team'):
+            for period in period_ids:
+                key = (submission.team_id, submission.project_version, period)
+                submission_keys.add((*key, submission.stage_label.casefold(), submission.deliverable_id))
+                if submission.deliverable_type == DeliverableSubmission.TYPE_POST:
+                    post_submission_keys.add((*key, submission.stage_label.casefold()))
+                if doc['_file_key']:
+                    file_keys.add((*key, doc['_file_key']))
+        for entry in ArchiveEntry.objects.filter(entry_type=self.scope, team__isnull=False).select_related('team', 'uploaded_by'):
             team = self.teams.get(entry.team_id)
             if not team:
                 continue
@@ -235,6 +257,14 @@ class CurriculumExplorer:
                 continue
             semester = next((s for s in self.semesters.values() if s.school_year.label == entry.academic_year
                              and s.label.casefold() == entry.semester_label.casefold()), None)
+            key = (entry.team_id, entry.project_version, str(semester.pk) if semester else '')
+            stage = entry.stage_label.casefold()
+            # As in Repository, live post-defense deliverables supersede legacy
+            # archive copies. Keep other periods and project versions separate.
+            if ((*key, stage) in post_submission_keys or
+                    (*key, stage, metadata.get('deliverable_id')) in submission_keys or
+                    (entry.file and (*key, entry.file.name) in file_keys)):
+                continue
             project = self.projects.get((entry.team_id, entry.project_version))
             if not project:
                 # Only a linked, dated project record may add a historical team.
@@ -245,6 +275,11 @@ class CurriculumExplorer:
             elif semester:
                 project['periods'].add(str(semester.pk))
             doc = _document(entry, label, 'archive')
+            deliverable_id = metadata.get('deliverable_id') or ''
+            doc.update({'display_name': f'{deliverable_id} · {label}' if deliverable_id else label,
+                        'deliverable_id': deliverable_id, 'stage': entry.stage_label,
+                        'deliverable_type': 'post', 'status': entry.status,
+                        'uploaded_by': entry.uploaded_by_name or _name(entry.uploaded_by)})
             doc['_source_title'] = metadata.get('project_title', '') if metadata.get('matched') else ''
             doc['period_ids'] = [str(semester.pk)] if semester else []
             project['documents'].append(doc)
@@ -432,18 +467,25 @@ class CurriculumExplorer:
             return self._classification_cache[cache_key]
         docs = self._documents(project, year, semester_id)
         readable = [d for d in docs if d['readable']]
+        related = self._related_documents(project, readable)
+        # Identical parent/file/archive copies never add votes or evidence.
+        unique = {d['classification']['input_hash']: d for d in related}
+        related = list(unique.values())
+        return self._classify_documents(project, cache_key, docs, readable, related)
+
+    @staticmethod
+    def _related_documents(project, readable):
         # A wrong attachment must not classify a project from unrelated content.
         tokens = {t for t in re.findall(r'[a-z]{3,}', project['title'].lower())
                   if t not in {'project', 'system', 'smart', 'powered', 'application', 'and', 'the', 'with'}}
-        related = [d for d in readable if len(tokens) < 3 or
+        return [d for d in readable if len(tokens) < 3 or
                    sum(bool(re.search(r'\b' + re.escape(t) + r'\b', d['_text'], re.I)) for t in tokens) >= 2 or
                    d.get('_source_title') and
                    sum(bool(re.search(r'\b' + re.escape(t) + r'\b', d['_text'], re.I))
                        for t in set(re.findall(r'[a-z]{3,}', d['_source_title'].lower()))
                        if t not in {'project', 'system', 'application', 'and', 'the'}) >= 2]
-        # Identical parent/file/archive copies never add votes or evidence.
-        unique = {d['classification']['input_hash']: d for d in related}
-        related = list(unique.values())
+
+    def _classify_documents(self, project, cache_key, docs, readable, related):
         usable = [d for d in related if d['classification']['status'] == 'estimated' and
                   d['classification']['confidence_score'] >= getattr(settings, 'CURRICULUM_ML_MIN_SCORE', MIN_MODEL_SCORE)]
         candidates = sorted(related, key=lambda d: -d['classification']['confidence_score'])
@@ -451,14 +493,14 @@ class CurriculumExplorer:
         domain_source = max(domain_docs, key=lambda d: len(d['classification']['domain_evidence']), default=None)
         common = {'model_version': MODEL_VERSION, 'review_status': 'Estimated; not faculty-reviewed',
                   'domain': domain_source['classification']['domain'] if domain_source else 'Unresolved domain',
-                  'domain_evidence': [{**hit, 'document_id': domain_source['id'], 'file_name': domain_source['file_name']}
+                  'domain_evidence': [{**hit, **_source_reference(domain_source)}
                                       for hit in domain_source['classification']['domain_evidence']] if domain_source else [],
                   'document_count': len(docs), 'unique_documents': len(related),
                   'readable_documents': len(readable), 'technologies': [], 'secondary_categories': []}
         technologies = {}
         for document in related:
             for technology in document['classification']['technologies']:
-                technologies.setdefault(technology['name'], {**technology, 'document_id': document['id'], 'file_name': document['file_name']})
+                technologies.setdefault(technology['name'], {**technology, **_source_reference(document)})
         common['technologies'] = list(technologies.values())
         if not usable:
             if not docs:
@@ -483,15 +525,15 @@ class CurriculumExplorer:
         result = {**common, 'label': prediction['predicted_category'],
                   'status': 'estimated', 'reason_code': 'supported', 'reason': prediction['reason'],
                   'model_score': prediction['confidence_score'], 'margin': prediction['margin'],
-                  'document_id': primary['id'], 'file_name': primary['file_name'],
+                  **_source_reference(primary),
                   'classified_at': prediction['classified_at'], 'training_source': prediction['training_source'],
-                  'evidence': [{**hit, 'document_id': primary['id'], 'file_name': primary['file_name']} for hit in prediction['evidence']],
+                  'evidence': [{**hit, **_source_reference(primary)} for hit in prediction['evidence']],
                   'candidates': prediction['top_3'],
                   'secondary_categories': prediction['secondary_categories'],
                   'technologies': list(technologies.values()),
                   'domain': prediction['domain'] if prediction['domain'] != 'Unresolved domain' else common['domain']}
         if prediction['domain'] != 'Unresolved domain':
-            result['domain_evidence'] = [{**hit, 'document_id': primary['id'], 'file_name': primary['file_name']}
+            result['domain_evidence'] = [{**hit, **_source_reference(primary)}
                                          for hit in prediction['domain_evidence']]
         self._classification_cache[cache_key] = result
         return result
@@ -661,8 +703,14 @@ class CurriculumExplorer:
                                 'status': grade.status, 'final_grade': _float(grade.final_grade),
                                 'verdict': grade.get_verdict_display() if grade.verdict else None,
                                 'remarks': grade.verdict_remarks, 'criteria': criteria})
-        return {'project': self._project_summary(project), 'classification': self._category(project),
-                'assessments': assessments, 'documents': [{k: v for k, v in d.items() if not k.startswith('_')} for d in self._documents(project)], 'scope': self.scope}
+        documents = self._documents(project)
+        classification = self._category(project)
+        profile = build_project_profile(
+            self._related_documents(project, [d for d in documents if d['readable']]), classification)
+        return {'project': self._project_summary(project), 'classification': classification,
+                'profile': profile, 'assessments': assessments,
+                'documents': [{k: v for k, v in d.items() if not k.startswith('_')} for d in documents],
+                'scope': self.scope}
 
 
 def explorer_payload(user, params):

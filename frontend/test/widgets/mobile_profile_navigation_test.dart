@@ -45,10 +45,11 @@ class _Auth extends AuthNotifier {
 }
 
 class _Notifications extends NotificationsNotifier {
+  _Notifications([super.workspace = 'admin']);
   @override
   NotificationsState build() => const NotificationsState();
   @override
-  Future<void> fetchNotifications() async {}
+  Future<void> fetchNotifications({bool? unreadOnly, bool loadMore = false}) async {}
 }
 
 class _Dashboard extends DashboardNotifier {
@@ -86,11 +87,11 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await loadPreviewFonts();
+    await loadPreviewFonts(force: true);
     final container = ProviderContainer(
       overrides: [
         authProvider.overrideWith(() => _Auth(role)),
-        notificationsProvider.overrideWith(_Notifications.new),
+        notificationsProvider.overrideWith2(_Notifications.new),
         dashboardProvider('student').overrideWith(_Dashboard.new),
         connectivityProvider.overrideWith(_Connectivity.new),
       ],

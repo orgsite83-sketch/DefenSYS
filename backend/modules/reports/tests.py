@@ -160,6 +160,69 @@ class ReportsApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Content-Type'], 'application/pdf')
 
+    def test_team_grade_signature_settings_match_preview_and_export(self):
+        import base64
+        import io
+        import json
+        import pdfplumber
+
+        self.client.force_authenticate(user=self.admin)
+        url = f'/api/reports/team-grade/{self.team_other.id}/'
+        signers = [{'label': 'Verified by:', 'name': 'Report Reviewer', 'role': 'Quality Officer'}]
+        for include in ('true', 'false', None):
+            params = {'signatories': json.dumps(signers)}
+            if include is not None:
+                params['include_signatures'] = include
+            preview = self.client.get(url, {**params, 'export_format': 'json'})
+            export = self.client.get(url, params)
+            self.assertEqual(preview.status_code, 200)
+            self.assertEqual(export.status_code, 200)
+            self.assertTrue(preview.data.get('pdf_base64'))
+
+            for source, pdf_bytes in (
+                ('preview', base64.b64decode(preview.data['pdf_base64'])),
+                ('export', export.content),
+            ):
+                with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+                    text = '\n'.join(page.extract_text() or '' for page in pdf.pages)
+                with self.subTest(include_signatures=include, source=source):
+                    self.assertIn('Master Student Grade Sheet', text)
+                    for signature_text in ('Verified by:', 'Report Reviewer', 'Quality Officer'):
+                        if include == 'true':
+                            self.assertIn(signature_text, text)
+                        else:
+                            self.assertNotIn(signature_text, text)
+                    self.assertNotIn('Prepared by:', text)
+                    self.assertNotIn('Approved by:', text)
+
+    def test_signatures_off_omits_certification_and_extra_page(self):
+        import io
+        import pdfplumber
+        from reports.pdf_builder import DefensysPdfReportBuilder
+
+        page_counts = {}
+        for include in (True, False):
+            builder = DefensysPdfReportBuilder(title='Signature Toggle Regression')
+            builder.add_header()
+            # Leave too little room for the signature block to fit on page one.
+            builder.add_spacer(6.4)
+            builder.add_paragraph('End of report data')
+            builder.add_signatures(
+                include_signatures=include,
+                certification_text='Certification regression marker',
+            )
+            with pdfplumber.open(io.BytesIO(builder.build())) as pdf:
+                page_counts[include] = len(pdf.pages)
+                text = '\n'.join(page.extract_text() or '' for page in pdf.pages)
+            if include:
+                self.assertIn('Certification regression marker', text)
+                self.assertIn('Prepared by:', text)
+            else:
+                self.assertNotIn('Certification regression marker', text)
+                self.assertNotIn('Prepared by:', text)
+        self.assertEqual(page_counts[False], 1)
+        self.assertGreater(page_counts[True], page_counts[False])
+
     def test_adviser_access_limits(self):
         self.client.force_authenticate(user=self.adviser)
 

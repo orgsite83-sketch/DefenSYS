@@ -413,7 +413,7 @@ class _DefensysSignatoryCustomizerDialogState extends State<DefensysSignatoryCus
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Include Signatory & Certification Block',
+                                  'Include Optional Signature Block',
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w700,
@@ -423,8 +423,8 @@ class _DefensysSignatoryCustomizerDialogState extends State<DefensysSignatoryCus
                                 const SizedBox(height: 2),
                                 Text(
                                   _includeSignatures
-                                      ? 'Institutional certification disclaimer and signature lines will be rendered on the PDF.'
-                                      : 'Signatures and certification disclaimer will be completely omitted from the export.',
+                                      ? 'Signature lines and signatory details will be included in the export.'
+                                      : 'Optional. Reports export without signature lines by default.',
                                   style: TextStyle(
                                     fontSize: 11,
                                     color: _includeSignatures ? const Color(0xFFB45309) : DefensysTokens.steelGrey,

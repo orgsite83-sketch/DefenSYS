@@ -719,7 +719,9 @@ class _GradeFormState extends ConsumerState<_GradeForm> {
     final isOfficiallyComplete = grade['is_officially_complete'] == true;
     final isPublished = grade['status']?.toString() == 'published';
     final isRecovery = (grade['attempt_count'] as num? ?? 1) > 1 || (grade['project_version'] as num? ?? 1) > 1;
-    final isGradingLocked = (isOfficiallyComplete && !isRecovery) || isPublished;
+    final availabilityReason = grade['adviser_grading_unavailable_reason']?.toString();
+    final isGradingLocked = (isOfficiallyComplete && !isRecovery) || isPublished ||
+        grade['adviser_grading_available'] == false;
 
     final targetType = _selectedRubric?['target_type']?.toString() ?? 'team';
     final teamCrits = _getTeamCriteria();
@@ -803,7 +805,9 @@ class _GradeFormState extends ConsumerState<_GradeForm> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      isOfficiallyComplete
+                      availabilityReason != null && availabilityReason.isNotEmpty
+                          ? availabilityReason
+                          : isOfficiallyComplete
                           ? 'This defense stage is officially complete. Adviser grades are locked and cannot be edited.'
                           : 'Grades for this stage have been finalized and published. Modifications are locked.',
                       style: const TextStyle(
@@ -1177,7 +1181,9 @@ class _GradeFormState extends ConsumerState<_GradeForm> {
                     onPressed: null,
                     icon: const Icon(Icons.lock_rounded, size: 18),
                     label: Text(
-                      isOfficiallyComplete
+                      grade['adviser_grading_available'] == false && !isPublished && !isOfficiallyComplete
+                          ? 'Grading Locked'
+                          : isOfficiallyComplete
                           ? 'Stage Officially Complete (Grades Locked)'
                           : 'Grade Finalized (Locked)',
                       style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),

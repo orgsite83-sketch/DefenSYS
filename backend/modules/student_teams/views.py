@@ -824,6 +824,8 @@ class StudentTeamSendReminderView(APIView):
             return Response({'detail': 'This team has no leader assigned.'}, status=status.HTTP_400_BAD_REQUEST)
 
         notified_user_ids = set()
+        notification_target = {'team_id': team.pk, 'stage_label': stage_label, 'action_kind': 'deliverables',
+                               'deliverable_task': 'submit' if missing_list else 'endorse'}
 
         message_body = (
             f"Dear {leader.first_name} {leader.last_name},\n\n"
@@ -842,7 +844,9 @@ class StudentTeamSendReminderView(APIView):
             recipient=leader,
             sender=user,
             title=f"Action Required: Pending Deliverables for {stage_label}",
-            message=message_body
+            message=message_body,
+            workspace='student', priority='HIGH', action_route='/student',
+            action_payload=notification_target,
         )
         notified_user_ids.add(leader.id)
 
@@ -866,7 +870,9 @@ class StudentTeamSendReminderView(APIView):
                     recipient=member,
                     sender=user,
                     title=f"Action Required: Pending Deliverables for {stage_label}",
-                    message=member_body
+                    message=member_body,
+                    workspace='student', priority='HIGH', action_route='/student',
+                    action_payload=notification_target,
                 )
                 notified_user_ids.add(member.id)
 
@@ -889,7 +895,10 @@ class StudentTeamSendReminderView(APIView):
                 recipient=adviser,
                 sender=user,
                 title=f"CC Reminder: Team {team.name} Pending Deliverables ({stage_label})",
-                message=adviser_body
+                message=adviser_body,
+                workspace='admin' if adviser.role == 'admin' else 'adviser',
+                action_route='/admin/student-teams' if adviser.role == 'admin' else '/faculty/deliverables',
+                action_payload=notification_target,
             )
             notified_user_ids.add(adviser.id)
 
@@ -902,9 +911,11 @@ class StudentTeamSendReminderView(APIView):
             is_active=True
         ).select_related('faculty')
         
+        # Faculty duties have independent inboxes; admin duties share one inbox.
+        notified_instructors = {adviser.id} if adviser and adviser.role == 'admin' else set()
         for assignment in assignments:
             instructor = assignment.faculty
-            if instructor and instructor.id not in notified_user_ids:
+            if instructor and instructor.id not in notified_instructors:
                 inst_body = (
                     f"Dear {instructor.first_name} {instructor.last_name},\n\n"
                     f"This is a copy of the reminder sent to team {team.name} (Led by {leader.first_name} {leader.last_name}) "
@@ -921,8 +932,12 @@ class StudentTeamSendReminderView(APIView):
                     recipient=instructor,
                     sender=user,
                     title=f"CC Reminder: Team {team.name} Pending Deliverables ({stage_label})",
-                    message=inst_body
+                    message=inst_body,
+                    workspace='admin' if instructor.role == 'admin' else 'pit_instructor',
+                    action_route='/admin/student-teams' if instructor.role == 'admin' else '/faculty/deliverables',
+                    action_payload=notification_target,
                 )
+                notified_instructors.add(instructor.id)
                 notified_user_ids.add(instructor.id)
 
         return Response({

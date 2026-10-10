@@ -108,7 +108,7 @@ def breakdowns_for_panelist(team_grade, panelist_key):
     return [
         row
         for row in team_grade.breakdowns.select_related('student').filter(
-            evaluation_type=GradeBreakdown.EVAL_PANEL
+            evaluation_type=GradeBreakdown.EVAL_PANEL, is_void=False,
         ).order_by('display_order', 'id')
         if _panelist_key_from_breakdown_remarks(row.remarks) == panelist_key
     ]
@@ -121,16 +121,14 @@ def panelist_result_payload(team_grade, panelist_key):
         return None
 
     team = team_grade.team
+    from defense.scheduler.progress import schedule_progress
+    progress = schedule_progress(team_grade.schedule) if team_grade.schedule_id else {}
     total_score = sum((row.score for row in rows), Decimal('0'))
     total_max = sum((row.max_score for row in rows), Decimal('0'))
     percentage = panelist_percentage_from_breakdowns(rows) or Decimal('0')
 
-    status_map = {
-        TeamGrade.STATUS_PUBLISHED: 'Approved',
-    }
-    team_status = status_map.get(team_grade.status, 'Pending')
-    if team_grade.final_grade is not None:
-        team_status = 'Approved' if team_grade.final_grade >= PASS_GRADE_THRESHOLD else 'Failed'
+    team_status = ('Approved' if team_grade.status == TeamGrade.STATUS_PUBLISHED and team_grade.result == 'passed'
+                   else 'Failed' if team_grade.result == 'failed' else 'Pending')
 
     panel_w = team_grade.panel_weight
     peer_w = team_grade.peer_weight
@@ -179,6 +177,12 @@ def panelist_result_payload(team_grade, panelist_key):
         'level': team.year_level or '',
         'stage': team_grade.stage_label or '',
         'scope': team_grade.scope or '',
+        'semester_id': team_grade.semester_id,
+        'display_semester': team_grade.semester.display_name,
+        'defense_stage_id': team_grade.defense_stage_id,
+        'event_name': team_grade.schedule.event_name if team_grade.schedule_id else '',
+        'display_status': progress.get('display_status', ''),
+        'is_completed': progress.get('is_completed', False),
         'criteria': [
             {
                 'criteriaName': row.criterion_name,
@@ -211,10 +215,67 @@ def panelist_result_payload(team_grade, panelist_key):
         ),
         'attempt_count': team_grade.attempt_count or 1,
         'schedule_id': team_grade.schedule_id,
+        'session_id': str(team_grade.schedule.session_id) if team_grade.schedule_id else '',
+        'scheduled_date': team_grade.schedule.scheduled_date.isoformat() if team_grade.schedule_id else '',
         'grade_id': team_grade.id,
         '_sort_date': team_grade.schedule.scheduled_date if team_grade.schedule_id else None,
         '_sort_time': team_grade.schedule.start_time if team_grade.schedule_id else None,
     }
+
+
+def previous_panel_attempt_results(submissions):
+    """Read prior attempts from their immutable criterion and verdict snapshots.
+
+    TeamGrade moves to the new schedule on re-defense. Its current breakdowns
+    and member grades must never be displayed as the earlier session's results.
+    """
+    from .models import GradeAttemptHistory
+    groups = {}
+    for submission in submissions:
+        groups.setdefault(submission.schedule_id, []).append(submission)
+    snapshots = {snapshot.schedule_id: snapshot for snapshot in
+                 GradeAttemptHistory.objects.filter(schedule_id__in=groups).select_related('verdict_by')}
+    results = []
+    for schedule_id, rows in groups.items():
+        schedule = rows[0].schedule
+        snapshot = snapshots.get(schedule_id)
+        scores = [score for row in rows for score in row.criterion_scores.all()]
+        if not scores:
+            continue
+        percentage = panelist_percentage_from_criterion_scores(scores)
+        weights = ({'panel_weight': snapshot.panel_weight, 'peer_weight': snapshot.peer_weight,
+                    'adviser_weight': snapshot.adviser_weight} if snapshot else weights_for_schedule(schedule))
+        verdict = snapshot.verdict if snapshot else ''
+        results.append({
+            'teamName': schedule.team.name,
+            'projectTitle': snapshot.project_title if snapshot else schedule.project_title_snapshot,
+            'percentage': float(percentage or 0),
+            'total': float(sum((score.score for score in scores), Decimal('0'))),
+            'max': float(sum((score.max_score_snapshot for score in scores), Decimal('0'))),
+            'teamStatus': 'Failed' if verdict in ('failed', 'project_rejected') else 'Pending',
+            'level': schedule.team.year_level or '', 'stage': schedule.stage_label,
+            'scope': schedule.scope, 'semester_id': schedule.semester_id,
+            'display_semester': schedule.semester.display_name,
+            'defense_stage_id': schedule.defense_stage_id, 'event_name': schedule.event_name,
+            'display_status': 'assessed', 'is_completed': False,
+            'criteria': [{
+                'criteriaName': score.criterion_name_snapshot, 'score': float(score.score),
+                'max': float(score.max_score_snapshot), 'student_id': row.student_id,
+                'student_name': display_name(row.student) if row.student_id else None,
+            } for row in rows for score in row.criterion_scores.all()],
+            'memberGrades': [],
+            'weights': {'panel': weights['panel_weight'], 'peer': weights['peer_weight'],
+                        **({'adviser': weights['adviser_weight']} if schedule.scope == 'capstone' else {})},
+            'verdict': verdict,
+            'verdict_remarks': snapshot.verdict_remarks if snapshot else '',
+            'verdict_by_name': display_name(snapshot.verdict_by) if snapshot and snapshot.verdict_by else '',
+            'revision_deadline': snapshot.revision_deadline.isoformat() if snapshot and snapshot.revision_deadline else None,
+            'attempt_count': snapshot.attempt_number if snapshot else 1,
+            'schedule_id': schedule.pk, 'session_id': str(schedule.session_id),
+            'scheduled_date': schedule.scheduled_date.isoformat(), 'grade_id': rows[0].team_grade_id,
+            '_sort_date': schedule.scheduled_date, '_sort_time': schedule.start_time,
+        })
+    return results
 
 
 def recompute_panel_score(team_grade):
@@ -675,6 +736,13 @@ def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=Non
     ])
 
     recompute_panel_score(team_grade)
+    if team_grade.scope == TeamGrade.SCOPE_CAPSTONE and peer_grading_allowed_for_grade(team_grade):
+        from realtime.broadcast import notify_team_peer_open
+        student_ids = list(team_grade.team.memberships.values_list('student_id', flat=True))
+        transaction.on_commit(lambda: notify_team_peer_open(
+            semester_id=team_grade.semester_id, team_id=team_grade.team_id,
+            stage_label=team_grade.stage_label, student_ids=student_ids,
+        ))
     submission.refresh_from_db()
     return submission
 
@@ -2637,10 +2705,8 @@ def require_grade_editable(grade):
 
 
 def peer_grading_allowed_for_grade(grade):
-    if grade.scope == TeamGrade.SCOPE_PIT:
-        settings = group_settings_for_grade(grade)
-        return bool(settings.get('peer_grading_enabled'))
-    return bool(getattr(grade.semester, 'capstone_peer_evaluation_enabled', True))
+    from .availability import peer_grading_unavailable_reason
+    return not peer_grading_unavailable_reason(grade)
 
 
 def publish_grade_record(grade, user=None):

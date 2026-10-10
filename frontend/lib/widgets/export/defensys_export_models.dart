@@ -168,7 +168,7 @@ class DefensysExportConfig {
     this.initialFormat = 'pdf',
     this.initialSignatories = const [],
     this.allowSignatoryCustomization = true,
-    this.initialIncludeSignatures = true,
+    this.initialIncludeSignatures = false,
     this.initialParams = const {},
     required this.onFetchPreview,
     required this.onDownload,

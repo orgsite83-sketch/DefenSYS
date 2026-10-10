@@ -28,6 +28,8 @@ SCHEDULES = '/api/defense/schedules/'
 
 
 class ExternalEvaluatorTests(APITestCase):
+    _complete_prior_stages = fixtures.DefenseSchedulerApiTests._complete_prior_stages
+
     def setUp(self):
         fixtures.DefenseSchedulerApiTests.setUp(self)
         self.lead = fixtures.User.objects.create_user(username='external-lead', role='faculty', is_pit_lead=True, pit_lead_year='1st Year')

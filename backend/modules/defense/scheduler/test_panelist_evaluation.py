@@ -9,9 +9,11 @@ from grading.grades.models import PanelistGradeSubmission
 from grading.grades.services import GradeContextService
 from grading.rubrics.models import Rubric
 from student_teams.models import TeamMembership
+from user_management.models import GuestPanelistCode
 from . import tests as fixtures
 from .models import DefenseSchedule, PanelistEvaluationDraft, SchedulePanelist
 from .panelist_evaluation import evaluation_context
+from .services import transition_schedule_status
 
 
 class PanelistEvaluationTests(APITestCase):
@@ -124,6 +126,196 @@ class PanelistEvaluationTests(APITestCase):
         self.client.force_authenticate(user=self.panelist)
         self.assertEqual(self.client.patch(f'/api/defense/schedules/{schedule.pk}/verdict/',
                                           {'verdict': 'approved'}, format='json').status_code, 200)
+
+    def test_verdict_preserves_faculty_and_guest_assignments_and_results(self):
+        schedule = self.schedule()
+        invitation = GuestPanelistCode.objects.create(guest_name='Guest Panelist', defense_schedule=schedule)
+        invitation.schedules.add(schedule)
+        guest = GuestPanelistPrincipal({
+            'guest_code_id': str(invitation.pk), 'guest_code': invitation.code,
+            'defense_schedule_id': schedule.pk, 'team_id': self.team.pk,
+            'guest_name': invitation.guest_name,
+        }, invitation=invitation)
+        evaluators = [
+            (self.panelist, 0, 'submit-grades', 'panelist-assignments', 'panelist-results', 'grade-draft'),
+            (self.second_panelist, 6, 'submit-grades', 'panelist-assignments', 'panelist-results', 'grade-draft'),
+            (guest, 8, 'guest-submit-grades', 'guest-assignments', 'guest-panelist-results', 'guest-grade-draft'),
+        ]
+        for principal, score, submit_path, _, _, _ in evaluators:
+            self.client.force_authenticate(user=principal)
+            response = self.client.post(f'/api/defense/schedules/{submit_path}/', {
+                'team_id': self.team.pk, 'schedule_id': schedule.pk,
+                'criteria_scores': self.scores(score),
+            }, format='json')
+            self.assertEqual(response.status_code, 201, response.data)
+
+        self.client.force_authenticate(user=self.panelist)
+        verdict = 'approved_with_revisions'
+        response = self.client.patch(f'/api/defense/schedules/{schedule.pk}/verdict/', {
+            'verdict': verdict, 'verdict_remarks': 'Update the manuscript.',
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        schedule.refresh_from_db()
+        self.assertEqual(schedule.status, DefenseSchedule.STATUS_DONE)
+
+        for schedule_status in (DefenseSchedule.STATUS_DONE, DefenseSchedule.STATUS_ARCHIVED):
+            if schedule.status != schedule_status:
+                schedule = transition_schedule_status(schedule, schedule_status, actor=self.admin)
+            for principal, score, submit_path, assignments_path, results_path, draft_path in evaluators:
+                with self.subTest(status=schedule_status, evaluator=str(principal)):
+                    self.client.force_authenticate(user=principal)
+                    response = self.client.get(f'/api/defense/schedules/{assignments_path}/')
+                    self.assertEqual(response.status_code, 200, response.data)
+                    self.assertEqual(response.data['schedules_count'], 1)
+                    self.assertEqual(len(response.data['teams']), 1)
+                    assignment = response.data['teams'][0]
+                    self.assertEqual(assignment['schedule_id'], schedule.pk)
+                    self.assertEqual(assignment['schedule_status'], schedule_status)
+                    self.assertTrue(assignment['is_posted'])
+                    self.assertTrue(assignment['is_submitted'])
+                    self.assertFalse(assignment['is_completed'])
+                    self.assertEqual(assignment['semester_id'], self.semester.pk)
+                    self.assertEqual(assignment['defense_stage_id'], self.stage.pk)
+                    self.assertFalse(assignment['grading_available'])
+                    self.assertIsNone(assignment['draft'])
+                    self.assertEqual(assignment['verdict'], verdict)
+                    self.assertEqual(assignment['verdict_remarks'], 'Update the manuscript.')
+                    self.assertEqual(assignment['is_chair'], principal == self.panelist)
+                    scores = assignment['submissions'][0]['criteria_scores']
+                    self.assertEqual(len(scores), 2)
+                    self.assertTrue(all(item['score'] == score for item in scores))
+
+                    results = self.client.get(f'/api/defense/schedules/{results_path}/')
+                    self.assertEqual(results.status_code, 200, results.data)
+                    self.assertEqual(len(results.data['results']), 1)
+                    result = results.data['results'][0]
+                    self.assertEqual(result['schedule_id'], schedule.pk)
+                    self.assertEqual(result['verdict'], verdict)
+                    self.assertEqual(result['percentage'], score * 10)
+                    self.assertFalse(result['is_completed'])
+                    self.assertEqual(result['semester_id'], assignment['semester_id'])
+                    self.assertEqual(result['defense_stage_id'], assignment['defense_stage_id'])
+
+                    # Read access to completed defenses must not reopen score writes.
+                    response = self.client.post(f'/api/defense/schedules/{submit_path}/', {
+                        'team_id': self.team.pk, 'schedule_id': schedule.pk,
+                        'criteria_scores': self.scores(10),
+                    }, format='json')
+                    self.assertIn(response.status_code, (400, 403, 404))
+                    response = self.client.post(f'/api/defense/schedules/{draft_path}/', {
+                        'schedule_id': schedule.pk,
+                        'submissions': [{'student_id': None, 'criteria_scores': self.scores(10)}],
+                    }, format='json')
+                    self.assertIn(response.status_code, (400, 403, 404))
+                    submission_filter = {'guest_code_id': invitation.pk} if principal is guest else {'panelist': principal}
+                    submission = PanelistGradeSubmission.objects.get(schedule=schedule, **submission_filter)
+                    self.assertTrue(all(item.score == score for item in submission.criterion_scores.all()))
+
+    def test_completion_metadata_changes_only_when_defense_is_marked_completed(self):
+        schedule = self.schedule()
+        for principal in (self.panelist, self.second_panelist):
+            self.client.force_authenticate(user=principal)
+            response = self.client.post('/api/defense/schedules/submit-grades/', {
+                'team_id': self.team.pk, 'schedule_id': schedule.pk,
+                'criteria_scores': self.scores(8),
+            }, format='json')
+            self.assertEqual(response.status_code, 201, response.data)
+        self.client.force_authenticate(user=self.panelist)
+        response = self.client.patch(f'/api/defense/schedules/{schedule.pk}/verdict/',
+                                     {'verdict': 'approved'}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        assignment = self.client.get('/api/defense/schedules/panelist-assignments/').data['teams'][0]
+        self.assertEqual(assignment['schedule_status'], 'done')
+        self.assertFalse(assignment['is_completed'])
+        self.assertEqual(assignment['display_status'], 'grading_incomplete')
+
+        grade = schedule.grade_records.get()
+        grade.adviser_score = 80
+        grade.peer_score = 80
+        grade.publish(user=self.admin)
+        for archived in (False, True):
+            if archived:
+                schedule.refresh_from_db()
+                schedule = transition_schedule_status(schedule, DefenseSchedule.STATUS_ARCHIVED, actor=self.admin)
+            assignment = self.client.get('/api/defense/schedules/panelist-assignments/').data['teams'][0]
+            result = self.client.get('/api/defense/schedules/panelist-results/').data['results'][0]
+            self.assertTrue(assignment['is_completed'])
+            self.assertTrue(result['is_completed'])
+            self.assertEqual(assignment['display_status'], 'archived' if archived else 'completed')
+            self.assertEqual(result['display_status'], assignment['display_status'])
+            self.assertFalse(assignment['grading_available'])
+
+    def test_redefense_preserves_each_sessions_scores_and_verdict(self):
+        original = self.schedule(scheduled_date=timezone.localdate() - timedelta(days=1))
+        invitation = GuestPanelistCode.objects.create(guest_name='External Reviewer', defense_schedule=original)
+        invitation.schedules.add(original)
+        claims = {'guest_code_id': str(invitation.pk), 'guest_code': invitation.code,
+                  'guest_name': invitation.guest_name, 'defense_schedule_id': original.pk}
+        guest = GuestPanelistPrincipal(claims, invitation=invitation)
+        for principal in (self.panelist, self.second_panelist, guest):
+            self.client.force_authenticate(user=principal)
+            path = 'guest-submit-grades' if principal is guest else 'submit-grades'
+            response = self.client.post(f'/api/defense/schedules/{path}/', {
+                'team_id': self.team.pk, 'schedule_id': original.pk, 'criteria_scores': self.scores(8),
+            }, format='json')
+            self.assertEqual(response.status_code, 201, response.data)
+        self.client.force_authenticate(user=self.panelist)
+        response = self.client.patch(f'/api/defense/schedules/{original.pk}/verdict/', {
+            'verdict': 'for_redefense', 'verdict_remarks': 'Improve the prototype.',
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        redefense = self.schedule()
+        response = self.client.post('/api/defense/schedules/submit-grades/', {
+            'team_id': self.team.pk, 'schedule_id': redefense.pk, 'criteria_scores': self.scores(4),
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        invitation.schedules.add(redefense)
+        guest = GuestPanelistPrincipal(claims, invitation=invitation)
+        self.client.force_authenticate(user=guest)
+        response = self.client.post('/api/defense/schedules/guest-submit-grades/', {
+            'team_id': self.team.pk, 'schedule_id': redefense.pk, 'criteria_scores': self.scores(4),
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        guest_results = {row['schedule_id']: row for row in
+                         self.client.get('/api/defense/schedules/guest-panelist-results/').data['results']}
+        self.assertEqual(guest_results[original.pk]['percentage'], 80)
+        self.assertEqual(guest_results[original.pk]['verdict'], 'for_redefense')
+        self.assertEqual(guest_results[redefense.pk]['percentage'], 40)
+        self.client.force_authenticate(user=self.panelist)
+        assignments = {team['schedule_id']: team for team in
+                       self.client.get('/api/defense/schedules/panelist-assignments/').data['teams']}
+        self.assertEqual(assignments[original.pk]['verdict'], 'for_redefense')
+        self.assertEqual(assignments[original.pk]['attempt_count'], 1)
+        self.assertEqual(assignments[original.pk]['submissions'][0]['criteria_scores'][0]['score'], 8)
+        self.assertEqual(assignments[redefense.pk]['attempt_count'], 2)
+        self.assertFalse(assignments[redefense.pk]['verdict'])
+        results = {row['schedule_id']: row for row in
+                   self.client.get('/api/defense/schedules/panelist-results/').data['results']}
+        self.assertEqual(results[original.pk]['percentage'], 80)
+        self.assertEqual(results[original.pk]['verdict'], 'for_redefense')
+        self.assertEqual(results[redefense.pk]['percentage'], 40)
+        self.assertEqual(results[redefense.pk]['attempt_count'], 2)
+        self.assertNotEqual(results[original.pk]['session_id'], results[redefense.pk]['session_id'])
+
+    def test_assignments_exclude_cancelled_and_unassigned_defenses(self):
+        assigned = self.schedule()
+        self.schedule(status=DefenseSchedule.STATUS_CANCELLED)
+        unassigned = self.schedule(status=DefenseSchedule.STATUS_DONE)
+        unassigned.panel_assignments.filter(panelist=self.panelist).delete()
+
+        response = self.client.get('/api/defense/schedules/panelist-assignments/')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['schedules_count'], 1)
+        self.assertEqual([team['schedule_id'] for team in response.data['teams']], [assigned.pk])
+
+        invitation = GuestPanelistCode.objects.create(guest_name='Guest Panelist', defense_schedule=assigned)
+        invitation.schedules.add(assigned, *DefenseSchedule.objects.filter(status=DefenseSchedule.STATUS_CANCELLED))
+        guest = GuestPanelistPrincipal({'guest_code_id': str(invitation.pk)}, invitation=invitation)
+        self.client.force_authenticate(user=guest)
+        response = self.client.get('/api/defense/schedules/guest-assignments/')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['schedules_count'], 1)
+        self.assertEqual([team['schedule_id'] for team in response.data['teams']], [assigned.pk])
 
     def test_paused_defense_reports_the_same_verdict_lock_as_submission(self):
         schedule = self.schedule(operation_state='paused')

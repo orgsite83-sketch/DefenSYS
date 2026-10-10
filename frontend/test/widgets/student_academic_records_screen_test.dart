@@ -7,6 +7,7 @@ import 'package:defensys/notifications/notifications_provider.dart';
 import '../helpers/pump_app.dart';
 
 class FakeNotificationsNotifier extends NotificationsNotifier {
+  FakeNotificationsNotifier([super.workspace = 'admin']);
   @override
   NotificationsState build() {
     return const NotificationsState(
@@ -16,7 +17,7 @@ class FakeNotificationsNotifier extends NotificationsNotifier {
   }
 
   @override
-  Future<void> fetchNotifications() async {}
+  Future<void> fetchNotifications({bool? unreadOnly, bool loadMore = false}) async {}
 }
 
 class FakeStudentAcademicRecordsNotifier extends StudentAcademicRecordsNotifier {
@@ -44,7 +45,7 @@ void main() {
       tester,
       const Scaffold(body: StudentAcademicRecordsScreen()),
       overrides: [
-        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+        notificationsProvider.overrideWith2((workspace) => FakeNotificationsNotifier(workspace)),
         studentAcademicRecordsProvider.overrideWith(() => FakeStudentAcademicRecordsNotifier()),
       ],
     );

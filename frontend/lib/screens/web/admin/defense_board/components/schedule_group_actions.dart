@@ -5,17 +5,19 @@ import '../../../../../theme/defensys_tokens.dart';
 import '../../../../../widgets/shadcn/defensys_action_menu.dart';
 import 'schedule_operations_dialog.dart';
 
-/// Each group has three choices; the editor contains its detailed tasks.
+/// Session actions keep evaluator access beside the schedule's editing tasks.
 class ScheduleGroupActions extends StatelessWidget {
   const ScheduleGroupActions({
     super.key,
     required this.schedule,
     this.target = 'session',
     this.enabled = true,
+    this.onEvaluatorAccess,
   });
   final Map<String, dynamic> schedule;
   final String target;
   final bool enabled;
+  final VoidCallback? onEvaluatorAccess;
 
   @override
   Widget build(BuildContext context) {
@@ -33,6 +35,12 @@ class ScheduleGroupActions extends StatelessWidget {
       triggerLabel: stage ? 'Stage actions' : null,
       enabled: enabled,
       items: [
+        if (!stage && onEvaluatorAccess != null)
+          DefensysMenuItem(
+            label: 'Evaluator access',
+            icon: LucideIcons.keyRound,
+            onPressed: onEvaluatorAccess,
+          ),
         DefensysMenuItem(
           label: stage ? 'Edit stage schedules' : 'Edit session',
           icon: LucideIcons.pencil,

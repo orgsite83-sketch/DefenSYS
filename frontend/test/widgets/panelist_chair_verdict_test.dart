@@ -255,9 +255,7 @@ void main() {
           ),
         );
 
-        await tester.ensureVisible(find.text('Presenting members'));
-        await tester.tap(find.text('Presenting members'));
-        await tester.pumpAndSettle();
+        expect(find.text('Team details & presenting members'), findsOneWidget);
         expect(find.text('Panel Chair'), findsWidgets);
 
         // Verify Chair Verdict section
@@ -331,7 +329,7 @@ void main() {
     );
 
     testWidgets(
-      'AssignmentsTab search and triage filters filter teams correctly',
+      'AssignmentsTab filters retain completed defenses under Submitted',
       (tester) async {
         int? openedIndex;
 
@@ -362,6 +360,9 @@ void main() {
           startTime: '13:30',
           room: 'Room 302',
           teamId: '102',
+          scheduleStatus: 'done',
+          scheduledDate: TeamData.manilaToday,
+          verdict: 'approved',
           scope: 'capstone',
           isCapstone: true,
           members: ['Bob Cruz'],
@@ -395,12 +396,18 @@ void main() {
         expect(find.text('Team Alpha'), findsOneWidget);
         expect(find.text('Team Beta'), findsNothing);
 
-        // Filter by "Completed"
+        // Completed defenses remain in Submitted with their verdict and review action.
         await tester.tap(find.text('Submitted').first);
         await tester.pumpAndSettle();
 
         expect(find.text('Team Alpha'), findsNothing);
         expect(find.text('Team Beta'), findsOneWidget);
+        expect(find.text('APPROVED'), findsOneWidget);
+        expect(find.text('Grade Team'), findsNothing);
+        await tester.ensureVisible(find.text('View Grades'));
+        await tester.tap(find.text('View Grades'));
+        await tester.pumpAndSettle();
+        expect(openedIndex, equals(1));
 
         // Reset to "All Teams"
         await tester.tap(find.text('All Teams'));

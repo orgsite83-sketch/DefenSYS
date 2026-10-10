@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../navigation/admin_route_paths.dart';
+import '../../notifications/notifications_bell.dart';
 import '../../services/auth_provider.dart';
 import '../../services/documenter_provider.dart';
 import '../../theme/defensys_tokens.dart';
@@ -82,6 +83,10 @@ class _DocumenterDashboardState extends ConsumerState<DocumenterDashboard>
         ],
       ),
       actions: const [
+        NotificationsBell(
+          workspace: 'documenter',
+          workspaceLabel: 'Minutes Documenter',
+        ),
         FacultyAppWorkspaceSwitcher(currentRoute: AppRoutes.documenter),
       ],
     ),

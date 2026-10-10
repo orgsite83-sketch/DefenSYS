@@ -19,6 +19,7 @@ def create_notification(
     sender=None,
     action_route: str = None,
     action_payload: dict = None,
+    workspace: str = None,
 ) -> Notification:
     """
     Creates an in-system Notification for a recipient user.
@@ -38,6 +39,7 @@ def create_notification(
             priority=priority,
             action_route=action_route,
             action_payload=action_payload or {},
+            workspace=workspace or '',
         )
         logger.info(
             'create_notification: created notification id=%s for recipient_id=%s title="%s"',

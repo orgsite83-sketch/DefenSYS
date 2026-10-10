@@ -159,10 +159,11 @@ List<Map<String, dynamic>> teamsForScope(
 }
 
 /// Returns the stage lifecycle status for a team and milestone:
-/// 'completed' (passed/done)
+/// 'completed' (finalized and passed)
 /// 'scheduled' (defense date set)
 /// 'ready' (deliverables & endorsement complete, awaiting scheduling)
 /// 'pending' (missing deliverables or awaiting instructor/adviser endorsement)
+/// Other workflow states describe assessment, clearance, or recovery work.
 String getTeamStageStatus(Map<String, dynamic> team, String stageLabel) {
   if (stageLabel.isEmpty) return 'pending';
 
@@ -182,17 +183,30 @@ String getTeamStageStatus(Map<String, dynamic> team, String stageLabel) {
       stageProgress[stageLabel]?.toString().toLowerCase().trim() ?? '';
   if (progVal == 'completed' ||
       progVal == 'passed' ||
-      progVal == 'archived' ||
       completedStages.contains(stageLabel)) {
     return 'completed';
   }
+  if (progVal == 'for_redefense') return 'redefense_required';
+  if (progVal == 'grading') return 'grading_incomplete';
+  if (progVal == 'ongoing') return 'evaluating';
+  const assessmentStatuses = {
+    'awaiting_evaluation', 'evaluating', 'awaiting_verdict',
+    'revisions_pending', 'redefense_required', 'grading_incomplete',
+    'awaiting_completion', 'failed', 'project_rejected', 'assessed', 'done',
+    'paused', 'postponed', 'no_show', 'archived',
+  };
+  if (assessmentStatuses.contains(progVal)) return progVal;
   if (progVal == 'scheduled' ||
-      progVal == 'ongoing' ||
       scheduledStages.contains(stageLabel)) {
     return 'scheduled';
   }
   if (progVal == 'ready' ||
       team['ready_for_stage']?.toString().trim() == stageLabel) {
+    if (team['eligible_stages'] is List &&
+        (team['level']?.toString().toLowerCase().contains('capstone') ?? false) &&
+        !(team['eligible_stages'] as List).contains(stageLabel)) {
+      return 'pending';
+    }
     if (!completedStages.contains(stageLabel) &&
         !scheduledStages.contains(stageLabel)) {
       return 'ready';
@@ -206,14 +220,15 @@ bool isTeamStageCompleted(Map<String, dynamic> team, String stageLabel) {
 }
 
 bool isTeamStageReady(Map<String, dynamic> team, String stageLabel) {
-  if (team['eligible_stages'] is List && (team['level']?.toString().contains('Capstone') ?? false)) {
+  if (team['eligible_stages'] is List && (team['level']?.toString().toLowerCase().contains('capstone') ?? false)) {
     return (team['eligible_stages'] as List).contains(stageLabel);
   }
   return getTeamStageStatus(team, stageLabel) == 'ready';
 }
 
 bool isTeamStageScheduled(Map<String, dynamic> team, String stageLabel) {
-  return getTeamStageStatus(team, stageLabel) == 'scheduled';
+  return (team['scheduled_stages'] as List?)?.contains(stageLabel) == true ||
+      getTeamStageStatus(team, stageLabel) == 'scheduled';
 }
 
 class ImportNameMatch {

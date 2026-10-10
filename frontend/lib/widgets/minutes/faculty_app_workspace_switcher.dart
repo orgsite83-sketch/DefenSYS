@@ -47,6 +47,7 @@ class FacultyAppWorkspaceSwitcher extends ConsumerWidget {
         label: 'Switch workspace',
         triggerLabel: 'Workspace',
         triggerIcon: LucideIcons.chevronDown,
+        triggerForegroundColor: Colors.white,
         items: [
           for (final option in options)
             DefensysMenuItem(

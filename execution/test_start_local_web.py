@@ -21,12 +21,14 @@ class LocalWebLauncherTests(unittest.TestCase):
         self.listening = stack.enter_context(patch.object(launcher, 'listening', return_value=False))
         self.ready = stack.enter_context(patch.object(launcher, 'ready', return_value=True))
         self.start = stack.enter_context(patch.object(launcher, 'start'))
+        self.start.return_value.poll.return_value = None
         def started(command, cwd, **kwargs):
             if kwargs.get('web_started') is not None:
                 kwargs['web_started'].set()
             return self.start.return_value
         self.start.side_effect = started
         self.stop = stack.enter_context(patch.object(launcher, 'stop'))
+        self.stop_web = stack.enter_context(patch.object(launcher, 'stop_web'))
         self.browser = stack.enter_context(patch.object(launcher.webbrowser, 'open'))
         self.is_web = stack.enter_context(patch.object(launcher, 'is_defensys_web', return_value=False))
         self.monitor = stack.enter_context(patch.object(launcher, 'monitor_servers', return_value=0))
@@ -55,6 +57,7 @@ class LocalWebLauncherTests(unittest.TestCase):
             self.assertEqual(launcher.main(['--check', '--restart-backend', '--restart-web']), 0)
             self.start.assert_not_called()
             self.stop_backend.assert_not_called()
+            self.stop_web.assert_not_called()
             self.backend_listener.assert_not_called()
 
     def test_restart_backend_flag_replaces_only_the_identified_backend(self):
@@ -86,12 +89,53 @@ class LocalWebLauncherTests(unittest.TestCase):
                 launcher.android_download_url(address)
 
     def test_occupied_web_port_leaves_existing_servers_untouched(self):
+        for flags in ([], ['--restart-web'], ['--rebuild'], ['--reuse-web']):
+            with self.subTest(flags=flags), ExitStack() as stack:
+                self.setup_runtime(stack)
+                self.listening.return_value = True
+                self.assertEqual(launcher.main(flags + ['--no-browser']), 1)
+                self.start.assert_not_called()
+                self.stop.assert_not_called()
+                self.stop_web.assert_not_called()
+
+    def test_normal_start_recompiles_an_existing_web_session(self):
+        for flags in ([], ['--restart-web'], ['--rebuild'], ['--debug']):
+            with self.subTest(flags=flags), ExitStack() as stack:
+                self.setup_runtime(stack)
+                self.listening.return_value = True
+                self.is_web.return_value = True
+                wait = stack.enter_context(patch.object(launcher, 'wait_for'))
+                self.assertEqual(launcher.main(flags + ['--no-android', '--no-browser']), 0)
+                self.stop_web.assert_called_once_with('192.168.1.3', 57583)
+                self.start.assert_called_once()
+                command = self.start.call_args.args[0]
+                self.assertIn('web-server', command)
+                self.assertIn('--debug' if '--debug' in flags else '--release', command)
+                self.assertIn('--dart-define=DEFENSYS_WEB_ORIGIN=http://192.168.1.3:57583', command)
+                self.assertIn('--dart-define=DEFENSYS_API_PORT=8000', command)
+                wait.assert_called_once()
+                self.assertIs(wait.call_args.kwargs['web_started'], self.start.call_args.kwargs['web_started'])
+                self.stop.assert_called_once_with(self.start.return_value)
+
+    def test_failed_web_stop_does_not_start_a_second_server_or_open_browser(self):
         with ExitStack() as stack:
             self.setup_runtime(stack)
             self.listening.return_value = True
-            self.assertEqual(launcher.main(['--no-browser']), 1)
+            self.is_web.return_value = True
+            self.stop_web.side_effect = RuntimeError('web port is still occupied')
+            self.assertEqual(launcher.main(['--no-android']), 1)
             self.start.assert_not_called()
             self.stop.assert_not_called()
+            self.browser.assert_not_called()
+
+    def test_reuse_and_rebuild_cannot_be_requested_together(self):
+        with ExitStack() as stack:
+            self.setup_runtime(stack)
+            with self.assertRaises(SystemExit) as error:
+                launcher.main(['--reuse-web', '--rebuild'])
+            self.assertEqual(error.exception.code, 2)
+            self.start.assert_not_called()
+            self.stop_web.assert_not_called()
 
     def test_healthy_existing_backend_is_reused_and_never_stopped(self):
         with ExitStack() as stack:
@@ -136,7 +180,7 @@ class LocalWebLauncherTests(unittest.TestCase):
             stack.enter_context(patch.object(launcher, 'wait_for'))
             backend = Mock()
             self.start.return_value = backend
-            self.assertEqual(launcher.main(['--no-browser']), 0)
+            self.assertEqual(launcher.main(['--reuse-web', '--no-browser']), 0)
             self.start.assert_called_once()
             self.assertIn('manage.py', self.start.call_args.args[0])
             self.assertIsNone(self.monitor.call_args.args[0])
@@ -147,9 +191,10 @@ class LocalWebLauncherTests(unittest.TestCase):
             self.setup_runtime(stack)
             self.listening.return_value = True
             self.is_web.return_value = True
-            self.assertEqual(launcher.main(['--no-browser']), 0)
+            self.assertEqual(launcher.main(['--reuse-web', '--no-browser']), 0)
             self.start.assert_not_called()
             self.stop.assert_not_called()
+            self.stop_web.assert_not_called()
 
     def test_connected_phone_is_included_when_web_and_api_are_already_up(self):
         with ExitStack() as stack:
@@ -159,7 +204,7 @@ class LocalWebLauncherTests(unittest.TestCase):
             self.android.return_value = 'demo-phone'
             phone = Mock()
             self.start.return_value = phone
-            self.assertEqual(launcher.main(['--no-browser']), 0)
+            self.assertEqual(launcher.main(['--reuse-web', '--no-browser']), 0)
             self.start.assert_called_once()
             command = self.start.call_args.args[0]
             self.assertIn('demo-phone', command)
@@ -176,7 +221,7 @@ class LocalWebLauncherTests(unittest.TestCase):
             self.listening.return_value = True
             self.is_web.return_value = True
             self.android.return_value = 'demo-phone'
-            self.assertEqual(launcher.main(['--debug', '--no-browser']), 0)
+            self.assertEqual(launcher.main(['--debug', '--reuse-web', '--no-browser']), 0)
             command = self.start.call_args.args[0]
             self.assertIn('--debug', command)
             self.assertNotIn('--release', command)
@@ -246,6 +291,38 @@ class StartupReadinessTests(unittest.TestCase):
                 redirect_stdout(terminal):
             launcher.forward_web_output(process, started)
             self.assertTrue(started.is_set())
+
+
+class WebRestartTests(unittest.TestCase):
+    def test_waits_for_the_old_server_to_release_the_port(self):
+        with patch.object(launcher, 'stop_port', return_value=True) as stop, \
+                patch.object(launcher, 'listening', side_effect=[True, False, False]) as listening, \
+                patch.object(launcher.time, 'sleep') as sleep:
+            launcher.stop_web('192.168.1.3', 57583)
+        stop.assert_called_once_with(57583)
+        sleep.assert_called_once_with(0.2)
+        self.assertEqual(listening.call_args_list[-1], call('192.168.1.3', 57583))
+
+    def test_failed_stop_is_reported(self):
+        with patch.object(launcher, 'stop_port', return_value=False), \
+                patch.object(launcher, 'listening') as listening, \
+                self.assertRaisesRegex(RuntimeError, 'Could not stop'):
+            launcher.stop_web('192.168.1.3', 57583)
+        listening.assert_not_called()
+
+    def test_port_that_stays_occupied_is_reported_without_another_stop(self):
+        with patch.object(launcher, 'stop_port', return_value=True) as stop, \
+                patch.object(launcher, 'listening', return_value=True), \
+                patch.object(launcher.time, 'monotonic', side_effect=[0, 5]), \
+                self.assertRaisesRegex(RuntimeError, 'still occupied'):
+            launcher.stop_web('192.168.1.3', 57583)
+        stop.assert_called_once()
+
+    def test_taskkill_failure_does_not_count_as_a_successful_stop(self):
+        with patch.object(launcher.os, 'name', 'nt'), \
+                patch.object(launcher, 'pids_listening_on', return_value=[123]), \
+                patch.object(launcher.subprocess, 'run', return_value=Mock(returncode=1)):
+            self.assertFalse(launcher.stop_port(57583))
 
 
 class BackendReloadTests(unittest.TestCase):

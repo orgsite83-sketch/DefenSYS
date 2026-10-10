@@ -5,7 +5,7 @@ must not be used to claim real-world accuracy. A reviewed dataset can replace
 them through NaiveBayesClassifier.train_from_examples without changing callers.
 """
 
-MODEL_VERSION = 'project-focus-3.0'
+MODEL_VERSION = 'project-focus-3.1'
 TRAINING_SOURCE = 'Authored development examples; not faculty-reviewed'
 
 TRAINING_EXAMPLES = {
@@ -36,6 +36,9 @@ TRAINING_EXAMPLES = {
         'An exploratory study cleans survey data and uses statistics and visualizations to investigate factors affecting retention.',
         'Our decision support dashboard compares historical fleet logistics, route efficiency and performance indicators through data analytics.',
         'A data visualization application presents statistical distributions and descriptive insights for institutional planning.',
+        'A delivery planning decision support project performs route optimization and route comparison. It evaluates feasible routes against distance, travel time and fuel-use criteria to support data-driven planning.',
+        'A transport analytics project compares fleet performance indicators and trip efficiency. Route comparison and constraint-based route optimization produce planning alternatives for dispatchers.',
+        'A resource planning decision support prototype analyzes operational data and compares feasible allocation scenarios. Statistical reports and optimization criteria support scheduling decisions.',
     ],
     'Web Development': [
         'A browser based campus event hub allows students to register for events. A responsive web application connects forms to a REST API.',
@@ -95,6 +98,14 @@ TRAINING_EXAMPLES = {
         'A laboratory information system tracks test requests, specimens and diagnostic result records.',
         'An institutional records management system organizes forms, approvals and reporting for administrative operations.',
         'A ward management system maintains admissions, bed allocation and patient discharge records.',
+        'An event information system manages event publishing, attendee registration, attendance tracking and organizer records. Staff retrieve event records and participation reports from a centralized directory.',
+        'A clinical intake information system records vital signs and presenting complaints. Configurable priority categories organize the triage queue, triage history and patient handoff records without a learned predictive model.',
+        'A hospital occupancy information system maintains bed availability, patient assignments and patient transfers. Admission and discharge updates keep ward records and occupancy reports consistent.',
+        'A municipal service information system stores application records, permit requests, processing queues and approval histories. Clerks coordinate structured records and operational workflows.',
+        'A hotel operations information system maintains room availability, guest assignments, booking records and check-in updates. Occupancy dashboards support reception staff.',
+        'A school activities records management service maintains event schedules, attendance records and registration records. Organizers coordinate event management and participation reporting.',
+        'A graduate information system maintains alumni profiles, employment records and career histories. A searchable directory supports authorized alumni affairs staff with profile management, announcements and institutional records.',
+        'An institutional alumni information service tracks graduate employment, career milestones, skills and achievements. Profile management and a searchable directory support networking and administrative reporting.',
     ],
 }
 
@@ -104,7 +115,7 @@ FOCUS_SIGNALS = {
     'IoT': ['iot', 'internet of things', 'sensor', 'sensors', 'soil moisture', 'soil-moisture', 'embedded', 'microcontroller', 'arduino', 'esp32', 'mqtt', 'actuator', 'telemetry', 'connected devices', 'sensor-integrated'],
     'Machine Learning': ['machine learning', 'ai/ml', 'ai-assisted', 'ai assisted', 'ai-powered', 'ai powered', 'neural network', 'deep learning', 'model training', 'training dataset', 'approved dataset', 'tensorflow', 'pytorch', 'learned model', 'disease predictions', 'disease prediction', 'model performance'],
     'Cybersecurity': ['penetration testing', 'threat hunting', 'threat hunter', 'vulnerability', 'vulnerabilities', 'vulnerability scanner', 'intrusion detection', 'malware', 'cryptographic', 'cryptography', 'zero trust', 'zero-trust', 'brute force', 'security testing', 'threat detection'],
-    'Data Science': ['analytics', 'statistical analysis', 'statistics', 'data analysis', 'data visualization', 'business intelligence', 'exploratory', 'grade trends', 'cohort distributions', 'performance indicators', 'early warning', 'trend exploration'],
+    'Data Science': ['analytics', 'statistical analysis', 'statistics', 'data analysis', 'data visualization', 'business intelligence', 'exploratory', 'grade trends', 'cohort distributions', 'performance indicators', 'early warning', 'trend exploration', 'route optimization', 'route comparison', 'compare feasible routes', 'data-driven planning'],
     'Web Development': ['web application', 'web portal', 'web platform', 'web-based', 'browser based', 'browser-based', 'website', 'online portal', 'responsive web', 'frontend', 'react', 'django', 'laravel', 'node.js', 'nodejs'],
     'Mobile Development': ['mobile app', 'mobile application', 'smartphone', 'android', 'ios', 'flutter', 'kotlin', 'react native', 'swift', 'phone app'],
     'Cloud Computing': ['cloud storage', 'distributed storage', 'cloud infrastructure', 'cloud synchronization', 'serverless', 'resource provisioning', 'elastic compute', 'kubernetes', 'distributed file', 'storage synchronization', 'infrastructure orchestration'],
@@ -112,7 +123,7 @@ FOCUS_SIGNALS = {
     'Desktop Applications': ['desktop application', 'desktop app', 'standalone desktop', 'tkinter', 'javafx', 'windows forms', 'electron', 'qt', 'desktop tool'],
     'Database Systems': ['query optimization', 'query execution', 'database engine', 'database optimization', 'database administration', 'normalization', 'query planning', 'performance tuning', 'database replication'],
     'Network Systems': ['network topology', 'routing', 'switching', 'network monitoring', 'network infrastructure', 'network administration', 'bandwidth', 'routers', 'dhcp', 'tcp ip'],
-    'Information Systems': ['information system', 'records management', 'inventory management', 'billing', 'patient records', 'appointment', 'appointments', 'pharmacy', 'laboratory', 'ward management', 'invoices', 'purchase orders', 'stock', 'booking', 'bookings', 'prescription', 'specimens', 'bed allocation', 'administrative workflows'],
+    'Information Systems': ['information system', 'records management', 'inventory management', 'billing', 'patient records', 'appointment', 'appointments', 'pharmacy', 'laboratory', 'ward management', 'invoices', 'purchase orders', 'stock', 'booking', 'bookings', 'prescription', 'specimens', 'bed allocation', 'administrative workflows', 'event management', 'event records', 'attendance tracking', 'attendance records', 'registration records', 'patient intake', 'triage queue', 'triage history', 'patient handoff', 'bed availability', 'bed records', 'patient assignment', 'patient assignments', 'patient transfers', 'occupancy reports', 'alumni information', 'profile management', 'employment records', 'career history', 'searchable directory'],
 }
 
 DOMAIN_SIGNALS = {

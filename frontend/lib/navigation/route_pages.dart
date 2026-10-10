@@ -21,15 +21,18 @@ class AdminTeamDetailRoute extends ConsumerWidget {
     super.key,
     required this.teamId,
     this.pitLeadMode = false,
+    this.initialDeliverableStage,
   });
 
   final int teamId;
   final bool pitLeadMode;
+  final String? initialDeliverableStage;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return TeamDetailPage(
       teamId: teamId,
+      initialDeliverableStage: initialDeliverableStage,
       canManage: true,
       isPitLead: pitLeadMode,
       pitLeadYear: pitLeadMode
@@ -55,17 +58,30 @@ class AdminGradeTeamDetailRoute extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final locked =
-        GoRouterState.of(context).uri.queryParameters['locked'] == '1';
+    final uri = GoRouterState.of(context).uri;
+    final locked = uri.queryParameters['locked'] == '1';
+    final originTeamId = int.tryParse(uri.queryParameters['fromTeam'] ?? '');
+    final returnTeamId = originTeamId != null && originTeamId > 0
+        ? originTeamId
+        : null;
+    final isFaculty = uri.path.startsWith('/faculty/');
     return GradeCenterTeamDetailScreen(
       gradeId: gradeId,
       isLocked: locked,
+      returnToTeam: returnTeamId != null,
       onBack: () {
+        if (returnTeamId != null) {
+          context.go(
+            isFaculty
+                ? FacultyRoutes.teamDetail(returnTeamId)
+                : AdminRoutes.teamDetail(returnTeamId),
+          );
+          return;
+        }
         if (context.canPop()) {
           context.pop();
         } else {
-          final location = GoRouterState.of(context).uri.path;
-          if (location.startsWith('/faculty/')) {
+          if (isFaculty) {
             context.go(FacultyRoutes.gradeCenter);
           } else {
             context.go(AdminRoutes.gradeCenter);

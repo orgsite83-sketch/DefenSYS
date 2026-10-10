@@ -3,6 +3,7 @@ import '../../../../widgets/shadcn/defensys_action_menu.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import 'components/schedule_operations_dialog.dart';
 import 'components/schedule_group_actions.dart';
+import 'components/session_evaluator_access_dialog.dart';
 import 'components/schedule_manager_dialog.dart';
 import '../grade_center/grade_correction_dialog.dart';
 import 'package:flutter/material.dart';
@@ -23,6 +24,7 @@ import '../../../../toasts/feedback_toast.dart';
 import '../defense_scheduler/components/team_readiness_tracker.dart';
 import '../defense_scheduler/defense_scheduler_screen.dart';
 import '../defense_scheduler/dialogs/manual_slot_editor_dialog.dart';
+import '../defense_scheduler/dialogs/panelist_pool_dialog.dart';
 import '../defense_scheduler/dialogs/team_deliverables_review_dialog.dart';
 import '../defense_scheduler/models/schedule_import_models.dart';
 import '../grade_center/grade_center_screen.dart';
@@ -35,6 +37,7 @@ import '../../faculty/minutes_form_screen.dart';
 import '../../../../widgets/minutes/minutes_pdf_dialog.dart';
 import '../../../../utils/import/schedule_import_draft.dart';
 import '../../../../utils/scheduler/defense_scheduler_draft.dart';
+import '../../../../utils/scheduler/session_activity.dart';
 import 'components/defense_schedule_bulk_import_view.dart';
 
 class DefenseBoardScreen extends ConsumerStatefulWidget {
@@ -100,6 +103,25 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     if (widget.initialBulkImport != oldWidget.initialBulkImport) {
       _showScheduleBulkImport = widget.initialBulkImport;
     }
+  }
+
+  int? _lastPanelistRequest;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (GoRouter.maybeOf(context) == null) return;
+    final uri = GoRouterState.of(context).uri;
+    final id = int.tryParse(uri.queryParameters['panelistRequest'] ?? '');
+    if (id == _lastPanelistRequest) return;
+    _lastPanelistRequest = id;
+    if (id == null || id < 1) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await PanelistPoolDialog.show(context, initialRequestId: id);
+      if (mounted && GoRouterState.of(context).uri.queryParameters['panelistRequest'] == '$id') {
+        context.go('/faculty/defense-board');
+      }
+    });
   }
 
   Future<void> _checkImportDraft() async {
@@ -280,9 +302,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     final pendingTeamsForActiveStage = scopeTeams
         .where((t) =>
             activeStageName.isNotEmpty &&
-            !isTeamStageReady(t, activeStageName) &&
-            !isTeamStageCompleted(t, activeStageName) &&
-            !isTeamStageScheduled(t, activeStageName))
+            getTeamStageStatus(t, activeStageName) == 'pending')
         .toList();
 
     final totalReadyAcrossAllStages = schedState.teams
@@ -698,10 +718,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                           .where((t) => isTeamStageCompleted(t, stageLabel))
                           .length;
                       final pendingCountForStage = teamsForScope(schedState, 'capstone')
-                          .where((t) =>
-                              !isTeamStageReady(t, stageLabel) &&
-                              !isTeamStageCompleted(t, stageLabel) &&
-                              !isTeamStageScheduled(t, stageLabel))
+                          .where((t) => getTeamStageStatus(t, stageLabel) == 'pending')
+                          .length;
+                      final stageTeamCount = teamsForScope(schedState, 'capstone').length;
+                      final awaitingCompletionCount = teamsForScope(schedState, 'capstone')
+                          .where((t) => getTeamStageStatus(t, stageLabel) == 'awaiting_completion')
                           .length;
 
                       String badgeText;
@@ -712,12 +733,16 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                         badgeText = '$readyCountForStage ready';
                         badgeColor = _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.5) : const Color(0xFFDEF7EC);
                         badgeTextColor = _isDark ? const Color(0xFF6EE7B7) : const Color(0xFF03543F);
-                      } else if (completedCountForStage > 0) {
+                      } else if (stageTeamCount > 0 && completedCountForStage == stageTeamCount) {
                         badgeText = 'Complete';
                         badgeColor = _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.5) : const Color(0xFFDEF7EC);
                         badgeTextColor = _isDark ? const Color(0xFF6EE7B7) : const Color(0xFF03543F);
                       } else {
-                        badgeText = '$pendingCountForStage pending';
+                        badgeText = awaitingCompletionCount > 0
+                            ? '$awaitingCompletionCount awaiting completion'
+                            : pendingCountForStage > 0
+                                ? '$pendingCountForStage pending'
+                                : '${stageTeamCount - completedCountForStage} in progress';
                         badgeColor = _isDark ? const Color(0xFF78350F).withValues(alpha: 0.5) : const Color(0xFFFEF3C7);
                         badgeTextColor = _isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E);
                       }
@@ -756,11 +781,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                           .where((t) => isTeamStageCompleted(t, eventName))
                           .length;
                       final pendingCountForEvent = teamsForScope(schedState, 'pit')
-                          .where((t) =>
-                              !isTeamStageReady(t, eventName) &&
-                              !isTeamStageCompleted(t, eventName) &&
-                              !isTeamStageScheduled(t, eventName))
+                          .where((t) => getTeamStageStatus(t, eventName) == 'pending')
                           .length;
+                      final eventTeamCount = teamsForScope(schedState, 'pit').length;
 
                       String badgeText;
                       Color badgeColor;
@@ -770,12 +793,14 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                         badgeText = '$readyCountForEvent ready';
                         badgeColor = _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.5) : const Color(0xFFDEF7EC);
                         badgeTextColor = _isDark ? const Color(0xFF6EE7B7) : const Color(0xFF03543F);
-                      } else if (completedCountForEvent > 0) {
+                      } else if (eventTeamCount > 0 && completedCountForEvent == eventTeamCount) {
                         badgeText = 'Complete';
                         badgeColor = _isDark ? const Color(0xFF064E3B).withValues(alpha: 0.5) : const Color(0xFFDEF7EC);
                         badgeTextColor = _isDark ? const Color(0xFF6EE7B7) : const Color(0xFF03543F);
                       } else {
-                        badgeText = '$pendingCountForEvent pending';
+                        badgeText = pendingCountForEvent > 0
+                            ? '$pendingCountForEvent pending'
+                            : '${eventTeamCount - completedCountForEvent} in progress';
                         badgeColor = _isDark ? const Color(0xFF78350F).withValues(alpha: 0.5) : const Color(0xFFFEF3C7);
                         badgeTextColor = _isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E);
                       }
@@ -1724,23 +1749,45 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       return _buildEmptyBoard();
     }
 
-    final groups = _groupSchedules(state.schedules);
-    final stages = <String, List<_SessionGroup>>{};
+    final now = DateTime.now();
+    final groups = _groupSchedules(state.schedules)
+      ..sort((a, b) {
+        final result = compareSessionActivity(a.schedules, b.schedules, now: now);
+        return result != 0 ? result : a.key.compareTo(b.key);
+      });
+    final sections = <SessionActivity, Map<String, List<_SessionGroup>>>{};
     for (final group in groups) {
       final anchor = group.schedules.first;
       final stageKey = '${group.scope}|${anchor['semester_id']}|${group.scope == 'pit' ? group.stageLabel.toLowerCase() : anchor['defense_stage_id'] ?? group.stageLabel}';
+      final stages = sections.putIfAbsent(
+        sessionActivity(group.schedules, now: now),
+        () => {},
+      );
       stages.putIfAbsent(stageKey, () => []).add(group);
     }
     return Column(
-      children: [for (final stageGroups in stages.values) ...[
-        StageScheduleHeader(
-          schedule: stageGroups.expand((group) => group.schedules).where((s) => s['can_edit'] != false && s['status'] == 'scheduled').firstOrNull ?? stageGroups.first.schedules.first,
-          sessionCount: stageGroups.length,
-          canManage: _canManageSession(stageGroups.first) && (stageGroups.first.scope == 'pit' || _asInt(stageGroups.first.schedules.first['defense_stage_id']) != null),
-          isSaving: state.isSaving,
-        ),
-        ...stageGroups.map((group) => _buildSessionCard(group, state)),
-      ]],
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final section in sections.entries) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 4, 16),
+            child: Text(
+              section.key.label,
+              key: ValueKey('session-section-${section.key.name}'),
+              style: DefensysTokens.sectionTitle.copyWith(color: _textPrimaryColor),
+            ),
+          ),
+          for (final stageGroups in section.value.values) ...[
+            StageScheduleHeader(
+              schedule: stageGroups.expand((group) => group.schedules).where((s) => s['can_edit'] != false && s['status'] == 'scheduled').firstOrNull ?? stageGroups.first.schedules.first,
+              sessionCount: stageGroups.length,
+              canManage: _canManageSession(stageGroups.first) && (stageGroups.first.scope == 'pit' || _asInt(stageGroups.first.schedules.first['defense_stage_id']) != null),
+              isSaving: state.isSaving,
+            ),
+            ...stageGroups.map((group) => _buildSessionCard(group, state)),
+          ],
+        ],
+      ],
     );
   }
 
@@ -2601,6 +2648,14 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       key: ValueKey('session-actions-${group.key}'),
       schedule: anchor,
       enabled: !ref.watch(defenseBoardProvider).isSaving,
+      onEvaluatorAccess: group.schedules.any(
+        (s) => (s['external_evaluators'] as List? ?? []).isNotEmpty,
+      )
+          ? () => SessionEvaluatorAccessDialog.show(
+              context,
+              group.schedules.map((s) => _asInt(s['id'])).whereType<int>().toSet(),
+            )
+          : null,
     );
   }
 

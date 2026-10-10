@@ -1,7 +1,8 @@
 """Start DefenSYS with one Wi-Fi address for the PC, phones and invitations.
 
 Uses only the standard library. Reuses a current API server on the LAN and
-enables Django's code reload. Restarts only an identified workspace backend;
+enables Django's code reload. Compiles the current frontend on every start
+unless --reuse-web is requested. Restarts only identified DefenSYS servers;
 does not change .env, firewall rules, accounts or data.
 """
 
@@ -241,7 +242,7 @@ def wait_for(url: str, process: subprocess.Popen, timeout: int,
 
 
 def is_defensys_web(origin: str) -> bool:
-    """Identify our app before reusing an occupied web port."""
+    """Identify our app before restarting or reusing an occupied web port."""
     try:
         with HTTP.open(origin + '/', timeout=2) as response:
             return response.status == 200 and b'<title>DefenSYS</title>' in response.read(65536)
@@ -276,14 +277,27 @@ def stop_port(number: int) -> bool:
     for pid in pids:
         try:
             if os.name == 'nt':
-                subprocess.run(['taskkill', '/F', '/T', '/PID', str(pid)],
-                               capture_output=True, check=False)
+                result = subprocess.run(['taskkill', '/F', '/T', '/PID', str(pid)],
+                                        capture_output=True, check=False, timeout=10)
+                if result.returncode:
+                    continue
             else:
                 os.kill(pid, signal.SIGTERM)
             stopped = True
         except (OSError, subprocess.SubprocessError):
             pass
     return stopped
+
+
+def stop_web(host: str, number: int) -> None:
+    """Stop an already identified DefenSYS web server and wait for its port."""
+    if not stop_port(number):
+        raise RuntimeError(f'Could not stop the DefenSYS web server on port {number}. Stop it in its terminal and run this launcher again.')
+    deadline = time.monotonic() + 5
+    while listening('127.0.0.1', number) or listening(host, number):
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f'Port {number} is still occupied after stopping the DefenSYS web server. No other process was stopped.')
+        time.sleep(0.2)
 
 
 @dataclass(frozen=True)
@@ -473,8 +487,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--check', action='store_true', help='Print addresses and check setup without starting anything.')
     parser.add_argument('--no-browser', action='store_true', help='Leave the PC browser closed.')
     parser.add_argument('--debug', action='store_true', help='Use Flutter debug mode for web and Android development; both default to release mode for phone testing.')
-    parser.add_argument('--restart-web', '--rebuild', action='store_true',
-                        help='Stop any existing web server on this port and recompile a fresh build.')
+    web = parser.add_mutually_exclusive_group()
+    web.add_argument('--restart-web', '--rebuild', action='store_true',
+                     help='Compile the current frontend (the default); retained for existing commands.')
+    web.add_argument('--reuse-web', action='store_true',
+                     help='Reuse an existing DefenSYS web session without compiling. Its code and compiled settings may be older.')
     parser.add_argument('--restart-backend', action='store_true',
                         help='Restart the identified workspace backend, including changes to .env. New servers automatically reload Python changes.')
     parser.add_argument('--android-download-url', type=android_download_url,
@@ -510,26 +527,28 @@ def main(argv: list[str] | None = None) -> int:
         if args.check:
             print(f'Backend ready: {ready(health)}', flush=True)
             print(f'Web port already in use: {listening("127.0.0.1", args.web_port)}', flush=True)
+            print('Web startup: ' + ('reuse an existing session if available' if args.reuse_web else 'compile the current frontend'), flush=True)
             print('Flutter options: ' + ' '.join(command[command.index('run'):]), flush=True)
             if mobile_command:
                 print('Android options: ' + ' '.join(mobile_command[mobile_command.index('run'):]), flush=True)
             return 0
-        if args.restart_web:
-            if stop_port(args.web_port):
-                print(f'Stopped existing web server on port {args.web_port}. Recompiling fresh build...', flush=True)
-                time.sleep(1)
         existing_web = listening('127.0.0.1', args.web_port) or listening(host, args.web_port)
         if existing_web and not is_defensys_web(origin):
             raise RuntimeError(f'Port {args.web_port} is occupied by an unrecognized or unreachable web server. No existing process was stopped. Free the port or choose --web-port.')
+        if existing_web and not args.reuse_web:
+            print(f'Stopping the existing DefenSYS web server on port {args.web_port} to compile the current frontend...', flush=True)
+            stop_web(host, args.web_port)
+            existing_web = False
         backend = ensure_backend(host, args.api_port, health, owned, restart=args.restart_backend)
         external_backend = backend_listener(args.api_port) if backend is None else None
         if backend is None:
             print('Using the existing backend and monitoring its availability. It will stay running when this launcher stops.', flush=True)
         frontend = None
         if existing_web:
-            print('Using the existing DefenSYS web session. It will stay running when this launcher stops.', flush=True)
-            print('NOTE: If you recently edited frontend code, run with --restart-web to recompile.', flush=True)
+            print('Using the existing DefenSYS web session because --reuse-web was requested. It will stay running when this launcher stops.', flush=True)
+            print('Compilation skipped. Frontend code and compiled settings may be older. Run without --reuse-web to update them.', flush=True)
         else:
+            print('Compiling the current frontend. Wait for Ready: before opening or reloading the browser.', flush=True)
             web_started = threading.Event()
             frontend = start(command, ROOT / 'frontend', web_started=web_started)
             owned.append(frontend)

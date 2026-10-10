@@ -3,7 +3,7 @@ from reportlab.lib.units import inch
 from reports.pdf_builder import DefensysPdfReportBuilder
 
 
-def generate_defense_schedule_pdf(semester, schedules, generated_by_user, signatories=None, include_signatures=True):
+def generate_defense_schedule_pdf(semester, schedules, generated_by_user, signatories=None, include_signatures=False):
     """
     Generate an official USTP DIT PDF report summarizing scheduled defense presentations.
     """

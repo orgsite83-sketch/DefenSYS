@@ -2,7 +2,7 @@ from reportlab.lib.units import inch
 from reports.pdf_builder import DefensysPdfReportBuilder
 
 
-def generate_team_roster_pdf(semester, teams, generated_by_user, signatories=None, include_signatures=True):
+def generate_team_roster_pdf(semester, teams, generated_by_user, signatories=None, include_signatures=False):
     """
     Generate an official USTP DIT PDF roster listing all active teams and their memberships.
     """

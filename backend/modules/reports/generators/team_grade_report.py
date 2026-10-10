@@ -7,7 +7,7 @@ from reports.pdf_builder import DefensysPdfReportBuilder
 from reports.pdf_styles import defensys_table_style
 
 
-def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, include_signatures=True):
+def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, include_signatures=False):
     """
     Generate an official USTP DIT PDF report detailing a team's Master Student Grade Sheet
     matrix and detailed panelist rubric criteria evaluation breakdown.

@@ -5,7 +5,7 @@ from reports.pdf_builder import DefensysPdfReportBuilder
 from reports.pdf_styles import defensys_styles
 
 
-def generate_curriculum_proposal_pdf(analytics_data, proposal_data, generated_by_user, signatories=None, include_signatures=True):
+def generate_curriculum_proposal_pdf(analytics_data, proposal_data, generated_by_user, signatories=None, include_signatures=False):
     """
     Generate an official USTP DIT Curriculum Review & Decision Support Proposal PDF.
     Suitable for PACUCOA accreditation, CHED compliance, and Department Curriculum Committee review.

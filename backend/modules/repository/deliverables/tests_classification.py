@@ -57,7 +57,7 @@ The Flutter smartphone app implements offline lessons and push notifications for
         self.assertEqual(result['predicted_category'], 'Mobile Development')
         self.assertIn('Flutter', [t['name'] for t in result['technologies']])
         self.assertIn('input_hash', result)
-        self.assertTrue(result['model_version'].startswith('project-focus-3.0-'))
+        self.assertTrue(result['model_version'].startswith('project-focus-3.1-'))
         self.assertEqual(result['training_source'], 'Authored development examples; not faculty-reviewed')
 
     def test_missing_text_is_explicitly_unresolved(self):
@@ -77,3 +77,59 @@ The Flutter smartphone app implements offline lessons and push notifications for
     def test_section_chunks_preserve_source_passages(self):
         chunks = section_chunks('4. Objectives\nCollect soil moisture readings.\nReferences\nUse MQTT devices.')
         self.assertEqual(chunks, [{'section': 'Objectives', 'text': 'Collect soil moisture readings.', 'weight': 3}])
+
+    def test_functional_descriptions_establish_project_focus_without_stack_names(self):
+        cases = [
+            ('Objectives\nPublish activity schedules and organize event records.\n'
+             'Proposed System Features\nOnline sign-ups and attendance tracking support event-management tools.',
+             'Information Systems'),
+            ('Objectives\nRecord presenting complaints during patient intake.\n'
+             'Proposed System Features\nNurses use the triage queue and triage history for handoff.',
+             'Information Systems'),
+            ('Objectives\nMaintain bed records and update patient transfers.\n'
+             'Proposed System Features\nWard-management tools report bed availability and occupancy reports.',
+             'Information Systems'),
+            ('Objectives\nSupport route optimization and compare feasible routes using distance and travel-time criteria.\n'
+             'Expected Outputs\nRoute comparison provides data-driven planning alternatives for dispatchers.',
+             'Data Science'),
+            ('Objectives\nMaintain alumni information with employment records and career history.\n'
+             'Proposed System Features\nProfile management and a searchable directory support authorized staff.',
+             'Information Systems'),
+        ]
+        for text, expected in cases:
+            with self.subTest(expected=expected, text=text):
+                result = self.model.predict(text)
+                self.assertEqual(result['predicted_category'], expected)
+                self.assertEqual(result['status'], 'estimated')
+                self.assertGreaterEqual(len(result['evidence']), 2)
+                self.assertEqual(result['technologies'], [])
+
+    def test_line_wraps_and_hyphen_variants_preserve_cues_and_excerpts(self):
+        result = self.model.predict('Objectives\nThe occupancy information system manages patient\n'
+            'transfers and maintains bed\navailability.\nProposed System Features\nWard–management provides patient assignments.')
+        self.assertEqual(result['predicted_category'], 'Information Systems')
+        cues = {hit['term'] for hit in result['evidence']}
+        self.assertIn('patient transfers', cues)
+        self.assertIn('bed availability', cues)
+        self.assertIn('ward management', cues)
+        self.assertTrue(all(hit['section'] in ('Objectives', 'Proposed System Features') for hit in result['evidence']))
+
+    def test_cited_and_tentative_operational_features_are_not_project_evidence(self):
+        result = self.model.predict('Objectives\nWe investigate community needs through interviews.\n'
+            'Preliminary Technology Considerations\nWe might use route optimization and route comparison.\n'
+            'Related Work\nPrior studies provide patient intake, triage queue and ward-management systems.\n'
+            'References\nAn event-management platform provides attendance tracking and event records.')
+        self.assertEqual(result['status'], 'unresolved')
+        self.assertEqual(result['evidence'], [])
+        self.assertEqual(result['technologies'], [])
+
+    def test_routing_does_not_confuse_computer_networks_with_fleet_optimization(self):
+        result = self.model.predict('Objectives\nConfigure packet routing and switching across routers.\n'
+            'Methodology\nEvaluate network topology and bandwidth in the campus network infrastructure.')
+        self.assertEqual(result['predicted_category'], 'Network Systems')
+
+    def test_triage_workflow_does_not_imply_a_trained_machine_learning_model(self):
+        result = self.model.predict('Objectives\nSupport patient intake, the triage queue and triage history.\n'
+            'Methodology\nConfigurable criteria support patient handoff and records management.')
+        self.assertEqual(result['predicted_category'], 'Information Systems')
+        self.assertNotIn('Machine Learning', result['secondary_categories'])

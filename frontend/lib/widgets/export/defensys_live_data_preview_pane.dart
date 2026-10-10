@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import '../../services/admin/reports_provider.dart';
 import '../../theme/defensys_tokens.dart';
@@ -23,7 +25,7 @@ class DefensysLiveDataPreviewPane extends StatefulWidget {
     required this.onRefresh,
     this.emptyStateOverride,
     this.signatories = const [],
-    this.includeSignatures = true,
+    this.includeSignatures = false,
     this.selectedFormat = 'pdf',
   });
 
@@ -35,10 +37,12 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
   final _searchController = TextEditingController();
   bool _isDocumentView = true;
   double _zoomScale = 1.0;
+  Uint8List? _pdfBytes;
 
   @override
   void initState() {
     super.initState();
+    _pdfBytes = widget.previewData?.pdfBytes;
     final isTabular = widget.selectedFormat == 'xlsx' ||
         widget.selectedFormat == 'csv' ||
         widget.selectedFormat == 'sheet';
@@ -49,6 +53,9 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
   @override
   void didUpdateWidget(covariant DefensysLiveDataPreviewPane oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.previewData != widget.previewData) {
+      _pdfBytes = widget.previewData?.pdfBytes;
+    }
     if (oldWidget.selectedFormat != widget.selectedFormat) {
       final isTabular = widget.selectedFormat == 'xlsx' ||
           widget.selectedFormat == 'csv' ||
@@ -215,7 +222,7 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
           Expanded(
             child: Text(
               _isDocumentView
-                  ? (data.pdfBytes != null
+                  ? (_pdfBytes != null
                       ? 'Official Document Preview — Dynamic output matching exact PDF export'
                       : 'Official Document Preview (Multi-Page) — Mirrored letterheads, sidebars, and signatures')
                   : 'Viewing $displayRowCount of ${data.totalRows} raw records',
@@ -229,7 +236,7 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
           ),
 
           // Zoom Controls (Fallback Sheet Mode Only)
-          if (_isDocumentView && data.pdfBytes == null) ...[
+          if (_isDocumentView && _pdfBytes == null) ...[
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -339,7 +346,7 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
 
   /// 1. True Document Sheet View
   Widget _buildDocumentSheetView(ReportPreviewData data) {
-    final pdfBytes = data.pdfBytes;
+    final pdfBytes = _pdfBytes;
     if (pdfBytes != null && pdfBytes.isNotEmpty) {
       return DefensysPdfViewer(
         key: ValueKey(pdfBytes),

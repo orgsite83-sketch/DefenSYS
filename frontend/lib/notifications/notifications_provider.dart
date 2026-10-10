@@ -1,172 +1,319 @@
+import 'dart:async';
 import 'dart:convert';
+
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../config/api_config.dart';
+import '../services/auth_provider.dart';
 import '../services/authenticated_client.dart';
 
-final notificationsProvider =
-    NotifierProvider<NotificationsNotifier, NotificationsState>(
+final notificationsProvider = NotifierProvider.autoDispose
+    .family<NotificationsNotifier, NotificationsState, String>(
       NotificationsNotifier.new,
     );
 
 class NotificationsState {
   final bool isLoading;
+  final bool isLoadingMore;
   final bool isSaving;
+  final bool unreadOnly;
   final List<Map<String, dynamic>> notifications;
   final int unreadCount;
+  final int totalCount;
+  final int? nextPage;
   final String? error;
-  final String? message;
 
   const NotificationsState({
     this.isLoading = false,
+    this.isLoadingMore = false,
     this.isSaving = false,
+    this.unreadOnly = false,
     this.notifications = const [],
     this.unreadCount = 0,
+    this.totalCount = 0,
+    this.nextPage,
     this.error,
-    this.message,
   });
 
   NotificationsState copyWith({
     bool? isLoading,
+    bool? isLoadingMore,
     bool? isSaving,
+    bool? unreadOnly,
     List<Map<String, dynamic>>? notifications,
     int? unreadCount,
+    int? totalCount,
+    int? nextPage,
     String? error,
-    String? message,
     bool clearError = false,
-    bool clearMessage = false,
-  }) {
-    return NotificationsState(
-      isLoading: isLoading ?? this.isLoading,
-      isSaving: isSaving ?? this.isSaving,
-      notifications: notifications ?? this.notifications,
-      unreadCount: unreadCount ?? this.unreadCount,
-      error: clearError ? null : error ?? this.error,
-      message: clearMessage ? null : message ?? this.message,
-    );
-  }
+    bool clearNextPage = false,
+  }) => NotificationsState(
+    isLoading: isLoading ?? this.isLoading,
+    isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+    isSaving: isSaving ?? this.isSaving,
+    unreadOnly: unreadOnly ?? this.unreadOnly,
+    notifications: notifications ?? this.notifications,
+    unreadCount: unreadCount ?? this.unreadCount,
+    totalCount: totalCount ?? this.totalCount,
+    nextPage: clearNextPage ? null : nextPage ?? this.nextPage,
+    error: clearError ? null : error ?? this.error,
+  );
 }
 
 class NotificationsNotifier extends Notifier<NotificationsState> {
-  static String get baseUrl => ApiConfig.notificationsUrl;
+  NotificationsNotifier(this.workspace);
+  final String workspace;
+  int _epoch = 0;
+  int _request = 0;
 
-  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
+  AuthenticatedHttpClient get _client =>
+      ref.read(authenticatedHttpClientProvider);
 
   @override
   NotificationsState build() {
-    return const NotificationsState();
-  }
-
-  Future<void> fetchNotifications() async {
-    state = state.copyWith(
-      isLoading: state.notifications.isEmpty,
-      clearError: true,
-      clearMessage: true,
-    );
-
-    try {
-      final response = await _client.get(Uri.parse(baseUrl));
-
-      if (response.statusCode == 200) {
-        final data = Map<String, dynamic>.from(jsonDecode(response.body));
-        final list = List<Map<String, dynamic>>.from(data['notifications'] ?? []);
-        final unread = data['unread_count'] as int? ?? 0;
-
-        state = state.copyWith(
-          isLoading: false,
-          notifications: list,
-          unreadCount: unread,
-        );
-        return;
+    // A new login must never inherit cached inbox contents or an old response.
+    final userId = ref.watch(authProvider.select((s) => s.user?['id']));
+    final epoch = ++_epoch;
+    if (userId != null) {
+      Timer? timer;
+      void startPolling() {
+        timer?.cancel();
+        timer = Timer.periodic(const Duration(seconds: 60), (_) {
+          if (ref.mounted &&
+              epoch == _epoch &&
+              !state.isLoading &&
+              !state.isLoadingMore &&
+              !state.isSaving &&
+              state.notifications.length <= 20 &&
+              (WidgetsBinding.instance.lifecycleState == null ||
+                  WidgetsBinding.instance.lifecycleState ==
+                      AppLifecycleState.resumed)) {
+            fetchNotifications();
+          }
+        });
       }
 
+      startPolling();
+      ref.onCancel(() => timer?.cancel());
+      ref.onResume(startPolling);
+      ref.onDispose(() => timer?.cancel());
+      Future.microtask(() {
+        if (ref.mounted && epoch == _epoch) fetchNotifications();
+      });
+    }
+    return const NotificationsState(isLoading: true);
+  }
+
+  Uri _uri([String suffix = '', Map<String, String> params = const {}]) =>
+      Uri.parse(
+        '${ApiConfig.notificationsUrl}$suffix',
+      ).replace(queryParameters: {'workspace': workspace, ...params});
+
+  bool _current(int epoch, int request) =>
+      ref.mounted && epoch == _epoch && request == _request;
+
+  Future<void> fetchNotifications({
+    bool? unreadOnly,
+    bool loadMore = false,
+  }) async {
+    if (state.isSaving ||
+        (loadMore &&
+            (state.nextPage == null ||
+                state.isLoadingMore ||
+                state.isLoading))) {
+      return;
+    }
+    final filter = unreadOnly ?? state.unreadOnly;
+    final changed = filter != state.unreadOnly;
+    final page = loadMore ? state.nextPage! : 1;
+    final epoch = _epoch;
+    final request = ++_request;
+    state = state.copyWith(
+      isLoading: !loadMore && (changed || state.notifications.isEmpty),
+      isLoadingMore: loadMore,
+      unreadOnly: filter,
+      notifications: changed ? [] : null,
+      clearNextPage: changed,
+      clearError: true,
+    );
+    try {
+      final response = await _client.get(
+        _uri('', {'page': '$page', if (filter) 'unread': 'true'}),
+      );
+      if (!_current(epoch, request)) return;
+      if (response.statusCode != 200) {
+        throw Exception(_errorFromResponse(response));
+      }
+      final data = Map<String, dynamic>.from(jsonDecode(response.body));
+      final incoming = List<Map<String, dynamic>>.from(
+        data['notifications'] ?? [],
+      );
+      final items = <int, Map<String, dynamic>>{
+        if (loadMore)
+          for (final n in state.notifications) n['id'] as int: n,
+        for (final n in incoming) n['id'] as int: n,
+      }.values.toList();
+      final next = data['next'] == null
+          ? null
+          : int.tryParse(
+              Uri.parse(data['next'].toString()).queryParameters['page'] ?? '',
+            );
       state = state.copyWith(
         isLoading: false,
-        error: _errorFromResponse(response),
+        isLoadingMore: false,
+        notifications: items,
+        unreadCount: data['unread_count'] as int? ?? 0,
+        totalCount:
+            data['total_count'] as int? ??
+            data['count'] as int? ??
+            items.length,
+        nextPage: next,
+        clearNextPage: next == null,
       );
-    } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: 'Connection error: $e',
-      );
+    } catch (_) {
+      if (_current(epoch, request)) {
+        state = state.copyWith(
+          isLoading: false,
+          isLoadingMore: false,
+          error: 'Could not load notifications. Please try again.',
+        );
+      }
     }
   }
 
   Future<bool> markAsRead(int notificationId) async {
-    final updatedList = state.notifications.map((n) {
-      if (n['id'] == notificationId) {
-        return {...n, 'is_read': true};
-      }
-      return n;
-    }).toList();
-
-    final newUnread = updatedList.where((n) => n['is_read'] != true).length;
-
+    if (state.isSaving) return false;
+    final item = state.notifications
+        .where((n) => n['id'] == notificationId)
+        .firstOrNull;
+    if (item == null) return false;
+    if (item['is_read'] == true) return true;
+    final epoch = _epoch;
+    final request = ++_request;
     state = state.copyWith(
       isSaving: true,
-      notifications: updatedList,
-      unreadCount: newUnread,
+      isLoading: false,
+      isLoadingMore: false,
       clearError: true,
-      clearMessage: true,
     );
-
     try {
-      final url = '$baseUrl/$notificationId/read/';
-      final response = await _client.post(Uri.parse(url), body: jsonEncode({}));
-
-      if (response.statusCode == 200) {
-        state = state.copyWith(isSaving: false);
-        return true;
+      final response = await _client.post(
+        _uri('/$notificationId/read/'),
+        body: jsonEncode({}),
+      );
+      if (!_current(epoch, request)) return false;
+      if (response.statusCode != 200) {
+        throw Exception(_errorFromResponse(response));
       }
-
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
       state = state.copyWith(
         isSaving: false,
-        error: _errorFromResponse(response),
+        notifications: [
+          for (final n in state.notifications)
+            if (n['id'] != notificationId || !state.unreadOnly)
+              n['id'] == notificationId
+                  ? {
+                      ...n,
+                      if (data['notification'] is Map)
+                        ...Map<String, dynamic>.from(data['notification']),
+                      'is_read': true,
+                    }
+                  : n,
+        ],
+        // This is the server's whole-inbox count, not the unread rows on page one.
+        unreadCount:
+            data['unread_count'] as int? ??
+            (state.unreadCount - 1).clamp(0, state.unreadCount),
       );
-      return false;
-    } catch (e) {
-      state = state.copyWith(
-        isSaving: false,
-        error: 'Connection error: $e',
-      );
+      return true;
+    } catch (_) {
+      if (_current(epoch, request)) {
+        state = state.copyWith(
+          isSaving: false,
+          error: 'Could not mark the notification as read. Please try again.',
+        );
+      }
       return false;
     }
   }
 
-  Future<bool> markAllAsRead() async {
-    final updatedList = state.notifications.map((n) {
-      return {...n, 'is_read': true};
-    }).toList();
-
+  /// Recheck a workflow immediately before opening it, including read alerts.
+  Future<Map<String, dynamic>?> refreshNotification(int id) async {
+    if (state.isSaving) return null;
+    final epoch = _epoch;
+    final request = ++_request;
     state = state.copyWith(
       isSaving: true,
-      notifications: updatedList,
-      unreadCount: 0,
+      isLoading: false,
+      isLoadingMore: false,
       clearError: true,
-      clearMessage: true,
     );
-
     try {
-      final url = '$baseUrl/read-all/';
-      final response = await _client.post(Uri.parse(url), body: jsonEncode({}));
-
-      if (response.statusCode == 200) {
+      final response = await _client.get(_uri('/$id/'));
+      if (!_current(epoch, request)) return null;
+      if (response.statusCode != 200) {
+        throw Exception(_errorFromResponse(response));
+      }
+      final item = Map<String, dynamic>.from(
+        (jsonDecode(response.body) as Map)['notification'],
+      );
+      state = state.copyWith(
+        isSaving: false,
+        notifications: [
+          for (final n in state.notifications) n['id'] == id ? item : n,
+        ],
+      );
+      return item;
+    } catch (_) {
+      if (_current(epoch, request)) {
         state = state.copyWith(
           isSaving: false,
-          message: 'All notifications marked as read.',
+          error: 'Could not check this action. Please try again.',
         );
-        return true;
       }
+      return null;
+    }
+  }
 
+  Future<bool> markAllAsRead() async {
+    if (state.isSaving) return false;
+    final epoch = _epoch;
+    final request = ++_request;
+    state = state.copyWith(
+      isSaving: true,
+      isLoading: false,
+      isLoadingMore: false,
+      clearError: true,
+    );
+    try {
+      final response = await _client.post(
+        _uri('/read-all/'),
+        body: jsonEncode({}),
+      );
+      if (!_current(epoch, request)) return false;
+      if (response.statusCode != 200) {
+        throw Exception(_errorFromResponse(response));
+      }
       state = state.copyWith(
         isSaving: false,
-        error: _errorFromResponse(response),
+        unreadCount: 0,
+        notifications: state.unreadOnly
+            ? []
+            : [
+                for (final n in state.notifications) {...n, 'is_read': true},
+              ],
+        clearNextPage: state.unreadOnly,
       );
-      return false;
-    } catch (e) {
-      state = state.copyWith(
-        isSaving: false,
-        error: 'Connection error: $e',
-      );
+      await fetchNotifications();
+      return true;
+    } catch (_) {
+      if (_current(epoch, request)) {
+        state = state.copyWith(
+          isSaving: false,
+          error: 'Could not mark this inbox as read. Please try again.',
+        );
+      }
       return false;
     }
   }
@@ -178,6 +325,6 @@ class NotificationsNotifier extends Notifier<NotificationsState> {
         return decoded['detail'].toString();
       }
     } catch (_) {}
-    return 'Failed with status ${response.statusCode}';
+    return 'Request failed (${response.statusCode}).';
   }
 }
