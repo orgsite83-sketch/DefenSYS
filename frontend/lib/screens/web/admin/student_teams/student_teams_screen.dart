@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -1014,12 +1015,12 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
             subtitle: _isCapstoneAdmin
                 ? 'Manage capstone project teams, assign advisers, and review defense context.'
                 : 'Manage PIT teams and PIT events setup for your assigned year level.',
-            actions: StudentTeamsHeaderActions(
+            actions: Wrap(spacing: 12, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [ReportExportMenu(reportId: 'team-roster', params: {'term_context': _teamListScope, if (_section != null) 'section': _section!}), StudentTeamsHeaderActions(
               isPitInstructor: _isPitInstructor,
               canTapActions: _canTapTeamActions(displayState),
               onBulkImport: () => _onBulkImportPressed(displayState),
               onCreateTeam: () => _onCreateTeamPressed(displayState),
-            ),
+            )]),
           ),
           const SizedBox(height: 26),
           StudentTeamsSummaryCards(

@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -82,9 +83,9 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const DefensysPageHeader(
+          DefensysPageHeader(
             icon: Icons.calendar_month_rounded,
-            title: 'Academic Period Management',
+            title: 'Academic Period Management', actions: const ReportExportMenu(reportId: 'academic-periods'),
             subtitle:
                 'Configure academic cycles, terms, and drill into semester program tracks.',
           ),

@@ -66,11 +66,10 @@ def visible_teams_for(user):
     if is_admin_user(user):
         return base
     if is_pit_lead_only(user):
-        queryset = base.filter(level__icontains='PIT')
         pit_year = _pit_year(user)
-        if pit_year:
-            queryset = queryset.filter(year_level=pit_year)
-        return queryset
+        if not pit_year:
+            return base.none()
+        return base.filter(level__icontains='PIT', year_level=pit_year)
     if getattr(user, 'is_uploader', False):
         return base.filter(semester__is_active=True)
     if getattr(user, 'role', None) == 'faculty':
@@ -194,7 +193,7 @@ def grade_records_for(user, *, include_previous_projects=False):
 def audit_logs_for(user):
     from .models import SystemAuditLog
 
-    base = SystemAuditLog.objects.select_related('actor')
+    base = SystemAuditLog.objects.select_related('actor', 'reviewed_by').prefetch_related('reviews')
     if not user or not getattr(user, 'is_authenticated', False):
         return base.none()
     if is_admin_user(user):
@@ -219,13 +218,13 @@ def audit_logs_for(user):
             | Q(old_values__pit_year_level=pit_year)
             | Q(new_values__pit_year_level=pit_year)
         )
-        has_year_metadata = (
-            Q(old_values__year_level__isnull=False)
-            | Q(new_values__year_level__isnull=False)
-            | Q(old_values__team_year_level__isnull=False)
-            | Q(new_values__team_year_level__isnull=False)
-            | Q(old_values__pit_year_level__isnull=False)
-            | Q(new_values__pit_year_level__isnull=False)
-        )
-        return base.filter(pit_marker).filter(year_marker | ~has_year_metadata)
+        queryset = base.filter(pit_marker & year_marker)
+        for side in ('old_values', 'new_values'):
+            for field in ('entry_type', 'scope', 'track'):
+                key = f'{side}__{field}'
+                queryset = queryset.filter(Q(**{f'{key}__isnull': True}) | Q(**{key: 'pit'}))
+            for field in ('year_level', 'team_year_level', 'pit_year_level'):
+                key = f'{side}__{field}'
+                queryset = queryset.filter(Q(**{f'{key}__isnull': True}) | Q(**{key: pit_year}))
+        return queryset
     return base.none()

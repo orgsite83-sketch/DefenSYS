@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -276,6 +277,7 @@ class CorrectionActionSerializer(drf_serializers.Serializer):
 class GradeCenterPublishView(APIView):
     permission_classes = [CanManageModule]
 
+    @transaction.atomic
     def post(self, request, grade_id):
         grade = get_object_or_404(grade_records_for(request.user), pk=grade_id)
         old_values = grade_audit_values(grade)
@@ -298,7 +300,9 @@ class GradeCenterPublishView(APIView):
             target=grade,
             old_values=old_values,
             new_values=grade_audit_values(grade),
+            reason=request.data.get('reason', ''),
             request=request,
+            strict=True,
         )
         grade = grade_records_for(request.user).get(pk=grade.pk)
         return Response({

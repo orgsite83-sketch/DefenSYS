@@ -1,5 +1,6 @@
 from reportlab.lib.units import inch
 from reports.pdf_builder import DefensysPdfReportBuilder
+from xml.sax.saxutils import escape
 
 
 def generate_team_roster_pdf(semester, teams, generated_by_user, signatories=None, include_signatures=False):
@@ -22,6 +23,7 @@ def generate_team_roster_pdf(semester, teams, generated_by_user, signatories=Non
     metadata_rows = [
         ("Academic Term / Semester", f"{semester.school_year.label if semester else ''} — {semester.label if semester else ''}"),
         ("Total Active Student Teams", f"{total_teams} Project Teams Registered"),
+        ("Academic Scope", ' / '.join(sorted({'PIT' if team.is_pit else 'Capstone' for team in teams})) or 'No matching teams'),
         ("Program / Department", "Department of Information Technology — Bachelor of Science in Information Technology"),
     ]
     builder.add_metadata_grid(metadata_rows)
@@ -31,6 +33,7 @@ def generate_team_roster_pdf(semester, teams, generated_by_user, signatories=Non
 
     headers = [
         "Team Name & Project Title",
+        "Scope",
         "Section / Year",
         "Project Leader",
         "Project Adviser",
@@ -39,7 +42,7 @@ def generate_team_roster_pdf(semester, teams, generated_by_user, signatories=Non
 
     rows = []
     for team in teams:
-        team_info = f"<b>{team.name or 'N/A'}</b><br/><i>{team.project_title or 'Untitled Project'}</i>"
+        team_info = f"<b>{escape(team.name or 'N/A')}</b><br/><i>{escape(team.project_title or 'Untitled Project')}</i>"
         level_info = f"{team.section or team.year_level or 'BSIT'}"
         leader_name = team.leader.get_full_name() if team.leader else "Unassigned"
         adviser_name = team.adviser.get_full_name() if team.adviser else "Unassigned"
@@ -52,6 +55,7 @@ def generate_team_roster_pdf(semester, teams, generated_by_user, signatories=Non
 
         rows.append([
             team_info,
+            'PIT' if team.is_pit else 'Capstone',
             level_info,
             leader_name,
             adviser_name,
@@ -61,8 +65,9 @@ def generate_team_roster_pdf(semester, teams, generated_by_user, signatories=Non
     builder.add_table(
         headers=headers,
         rows=rows,
-        col_widths=[1.9 * inch, 0.8 * inch, 1.1 * inch, 1.1 * inch, 1.5 * inch],
-        alignments=['left', 'center', 'left', 'left', 'left'],
+        col_widths=[builder.usable_width * ratio for ratio in (.23, .10, .12, .14, .14, .27)],
+        alignments=['left', 'center', 'center', 'left', 'left', 'left'],
+        repeat_headers=True,
         bold_cols=[],
     )
 
@@ -70,8 +75,8 @@ def generate_team_roster_pdf(semester, teams, generated_by_user, signatories=Non
     builder.add_signatures(
         prepared_by=generated_by_user,
         prepared_role="Academic Documenter / Evaluator",
-        noted_by="Capstone Project Coordinator",
-        noted_role="Faculty Capstone Coordinator",
+        noted_by="Academic Project Coordinator",
+        noted_role="Faculty Project Coordinator",
         approved_by="IT Program Chairperson",
         approved_role="IT Program Chairperson",
         signatories=signatories,

@@ -20,6 +20,7 @@ class ReportPreviewData {
   final List<Map<String, dynamic>> columns;
   final List<Map<String, dynamic>> rows;
   final List<Map<String, dynamic>> sections;
+  final List<Map<String, dynamic>> assessments;
   final int totalRows;
   final String? pdfBase64;
 
@@ -42,6 +43,7 @@ class ReportPreviewData {
     required this.columns,
     required this.rows,
     this.sections = const [],
+    this.assessments = const [],
     required this.totalRows,
     this.pdfBase64,
   });
@@ -92,6 +94,9 @@ class ReportPreviewData {
       columns: cols,
       rows: rws,
       sections: sects,
+      assessments: json['assessments'] is List
+          ? (json['assessments'] as List).whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList()
+          : const [],
       totalRows: (json['total_rows'] as num?)?.toInt() ?? rws.length,
       pdfBase64: json['pdf_base64']?.toString(),
     );
@@ -133,6 +138,17 @@ class ReportsState {
 }
 
 class ReportsNotifier extends Notifier<ReportsState> {
+  Future<Map<String, dynamic>?> fetchAssessmentCandidates(Map<String, String> queryParams) async {
+    final uri = Uri.parse('${ApiConfig.baseUrl}/reports/assessment-candidates/').replace(queryParameters: queryParams);
+    try {
+      final response = await ref.read(authenticatedHttpClientProvider).get(uri);
+      if (response.statusCode != 200) return null;
+      final data = jsonDecode(response.body);
+      return data is Map<String, dynamic> ? data : null;
+    } catch (_) {
+      return null;
+    }
+  }
   @override
   ReportsState build() => const ReportsState();
 

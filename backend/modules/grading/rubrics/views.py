@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -13,6 +14,15 @@ from .models import Rubric
 from .serializers import RubricSerializer, RubricWeightsSerializer, RubricWriteSerializer
 from user_management.permissions import CanManageModule
 
+
+def rubric_audit_values(rubric):
+    """Capture criteria and settings, including edits that leave the name unchanged."""
+    data = RubricSerializer(rubric).data
+    return {key: data[key] for key in (
+        'name', 'scope', 'evaluation_type', 'semester', 'school_year',
+        'defense_stage_id', 'defense_stage_label', 'scale', 'status',
+        'target_type', 'criteria',
+    )}
 
 
 
@@ -213,6 +223,7 @@ class RubricListCreateView(APIView):
             ),
         )
 
+    @transaction.atomic
     def post(self, request):
         serializer = RubricWriteSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
@@ -225,13 +236,9 @@ class RubricListCreateView(APIView):
             category=SystemAuditLog.CATEGORY_RUBRICS,
             action='rubric.create',
             target=rubric,
-            new_values={
-                'name': rubric.name,
-                'scope': rubric.scope,
-                'evaluation_type': rubric.evaluation_type,
-                'semester': rubric.semester.display_name,
-            },
+            new_values=rubric_audit_values(rubric),
             request=request,
+            strict=True,
         )
 
         return Response(
@@ -259,14 +266,10 @@ class RubricDetailView(APIView):
             **options_payload(request.user),
         })
 
+    @transaction.atomic
     def patch(self, request, rubric_id):
         rubric = self.get_object(request, rubric_id)
-        old_values = {
-            'name': rubric.name,
-            'scope': rubric.scope,
-            'evaluation_type': rubric.evaluation_type,
-            'semester': rubric.semester.display_name,
-        }
+        old_values = rubric_audit_values(rubric)
         serializer = RubricWriteSerializer(
             rubric,
             data=request.data,
@@ -283,13 +286,10 @@ class RubricDetailView(APIView):
             action='rubric.update',
             target=rubric,
             old_values=old_values,
-            new_values={
-                'name': rubric.name,
-                'scope': rubric.scope,
-                'evaluation_type': rubric.evaluation_type,
-                'semester': rubric.semester.display_name,
-            },
+            new_values=rubric_audit_values(rubric),
+            reason=request.data.get('reason', ''),
             request=request,
+            strict=True,
         )
 
         return Response({
@@ -297,6 +297,7 @@ class RubricDetailView(APIView):
             **list_payload_for_request(request),
         })
 
+    @transaction.atomic
     def delete(self, request, rubric_id):
         from django.db.models import ProtectedError
         from .serializers import get_rubric_deletion_info
@@ -318,12 +319,7 @@ class RubricDetailView(APIView):
             PitEventGradingConfig.objects.filter(panel_rubric=rubric).update(panel_rubric=None)
             PitEventGradingConfig.objects.filter(peer_rubric=rubric).update(peer_rubric=None)
 
-        old_values = {
-            'name': rubric.name,
-            'scope': rubric.scope,
-            'evaluation_type': rubric.evaluation_type,
-            'semester': rubric.semester.display_name,
-        }
+        old_values = rubric_audit_values(rubric)
         rubric_pk = rubric.pk
         try:
             rubric.delete()
@@ -343,7 +339,9 @@ class RubricDetailView(APIView):
             target_id=rubric_pk,
             old_values=old_values,
             new_values={'deleted': True},
+            reason=request.data.get('reason', ''),
             request=request,
+            strict=True,
         )
 
         return Response(list_payload_for_request(request), status=status.HTTP_200_OK)
@@ -352,6 +350,7 @@ class RubricDetailView(APIView):
 class RubricPublishView(APIView):
     permission_classes = [CanManageModule]
 
+    @transaction.atomic
     def post(self, request, rubric_id):
         rubric = get_object_or_404(
             rubric_queryset_for_manage(request.user),
@@ -375,7 +374,9 @@ class RubricPublishView(APIView):
             target=rubric,
             old_values={'status': old_status},
             new_values={'status': rubric.status},
+            reason=request.data.get('reason', ''),
             request=request,
+            strict=True,
         )
         return Response({
             'rubric': RubricSerializer(rubric).data,

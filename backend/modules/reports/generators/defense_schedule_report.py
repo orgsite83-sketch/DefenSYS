@@ -23,6 +23,7 @@ def generate_defense_schedule_pdf(semester, schedules, generated_by_user, signat
     metadata_rows = [
         ("Academic Term / Semester", f"{semester.school_year.label if semester else ''} — {semester.label if semester else ''}"),
         ("Total Scheduled Presentations", f"{total_slots} Defense Sessions"),
+        ("Academic Scope", ' / '.join(sorted({'PIT' if schedule.scope == 'pit' else 'Capstone' for schedule in schedules})) or 'No matching sessions'),
         ("Defense Venue / Modality", "Department of Information Technology Defense Rooms / Hybrid"),
     ]
     builder.add_metadata_grid(metadata_rows)
@@ -34,7 +35,8 @@ def generate_defense_schedule_pdf(semester, schedules, generated_by_user, signat
         "Date & Time",
         "Room / Venue",
         "Student Team",
-        "Defense Stage",
+        "Scope",
+        "Stage / Event",
         "Panel Assignments",
         "Status",
     ]
@@ -66,7 +68,8 @@ def generate_defense_schedule_pdf(semester, schedules, generated_by_user, signat
             time_str,
             sched.room or "TBA",
             sched.team.name if sched.team else "N/A",
-            sched.defense_stage.label if sched.defense_stage else (sched.stage_label or "N/A"),
+            'PIT' if sched.scope == 'pit' else 'Capstone',
+            sched.defense_stage.label if sched.defense_stage else (sched.event_name or "N/A"),
             panel_str,
             status_label,
         ])
@@ -74,16 +77,17 @@ def generate_defense_schedule_pdf(semester, schedules, generated_by_user, signat
     builder.add_table(
         headers=headers,
         rows=rows,
-        col_widths=[1.25 * inch, 0.8 * inch, 1.2 * inch, 0.95 * inch, 1.5 * inch, 0.7 * inch],
-        alignments=['left', 'center', 'left', 'center', 'left', 'center'],
-        bold_cols=[2, 5],
+        col_widths=[builder.usable_width * ratio for ratio in (.17, .10, .14, .10, .17, .14, .18)],
+        alignments=['left', 'center', 'left', 'center', 'center', 'left', 'center'],
+        bold_cols=[2, 6],
+        repeat_headers=True,
     )
 
     # 4. Signatures Block
     builder.add_signatures(
         prepared_by=generated_by_user,
         prepared_role="Defense Scheduler / Admin",
-        noted_by="Capstone Defense Coordinator",
+        noted_by="Academic Defense Coordinator",
         noted_role="Faculty Defense Coordinator",
         approved_by="IT Program Chairperson",
         approved_role="IT Program Chairperson",

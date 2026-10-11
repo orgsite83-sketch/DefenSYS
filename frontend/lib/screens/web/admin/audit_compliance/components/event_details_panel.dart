@@ -60,21 +60,50 @@ class EventDetailsPanel extends StatelessWidget {
     final processArea = AuditFormatUtils.formatProcessArea(item);
     final actor = item['actor_name']?.toString() ?? 'System';
     final status = item['review_status']?.toString() ?? 'needs_review';
-    final timestamp = AuditFormatUtils.formatTimestamp(item['created_at']?.toString());
+    final evidence = item['evidence'] is Map
+        ? item['evidence'] as Map
+        : const {};
+    final reason = (item['reason']?.toString() ?? '').trim();
+    final timestamp = AuditFormatUtils.formatTimestamp(
+      item['created_at']?.toString(),
+    );
     final targetType = item['target_type']?.toString() ?? 'Resource';
     final targetId = item['target_id']?.toString() ?? '';
-    final targetLabel = targetId.isNotEmpty ? '$targetType #$targetId' : targetType;
+    final targetLabel =
+        item['target_label']?.toString() ??
+        (targetId.isNotEmpty ? '$targetType #$targetId' : targetType);
 
-    final oldVals = item['old_values'] is Map ? Map<String, dynamic>.from(item['old_values']) : <String, dynamic>{};
-    final newVals = item['new_values'] is Map ? Map<String, dynamic>.from(item['new_values']) : <String, dynamic>{};
+    final oldVals = item['old_values'] is Map
+        ? Map<String, dynamic>.from(item['old_values'])
+        : <String, dynamic>{};
+    final newVals = item['new_values'] is Map
+        ? Map<String, dynamic>.from(item['new_values'])
+        : <String, dynamic>{};
+    final displayOldVals = AuditFormatUtils.displayValues(item, 'old_values');
+    final displayNewVals = AuditFormatUtils.displayValues(item, 'new_values');
 
     final isDelete = AuditFormatUtils.isDeleteAction(rawAction);
-    final isUpdate = AuditFormatUtils.isUpdateAction(rawAction, oldVals, newVals);
+    final isUpdate = AuditFormatUtils.isUpdateAction(
+      rawAction,
+      oldVals,
+      newVals,
+    );
 
-    final diffEntries = isUpdate ? AuditFormatUtils.computeDiff(oldVals, newVals) : <AuditDiffEntry>[];
+    final diffEntries = isUpdate
+        ? AuditFormatUtils.computeDiff(
+            oldVals,
+            newVals,
+            displayOldVals: displayOldVals,
+            displayNewVals: displayNewVals,
+          )
+        : <AuditDiffEntry>[];
     final activeAttributes = isDelete
-        ? AuditFormatUtils.extractAttributes(oldVals.isNotEmpty ? oldVals : newVals)
-        : AuditFormatUtils.extractAttributes(newVals.isNotEmpty ? newVals : oldVals);
+        ? AuditFormatUtils.extractAttributes(
+            oldVals.isNotEmpty ? displayOldVals : displayNewVals,
+          )
+        : AuditFormatUtils.extractAttributes(
+            newVals.isNotEmpty ? displayNewVals : displayOldVals,
+          );
 
     return Container(
       decoration: BoxDecoration(
@@ -104,17 +133,20 @@ class EventDetailsPanel extends StatelessWidget {
                   color: DefensysTokens.textPrimaryOf(context),
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  'Event Details',
-                  style: TextStyle(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w800,
-                    color: DefensysTokens.textPrimaryOf(context),
-                    letterSpacing: -0.2,
+                Expanded(
+                  child: Text(
+                    'Event Details',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w800,
+                      color: DefensysTokens.textPrimaryOf(context),
+                      letterSpacing: -0.2,
+                    ),
                   ),
                 ),
-                const Spacer(),
-                _buildStatusBadge(context, status, isDelete: isDelete),
+                _buildStatusBadge(context, status),
                 const SizedBox(width: 4),
                 _buildHeaderMenu(context, item, status, isDelete: isDelete),
               ],
@@ -133,10 +165,18 @@ class EventDetailsPanel extends StatelessWidget {
                     width: 38,
                     height: 38,
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0x33DC2626) : const Color(0xFFFEE2E2),
-                      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                      color: isDark
+                          ? const Color(0x33DC2626)
+                          : const Color(0xFFFEE2E2),
+                      borderRadius: BorderRadius.circular(
+                        DefensysTokens.radiusMd,
+                      ),
                     ),
-                    child: const Icon(Icons.delete_outline_rounded, color: Color(0xFFDC2626), size: 20),
+                    child: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Color(0xFFDC2626),
+                      size: 20,
+                    ),
                   ),
                   const SizedBox(width: 12),
                 ],
@@ -150,7 +190,9 @@ class EventDetailsPanel extends StatelessWidget {
                           fontSize: 19,
                           fontWeight: FontWeight.w800,
                           color: isDelete
-                              ? (isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626))
+                              ? (isDark
+                                    ? const Color(0xFFF87171)
+                                    : const Color(0xFFDC2626))
                               : DefensysTokens.textPrimaryOf(context),
                           letterSpacing: -0.4,
                         ),
@@ -160,7 +202,9 @@ class EventDetailsPanel extends StatelessWidget {
                         resourceSubtitle,
                         style: TextStyle(
                           fontSize: 13,
-                          color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                          color: isDark
+                              ? const Color(0xFF94A3B8)
+                              : DefensysTokens.steelGrey,
                         ),
                       ),
                     ],
@@ -200,7 +244,9 @@ class EventDetailsPanel extends StatelessWidget {
                   context,
                   icon: Icons.code_rounded,
                   label: 'Action Type',
-                  value: isUpdate ? 'Updated' : (isDelete ? rawAction : rawAction),
+                  value: isUpdate
+                      ? 'Updated'
+                      : (isDelete ? rawAction : rawAction),
                   isPill: isUpdate,
                 ),
                 const SizedBox(height: 8),
@@ -208,8 +254,63 @@ class EventDetailsPanel extends StatelessWidget {
                   context,
                   icon: Icons.gps_fixed_rounded,
                   label: 'Target Resource',
-                  value: targetId.isNotEmpty ? '$targetLabel ($resourceSubtitle)' : targetLabel,
+                  value: item['target_label'] != null
+                      ? targetLabel
+                      : targetId.isNotEmpty
+                      ? '$targetLabel ($resourceSubtitle)'
+                      : targetLabel,
                 ),
+                const SizedBox(height: 8),
+                _buildMetaRow(
+                  context,
+                  icon: Icons.inventory_2_outlined,
+                  label: 'Evidence status',
+                  value:
+                      evidence['label']?.toString() ??
+                      'Capture status unavailable',
+                ),
+                const SizedBox(height: 8),
+                _buildMetaRow(
+                  context,
+                  icon: Icons.notes_rounded,
+                  label: 'Reason for change',
+                  value: reason.isNotEmpty
+                      ? reason
+                      : (evidence['reason_required'] == true
+                            ? 'Reason required - not recorded'
+                            : (evidence['reason_required'] == false
+                                  ? 'Not required for this event'
+                                  : 'No reason recorded')),
+                ),
+                const SizedBox(height: 8),
+                _buildMetaRow(
+                  context,
+                  icon: Icons.fact_check_outlined,
+                  label: 'Human review',
+                  value: status == 'reviewed' ? 'Reviewed' : 'Pending review',
+                ),
+                if (item['reviewed_at'] != null || status == 'reviewed') ...[
+                  const SizedBox(height: 8),
+                  _buildMetaRow(
+                    context,
+                    icon: Icons.verified_outlined,
+                    label: status == 'reviewed'
+                        ? 'Reviewed by'
+                        : 'Last reviewed by',
+                    value: (item['reviewed_by_name']?.toString() ?? '').isEmpty
+                        ? 'Reviewer not recorded'
+                        : '${item['reviewed_by_name']} · ${AuditFormatUtils.reviewRole(item['reviewed_by_role']?.toString(), item['reviewed_by_year']?.toString())}',
+                  ),
+                  const SizedBox(height: 8),
+                  _buildMetaRow(
+                    context,
+                    icon: Icons.schedule_rounded,
+                    label: 'Review date & time',
+                    value: AuditFormatUtils.formatTimestamp(
+                      item['reviewed_at']?.toString(),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -226,7 +327,13 @@ class EventDetailsPanel extends StatelessWidget {
                 if (isDelete)
                   _buildDeleteSection(context, item, activeAttributes)
                 else if (isUpdate)
-                  _buildUpdateDiffSection(context, item, diffEntries, oldVals, newVals)
+                  _buildUpdateDiffSection(
+                    context,
+                    item,
+                    diffEntries,
+                    oldVals,
+                    newVals,
+                  )
                 else
                   _buildCreateSection(context, item, activeAttributes),
               ],
@@ -236,11 +343,53 @@ class EventDetailsPanel extends StatelessWidget {
           const Divider(height: 1),
 
           // 5. Footer Actions (Primary Review Workflow)
+          if ((item['review_history'] as List? ?? []).isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Review history',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 10),
+                  for (final entry
+                      in (item['review_history'] as List).whereType<Map>())
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${entry['to_status'] == 'reviewed' ? 'Reviewed' : 'Reopened for review'} by ${entry['reviewer_name']}',
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            '${AuditFormatUtils.reviewRole(entry['reviewer_role']?.toString(), entry['reviewer_year']?.toString())} · ${AuditFormatUtils.formatTimestamp(entry['created_at']?.toString())}',
+                            style: const TextStyle(fontSize: 11.5),
+                          ),
+                          if ((entry['reason']?.toString() ?? '').isNotEmpty)
+                            Text(
+                              entry['reason'].toString(),
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF1E1D24) : const Color(0xFFF8FAFC),
-              border: Border(top: BorderSide(color: DefensysTokens.borderOf(context))),
+              border: Border(
+                top: BorderSide(color: DefensysTokens.borderOf(context)),
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -256,20 +405,24 @@ class EventDetailsPanel extends StatelessWidget {
                         size: 16,
                         color: status == 'reviewed'
                             ? const Color(0xFF059669)
-                            : (isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey),
+                            : (isDark
+                                  ? const Color(0xFF94A3B8)
+                                  : DefensysTokens.steelGrey),
                       ),
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
                           status == 'reviewed'
-                              ? 'Audit entry is marked as reviewed'
-                              : 'Pending administrative compliance review',
+                              ? 'Review completed'
+                              : 'Pending review',
                           style: TextStyle(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w600,
                             color: status == 'reviewed'
                                 ? const Color(0xFF059669)
-                                : (isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey),
+                                : (isDark
+                                      ? const Color(0xFF94A3B8)
+                                      : DefensysTokens.steelGrey),
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -290,9 +443,14 @@ class EventDetailsPanel extends StatelessWidget {
                     style: FilledButton.styleFrom(
                       backgroundColor: const Color(0xFF059669),
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        borderRadius: BorderRadius.circular(
+                          DefensysTokens.radiusMd,
+                        ),
                       ),
                     ),
                   )
@@ -306,9 +464,14 @@ class EventDetailsPanel extends StatelessWidget {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: const Color(0xFFD97706),
                       side: const BorderSide(color: Color(0xFFF59E0B)),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        borderRadius: BorderRadius.circular(
+                          DefensysTokens.radiusMd,
+                        ),
                       ),
                     ),
                   ),
@@ -335,14 +498,22 @@ class EventDetailsPanel extends StatelessWidget {
           width: 140,
           child: Row(
             children: [
-              Icon(icon, size: 15, color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey),
+              Icon(
+                icon,
+                size: 15,
+                color: isDark
+                    ? const Color(0xFF94A3B8)
+                    : DefensysTokens.steelGrey,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   label,
                   style: TextStyle(
                     fontSize: 12.5,
-                    color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                    color: isDark
+                        ? const Color(0xFF94A3B8)
+                        : DefensysTokens.steelGrey,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -356,10 +527,17 @@ class EventDetailsPanel extends StatelessWidget {
               ? Align(
                   alignment: Alignment.centerLeft,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF2A2932) : const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                      color: isDark
+                          ? const Color(0xFF2A2932)
+                          : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(
+                        DefensysTokens.radiusPill,
+                      ),
                     ),
                     child: Text(
                       value,
@@ -411,7 +589,11 @@ class EventDetailsPanel extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.delete_outline_rounded, color: Color(0xFFDC2626), size: 20),
+              const Icon(
+                Icons.delete_outline_rounded,
+                color: Color(0xFFDC2626),
+                size: 20,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -430,7 +612,9 @@ class EventDetailsPanel extends StatelessWidget {
                       'The item has been removed from the portal and is no longer available for active defense use.',
                       style: TextStyle(
                         fontSize: 12,
-                        color: isDark ? const Color(0xFFFCA5A5) : const Color(0xFF991B1B),
+                        color: isDark
+                            ? const Color(0xFFFCA5A5)
+                            : const Color(0xFF991B1B),
                         height: 1.35,
                       ),
                     ),
@@ -450,7 +634,13 @@ class EventDetailsPanel extends StatelessWidget {
             Expanded(
               child: Row(
                 children: [
-                  Icon(Icons.history_rounded, size: 15, color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey),
+                  Icon(
+                    Icons.history_rounded,
+                    size: 15,
+                    color: isDark
+                        ? const Color(0xFF94A3B8)
+                        : DefensysTokens.steelGrey,
+                  ),
                   const SizedBox(width: 6),
                   Flexible(
                     child: Text(
@@ -473,7 +663,10 @@ class EventDetailsPanel extends StatelessWidget {
                 data: item['old_values'] is Map ? item['old_values'] : item,
               ),
               icon: const Icon(Icons.code_rounded, size: 12),
-              label: const Text('View as JSON', style: TextStyle(fontSize: 11.5)),
+              label: const Text(
+                'View as JSON',
+                style: TextStyle(fontSize: 11.5),
+              ),
             ),
           ],
         ),
@@ -500,7 +693,11 @@ class EventDetailsPanel extends StatelessWidget {
         // Change Diff Header
         Row(
           children: [
-            Icon(Icons.compare_arrows_rounded, size: 16, color: DefensysTokens.maroonOf(context)),
+            Icon(
+              Icons.compare_arrows_rounded,
+              size: 16,
+              color: DefensysTokens.maroonOf(context),
+            ),
             const SizedBox(width: 8),
             Text(
               'Change Diff',
@@ -523,7 +720,12 @@ class EventDetailsPanel extends StatelessWidget {
             ),
             child: Text(
               'No individual field values modified in payload snapshot.',
-              style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey),
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark
+                    ? const Color(0xFF94A3B8)
+                    : DefensysTokens.steelGrey,
+              ),
             ),
           )
         else
@@ -537,14 +739,60 @@ class EventDetailsPanel extends StatelessWidget {
               children: [
                 // Table Header
                 Container(
-                  color: isDark ? const Color(0xFF1E1D24) : const Color(0xFFF8FAFC),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  color: isDark
+                      ? const Color(0xFF1E1D24)
+                      : const Color(0xFFF8FAFC),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   child: const Row(
                     children: [
-                      Expanded(flex: 3, child: Text('Field', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF64748B)))),
-                      Expanded(flex: 4, child: Text('Before', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF64748B)))),
-                      SizedBox(width: 24, child: Center(child: Text('→', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))))),
-                      Expanded(flex: 4, child: Text('After', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF64748B)))),
+                      Expanded(
+                        flex: 3,
+                        child: Text(
+                          'Field',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 4,
+                        child: Text(
+                          'Before',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: 24,
+                        child: Center(
+                          child: Text(
+                            '→',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF64748B),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 4,
+                        child: Text(
+                          'After',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -553,9 +801,16 @@ class EventDetailsPanel extends StatelessWidget {
                 // Rows
                 ...diffs.map((diff) {
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
-                      border: Border(bottom: BorderSide(color: DefensysTokens.borderOf(context))),
+                      border: Border(
+                        bottom: BorderSide(
+                          color: DefensysTokens.borderOf(context),
+                        ),
+                      ),
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
@@ -577,30 +832,45 @@ class EventDetailsPanel extends StatelessWidget {
                             diff.before,
                             style: TextStyle(
                               fontSize: 12,
-                              color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                              color: isDark
+                                  ? const Color(0xFF94A3B8)
+                                  : DefensysTokens.steelGrey,
                             ),
                           ),
                         ),
                         const SizedBox(
                           width: 24,
                           child: Center(
-                            child: Icon(Icons.arrow_forward_rounded, size: 12, color: Color(0xFF94A3B8)),
+                            child: Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 12,
+                              color: Color(0xFF94A3B8),
+                            ),
                           ),
                         ),
                         Expanded(
                           flex: 4,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
                             decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF064E3B) : const Color(0xFFDCFCE7),
-                              borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                              color: isDark
+                                  ? const Color(0xFF064E3B)
+                                  : const Color(0xFFDCFCE7),
+                              borderRadius: BorderRadius.circular(
+                                DefensysTokens.radiusSm,
+                              ),
                             ),
                             child: Text(
                               diff.after,
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
-                                color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF059669),
+                                color: isDark
+                                    ? const Color(0xFF6EE7B7)
+                                    : const Color(0xFF059669),
                               ),
                             ),
                           ),
@@ -618,7 +888,13 @@ class EventDetailsPanel extends StatelessWidget {
         // Other Details
         Row(
           children: [
-            Icon(Icons.tune_rounded, size: 15, color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey),
+            Icon(
+              Icons.tune_rounded,
+              size: 15,
+              color: isDark
+                  ? const Color(0xFF94A3B8)
+                  : DefensysTokens.steelGrey,
+            ),
             const SizedBox(width: 6),
             Text(
               'Other Details',
@@ -634,9 +910,12 @@ class EventDetailsPanel extends StatelessWidget {
 
         _buildKeyValueTable(
           context,
-          AuditFormatUtils.extractAttributes(newVals.isNotEmpty ? newVals : oldVals)
-              .where((a) => !diffs.any((d) => d.field == a.key))
-              .toList(),
+          AuditFormatUtils.extractAttributes(
+            AuditFormatUtils.displayValues(
+              item,
+              newVals.isNotEmpty ? 'new_values' : 'old_values',
+            ),
+          ).where((a) => !diffs.any((d) => d.field == a.key)).toList(),
         ),
       ],
     );
@@ -656,7 +935,11 @@ class EventDetailsPanel extends StatelessWidget {
         // Resource Details Header
         Row(
           children: [
-            Icon(Icons.inventory_2_outlined, size: 16, color: DefensysTokens.maroonOf(context)),
+            Icon(
+              Icons.inventory_2_outlined,
+              size: 16,
+              color: DefensysTokens.maroonOf(context),
+            ),
             const SizedBox(width: 8),
             Text(
               'Resource Details',
@@ -677,7 +960,13 @@ class EventDetailsPanel extends StatelessWidget {
             Expanded(
               child: Row(
                 children: [
-                  Icon(Icons.access_time_rounded, size: 15, color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey),
+                  Icon(
+                    Icons.access_time_rounded,
+                    size: 15,
+                    color: isDark
+                        ? const Color(0xFF94A3B8)
+                        : DefensysTokens.steelGrey,
+                  ),
                   const SizedBox(width: 6),
                   Flexible(
                     child: Text(
@@ -700,7 +989,10 @@ class EventDetailsPanel extends StatelessWidget {
                 data: item['new_values'] is Map ? item['new_values'] : item,
               ),
               icon: const Icon(Icons.code_rounded, size: 12),
-              label: const Text('View as JSON', style: TextStyle(fontSize: 11.5)),
+              label: const Text(
+                'View as JSON',
+                style: TextStyle(fontSize: 11.5),
+              ),
             ),
           ],
         ),
@@ -726,7 +1018,10 @@ class EventDetailsPanel extends StatelessWidget {
         ),
         child: Text(
           'No additional attributes recorded.',
-          style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey),
+          style: TextStyle(
+            fontSize: 12,
+            color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+          ),
         ),
       );
     }
@@ -744,8 +1039,28 @@ class EventDetailsPanel extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: const Row(
               children: [
-                Expanded(flex: 2, child: Text('Field', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF64748B)))),
-                Expanded(flex: 3, child: Text('Value', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF64748B)))),
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    'Field',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: Text(
+                    'Value',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -754,7 +1069,9 @@ class EventDetailsPanel extends StatelessWidget {
             return Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
               decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: DefensysTokens.borderOf(context))),
+                border: Border(
+                  bottom: BorderSide(color: DefensysTokens.borderOf(context)),
+                ),
               ),
               child: Row(
                 children: [
@@ -775,7 +1092,9 @@ class EventDetailsPanel extends StatelessWidget {
                       entry.value,
                       style: TextStyle(
                         fontSize: 12.5,
-                        color: isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155),
+                        color: isDark
+                            ? const Color(0xFFCBD5E1)
+                            : const Color(0xFF334155),
                       ),
                     ),
                   ),
@@ -788,7 +1107,11 @@ class EventDetailsPanel extends StatelessWidget {
     );
   }
 
-  Widget _buildStatusBadge(BuildContext context, String status, {bool isDelete = false}) {
+  Widget _buildStatusBadge(
+    BuildContext context,
+    String status, {
+    bool isDelete = false,
+  }) {
     final isDark = DefensysTokens.isDark(context);
 
     if (isDelete) {
@@ -805,7 +1128,11 @@ class EventDetailsPanel extends StatelessWidget {
             SizedBox(width: 4),
             Text(
               'Deleted',
-              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFFDC2626)),
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFFDC2626),
+              ),
             ),
           ],
         ),
@@ -826,7 +1153,11 @@ class EventDetailsPanel extends StatelessWidget {
             SizedBox(width: 4),
             Text(
               'Reviewed',
-              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF059669)),
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF059669),
+              ),
             ),
           ],
         ),
@@ -846,7 +1177,11 @@ class EventDetailsPanel extends StatelessWidget {
           SizedBox(width: 4),
           Text(
             'Needs review',
-            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFFD97706)),
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFFD97706),
+            ),
           ),
         ],
       ),
@@ -953,7 +1288,11 @@ class EventDetailsPanel extends StatelessWidget {
             value: 'reviewed',
             child: Row(
               children: [
-                Icon(Icons.check_circle_outline_rounded, size: 16, color: Color(0xFF059669)),
+                Icon(
+                  Icons.check_circle_outline_rounded,
+                  size: 16,
+                  color: Color(0xFF059669),
+                ),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -991,7 +1330,9 @@ class EventDetailsPanel extends StatelessWidget {
     final action = item['action']?.toString() ?? '';
     final targetType = item['target_type']?.toString() ?? '';
 
-    if (action.startsWith('rubric.') || category == 'rubrics' || targetType == 'Rubric') {
+    if (action.startsWith('rubric.') ||
+        category == 'rubrics' ||
+        targetType == 'Rubric') {
       return AdminRoutes.rubrics;
     }
     if (category == 'user_management' || action.startsWith('user.')) {
@@ -1014,7 +1355,9 @@ class EventDetailsPanel extends StatelessWidget {
     final action = item['action']?.toString() ?? '';
     final targetType = item['target_type']?.toString() ?? '';
 
-    if (action.startsWith('rubric.') || category == 'rubrics' || targetType == 'Rubric') {
+    if (action.startsWith('rubric.') ||
+        category == 'rubrics' ||
+        targetType == 'Rubric') {
       return 'Open Rubric';
     }
     if (category == 'user_management' || action.startsWith('user.')) {

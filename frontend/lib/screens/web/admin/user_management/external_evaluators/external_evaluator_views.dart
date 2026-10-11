@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -1135,6 +1136,7 @@ class _ExternalEvaluatorDirectoryState
                     spacing: 8,
                     runSpacing: 8,
                     children: [
+                      ReportExportMenu(reportId: 'external-evaluators', params: {'search': _search, 'view': _invitations ? 'assignments' : 'directory'}),
                       ShadButton.outline(
                         size: ShadButtonSize.sm,
                         onPressed: state.loading || state.saving

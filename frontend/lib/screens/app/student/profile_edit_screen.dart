@@ -64,7 +64,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
     super.key,
     this.showAppBar,
     this.includeAppSettings = false,
-    this.compactInstallation = false,
+    this.compactInstallation = true,
     this.compactPanelistHeader = false,
   });
 
@@ -547,15 +547,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                 ],
               )
+            else if (widget.includeAppSettings)
+              _buildGroupedMobileProfile(
+                displayName,
+                username,
+                email,
+                roleLabel,
+                user,
+                isStudent,
+              )
             else
               Column(
                 children: [
-                  if (widget.includeAppSettings) ...[
-                    AppSettingsContent(
-                      compactInstallation: widget.compactInstallation,
-                    ),
-                    const SizedBox(height: 16),
-                  ],
                   _buildIdentityCard(displayName, username, email, roleLabel, user),
                   if (!isStudent) ...[
                     const SizedBox(height: 16),
@@ -574,6 +577,106 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       ),
     );
   }
+
+  Widget _buildGroupedMobileProfile(
+    String displayName,
+    String username,
+    String email,
+    String roleLabel,
+    Map<String, dynamic> user,
+    bool isStudent,
+  ) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _mobileGroup(
+        title: 'Account',
+        icon: Icons.person_outline_rounded,
+        children: [
+          _buildIdentityCard(displayName, username, email, roleLabel, user),
+          if (!isStudent) ...[
+            const SizedBox(height: 16),
+            _buildESignatureCard(user),
+          ],
+        ],
+      ),
+      _mobileGroup(
+        title: 'Settings',
+        icon: Icons.tune_rounded,
+        initiallyExpanded: true,
+        children: const [AppearanceSettingsSection()],
+      ),
+      _mobileGroup(
+        title: 'Security',
+        icon: Icons.lock_outline_rounded,
+        children: [_buildChangePasswordCard(username, email)],
+      ),
+      _mobileGroup(
+        title: 'Guides & information',
+        icon: Icons.help_outline_rounded,
+        children: [
+          AppSettingsContent(
+            compactInstallation: widget.compactInstallation,
+            includeAppearance: false,
+          ),
+          const SizedBox(height: 16),
+          _buildAppInfoAndSessionCard(includeLogout: false),
+        ],
+      ),
+      _mobileGroup(
+        title: 'Account activity',
+        icon: Icons.history_rounded,
+        children: [_buildHistoryCard()],
+      ),
+      const SizedBox(height: 20),
+      _mobileGroupHeading('Session', Icons.logout_rounded),
+      _buildSessionCard(),
+    ],
+  );
+
+  Widget _mobileGroup({
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+    bool initiallyExpanded = false,
+  }) => ExpansionTile(
+    key: PageStorageKey('profile-$title'),
+    initiallyExpanded: initiallyExpanded,
+    maintainState: true,
+    tilePadding: const EdgeInsets.symmetric(horizontal: 4),
+    childrenPadding: const EdgeInsets.only(bottom: 12),
+    shape: Border(bottom: BorderSide(color: DefensysTokens.borderOf(context))),
+    collapsedShape: Border(
+      bottom: BorderSide(color: DefensysTokens.borderOf(context)),
+    ),
+    leading: Icon(icon, size: 19, color: DefensysTokens.maroonTextOf(context)),
+    title: Text(
+      title,
+      style: TextStyle(
+        fontSize: 15,
+        fontWeight: FontWeight.w700,
+        color: DefensysTokens.textPrimaryOf(context),
+      ),
+    ),
+    children: children,
+  );
+
+  Widget _mobileGroupHeading(String title, IconData icon) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Row(
+      children: [
+        Icon(icon, size: 18, color: DefensysTokens.maroonTextOf(context)),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: DefensysTokens.textPrimaryOf(context),
+          ),
+        ),
+      ],
+    ),
+  );
 
   // --- HERO BANNER ---
 
@@ -2237,7 +2340,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         .join(' ');
   }
 
-  Widget _buildAppInfoAndSessionCard() {
+  Widget _buildAppInfoAndSessionCard({bool includeLogout = true}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       decoration: BoxDecoration(
@@ -2278,7 +2381,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  widget.includeAppSettings ? 'About & Session' : 'Application & Preferences',
+                  includeLogout
+                      ? (widget.includeAppSettings
+                          ? 'About & Session'
+                          : 'Application & Preferences')
+                      : 'About DefenSYS',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -2329,32 +2436,53 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               MaterialPageRoute(builder: (_) => const TermsScreen()),
             ),
           ),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFFDC2626),
-                side: BorderSide(color: isDark ? const Color(0xFF991B1B) : const Color(0xFFFCA5A5)),
-                backgroundColor: isDark ? const Color(0xFF450A0A).withValues(alpha: 0.3) : const Color(0xFFFEF2F2),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              icon: const Icon(Icons.logout_rounded, size: 18),
-              label: const Text(
-                'Logout',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-              onPressed: () async {
-                if (await confirmLogout(context)) {
-                  await ref.read(authProvider.notifier).logout();
-                }
-              },
-            ),
-          ),
+          if (includeLogout) ...[
+            const SizedBox(height: 20),
+            _buildLogoutButton(),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildSessionCard() => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: DefensysTokens.panelOf(context),
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: DefensysTokens.borderOf(context)),
+    ),
+    child: _buildLogoutButton(),
+  );
+
+  Widget _buildLogoutButton() {
+    final isDark = DefensysTokens.isDark(context);
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFFDC2626),
+          side: BorderSide(
+            color: isDark ? const Color(0xFF991B1B) : const Color(0xFFFCA5A5),
+          ),
+          backgroundColor: isDark
+              ? const Color(0xFF450A0A).withValues(alpha: 0.3)
+              : const Color(0xFFFEF2F2),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+        icon: const Icon(Icons.logout_rounded, size: 18),
+        label: const Text(
+          'Logout',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        onPressed: () async {
+          if (await confirmLogout(context)) {
+            await ref.read(authProvider.notifier).logout();
+          }
+        },
       ),
     );
   }

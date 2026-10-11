@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:defensys/navigation/admin_route_paths.dart';
+import 'package:defensys/widgets/export/report_export_menu.dart';
+import 'package:defensys/widgets/export/report_source_context.dart';
 import 'package:defensys/services/admin/system_audit_provider.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/reports_provider.dart';
@@ -33,13 +37,32 @@ class AuditComplianceScreen extends ConsumerStatefulWidget {
 class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
   bool _didInitialFetch = false;
   int _selectedTabIndex = 0;
+  Map<String, String> _reportQuery = {};
+  bool _didReadReportContext = false;
   final _searchController = TextEditingController();
+  Timer? _refreshTimer;
+  final Set<int> _updatingReviews = {};
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAndFetchAudit(ref.read(authProvider));
+    });
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted || _selectedTabIndex != 0 || !TickerMode.of(context)) return;
+      final auth = ref.read(authProvider);
+      final user = auth.user;
+      if (auth.isRestoring || user == null) return;
+      if (user['role'] != 'admin' &&
+          user['is_superuser'] != true &&
+          user['is_pit_lead'] != true) {
+        return;
+      }
+      if (!ref.read(systemAuditProvider).isLoading &&
+          _updatingReviews.isEmpty) {
+        ref.read(systemAuditProvider.notifier).fetch();
+      }
     });
   }
 
@@ -48,7 +71,8 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     if (_didInitialFetch) return;
 
     final user = authState.user;
-    final isAdmin = user?['role']?.toString() == 'admin' || user?['is_superuser'] == true;
+    final isAdmin =
+        user?['role']?.toString() == 'admin' || user?['is_superuser'] == true;
     final isPitLead = user?['is_pit_lead'] == true;
     final canViewAudit = isAdmin || isPitLead;
 
@@ -61,6 +85,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
 
   @override
   void dispose() {
+    _refreshTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -77,12 +102,14 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     final logId = log['id']?.toString() ?? '';
     if (logId.isEmpty) return;
 
-    final success = await ref.read(reportsProvider.notifier).downloadReport(
-      endpoint: 'audit-trail/',
-      queryParams: {'log_id': logId},
-      defaultFilename: 'DefenSYS_Audit_Evidence_#$logId.pdf',
-      exportFormat: 'pdf',
-    );
+    final success = await ref
+        .read(reportsProvider.notifier)
+        .downloadReport(
+          endpoint: 'audit-trail/',
+          queryParams: {'log_id': logId},
+          defaultFilename: 'DefenSYS_Audit_Evidence_#$logId.pdf',
+          exportFormat: 'pdf',
+        );
 
     _showDownloadResultToast(success, 'pdf');
   }
@@ -91,7 +118,8 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     final auditState = ref.read(systemAuditProvider);
     final queryParams = <String, String>{
       if (auditState.category.isNotEmpty) 'category': auditState.category,
-      if (auditState.reviewStatus.isNotEmpty) 'review_status': auditState.reviewStatus,
+      if (auditState.reviewStatus.isNotEmpty)
+        'review_status': auditState.reviewStatus,
       if (auditState.action.isNotEmpty) 'action': auditState.action,
       if (auditState.search.isNotEmpty) 'search': auditState.search,
       if (auditState.startDate.isNotEmpty) 'start_date': auditState.startDate,
@@ -100,25 +128,37 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
       if (auditState.yearLevel.isNotEmpty) 'year_level': auditState.yearLevel,
     };
 
-    final defaultFilename = format == 'csv'
-        ? 'DefenSYS_Audit_Register.csv'
-        : 'DefenSYS_Audit_Register.pdf';
+    final defaultFilename = 'DefenSYS_Audit_Register.$format';
 
-    final success = await ref.read(reportsProvider.notifier).downloadReport(
-      endpoint: 'audit-trail/',
-      queryParams: queryParams,
-      defaultFilename: defaultFilename,
-      exportFormat: format,
-    );
+    final success = await ref
+        .read(reportsProvider.notifier)
+        .downloadReport(
+          endpoint: 'audit-trail/',
+          queryParams: queryParams,
+          defaultFilename: defaultFilename,
+          exportFormat: format,
+        );
 
     _showDownloadResultToast(success, format);
   }
 
-  Future<void> _updateReviewStatus(Map<String, dynamic> log, String newStatus) async {
+  Future<void> _updateReviewStatus(
+    Map<String, dynamic> log,
+    String newStatus,
+  ) async {
     final logId = log['id'] as int?;
-    if (logId == null) return;
+    if (logId == null || _updatingReviews.contains(logId)) return;
+    String? reason;
+    if (newStatus != 'reviewed' && log['review_status'] == 'reviewed') {
+      reason = await _askReopenReason();
+      if (!mounted || reason == null) return;
+    }
 
-    final success = await ref.read(systemAuditProvider.notifier).updateReviewStatus(logId, newStatus);
+    _updatingReviews.add(logId);
+    final success = await ref
+        .read(systemAuditProvider.notifier)
+        .updateReviewStatus(logId, newStatus, reason: reason);
+    _updatingReviews.remove(logId);
     if (!mounted) return;
 
     if (success) {
@@ -131,9 +171,56 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     } else {
       ToastService.error(
         context,
-        'Failed to update review status',
+        ref.read(systemAuditProvider).error ?? 'Failed to update review status',
       );
     }
+  }
+
+  Future<String?> _askReopenReason() async {
+    final controller = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reopen audit review'),
+        content: SizedBox(
+          width: 420,
+          child: Form(
+            key: formKey,
+            child: TextFormField(
+              controller: controller,
+              autofocus: true,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Reason',
+                hintText: 'Explain what needs another review.',
+              ),
+              validator: (value) => value == null || value.trim().isEmpty
+                  ? 'Enter a reason to reopen this review.'
+                  : null,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(context, controller.text.trim());
+              }
+            },
+            child: const Text('Reopen review'),
+          ),
+        ],
+      ),
+    );
+    // The dialog finishes its closing animation before releasing its controller.
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    controller.dispose();
+    return result;
   }
 
   void _showDownloadResultToast(bool success, [String format = 'pdf']) {
@@ -143,7 +230,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     if (success) {
       ToastService.success(
         context,
-        '$fmtUpper exported and downloaded successfully!',
+        '$fmtUpper downloaded successfully.',
       );
     } else {
       ToastService.error(
@@ -155,13 +242,24 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_didReadReportContext) {
+      _didReadReportContext = true;
+      final router = GoRouter.maybeOf(context);
+      if (router != null) {
+        _reportQuery = GoRouterState.of(context).uri.queryParameters;
+        if (_reportQuery['tab'] == 'reports') _selectedTabIndex = 1;
+      }
+    }
     final authState = ref.watch(authProvider);
 
     ref.listen<AuthState>(authProvider, (previous, next) {
       _checkAndFetchAudit(next);
     });
 
-    ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (previous, next) {
+    ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (
+      previous,
+      next,
+    ) {
       if (next == DefensysAdminSection.auditCompliance) {
         _checkAndFetchAudit(ref.read(authProvider));
       }
@@ -180,14 +278,15 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     }
 
     final user = authState.user;
-    final isAdmin = user?['role']?.toString() == 'admin' || user?['is_superuser'] == true;
+    final isAdmin =
+        user?['role']?.toString() == 'admin' || user?['is_superuser'] == true;
     final isPitLead = user?['is_pit_lead'] == true;
     final canViewAudit = isAdmin || isPitLead;
 
     if (!canViewAudit) {
-      return const SingleChildScrollView(
+      return SingleChildScrollView(
         padding: DefensysUi.contentPadding,
-        child: AuditReportCenterTab(),
+        child: AuditReportCenterTab(reportQuery: _reportQuery),
       );
     }
 
@@ -213,7 +312,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
           if (_selectedTabIndex == 0)
             _buildAuditTrailWorkspace(context)
           else
-            const AuditReportCenterTab(),
+            AuditReportCenterTab(reportQuery: _reportQuery),
         ],
       ),
     );
@@ -222,8 +321,11 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
   Widget _buildAuditTrailWorkspace(BuildContext context) {
     final auditState = ref.watch(systemAuditProvider);
     final notifier = ref.read(systemAuditProvider.notifier);
+    final user = ref.watch(authProvider).user;
+    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
 
-    final selectedLog = auditState.selectedLog ??
+    final selectedLog =
+        auditState.selectedLog ??
         (auditState.logs.isNotEmpty ? auditState.logs.first : null);
 
     return Column(
@@ -231,17 +333,29 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
       children: [
         // 1. Header with Title, Subtitle, and Export Dropdown Menu
         AuditHeaderAndExport(
-          onExportCurrentView: () => _exportAuditRegister(format: 'pdf'),
-          onExportCsv: () => _exportAuditRegister(format: 'csv'),
+          onExportExcel: () => _exportAuditRegister(format: 'xlsx'),
           onExportPdf: () => _exportAuditRegister(format: 'pdf'),
           onOpenReportCenter: () {
-            setState(() => _selectedTabIndex = 1);
+            final params = reportSourceParams(ref, 'audit-trail')..removeWhere((key, value) => value.isEmpty);
+            final router = GoRouter.maybeOf(context);
+            if (router != null) {
+              context.push(reportCenterLocation(admin: isAdmin, reportId: 'audit-trail', params: params, source: GoRouterState.of(context).uri.toString()));
+            } else {
+              setState(() { _selectedTabIndex = 1; _reportQuery = {'report': 'audit-trail', ...params}; });
+            }
           },
         ),
         const SizedBox(height: 20),
 
-        // 2. Shadcn-style 4 KPI Metrics Strip
-        AuditKpiMetrics(state: auditState),
+        // 2. Four scope cards double as an overview and direct filter shortcuts.
+        AuditKpiMetrics(
+          state: auditState,
+          isAdmin: isAdmin,
+          onSelectScope: isAdmin
+              ? (track, year) => notifier.setScope(track, yearLevel: year)
+              : null,
+          onRefresh: () => notifier.fetch(),
+        ),
         const SizedBox(height: 18),
 
         // 3. Search and Filters Toolbar
@@ -271,9 +385,11 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
               context,
               currentTrack: auditState.track,
               currentYearLevel: auditState.yearLevel,
+              lockedYear: isAdmin
+                  ? null
+                  : user?['pit_lead_year']?.toString() ?? '',
               onApply: (track, yearLevel) {
-                notifier.setTrack(track);
-                notifier.setYearLevel(yearLevel);
+                notifier.setScope(track, yearLevel: yearLevel);
               },
             );
           },
@@ -297,23 +413,21 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
               onSelectLog: (log) => notifier.selectLog(log),
               onPageChanged: (page) => notifier.setPage(page),
               onPageSizeChanged: (size) => notifier.setPageSize(size),
-              onQuickReviewStatus: (log, status) => _updateReviewStatus(log, status),
+              onQuickReviewStatus: (log, status) =>
+                  _updateReviewStatus(log, status),
             );
 
             final details = EventDetailsPanel(
               log: selectedLog,
-              onUpdateReviewStatus: (log, status) => _updateReviewStatus(log, status),
+              onUpdateReviewStatus: (log, status) =>
+                  _updateReviewStatus(log, status),
               onExportPdf: (log) => _exportSingleLogPdf(log),
               onNavigateToResource: _navigateToResource,
             );
 
             if (!isWide) {
               return Column(
-                children: [
-                  table,
-                  const SizedBox(height: 16),
-                  details,
-                ],
+                children: [table, const SizedBox(height: 16), details],
               );
             }
 

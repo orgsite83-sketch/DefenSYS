@@ -43,6 +43,7 @@ class DefenseStageDirectory extends StatefulWidget {
     required this.onPublish,
     required this.onDelete,
     required this.onMove,
+    this.exportAction,
   });
   final DefenseStagesState state;
   final Future<void> Function() onRefresh;
@@ -50,6 +51,7 @@ class DefenseStageDirectory extends StatefulWidget {
   final ValueChanged<Map<String, dynamic>> onConfigure;
   final StageMutation onPublish, onDelete;
   final Future<void> Function(Map<String, dynamic>, int, int) onMove;
+  final Widget? exportAction;
 
   @override
   State<DefenseStageDirectory> createState() => _DefenseStageDirectoryState();
@@ -190,6 +192,7 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
       spacing: 8,
       runSpacing: 8,
       children: [
+        if (widget.exportAction != null) widget.exportAction!,
         ShadButton.outline(
           enabled: !_busy,
           leading: const Icon(LucideIcons.refreshCw, size: 16),

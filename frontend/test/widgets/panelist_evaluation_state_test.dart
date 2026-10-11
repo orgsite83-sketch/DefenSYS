@@ -469,6 +469,12 @@ void main() {
         tester,
         find.byKey(const ValueKey('confirm-team-selection')),
       );
+      // The preview list builds this notice after the expanded team details.
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('team-switch-error')),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.byKey(const ValueKey('team-switch-error')), findsOneWidget);
       expect(second.hasDraft, isFalse);
       when(

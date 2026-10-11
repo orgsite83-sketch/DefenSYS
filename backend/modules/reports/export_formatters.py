@@ -2,14 +2,20 @@ import csv
 import io
 import os
 import base64
+import json
+import math
+import textwrap
 from datetime import datetime
 from django.http import HttpResponse
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework.response import Response
 
 try:
     import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles import Font, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.hyperlink import Hyperlink
     HAS_OPENPYXL = True
 except ImportError:
     HAS_OPENPYXL = False
@@ -94,144 +100,205 @@ def generate_csv_response(columns, rows, filename):
     return response
 
 
-def generate_xlsx_response(title, metadata, columns, rows, filename):
-    """
-    Generates a professionally styled Excel workbook (.xlsx) matching the institutional USTP template.
-    """
-    if not HAS_OPENPYXL:
-        return generate_csv_response(columns, rows, filename.replace('.xlsx', '.csv'))
-        
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Report Data"
-    ws.views.sheetView[0].showGridLines = True
+def _write_xlsx_sheet(wb, title, metadata, columns, rows, *, name, generated_by='', table_only=False):
+    """Fit each sheet once, keeping data rows sortable and dates typed."""
+    ws = wb.create_sheet(name)
+    ws.views.sheetView[0].showGridLines = False
+
+    # Determine widths before writing so headers and wrapped rows can be fitted.
+    for col_idx, col in enumerate(columns, start=1):
+        lengths = [len(col['label'])]
+        lengths.extend(max((len(line) for line in str(row.get(col['key'], '') or '').splitlines()), default=0) for row in rows)
+        ws.column_dimensions[get_column_letter(col_idx)].width = col.get('width', min(max(max(lengths) + 3, 16), 46))
     
-    # Fonts & Colors
-    maroon_fill = PatternFill(start_color="7A110A", end_color="7A110A", fill_type="solid")
-    gold_fill = PatternFill(start_color="D4A843", end_color="D4A843", fill_type="solid")
-    meta_bg = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
-    
-    inst_header_font = Font(name="Calibri", size=13, bold=True, color="7A110A")
+    # Neutral report typography: plain white cells and bold black headings.
+    inst_header_font = Font(name="Calibri", size=13, bold=True, color="000000")
     inst_dept_font = Font(name="Calibri", size=11, bold=True, color="1E293B")
     inst_sub_font = Font(name="Calibri", size=9, italic=True, color="64748B")
-    title_font = Font(name="Calibri", size=13, bold=True, color="7A110A")
+    title_font = Font(name="Calibri", size=13, bold=True, color="000000")
     subtitle_font = Font(name="Calibri", size=9.5, italic=True, color="64748B")
     
     meta_label_font = Font(name="Calibri", size=9.5, bold=True, color="1E293B")
     meta_val_font = Font(name="Calibri", size=9.5, color="334155")
-    header_font = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
-    cell_font = Font(name="Calibri", size=9.5, color="1E293B")
-    sig_title_font = Font(name="Calibri", size=9.5, bold=True, color="1E293B")
-    sig_role_font = Font(name="Calibri", size=8.5, color="64748B")
+    header_font = Font(name="Calibri", size=11, bold=True, color="000000")
+    cell_font = Font(name="Calibri", size=11, color="000000")
     
     thin_border = Border(
-        left=Side(style='thin', color='E2E8F0'),
-        right=Side(style='thin', color='E2E8F0'),
-        top=Side(style='thin', color='E2E8F0'),
-        bottom=Side(style='thin', color='E2E8F0'),
+        left=Side(style='thin', color='000000' if table_only else 'E2E8F0'),
+        right=Side(style='thin', color='000000' if table_only else 'E2E8F0'),
+        top=Side(style='thin', color='000000' if table_only else 'E2E8F0'),
+        bottom=Side(style='thin', color='000000' if table_only else 'E2E8F0'),
     )
-    top_line_border = Border(top=Side(style='medium', color='1E293B'))
-    
+
     current_row = 1
-    
-    # 1. Official Institutional Header Block
-    ws.cell(row=current_row, column=1, value="REPUBLIC OF THE PHILIPPINES").font = inst_sub_font
-    current_row += 1
-    ws.cell(row=current_row, column=1, value="UNIVERSITY OF SCIENCE AND TECHNOLOGY OF SOUTHERN PHILIPPINES").font = inst_header_font
-    current_row += 1
-    ws.cell(row=current_row, column=1, value="Department of Information Technology — Oroquieta Campus").font = inst_dept_font
-    current_row += 1
-    ws.cell(row=current_row, column=1, value="P-6, Mobod, Oroquieta City, Misamis Occidental 7207 • Email: ustporoquieta.bsit@ustp.edu.ph").font = inst_sub_font
-    current_row += 2
-    
-    # 2. Document Title
-    ws.cell(row=current_row, column=1, value=f"DEFENSYS — {title.upper()}").font = title_font
-    current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Official Academic Record · Generated on {datetime.now().strftime('%Y-%m-%d %I:%M %p')}").font = subtitle_font
-    current_row += 2
-    
-    # 3. Metadata Grid
-    if metadata:
-        for item in metadata:
-            label = item.get('label', '')
-            val = item.get('value', '')
-            c_label = ws.cell(row=current_row, column=1, value=f"{label}:")
-            c_label.font = meta_label_font
-            c_val = ws.cell(row=current_row, column=2, value=str(val))
-            c_val.font = meta_val_font
+    if not table_only:
+        current_row = 2
+        # Official header and context belong above ordinary reports.
+        for value, font in (
+            ('REPUBLIC OF THE PHILIPPINES', inst_sub_font),
+            ('UNIVERSITY OF SCIENCE AND TECHNOLOGY OF SOUTHERN PHILIPPINES', inst_header_font),
+            ('Department of Information Technology — Oroquieta Campus', inst_dept_font),
+            ('P-6, Mobod, Oroquieta City, Misamis Occidental 7207 • Email: ustporoquieta.bsit@ustp.edu.ph', inst_sub_font),
+        ):
+            ws.cell(current_row, 1, value).font = font
             current_row += 1
         current_row += 1
+        ws.cell(current_row, 1, f'DEFENSYS — {title.upper()}').font = title_font
+        current_row += 1
+        ws.cell(current_row, 1, f"Generated {timezone.localtime().strftime('%Y-%m-%d %H:%M %Z')}" + (f' · By {generated_by}' if generated_by else '')).font = subtitle_font
+        current_row += 2
+        for row_num in (2, 3, 4, 5, 7, 8):
+            if len(columns) > 1:
+                ws.merge_cells(start_row=row_num, start_column=1, end_row=row_num, end_column=len(columns))
+            ws.cell(row_num, 1).alignment = Alignment(vertical='center')
+            ws.row_dimensions[row_num].height = 22
+        if metadata:
+            for item in metadata:
+                cell = ws.cell(current_row, 1, f"{item.get('label', '')}: {item.get('value', '')}")
+                cell.font = meta_label_font
+                cell.alignment = Alignment(vertical='center', wrap_text=True)
+                if len(columns) > 1:
+                    ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=len(columns))
+                ws.row_dimensions[current_row].height = 22
+                current_row += 1
+            current_row += 1
         
     # 4. Table Column Headers
     header_row_idx = current_row
     for col_idx, col in enumerate(columns, start=1):
         cell = ws.cell(row=header_row_idx, column=col_idx, value=col['label'])
         cell.font = header_font
-        cell.fill = maroon_fill
-        cell.alignment = Alignment(horizontal="center" if col.get('align') == 'center' else "left", vertical="center")
+        cell.alignment = Alignment(horizontal="left" if table_only else "center", vertical="center", wrap_text=True)
         cell.border = thin_border
-    ws.row_dimensions[header_row_idx].height = 24
+    ws.row_dimensions[header_row_idx].height = 30 if table_only else 36
     current_row += 1
     
     # 5. Data Rows
-    stripe_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
     for r_idx, row in enumerate(rows):
-        is_stripe = (r_idx % 2 == 1)
         row_num = current_row + r_idx
-        ws.row_dimensions[row_num].height = 19
+        row_lines = 1
         
         for col_idx, col in enumerate(columns, start=1):
             key = col['key']
             val = row.get(key, '')
             if isinstance(val, (dict, list)):
-                val = str(val)
+                val = json.dumps(val, ensure_ascii=False, default=str)
+            if col.get('type') == 'datetime' and val:
+                parsed = val if isinstance(val, datetime) else parse_datetime(str(val))
+                if parsed is not None:
+                    val = timezone.localtime(parsed).replace(tzinfo=None) if timezone.is_aware(parsed) else parsed
                 
             cell = ws.cell(row=row_num, column=col_idx, value=val)
+            # Audit text is data, including text beginning with '='.
+            if isinstance(val, str):
+                cell.data_type = 's'
+            if isinstance(val, datetime):
+                cell.number_format = col.get('number_format', 'yyyy-mm-dd hh:mm')
             cell.font = cell_font
             cell.border = thin_border
-            if is_stripe:
-                cell.fill = stripe_fill
             align = col.get('align', 'left')
-            cell.alignment = Alignment(horizontal=align, vertical="center")
+            cell.alignment = Alignment(horizontal=align, vertical="top", wrap_text=True)
+            width = max(8, int(ws.column_dimensions[get_column_letter(col_idx)].width - 2))
+            display = val.strftime('%Y-%m-%d %H:%M') if isinstance(val, datetime) else str(val if val is not None else '')
+            line_count = sum(max(1, len(textwrap.wrap(line, width=width, replace_whitespace=False))) for line in display.split('\n'))
+            row_lines = max(row_lines, line_count)
+        ws.row_dimensions[row_num].height = min(409, max(21 if table_only else 24, row_lines * 15 + (6 if table_only else 9)))
             
-    current_row += len(rows) + 2
-    
-    # 6. Signatures Block
-    ws.cell(row=current_row, column=1, value="Prepared by:").font = sig_role_font
-    if len(columns) >= 3:
-        mid_col = max(2, len(columns) // 2)
-        ws.cell(row=current_row, column=mid_col, value="Noted by:").font = sig_role_font
-        ws.cell(row=current_row, column=len(columns), value="Approved by:").font = sig_role_font
-    current_row += 3
-    
-    c_p = ws.cell(row=current_row, column=1, value="System Administrator")
-    c_p.font = sig_title_font
-    c_p.border = top_line_border
-    if len(columns) >= 3:
-        mid_col = max(2, len(columns) // 2)
-        c_n = ws.cell(row=current_row, column=mid_col, value="Capstone Adviser / Panel Chair")
-        c_n.font = sig_title_font
-        c_n.border = top_line_border
-        c_a = ws.cell(row=current_row, column=len(columns), value="IT Program Chairperson")
-        c_a.font = sig_title_font
-        c_a.border = top_line_border
-        
-    current_row += 1
-    ws.cell(row=current_row, column=1, value="Documenter / Evaluator").font = sig_role_font
-    if len(columns) >= 3:
-        mid_col = max(2, len(columns) // 2)
-        ws.cell(row=current_row, column=mid_col, value="Capstone Adviser").font = sig_role_font
-        ws.cell(row=current_row, column=len(columns), value="IT Program Chairperson").font = sig_role_font
-        
-    # Auto-fit Column Widths
-    for col_idx, col in enumerate(columns, start=1):
-        col_letter = get_column_letter(col_idx)
-        max_len = len(col['label'])
-        for row in rows:
-            val_str = str(row.get(col['key'], ''))
-            if len(val_str) > max_len:
-                max_len = len(val_str)
-        ws.column_dimensions[col_letter].width = min(max(max_len + 4, 14), 45)
+    last_col = get_column_letter(len(columns))
+    last_row = header_row_idx + len(rows)
+    ws.freeze_panes = f'{"C" if len(columns) > 2 else "A"}{header_row_idx + 1}'
+    ws.auto_filter.ref = f'A{header_row_idx}:{last_col}{last_row}'
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.sheet_view.zoomScale = 100 if table_only else 90
+    ws.print_options.horizontalCentered = True
+    ws.page_setup.orientation = 'landscape' if len(columns) > 5 else 'portrait'
+    ws.page_setup.paperSize = ws.PAPERSIZE_A3 if len(columns) > 10 else ws.PAPERSIZE_A4
+    # Wide registers remain readable on paper by using horizontal pages.
+    ws.page_setup.fitToWidth = max(1, math.ceil(sum(dim.width for dim in ws.column_dimensions.values()) / 190))
+    ws.page_setup.fitToHeight = 0
+    ws.print_title_rows = f'{header_row_idx}:{header_row_idx}'
+    ws.print_area = f'A{1 if table_only else 2}:{last_col}{last_row}'
+    ws.oddFooter.center.text = 'DefenSYS | Page &P of &N'
+    ws.oddFooter.right.text = 'Confidential'
+    if not rows:
+        ws.cell(header_row_idx + 1, 1, 'No records match the selected filters.').font = meta_val_font
+        ws.row_dimensions[header_row_idx + 1].height = 24
+        ws.print_area = f'A{1 if table_only else 2}:{last_col}{header_row_idx + 1}'
+
+    return ws
+
+
+def _write_xlsx_signatories(ws, signatories, generated_by, *, table_only=False):
+    """Place signing space below the data without extending the filter range."""
+    if signatories and isinstance(signatories, list):
+        signers = [s for s in signatories if isinstance(s, dict) and any(s.get(key) for key in ('label', 'name', 'role'))]
+    else:
+        signers = [
+            {'label': 'Prepared by:', 'name': generated_by, 'role': 'Academic Documenter / Evaluator'},
+            {'label': 'Noted by:', 'name': '', 'role': 'Project Adviser / Panel Chair'},
+            {'label': 'Approved by:', 'name': 'IT Program Chairperson', 'role': 'IT Program Chairperson'},
+        ]
+    if not signers:
+        return
+
+    last_column = min(2, ws.max_column)
+    width = max(8, int(sum(ws.column_dimensions[get_column_letter(col)].width for col in range(1, last_column + 1)) - 2))
+    next_row = ws.max_row + 3
+    for signer in signers:
+        for offset, key, bold in ((0, 'label', False), (2, 'name', True), (3, 'role', False)):
+            value = str(signer.get(key) or ('Signed by:' if key == 'label' else '')).strip()
+            row = next_row + offset
+            if last_column > 1:
+                ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=last_column)
+            cell = ws.cell(row, 1, value)
+            cell.data_type = 's'
+            cell.font = Font(name='Calibri', size=11, bold=bold, color='000000')
+            cell.alignment = Alignment(vertical='top', wrap_text=True)
+            lines = sum(max(1, len(textwrap.wrap(line, width=width))) for line in value.split('\n'))
+            ws.row_dimensions[row].height = min(409, max(21, lines * 15 + 6))
+            if key == 'name':
+                for col in range(1, last_column + 1):
+                    ws.cell(row, col).border = Border(top=Side(style='thin', color='000000'))
+        ws.row_dimensions[next_row + 1].height = 24
+        next_row += 5
+
+    first_row = 1 if table_only else 2
+    ws.print_area = f'A{first_row}:{get_column_letter(ws.max_column)}{ws.max_row}'
+
+
+def generate_xlsx_response(title, metadata, columns, rows, filename, *, extra_sheets=None, generated_by='', sheet_name='Report Data', table_only=False, include_signatures=False, signatories=None):
+    """Generate a fitted register with optional evidence/history sheets."""
+    if not HAS_OPENPYXL:
+        return generate_csv_response(columns, rows, filename.replace('.xlsx', '.csv'))
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    wb.properties.title = title
+    if generated_by:
+        wb.properties.creator = generated_by
+    register = _write_xlsx_sheet(wb, title, metadata, columns, rows, name=sheet_name, generated_by=generated_by, table_only=table_only)
+    if include_signatures:
+        _write_xlsx_signatories(register, signatories, generated_by, table_only=table_only)
+    references = {}
+    for spec in extra_sheets or []:
+        sheet = _write_xlsx_sheet(wb, spec['title'], spec.get('metadata', []), spec['columns'], spec['rows'], name=spec['name'], generated_by=generated_by)
+        if spec.get('link_key'):
+            first_data_row = int(sheet.auto_filter.ref.split(':')[0][1:]) + 1
+            locations = {}
+            for index, row in enumerate(spec['rows'], start=first_data_row):
+                locations.setdefault(row[spec['link_key']], index)
+            references[spec['name']] = (spec['link_key'], locations)
+    first_data_row = int(register.auto_filter.ref.split(':')[0][1:]) + 1
+    for column_index, column in enumerate(columns, start=1):
+        sheet_name = column.get('link_to')
+        if sheet_name not in references:
+            continue
+        key, locations = references[sheet_name]
+        for row_index, row in enumerate(rows, start=first_data_row):
+            location = locations.get(row.get(key))
+            if location is not None:
+                cell = register.cell(row_index, column_index)
+                escaped_name = sheet_name.replace("'", "''")
+                cell.hyperlink = Hyperlink(ref=cell.coordinate, location=f"'{escaped_name}'!A{location}")
         
     output = io.BytesIO()
     wb.save(output)
@@ -342,7 +409,7 @@ def generate_doc_response(title, metadata, columns, rows, filename):
     return response
 
 
-def handle_export_or_preview(export_format, title, subtitle, summary_kpis, metadata, columns, rows, filename, pdf_generator_func, sections=None, generated_by='admin'):
+def handle_export_or_preview(export_format, title, subtitle, summary_kpis, metadata, columns, rows, filename, pdf_generator_func, sections=None, generated_by='admin', *, include_signatures=False, signatories=None):
     """
     Unified dispatcher to handle json/preview, csv, xlsx, doc, and pdf exports.
     """
@@ -364,7 +431,8 @@ def handle_export_or_preview(export_format, title, subtitle, summary_kpis, metad
     elif fmt == 'csv':
         return generate_csv_response(columns, rows, filename)
     elif fmt in ('xlsx', 'excel', 'sheet'):
-        return generate_xlsx_response(title, metadata, columns, rows, filename)
+        return generate_xlsx_response(title, metadata, columns, rows, filename,
+                                      generated_by=generated_by, include_signatures=include_signatures, signatories=signatories)
     elif fmt in ('doc', 'docx', 'word'):
         return generate_doc_response(title, metadata, columns, rows, filename)
     else:

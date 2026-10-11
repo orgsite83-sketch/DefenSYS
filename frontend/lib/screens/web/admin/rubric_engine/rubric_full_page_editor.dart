@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -1605,7 +1606,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                   : (_editing
                       ? 'Update rubric details, criteria, and evaluation settings.'
                       : _createSubtitle()),
-              actions: OutlinedButton.icon(
+              actions: Wrap(spacing: 12, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [if (widget.rubric?['id'] != null) ReportExportMenu(reportId: 'rubric-details', params: {'rubric_id': widget.rubric!['id'].toString(), 'scope': widget.rubric!['scope'].toString(), 'term_context': '', 'search': '', 'status': '', 'evaluation_type': ''}), OutlinedButton.icon(
                 onPressed: saving ? null : _handleBack,
                 icon: Icon(
                   Icons.arrow_back_rounded,
@@ -1633,7 +1634,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-              ),
+              )]),
             ),
             if (widget.readOnly || widget.rubric?['is_locked'] == true) ...[
               const SizedBox(height: 18),

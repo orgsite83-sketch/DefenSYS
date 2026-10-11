@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:defensys/screens/app/panelist_dashboard.dart';
 import 'package:defensys/screens/app/panelist/grade_sheet_tab.dart';
 import 'package:defensys/screens/app/panelist/panelist_stage.dart';
-import 'package:defensys/screens/app/panelist/panelist_session.dart';
 import 'package:defensys/screens/app/panelist/panelist_models.dart';
 import 'package:defensys/screens/app/panelist/widgets/evaluation_score_picker.dart';
 import 'package:defensys/screens/app/panelist/widgets/panelist_segmented_tabs.dart';
@@ -134,22 +133,8 @@ void main() {
         findsOneWidget,
       );
       await _tap(tester, find.byKey(const ValueKey('open-panel-workspace')));
-      await _tap(tester, find.byKey(const ValueKey('panel-history-view')));
-      expect(
-        tester
-            .widget<PanelistSegmentedTabs<bool>>(
-              find.byKey(const ValueKey('panel-workspace-tabs')),
-            )
-            .controller!
-            .selected,
-        isFalse,
-      );
-      expect(
-        find.text(
-          'Your draft could not be saved. Check your connection and try again.',
-        ),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('panel-history-view')), findsNothing);
+      expect(find.byKey(const ValueKey('panel-workspace-tabs')), findsNothing);
       await _tap(tester, find.byKey(const ValueKey('close-panel-workspace')));
       when(() => client.post(any(), body: any(named: 'body'))).thenAnswer(
         (_) async => http.Response(
@@ -185,7 +170,7 @@ void main() {
   );
 
   testWidgets(
-    'finished days move to History when a new session is assigned and all tabs share context',
+    'Results history preserves the active assignment, grading team, and draft',
     (tester) async {
       await loadPreviewFonts();
       tester.view.physicalSize = const Size(390, 844);
@@ -252,6 +237,23 @@ void main() {
           posted: true,
           completed: true,
         ),
+        team(24, 'Team Earlier Stage', 'Project Proposal', 2, posted: true),
+        {
+          ...team(
+            25,
+            'Team Earlier Session',
+            'Concept Proposal',
+            1,
+            posted: true,
+          ),
+          'session_id': 'older-session',
+          'scheduled_date': TeamData.manilaToday
+              .subtract(const Duration(days: 2))
+              .toIso8601String()
+              .split('T')
+              .first,
+          'room': '302',
+        },
       ];
       final results = [
         for (final assignment in assignments.where(
@@ -287,6 +289,12 @@ void main() {
           headers: {'content-type': 'application/json; charset=utf-8'},
         );
       });
+      when(() => client.post(any(), body: any(named: 'body'))).thenAnswer(
+        (_) async => http.Response(
+          '{"draft":{"saved_at":"2026-10-11T08:00:00+08:00"}}',
+          200,
+        ),
+      );
       await pumpDefensysWidget(
         tester,
         const RepaintBoundary(
@@ -314,8 +322,11 @@ void main() {
           matching: find.text('Capstone · Concept Proposal'),
         ),
       );
-      expect(find.text('Active'), findsOneWidget);
-      expect(find.text('History'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('panel-active-session-card')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('panel-workspace-tabs')), findsNothing);
       expect(find.text('Team ReDefense'), findsOneWidget);
       expect(find.text('Team Completed'), findsNothing);
       expect(
@@ -333,6 +344,15 @@ void main() {
         tester,
         find.byKey(const ValueKey('panel-stage-history-preview')),
         'panel-active-stage',
+      );
+      await _tap(tester, find.text('Grade Team'));
+      await _tap(tester, find.byKey(const ValueKey('confirm-team-selection')));
+      await _tap(
+        tester,
+        find.descendant(
+          of: find.byType(EvaluationScorePicker),
+          matching: find.byKey(const ValueKey('score-value-8')),
+        ),
       );
       await _tap(tester, find.text('Results').last);
       final activeResults = tester.widget<OverallResultsTab>(
@@ -363,6 +383,65 @@ void main() {
         find.byKey(const ValueKey('panel-stage-history-preview')),
         'panel-history-results',
       );
+      // Browsing History must not replace either mounted active-work tab.
+      expect(
+        tester
+            .widget<AssignmentsTab>(
+              find.byType(AssignmentsTab, skipOffstage: false),
+            )
+            .teams
+            .single
+            .scheduleId,
+        '23',
+      );
+      expect(
+        tester
+            .widget<GradeSheetTab>(
+              find.byType(GradeSheetTab, skipOffstage: false),
+            )
+            .teams
+            .single
+            .scheduleId,
+        '23',
+      );
+      await _tap(
+        tester,
+        find.descendant(
+          of: find.byKey(const ValueKey('panel-stage-selector')),
+          matching: find.text('Capstone · Project Proposal'),
+        ),
+      );
+      expect(
+        tester
+            .widget<OverallResultsTab>(find.byType(OverallResultsTab))
+            .results
+            .single['schedule_id'],
+        24,
+      );
+      await _tap(tester, find.byKey(const ValueKey('panel-session-selector')));
+      expect(find.text('Choose a past session'), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const ValueKey('panel-session-search')),
+        'Team Earlier Session',
+      );
+      await tester.pumpAndSettle();
+      final earlierDate = TeamData.manilaToday
+          .subtract(const Duration(days: 2))
+          .toIso8601String()
+          .split('T')
+          .first;
+      final earlierSessionKey = json.encode(['older-session', earlierDate]);
+      await _tap(
+        tester,
+        find.byKey(ValueKey('panel-session-option-$earlierSessionKey')),
+      );
+      expect(
+        tester
+            .widget<OverallResultsTab>(find.byType(OverallResultsTab))
+            .results
+            .single['schedule_id'],
+        25,
+      );
       await _tap(tester, find.text('Assignments').last);
       expect(
         tester
@@ -370,32 +449,34 @@ void main() {
             .teams
             .map((team) => team.scheduleId)
             .toSet(),
-        {'20', '22'},
+        {'23'},
       );
-      await _tap(tester, find.text('View Grades').first);
-      await _tap(tester, find.byKey(const ValueKey('confirm-team-selection')));
+      expect(
+        find.byKey(const ValueKey('panel-active-session-card')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('panel-workspace-tabs')), findsNothing);
+      await _tap(tester, find.text('Grade Sheet').last);
       expect(find.byKey(const ValueKey('panel-workspace-tabs')), findsNothing);
       expect(find.byKey(const ValueKey('panel-stage-selector')), findsNothing);
-      expect(
-        tester.getSize(find.byKey(const ValueKey('evaluation-footer'))).height,
-        lessThan(90),
-      );
-      expect(find.byType(EvaluationScorePicker), findsNothing);
-      expect(find.text('Submitted grades'), findsWidgets);
+      expect(_valueForScore(tester), 8);
+      expect(find.text('Currently grading'), findsOneWidget);
       await capturePreview(
         tester,
         find.byKey(const ValueKey('panel-stage-history-preview')),
-        'panel-compact-submitted',
+        'panel-active-grading-after-history',
       );
       await _tap(tester, find.byKey(const ValueKey('open-panel-workspace')));
       expect(
         find.byKey(const ValueKey('panel-session-selector')),
-        findsOneWidget,
+        findsNothing,
       );
       expect(
         find.byKey(const ValueKey('panel-stage-selector')),
         findsOneWidget,
       );
+      expect(find.byKey(const ValueKey('panel-history-view')), findsNothing);
+      expect(find.byKey(const ValueKey('panel-workspace-tabs')), findsNothing);
       await capturePreview(
         tester,
         find
@@ -404,52 +485,7 @@ void main() {
               matching: find.byType(RepaintBoundary),
             )
             .first,
-        'panel-history-sheet',
-      );
-      await _tap(tester, find.byKey(const ValueKey('panel-session-selector')));
-      expect(find.text('Choose a past session'), findsOneWidget);
-      await tester.enterText(
-        find.byKey(const ValueKey('panel-session-search')),
-        'Team Assessed',
-      );
-      await tester.pumpAndSettle();
-      final historyTeam = tester
-          .widget<GradeSheetTab>(find.byType(GradeSheetTab))
-          .teams
-          .first;
-      await _tap(
-        tester,
-        find.byKey(
-          ValueKey(
-            'panel-session-option-${PanelistSession.teamKey(historyTeam)}',
-          ),
-        ),
-      );
-      expect(
-        find.byKey(const ValueKey('panel-workspace-sheet')),
-        findsOneWidget,
-      );
-      await _tap(tester, find.byKey(const ValueKey('panel-active-view')));
-      expect(
-        tester
-            .widget<GradeSheetTab>(find.byType(GradeSheetTab))
-            .teams
-            .single
-            .scheduleId,
-        '21',
-      );
-      expect(
-        find.byKey(const ValueKey('panel-session-selector')),
-        findsNothing,
-      );
-      await _tap(tester, find.byKey(const ValueKey('panel-history-view')));
-      expect(
-        tester
-            .widget<GradeSheetTab>(find.byType(GradeSheetTab))
-            .teams
-            .map((team) => team.scheduleId)
-            .toSet(),
-        {'20', '22'},
+        'panel-active-session-sheet',
       );
       await _tap(tester, find.byKey(const ValueKey('close-panel-workspace')));
       await _tap(tester, find.text('Change team'));
@@ -459,16 +495,99 @@ void main() {
             .teams
             .map((team) => team.scheduleId)
             .toSet(),
-        {'20', '22'},
+        {'23'},
       );
       expect(find.text('All stages / events'), findsNothing);
       await tester.tap(find.byTooltip('Keep current team'));
       await tester.pumpAndSettle();
+      await _tap(tester, find.text('Results').last);
+      expect(
+        tester
+            .widget<PanelistSegmentedTabs<bool>>(
+              find.byKey(const ValueKey('panel-workspace-tabs')),
+            )
+            .controller!
+            .selected,
+        isTrue,
+      );
+      expect(
+        tester
+            .widget<OverallResultsTab>(find.byType(OverallResultsTab))
+            .results
+            .single['schedule_id'],
+        25,
+      );
+      await _tap(tester, find.byKey(const ValueKey('panel-active-view')));
+      expect(
+        tester
+            .widget<OverallResultsTab>(find.byType(OverallResultsTab))
+            .results,
+        isEmpty,
+      );
+      await _tap(tester, find.byKey(const ValueKey('panel-history-view')));
+      expect(
+        tester
+            .widget<OverallResultsTab>(find.byType(OverallResultsTab))
+            .results
+            .single['schedule_id'],
+        25,
+      );
+      await _tap(tester, find.text('Grade Sheet').last);
+      expect(_valueForScore(tester), 8);
       expect(tester.takeException(), isNull);
       final preferences = await SharedPreferences.getInstance();
       expect(preferences.getString('panel_stage_guest_panelist_42'), stageKey);
     },
   );
+
+  testWidgets('Assignments can change between active sessions', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final client = _Client();
+    final assignments = [
+      {..._assignment(20, 'Team SkyLedger'), 'session_id': 'session-one'},
+      {
+        ..._assignment(21, 'Team BioPulse'),
+        'session_id': 'session-two',
+        'room': '302',
+      },
+    ];
+    when(() => client.get(any())).thenAnswer((invocation) async {
+      final path = (invocation.positionalArguments.first as Uri).path;
+      return http.Response(
+        json.encode(
+          path.contains('guest-assignments')
+              ? {'teams': assignments}
+              : {'results': []},
+        ),
+        200,
+      );
+    });
+    await pumpDefensysWidget(
+      tester,
+      const PanelistDashboard(),
+      overrides: [
+        authProvider.overrideWith(_Guest.new),
+        connectivityProvider.overrideWith(_Online.new),
+        authenticatedHttpClientProvider.overrideWithValue(client),
+      ],
+    );
+    expect(find.text('Team SkyLedger'), findsOneWidget);
+    expect(find.text('Team BioPulse'), findsNothing);
+    expect(find.byKey(const ValueKey('panel-workspace-tabs')), findsNothing);
+    await _tap(tester, find.byKey(const ValueKey('panel-session-selector')));
+    final date = TeamData.manilaToday.toIso8601String().split('T').first;
+    final secondSessionKey = json.encode(['session-two', date]);
+    await _tap(
+      tester,
+      find.byKey(ValueKey('panel-session-option-$secondSessionKey')),
+    );
+    expect(find.text('Team BioPulse'), findsOneWidget);
+    expect(find.text('Team SkyLedger'), findsNothing);
+    expect(find.textContaining('Room 302'), findsWidgets);
+  });
 
   for (final width in [320.0, 390.0]) {
     testWidgets('single active context leaves room for grading at $width', (
@@ -517,9 +636,10 @@ void main() {
       );
       expect(find.byKey(const ValueKey('panel-stage-selector')), findsNothing);
       expect(
-        find.byKey(const ValueKey('panel-active-context')),
+        find.byKey(const ValueKey('panel-active-session-card')),
         findsOneWidget,
       );
+      expect(find.byKey(const ValueKey('panel-workspace-tabs')), findsNothing);
       await capturePreview(
         tester,
         find.byKey(const ValueKey('panel-compact-preview')),
@@ -528,7 +648,10 @@ void main() {
       await _tap(tester, find.text('Grade Team'));
       await _tap(tester, find.byKey(const ValueKey('confirm-team-selection')));
       expect(find.byKey(const ValueKey('panel-workspace-tabs')), findsNothing);
-      expect(find.byKey(const ValueKey('panel-active-context')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('panel-active-session-card')),
+        findsNothing,
+      );
       expect(
         find.byKey(const ValueKey('open-panel-workspace')),
         findsOneWidget,

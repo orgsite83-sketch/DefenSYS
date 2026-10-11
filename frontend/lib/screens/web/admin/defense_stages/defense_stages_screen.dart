@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -92,6 +93,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     final state = ref.watch(defenseStagesProvider);
 
     return DefenseStageDirectory(
+      exportAction: const ReportExportMenu(reportId: 'defense-stage-setup'),
       state: state,
       onRefresh: () => ref.read(defenseStagesProvider.notifier).fetchStages(),
       onAdd: () => _showStageDialog(),

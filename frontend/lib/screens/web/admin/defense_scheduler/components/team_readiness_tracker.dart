@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:defensys/widgets/export/report_export_menu.dart';
 
 import 'package:defensys/models/defense_workflow_labels.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
@@ -180,6 +181,8 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                 ),
               ),
               const Spacer(),
+              ReportExportMenu(reportId: 'readiness', params: {'scope': widget.scope, 'stage': widget.activeStageOrEventName, 'search': _trackerSearchController.text.trim(), 'level': _selectedPitYearLevel ?? ''}),
+              const SizedBox(width: 10),
               if (widget.headerAction != null) ...[
                 widget.headerAction!,
                 const SizedBox(width: 10),

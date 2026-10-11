@@ -100,12 +100,21 @@ class SystemAuditLog(models.Model):
     target_id = models.CharField(max_length=80, blank=True)
     old_values = models.JSONField(default=dict, blank=True)
     new_values = models.JSONField(default=dict, blank=True)
+    reference_labels = models.JSONField(default=dict, blank=True)
     reason = models.TextField(blank=True)
     review_status = models.CharField(
         max_length=30,
         choices=REVIEW_STATUS_CHOICES,
         default=REVIEW_CAPTURED,
     )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, related_name='reviewed_system_audit_logs',
+        null=True, blank=True, on_delete=models.SET_NULL,
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by_name = models.CharField(max_length=255, blank=True)
+    reviewed_by_role = models.CharField(max_length=30, blank=True)
+    reviewed_by_year = models.CharField(max_length=50, blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -121,6 +130,26 @@ class SystemAuditLog(models.Model):
 
     def __str__(self):
         return f'{self.category}:{self.action} -> {self.target_type}#{self.target_id}'
+
+
+class SystemAuditReview(models.Model):
+    """Review decisions retain identity snapshots even if an account changes."""
+
+    audit_log = models.ForeignKey(SystemAuditLog, related_name='reviews', on_delete=models.CASCADE)
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name='system_audit_reviews',
+    )
+    reviewer_name = models.CharField(max_length=255)
+    reviewer_role = models.CharField(max_length=30)
+    reviewer_year = models.CharField(max_length=50, blank=True)
+    from_status = models.CharField(max_length=30, choices=SystemAuditLog.REVIEW_STATUS_CHOICES)
+    to_status = models.CharField(max_length=30, choices=SystemAuditLog.REVIEW_STATUS_CHOICES)
+    reason = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
 
 
 class PasswordResetOTP(models.Model):

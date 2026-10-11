@@ -52,26 +52,31 @@ def counts_payload(queryset=None):
     }
 
 
+def filter_academic_records(queryset, params):
+    search = params.get('search', '').strip()
+    school_year = params.get('school_year', '').strip()
+    semester = params.get('semester', '').strip()
+    if search:
+        queryset = queryset.filter(Q(student__username__icontains=search) | Q(student__first_name__icontains=search)
+                                  | Q(student__last_name__icontains=search) | Q(student__email__icontains=search))
+    if school_year:
+        queryset = queryset.filter(semester__school_year__label=school_year)
+    if semester:
+        queryset = queryset.filter(semester__label=semester)
+    for key in ('year_level', 'section'):
+        value = params.get(key, '')
+        if value == 'UNASSIGNED' and key == 'section':
+            queryset = queryset.filter(Q(section='') | Q(section__iexact='BSIT'))
+        elif value and value != 'ALL':
+            queryset = queryset.filter(**{key: value})
+    return queryset
+
+
 class StudentAcademicRecordListCreateView(APIView):
     permission_classes = [IsSystemAdmin]
 
     def get(self, request):
-        queryset = records_queryset()
-        search = request.query_params.get('search', '').strip()
-        school_year = request.query_params.get('school_year', '').strip()
-        semester = request.query_params.get('semester', '').strip()
-
-        if search:
-            queryset = queryset.filter(
-                Q(student__username__icontains=search)
-                | Q(student__first_name__icontains=search)
-                | Q(student__last_name__icontains=search)
-                | Q(student__email__icontains=search)
-            )
-        if school_year:
-            queryset = queryset.filter(semester__school_year__label=school_year)
-        if semester:
-            queryset = queryset.filter(semester__label=semester)
+        queryset = filter_academic_records(records_queryset(), request.query_params)
 
         return Response({
             'records': StudentAcademicRecordSerializer(queryset, many=True).data,

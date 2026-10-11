@@ -8,7 +8,7 @@ import 'defensys_document_sheet.dart';
 import 'defensys_pdf_viewer.dart';
 
 /// Reusable right pane / main pane rendering structured live preview data.
-/// Supports both True Institutional Document Sheet Preview and Raw Data Grid mode.
+/// The selected export format determines the document or table preview.
 class DefensysLiveDataPreviewPane extends StatefulWidget {
   final bool isLoading;
   final ReportPreviewData? previewData;
@@ -30,12 +30,15 @@ class DefensysLiveDataPreviewPane extends StatefulWidget {
   });
 
   @override
-  State<DefensysLiveDataPreviewPane> createState() => _DefensysLiveDataPreviewPaneState();
+  State<DefensysLiveDataPreviewPane> createState() =>
+      _DefensysLiveDataPreviewPaneState();
 }
 
-class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPane> {
+class _DefensysLiveDataPreviewPaneState
+    extends State<DefensysLiveDataPreviewPane> {
   final _searchController = TextEditingController();
-  bool _isDocumentView = true;
+  bool get _isDocumentView =>
+      !const ['xlsx', 'excel', 'sheet', 'csv'].contains(widget.selectedFormat);
   double _zoomScale = 1.0;
   Uint8List? _pdfBytes;
 
@@ -43,10 +46,6 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
   void initState() {
     super.initState();
     _pdfBytes = widget.previewData?.pdfBytes;
-    final isTabular = widget.selectedFormat == 'xlsx' ||
-        widget.selectedFormat == 'csv' ||
-        widget.selectedFormat == 'sheet';
-    _isDocumentView = !isTabular;
     _searchController.addListener(() => setState(() {}));
   }
 
@@ -55,14 +54,6 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
     super.didUpdateWidget(oldWidget);
     if (oldWidget.previewData != widget.previewData) {
       _pdfBytes = widget.previewData?.pdfBytes;
-    }
-    if (oldWidget.selectedFormat != widget.selectedFormat) {
-      final isTabular = widget.selectedFormat == 'xlsx' ||
-          widget.selectedFormat == 'csv' ||
-          widget.selectedFormat == 'sheet';
-      setState(() {
-        _isDocumentView = !isTabular;
-      });
     }
   }
 
@@ -103,12 +94,19 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
               SizedBox(height: 16),
               Text(
                 'Compiling live report document...',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: DefensysTokens.textDark),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: DefensysTokens.textDark,
+                ),
               ),
               SizedBox(height: 4),
               Text(
                 'Fetching realtime evaluations, defense scores, and official institutional layout.',
-                style: TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: DefensysTokens.steelGrey,
+                ),
               ),
             ],
           ),
@@ -128,11 +126,19 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.dataset_linked_outlined, size: 40, color: DefensysTokens.steelGrey),
+              const Icon(
+                Icons.dataset_linked_outlined,
+                size: 40,
+                color: DefensysTokens.steelGrey,
+              ),
               const SizedBox(height: 12),
               const Text(
                 'No data records found for current filter',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: DefensysTokens.textDark),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: DefensysTokens.textDark,
+                ),
               ),
               const SizedBox(height: 4),
               const Text(
@@ -167,7 +173,7 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Top Institutional Toolbar (View Switcher + Zoom Controls + Refresh)
+        // Format preview, zoom controls, and refresh
         _buildTopToolbar(data, displayRows.length),
 
         // Main Preview Area (Document Sheet vs Raw Data Table)
@@ -190,42 +196,21 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
       ),
       child: Row(
         children: [
-          // View Mode Switcher Pills
-          Container(
-            padding: const EdgeInsets.all(2.5),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE2E8F0),
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildModePill(
-                  label: 'Document Sheet',
-                  icon: Icons.description_rounded,
-                  isSelected: _isDocumentView,
-                  onTap: () => setState(() => _isDocumentView = true),
-                ),
-                _buildModePill(
-                  label: 'Data Table',
-                  icon: Icons.table_chart_rounded,
-                  isSelected: !_isDocumentView,
-                  onTap: () => setState(() => _isDocumentView = false),
-                ),
-              ],
-            ),
+          Icon(
+            _isDocumentView
+                ? Icons.picture_as_pdf_outlined
+                : Icons.table_view_rounded,
+            size: 17,
+            color: DefensysTokens.steelGrey,
           ),
-
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
 
           // Subtitle / Context Info
           Expanded(
             child: Text(
               _isDocumentView
-                  ? (_pdfBytes != null
-                      ? 'Official Document Preview — Dynamic output matching exact PDF export'
-                      : 'Official Document Preview (Multi-Page) — Mirrored letterheads, sidebars, and signatures')
-                  : 'Viewing $displayRowCount of ${data.totalRows} raw records',
+                  ? 'PDF document preview'
+                  : 'Excel data preview ($displayRowCount of ${data.totalRows} records)',
               style: const TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
@@ -256,7 +241,10 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
                   InkWell(
                     onTap: _resetZoom,
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 4,
+                      ),
                       child: Text(
                         '${(_zoomScale * 100).toInt()}%',
                         style: const TextStyle(
@@ -282,64 +270,17 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
 
           // Refresh Button
           IconButton(
-            icon: const Icon(Icons.refresh_rounded, size: 17, color: DefensysTokens.steelGrey),
+            icon: const Icon(
+              Icons.refresh_rounded,
+              size: 17,
+              color: DefensysTokens.steelGrey,
+            ),
             tooltip: 'Refresh dataset',
             padding: const EdgeInsets.all(6),
             constraints: const BoxConstraints(),
             onPressed: widget.onRefresh,
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildModePill({
-    required String label,
-    required IconData icon,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: isSelected ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-            boxShadow: isSelected
-                ? const [
-                    BoxShadow(
-                      color: Color(0x10000000),
-                      blurRadius: 3,
-                      offset: Offset(0, 1),
-                    )
-                  ]
-                : null,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 13,
-                color: isSelected ? DefensysTokens.maroon : DefensysTokens.steelGrey,
-              ),
-              const SizedBox(width: 5),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                  color: isSelected ? DefensysTokens.maroon : DefensysTokens.steelGrey,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -370,7 +311,10 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
   }
 
   /// 2. Raw Data Table View
-  Widget _buildRawDataTableView(ReportPreviewData data, List<Map<String, dynamic>> displayRows) {
+  Widget _buildRawDataTableView(
+    ReportPreviewData data,
+    List<Map<String, dynamic>> displayRows,
+  ) {
     return Column(
       children: [
         // KPI Summary Cards
@@ -391,10 +335,15 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
 
                   return Container(
                     margin: const EdgeInsets.only(right: 10),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 7,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                      borderRadius: BorderRadius.circular(
+                        DefensysTokens.radiusMd,
+                      ),
                       border: Border.all(color: DefensysTokens.border),
                     ),
                     child: Column(
@@ -425,19 +374,28 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
                             if (badge != null && badge.isNotEmpty) ...[
                               const SizedBox(width: 6),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 5,
+                                  vertical: 1,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: badge.contains('MEET') || badge.contains('PASS')
+                                  color:
+                                      badge.contains('MEET') ||
+                                          badge.contains('PASS')
                                       ? DefensysTokens.successBg
                                       : DefensysTokens.dangerBg,
-                                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                                  borderRadius: BorderRadius.circular(
+                                    DefensysTokens.radiusSm,
+                                  ),
                                 ),
                                 child: Text(
                                   badge,
                                   style: TextStyle(
                                     fontSize: 8.5,
                                     fontWeight: FontWeight.w800,
-                                    color: badge.contains('MEET') || badge.contains('PASS')
+                                    color:
+                                        badge.contains('MEET') ||
+                                            badge.contains('PASS')
                                         ? DefensysTokens.successText
                                         : DefensysTokens.dangerText,
                                   ),
@@ -466,8 +424,15 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
                     controller: _searchController,
                     decoration: InputDecoration(
                       hintText: 'Filter table records...',
-                      hintStyle: const TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
-                      prefixIcon: const Icon(Icons.search_rounded, size: 15, color: DefensysTokens.steelGrey),
+                      hintStyle: const TextStyle(
+                        fontSize: 11.5,
+                        color: DefensysTokens.steelGrey,
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.search_rounded,
+                        size: 15,
+                        color: DefensysTokens.steelGrey,
+                      ),
                       suffixIcon: _searchController.text.isNotEmpty
                           ? IconButton(
                               icon: const Icon(Icons.clear_rounded, size: 13),
@@ -476,18 +441,34 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
                           : null,
                       filled: true,
                       fillColor: const Color(0xFFF8FAFC),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 0,
+                      ),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                        borderSide: const BorderSide(color: DefensysTokens.border),
+                        borderRadius: BorderRadius.circular(
+                          DefensysTokens.radiusMd,
+                        ),
+                        borderSide: const BorderSide(
+                          color: DefensysTokens.border,
+                        ),
                       ),
                       enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                        borderSide: const BorderSide(color: DefensysTokens.border),
+                        borderRadius: BorderRadius.circular(
+                          DefensysTokens.radiusMd,
+                        ),
+                        borderSide: const BorderSide(
+                          color: DefensysTokens.border,
+                        ),
                       ),
                       focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                        borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.2),
+                        borderRadius: BorderRadius.circular(
+                          DefensysTokens.radiusMd,
+                        ),
+                        borderSide: const BorderSide(
+                          color: DefensysTokens.maroon,
+                          width: 1.2,
+                        ),
                       ),
                     ),
                   ),
@@ -502,7 +483,11 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
                 ),
                 child: Text(
                   '${displayRows.length} of ${data.rows.length} rows',
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: DefensysTokens.steelGrey),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: DefensysTokens.steelGrey,
+                  ),
                 ),
               ),
             ],
@@ -519,101 +504,174 @@ class _DefensysLiveDataPreviewPaneState extends State<DefensysLiveDataPreviewPan
                     padding: EdgeInsets.all(24),
                     child: Text(
                       'No matching records found in table.',
-                      style: TextStyle(fontSize: 12.5, color: DefensysTokens.steelGrey),
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: DefensysTokens.steelGrey,
+                      ),
                     ),
                   ),
                 )
               : SingleChildScrollView(
                   scrollDirection: Axis.vertical,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minWidth: 620),
-                      child: DataTable(
-                        headingRowHeight: 36,
-                        dataRowMinHeight: 32,
-                        dataRowMaxHeight: 44,
-                        headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-                        horizontalMargin: 14,
-                        columnSpacing: 16,
-                        columns: data.columns.map((col) {
-                          final label = col['label']?.toString() ?? '';
-                          final align = col['align']?.toString() ?? 'left';
-
-                          return DataColumn(
-                            numeric: align == 'center' || align == 'right',
-                            label: Text(
-                              label,
-                              style: const TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w800,
-                                color: DefensysTokens.textDark,
-                                letterSpacing: 0.3,
-                              ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minWidth: 620),
+                          child: DataTable(
+                            headingRowHeight: 36,
+                            dataRowMinHeight: 32,
+                            dataRowMaxHeight: 44,
+                            headingRowColor: WidgetStateProperty.all(
+                              const Color(0xFFF8FAFC),
                             ),
-                          );
-                        }).toList(),
-                        rows: displayRows.asMap().entries.map((entry) {
-                          final idx = entry.key;
-                          final row = entry.value;
-                          final isStripe = idx % 2 == 1;
-
-                          return DataRow(
-                            color: WidgetStateProperty.all(
-                              isStripe ? const Color(0xFFFAFAFA) : Colors.white,
-                            ),
-                            cells: data.columns.map((col) {
-                              final key = col['key']?.toString() ?? '';
-                              final val = row[key]?.toString() ?? '';
+                            horizontalMargin: 14,
+                            columnSpacing: 16,
+                            columns: data.columns.map((col) {
+                              final label = col['label']?.toString() ?? '';
                               final align = col['align']?.toString() ?? 'left';
 
-                              final isPassed = val == 'PASSED' || val == 'ACTIVE' || val == 'Proficient';
-                              final isFailed = val == 'FAILED' || val == 'REVISION' || val == 'Action Needed';
-                              final isSpecial = isPassed || isFailed;
-
-                              if (isSpecial) {
-                                return DataCell(
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: isPassed ? DefensysTokens.successBg : DefensysTokens.dangerBg,
-                                      borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                                    ),
-                                    child: Text(
-                                      val,
-                                      style: TextStyle(
-                                        fontSize: 9.5,
-                                        fontWeight: FontWeight.w800,
-                                        color: isPassed ? DefensysTokens.successText : DefensysTokens.dangerText,
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              }
-
-                              return DataCell(
-                                Align(
-                                  alignment: align == 'center'
-                                      ? Alignment.center
-                                      : align == 'right'
-                                          ? Alignment.centerRight
-                                          : Alignment.centerLeft,
-                                  child: Text(
-                                    val,
-                                    style: const TextStyle(fontSize: 11, color: DefensysTokens.textDark),
-                                    overflow: TextOverflow.ellipsis,
+                              return DataColumn(
+                                numeric: align == 'center' || align == 'right',
+                                label: Text(
+                                  label,
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: DefensysTokens.textDark,
+                                    letterSpacing: 0.3,
                                   ),
                                 ),
                               );
                             }).toList(),
-                          );
-                        }).toList(),
+                            rows: displayRows.asMap().entries.map((entry) {
+                              final idx = entry.key;
+                              final row = entry.value;
+                              final isStripe = idx % 2 == 1;
+
+                              return DataRow(
+                                color: WidgetStateProperty.all(
+                                  isStripe
+                                      ? const Color(0xFFFAFAFA)
+                                      : Colors.white,
+                                ),
+                                cells: data.columns.map((col) {
+                                  final key = col['key']?.toString() ?? '';
+                                  final val = row[key]?.toString() ?? '';
+                                  final align =
+                                      col['align']?.toString() ?? 'left';
+
+                                  final isPassed =
+                                      val == 'PASSED' ||
+                                      val == 'ACTIVE' ||
+                                      val == 'Proficient';
+                                  final isFailed =
+                                      val == 'FAILED' ||
+                                      val == 'REVISION' ||
+                                      val == 'Action Needed';
+                                  final isSpecial = isPassed || isFailed;
+
+                                  if (isSpecial) {
+                                    return DataCell(
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: isPassed
+                                              ? DefensysTokens.successBg
+                                              : DefensysTokens.dangerBg,
+                                          borderRadius: BorderRadius.circular(
+                                            DefensysTokens.radiusSm,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          val,
+                                          style: TextStyle(
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.w800,
+                                            color: isPassed
+                                                ? DefensysTokens.successText
+                                                : DefensysTokens.dangerText,
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }
+
+                                  return DataCell(
+                                    Align(
+                                      alignment: align == 'center'
+                                          ? Alignment.center
+                                          : align == 'right'
+                                          ? Alignment.centerRight
+                                          : Alignment.centerLeft,
+                                      child: Text(
+                                        val,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: DefensysTokens.textDark,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  );
+                                }).toList(),
+                              );
+                            }).toList(),
+                          ),
+                        ),
                       ),
-                    ),
+                      if (widget.includeSignatures &&
+                          widget.signatories.isNotEmpty)
+                        _buildExcelSignatories(),
+                    ],
                   ),
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _buildExcelSignatories() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Signatories',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+          for (final signer in widget.signatories)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 340),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(signer.label, style: const TextStyle(fontSize: 11)),
+                    const SizedBox(height: 24),
+                    const Divider(height: 1, color: DefensysTokens.textDark),
+                    const SizedBox(height: 4),
+                    Text(
+                      signer.name,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(signer.role, style: const TextStyle(fontSize: 11)),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

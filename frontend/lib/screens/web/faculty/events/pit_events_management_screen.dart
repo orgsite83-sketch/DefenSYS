@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../navigation/admin_route_paths.dart';
@@ -216,6 +217,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
           spacing: 12,
           runSpacing: 12,
           children: [
+            const ReportExportMenu(reportId: 'pit-event-setup'),
             SizedBox(
               height: 42,
               child: OutlinedButton.icon(

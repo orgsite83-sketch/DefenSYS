@@ -814,6 +814,37 @@ class GradeCenterApiTests(APITestCase):
         self.assertEqual(progress.status, TeamStageProgress.STATUS_FAILED)
         self.assertEqual(progress.grade, grade)
 
+    def test_publish_audit_failure_rolls_back_grade_team_and_schedule(self):
+        grade = self._capstone_grade()
+        grade.verdict = TeamGrade.VERDICT_FAILED
+        grade.save(update_fields=['verdict'])
+        self.patch_grade(f'/api/grading/grades/{grade.id}/',
+                         {'panel_score': '70.00', 'adviser_score': '70.00', 'peer_score': '70.00'}, format='json')
+        self._record_panel_evaluations(grade)
+        grade.refresh_from_db()
+        self.capstone_team.refresh_from_db()
+        self.capstone_schedule.refresh_from_db()
+        before = (grade.status, self.capstone_team.status, self.capstone_schedule.status)
+        with patch('authentication_access_control.audit.SystemAuditLog.objects.create', side_effect=RuntimeError('Audit unavailable')):
+            response = self.client.post(f'/api/grading/grades/{grade.id}/publish/')
+        self.assertEqual(response.status_code, 500)
+        grade.refresh_from_db()
+        self.capstone_team.refresh_from_db()
+        self.capstone_schedule.refresh_from_db()
+        self.assertEqual((grade.status, self.capstone_team.status, self.capstone_schedule.status), before)
+
+    def test_group_settings_audit_failure_rolls_back_configuration(self):
+        config = get_or_create_stage_grading_config(self.stage, self.semester)
+        before = config.peer_grading_enabled
+        with patch('authentication_access_control.audit.SystemAuditLog.objects.create', side_effect=RuntimeError('Audit unavailable')):
+            response = self.client.patch('/api/grading/grades/group-settings/', {
+                'scope': TeamGrade.SCOPE_CAPSTONE, 'stage_label': self.stage.label,
+                'peer_grading_enabled': not before,
+            }, format='json')
+        self.assertEqual(response.status_code, 500)
+        config.refresh_from_db()
+        self.assertEqual(config.peer_grading_enabled, before)
+
     def test_pit_lead_scope_only_returns_assigned_pit_year(self):
         sync_missing_grade_rows(user=self.pit_lead)
         self.client.force_authenticate(user=self.pit_lead)

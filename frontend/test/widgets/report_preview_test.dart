@@ -11,6 +11,7 @@ import 'package:defensys/services/network/authenticated_client.dart';
 import 'package:defensys/services/reports_provider.dart';
 import 'package:defensys/services/student_teams_provider.dart';
 import 'package:defensys/widgets/export/defensys_live_data_preview_pane.dart';
+import 'package:defensys/widgets/export/defensys_document_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,11 +32,29 @@ const _team = <String, dynamic>{
   'members': <dynamic>[],
 };
 
+const _pitTeam = <String, dynamic>{
+  'id': 16, 'name': 'PIT Preview', 'project_title': 'PIT Project',
+  'section': 'BSIT-2A', 'level': '2nd Year PIT', 'year_level': '2nd Year',
+  'leader': {'id': 5, 'name': 'PIT Student', 'username': 'pit-student'},
+  'members': <dynamic>[],
+};
+
 class _Auth extends AuthNotifier {
   @override
   AuthState build() => const AuthState(
     isRestoring: false,
     user: {'role': 'admin', 'first_name': 'Test', 'last_name': 'Admin'},
+  );
+}
+
+class _PitLeadAuth extends AuthNotifier {
+  @override
+  AuthState build() => const AuthState(
+    isRestoring: false,
+    user: {
+      'role': 'faculty', 'is_pit_lead': true,
+      'pit_lead_year': '2nd Year', 'first_name': 'PIT', 'last_name': 'Lead',
+    },
   );
 }
 
@@ -48,7 +67,7 @@ class _Periods extends AcademicPeriodNotifier {
 
 class _Teams extends StudentTeamsNotifier {
   @override
-  StudentTeamsState build() => const StudentTeamsState(teams: [_team]);
+  StudentTeamsState build() => const StudentTeamsState(teams: [_team, _pitTeam]);
   @override
   Future<void> fetchTeams({
     String? search,
@@ -105,23 +124,33 @@ http.Response _response(String title) => http.Response(
       {'score': 90},
     ],
     'summary_kpis': <dynamic>[],
+    'assessments': [
+      {'id': 21, 'scope': 'capstone', 'stage_label': 'Concept Proposal'},
+      {'id': 22, 'scope': 'capstone', 'stage_label': 'Project Proposal'},
+    ],
   }),
   200,
 );
 
-Future<void> _openReport(WidgetTester tester, http.Client client) async {
+Future<void> _openReport(
+  WidgetTester tester,
+  http.Client client, {
+  bool openDialog = true,
+  bool pitLead = false,
+  double viewportWidth = 1500,
+}) async {
   final fonts = FontLoader('Inter');
   fonts.addFont(rootBundle.load('assets/fonts/Inter-Regular.ttf'));
   fonts.addFont(rootBundle.load('assets/fonts/Inter-SemiBold.ttf'));
   await fonts.load();
-  tester.view.physicalSize = const Size(1500, 1100);
+  tester.view.physicalSize = Size(viewportWidth, 1100);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        authProvider.overrideWith(_Auth.new),
+        authProvider.overrideWith(pitLead ? _PitLeadAuth.new : _Auth.new),
         academicPeriodProvider.overrideWith(_Periods.new),
         studentTeamsProvider.overrideWith(_Teams.new),
         defenseStagesProvider.overrideWith(_Stages.new),
@@ -139,6 +168,7 @@ Future<void> _openReport(WidgetTester tester, http.Client client) async {
     ),
   );
   await tester.pumpAndSettle();
+  if (!openDialog) return;
   await tester.tap(find.text('Team Grade Report Card'));
   await tester.pumpAndSettle();
   await tester.tap(find.text('Team Preview'));
@@ -155,6 +185,240 @@ Future<void> _toggleSignatures(WidgetTester tester, String badge) async {
 }
 
 void main() {
+  testWidgets('PDF and Excel select their preview without view tabs', (tester) async {
+    final client = MockClient((request) async => _response('Format Preview'));
+    addTearDown(client.close);
+    await _openReport(tester, client);
+
+    expect(find.text('PDF Document'), findsOneWidget);
+    expect(find.text('Excel Spreadsheet'), findsOneWidget);
+    expect(find.text('CSV File'), findsNothing);
+    expect(find.text('Word Document'), findsNothing);
+    expect(find.text('Document Sheet'), findsNothing);
+    expect(find.text('Data Table'), findsNothing);
+    expect(find.byType(DefensysDocumentSheet), findsOneWidget);
+    expect(find.byType(DataTable), findsNothing);
+
+    await tester.tap(find.text('Excel Spreadsheet'));
+    await tester.pumpAndSettle();
+    expect(find.byType(DefensysDocumentSheet), findsNothing);
+    expect(find.byType(DataTable), findsOneWidget);
+    expect(find.text('Filter table records...'), findsOneWidget);
+    expect(find.text('Download XLSX Export'), findsOneWidget);
+
+    await tester.tap(find.text('PDF Document'));
+    await tester.pumpAndSettle();
+    expect(find.byType(DefensysDocumentSheet), findsOneWidget);
+    expect(find.byType(DataTable), findsNothing);
+    expect(find.text('Download PDF Export'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('PIT Lead sees the same report list locked to the assigned year', (tester) async {
+    final requests = <Uri>[];
+    final client = MockClient((request) async {
+      requests.add(request.url);
+      if (request.url.path.endsWith('assessment-candidates/')) {
+        return http.Response(jsonEncode({'teams': [_pitTeam], 'students': [], 'student_contexts': {}}), 200);
+      }
+      return _response('PIT Lead Preview');
+    });
+    addTearDown(client.close);
+    await _openReport(tester, client, openDialog: false, pitLead: true);
+    expect(find.text('PIT reports · 2nd Year'), findsOneWidget);
+    expect(find.text('Capstone Stage Grade Sheet'), findsNothing);
+    expect(find.text('PIT Event Grade Sheet'), findsOneWidget);
+    expect(find.text('User Directory'), findsNothing);
+    await tester.tap(find.text('Filters'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Defense operations & rosters'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Clear Filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('Capstone Stage Grade Sheet'), findsNothing);
+    expect(find.text('PIT Event Grade Sheet'), findsOneWidget);
+    await tester.tap(find.text('Team Grade Report Card'));
+    await tester.pumpAndSettle();
+    expect(find.text('Team Preview'), findsNothing);
+    expect(find.text('PIT Preview'), findsOneWidget);
+    await tester.tap(find.text('PIT Preview'));
+    await tester.pumpAndSettle();
+    expect(requests.last.queryParameters['scope'], 'pit');
+    expect(find.text('Latest recorded event'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('PIT Lead roster keeps its year after resetting filters', (tester) async {
+    final requests = <Uri>[];
+    final client = MockClient((request) async {
+      requests.add(request.url);
+      if (request.url.path.endsWith('assessment-candidates/')) {
+        return http.Response(jsonEncode({'teams': [_pitTeam], 'students': [], 'student_contexts': {}}), 200);
+      }
+      return _response('PIT Roster Preview');
+    });
+    addTearDown(client.close);
+    await _openReport(tester, client, openDialog: false, pitLead: true);
+    await tester.tap(find.text('Team Roster Report'));
+    await tester.pumpAndSettle();
+    Uri rosterRequest() => requests.where((url) => url.path.endsWith('/team-roster/')).last;
+    expect(rosterRequest().queryParameters['level'], 'pit');
+    expect(rosterRequest().queryParameters['year_level'], '2nd Year');
+    expect(find.text('1st Year'), findsNothing);
+    expect(find.text('3rd Year'), findsNothing);
+    final reset = find.text('Reset All Filters');
+    await tester.ensureVisible(reset);
+    await tester.tap(reset);
+    await tester.pumpAndSettle();
+    expect(rosterRequest().queryParameters['level'], 'pit');
+    expect(rosterRequest().queryParameters['year_level'], '2nd Year');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('scope filters reports and carries PIT into the team preview', (tester) async {
+    final requests = <Uri>[];
+    final client = MockClient((request) async {
+      requests.add(request.url);
+      if (request.url.path.endsWith('assessment-candidates/')) {
+        return http.Response(jsonEncode({'teams': [_pitTeam], 'students': [], 'student_contexts': {}}), 200);
+      }
+      return _response('PIT Preview');
+    });
+    addTearDown(client.close);
+    await _openReport(tester, client, openDialog: false);
+    await tester.tap(find.text('PIT').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Capstone Stage Grade Sheet'), findsNothing);
+    expect(find.text('PIT Event Grade Sheet'), findsOneWidget);
+    await tester.tap(find.text('Team Grade Report Card'));
+    await tester.pumpAndSettle();
+    expect(find.text('Team Preview'), findsNothing);
+    await tester.tap(find.text('PIT Preview'));
+    await tester.pumpAndSettle();
+    expect(requests.last.queryParameters['scope'], 'pit');
+    expect(requests.last.queryParameters['coverage'], 'latest');
+    expect(find.text('Latest recorded event'), findsOneWidget);
+  });
+
+  testWidgets('team coverage sends all assessments or a selected record', (tester) async {
+    final requests = <Uri>[];
+    final client = MockClient((request) async {
+      requests.add(request.url);
+      return _response('Coverage Preview');
+    });
+    addTearDown(client.close);
+    await _openReport(tester, client);
+    await tester.tap(find.text('Latest recorded stage'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All recorded stages').last);
+    await tester.pumpAndSettle();
+    expect(requests.last.queryParameters['coverage'], 'all');
+    await tester.tap(find.text('All recorded stages'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Capstone · Concept Proposal').last);
+    await tester.pumpAndSettle();
+    expect(requests.last.queryParameters['coverage'], 'specific');
+    expect(requests.last.queryParameters['grade_id'], '21');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('individual reports use the same scope and coverage controls', (tester) async {
+    final requests = <Uri>[];
+    final client = MockClient((request) async {
+      requests.add(request.url);
+      return _response('Individual Preview');
+    });
+    addTearDown(client.close);
+    await _openReport(tester, client, openDialog: false);
+    await tester.tap(find.text('Individual Student Grade Audit Card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Student Leader'));
+    await tester.pumpAndSettle();
+    expect(requests.last.path, endsWith('/individual-grade/3/'));
+    await tester.tap(find.text('Latest recorded assessment'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All recorded stages / events').last);
+    await tester.pumpAndSettle();
+    expect(requests.last.queryParameters['coverage'], 'all');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('report search narrows grouped rows and can be cleared', (
+    tester,
+  ) async {
+    final client = MockClient((request) async => _response('Report Preview'));
+    addTearDown(client.close);
+    await _openReport(tester, client, openDialog: false);
+
+    expect(find.text('Team Grade Report Card'), findsOneWidget);
+    expect(find.text('Team Roster Report'), findsOneWidget);
+    expect(find.text('Audit Trail Export'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).first, 'roster');
+    await tester.pumpAndSettle();
+    expect(find.text('Team Roster Report'), findsOneWidget);
+    expect(find.text('Team Grade Report Card'), findsNothing);
+    expect(find.text('Audit Trail Export'), findsNothing);
+    expect(find.text('1 of 21 reports'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).first, 'missing report');
+    await tester.pumpAndSettle();
+    expect(find.text('No reports found'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Clear report search'));
+    await tester.pumpAndSettle();
+    expect(find.text('Team Grade Report Card'), findsOneWidget);
+    expect(find.text('Audit Trail Export'), findsOneWidget);
+  });
+
+  testWidgets('catalog filters narrow categories and clear the search and scope', (
+    tester,
+  ) async {
+    final client = MockClient((request) async => _response('Report Preview'));
+    addTearDown(client.close);
+    await _openReport(tester, client, openDialog: false);
+
+    await tester.tap(find.text('Filters'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Defense operations & rosters'));
+    await tester.pumpAndSettle();
+    expect(find.text('Team Roster Report'), findsOneWidget);
+    expect(find.text('Team Grade Report Card'), findsNothing);
+    expect(find.text('Audit Trail Export'), findsNothing);
+    expect(find.text('5 of 21 reports'), findsOneWidget);
+
+    await tester.tap(find.text('PIT').first);
+    await tester.enterText(find.byType(TextField).first, 'roster');
+    await tester.pumpAndSettle();
+    expect(find.text('1 of 20 reports'), findsOneWidget);
+
+    await tester.tap(find.text('Clear Filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('Team Grade Report Card'), findsOneWidget);
+    expect(find.text('Capstone Stage Grade Sheet'), findsOneWidget);
+    expect(find.text('Audit Trail Export'), findsOneWidget);
+    expect(find.text('Browse reports by category'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('report rows fit a narrow viewport', (tester) async {
+    final client = MockClient((request) async => _response('Report Preview'));
+    addTearDown(client.close);
+    await _openReport(tester, client, openDialog: false, viewportWidth: 390);
+
+    expect(tester.takeException(), isNull);
+    await tester.enterText(find.byType(TextField).first, 'roster');
+    await tester.pumpAndSettle();
+    expect(find.text('Team Roster Report'), findsOneWidget);
+    await tester.tap(find.text('Filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('All categories'), findsOneWidget);
+    await tester.tap(find.text('Clear Filters'));
+    await tester.pumpAndSettle();
+    expect(find.text('Team Grade Report Card'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('applying signatories refreshes with the same settings as export', (
     tester,
   ) async {
@@ -186,11 +450,20 @@ void main() {
     expect(requests.last.queryParameters['include_signatures'], 'true');
     expect(requests.length, 2);
 
+    await tester.tap(find.text('Excel Spreadsheet'));
+    await tester.pumpAndSettle();
+    expect(find.byType(DataTable), findsOneWidget);
+    expect(find.text('Signatories'), findsOneWidget);
+    expect(find.text('Custom Reviewer'), findsOneWidget);
+
     await _toggleSignatures(tester, 'Signatures (3)');
     await tester.pumpAndSettle();
     expect(requests.length, 3);
     expect(requests.last.queryParameters['include_signatures'], 'false');
     expect(find.text('Signatures (Off)'), findsOneWidget);
+    expect(find.text('Signatories'), findsNothing);
+    expect(find.text('Custom Reviewer'), findsNothing);
+    expect(find.byType(DataTable), findsOneWidget);
     expect(
       tester.widget<DefensysLiveDataPreviewPane>(
         find.byType(DefensysLiveDataPreviewPane),
@@ -300,7 +573,17 @@ void main() {
     await tester.tap(find.text('Fit width'));
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('100%'), findsOneWidget);
-    await tester.tap(find.text('Document Sheet'));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: DefensysLiveDataPreviewPane(
+            isLoading: false,
+            previewData: data,
+            onRefresh: () {},
+          ),
+        ),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 500));
     expect(tester.state(find.byType(SfPdfViewer)), same(originalState));
     expect(loads, 1);

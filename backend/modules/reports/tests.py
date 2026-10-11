@@ -195,6 +195,271 @@ class ReportsApiTests(APITestCase):
                     self.assertNotIn('Prepared by:', text)
                     self.assertNotIn('Approved by:', text)
 
+    def test_all_excel_reports_use_the_selected_signatories(self):
+        import io
+        import json
+        import openpyxl
+
+        self.client.force_authenticate(user=self.admin)
+        signers = [{'label': 'Verified by:', 'name': 'Custom Report Reviewer', 'role': 'Quality Officer'}]
+        endpoints = [
+            f'/api/reports/team-grade/{self.team_other.pk}/',
+            f'/api/reports/individual-grade/{self.student.pk}/',
+            '/api/reports/semester-grades/',
+            '/api/reports/defense-schedules/',
+            '/api/reports/team-roster/',
+            '/api/reports/user-directory/',
+        ]
+        for endpoint in endpoints:
+            for enabled in ('true', 'false'):
+                with self.subTest(endpoint=endpoint, include_signatures=enabled):
+                    response = self.client.get(endpoint, {
+                        'export_format': 'xlsx', 'semester_id': self.semester.pk,
+                        'include_signatures': enabled, 'signatories': json.dumps(signers),
+                    })
+                    self.assertEqual(response.status_code, 200)
+                    self.assertIn('spreadsheetml', response['Content-Type'])
+                    workbook = openpyxl.load_workbook(io.BytesIO(response.content))
+                    sheet = workbook.active
+                    values = [cell.value for row in sheet for cell in row]
+                    for text in ('Verified by:', 'Custom Report Reviewer', 'Quality Officer'):
+                        self.assertEqual(text in values, enabled == 'true')
+                    self.assertNotIn('Prepared by:', values)
+                    if enabled == 'true':
+                        data_end = openpyxl.utils.range_boundaries(sheet.auto_filter.ref)[3]
+                        signer = next(cell for row in sheet for cell in row if cell.value == 'Custom Report Reviewer')
+                        self.assertGreater(signer.row, data_end)
+                        self.assertIn(f'${sheet.max_row}', sheet.print_area)
+
+    def test_semester_report_explains_approval_below_grade_threshold(self):
+        import base64
+        import io
+        from decimal import Decimal
+        import pdfplumber
+
+        self.client.force_authenticate(user=self.admin)
+        self.grade_other.panel_score = Decimal('58.76')
+        self.grade_other.adviser_score = Decimal('85.00')
+        self.grade_other.peer_score = Decimal('73.30')
+        self.grade_other.verdict = TeamGrade.VERDICT_APPROVED
+        self.grade_other.save(update_fields=[
+            'panel_score', 'adviser_score', 'peer_score', 'final_grade', 'verdict',
+        ])
+
+        params = {'semester_id': self.semester.id, 'scope': 'capstone'}
+        preview = self.client.get('/api/reports/semester-grades/', {**params, 'export_format': 'json'})
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.data['rows'][0]['final_grade'], '69.54%')
+        self.assertEqual(preview.data['rows'][0]['result'], 'Approved')
+        metadata = {item['label']: item['value'] for item in preview.data['metadata']}
+        self.assertIn('threshold is 75%', metadata['Outcome Basis'])
+        self.assertIn('average is for reference', metadata['Outcome Basis'])
+
+        export = self.client.get('/api/reports/semester-grades/', params)
+        self.assertEqual(export.status_code, 200)
+        for pdf_bytes in (export.content, base64.b64decode(preview.data['pdf_base64'])):
+            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+                text = '\n'.join(page.extract_text() or '' for page in pdf.pages)
+            self.assertIn('69.54%', text)
+            self.assertIn('Below 75%', text)
+            self.assertIn('Approved', text)
+            self.assertIn('Concept Proposal - Capstone - 1 record', text)
+
+        # A report must keep the no-verdict grade fallback distinguishable too.
+        self.grade_other.verdict = ''
+        self.grade_other.save(update_fields=['verdict'])
+        preview = self.client.get('/api/reports/semester-grades/', {**params, 'export_format': 'json'})
+        self.assertEqual(preview.data['rows'][0]['result'], 'Grade failed')
+
+    def test_semester_report_counts_unique_teams_and_all_stage_outcomes(self):
+        from decimal import Decimal
+
+        self.client.force_authenticate(user=self.admin)
+        self.grade_other.verdict = TeamGrade.VERDICT_APPROVED
+        self.grade_other.save(update_fields=['verdict'])
+        for index, (label, verdict, final_grade) in enumerate([
+            ('Project Proposal', TeamGrade.VERDICT_APPROVED_WITH_REVISIONS, Decimal('77.07')),
+            ('Pre-Oral Defense', TeamGrade.VERDICT_FOR_REDEFENSE, Decimal('70.00')),
+            ('Final Defense', TeamGrade.VERDICT_PROJECT_REJECTED, Decimal('68.00')),
+            ('Additional Evaluation', '', None),
+        ], start=2):
+            stage, _ = DefenseStage.objects.get_or_create(
+                label=label, defaults={'display_order': index},
+            )
+            TeamGrade.objects.create(
+                team=self.team_other, semester=self.semester,
+                scope=TeamGrade.SCOPE_CAPSTONE, defense_stage=stage,
+                stage_label=label, final_grade=final_grade, verdict=verdict,
+                panel_score=final_grade, adviser_score=final_grade, peer_score=final_grade,
+            )
+
+        preview = self.client.get('/api/reports/semester-grades/', {
+            'semester_id': self.semester.id, 'export_format': 'json',
+        })
+        self.assertEqual(preview.status_code, 200)
+        metadata = {item['label']: item['value'] for item in preview.data['metadata']}
+        self.assertEqual(metadata['Teams in Report'], '2')
+        self.assertEqual(metadata['Stage / Event Records'], '6')
+        self.assertEqual(metadata['Outcome Breakdown'], (
+            'Passed / approved: 2; Failed / rejected: 1; Revisions pending: 1; '
+            'For re-defense: 1; Pending grades: 1'
+        ))
+        outcomes = {row['result'] for row in preview.data['rows']}
+        self.assertIn('Revisions pending', outcomes)
+        self.assertIn('For Re-defense', outcomes)
+        self.assertIn('Project Rejected', outcomes)
+        self.assertIn('Pending grades', outcomes)
+
+    def test_semester_pdf_repeats_stage_and_column_headers_on_continuation_pages(self):
+        import io
+        from decimal import Decimal
+        import pdfplumber
+        from reports.generators.semester_grades_report import generate_semester_grades_pdf
+
+        # Unsaved records exercise pagination without writing extra team data.
+        records = [TeamGrade(
+            team=self.team_other, semester=self.semester,
+            scope=TeamGrade.SCOPE_CAPSTONE, defense_stage=self.stage,
+            stage_label=self.stage.label, final_grade=Decimal('77.10'),
+            panel_score=Decimal('75.00'), adviser_score=Decimal('80.00'),
+            peer_score=Decimal('78.00'), verdict=TeamGrade.VERDICT_APPROVED,
+        ) for _ in range(60)]
+        pdf_bytes = generate_semester_grades_pdf(self.semester, records, 'Report Test')
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            self.assertGreater(len(pdf.pages), 1)
+            for page in pdf.pages:
+                text = page.extract_text() or ''
+                self.assertIn('Concept Proposal - Capstone - 60 records', text)
+                self.assertIn('Team Name', text)
+                self.assertIn('Adviser', text)
+                self.assertIn('Outcome', text)
+
+    def test_team_report_supports_latest_specific_and_all_stage_coverage(self):
+        import base64
+        import io
+        import pdfplumber
+        from decimal import Decimal
+
+        self.client.force_authenticate(user=self.admin)
+        stage, _ = DefenseStage.objects.get_or_create(label='Project Proposal', defaults={'display_order': 2})
+        later = TeamGrade.objects.create(
+            team=self.team_other, semester=self.semester, scope='capstone',
+            defense_stage=stage, panel_score=Decimal('80'), adviser_score=Decimal('80'),
+            peer_score=Decimal('80'),
+        )
+        url = f'/api/reports/team-grade/{self.team_other.pk}/'
+        params = {'scope': 'capstone', 'semester_id': self.semester.pk, 'export_format': 'json'}
+        latest = self.client.get(url, params)
+        self.assertEqual(latest.status_code, 200)
+        self.assertEqual({row['assessment'] for row in latest.data['rows']}, {'Project Proposal'})
+        self.assertEqual(len(latest.data['assessments']), 2)
+        selected = self.client.get(url, {**params, 'coverage': 'specific', 'grade_id': self.grade_other.pk})
+        self.assertEqual({row['assessment'] for row in selected.data['rows']}, {'Concept Proposal'})
+        all_stages = self.client.get(url, {**params, 'coverage': 'all'})
+        self.assertEqual({row['assessment'] for row in all_stages.data['rows']}, {'Concept Proposal', 'Project Proposal'})
+        with pdfplumber.open(io.BytesIO(base64.b64decode(all_stages.data['pdf_base64']))) as pdf:
+            text = '\n'.join(page.extract_text() or '' for page in pdf.pages)
+            self.assertIn('Concept Proposal', text)
+            self.assertIn('Project Proposal', text)
+            self.assertNotIn('PROJECT FINAL DEFENSE', text)
+            self.assertGreaterEqual(len(pdf.pages), 2)
+        mismatch = self.client.get(url, {**params, 'grade_id': self.grade_advised.pk})
+        self.assertEqual(mismatch.status_code, 404)
+        mismatch = self.client.get(url, {**params, 'scope': 'pit', 'grade_id': later.pk})
+        self.assertEqual(mismatch.status_code, 404)
+
+    def test_individual_report_selects_scope_from_assessment_not_first_team(self):
+        import base64
+        import io
+        import pdfplumber
+
+        self.client.force_authenticate(user=self.admin)
+        url = f'/api/reports/individual-grade/{self.student.pk}/'
+        for scope, team, label in [('pit', self.team_advised, 'PIT'), ('capstone', self.team_other, 'Capstone')]:
+            response = self.client.get(url, {
+                'scope': scope, 'semester_id': self.semester.pk, 'coverage': 'all', 'export_format': 'json',
+            })
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual({row['scope'] for row in response.data['rows']}, {label})
+            self.assertEqual({row['team_name'] for row in response.data['rows']}, {team.name})
+            with pdfplumber.open(io.BytesIO(base64.b64decode(response.data['pdf_base64']))) as pdf:
+                text = '\n'.join(page.extract_text() or '' for page in pdf.pages)
+            self.assertIn(label.upper() + ' INDIVIDUAL GRADE AUDIT REPORT', text)
+            if scope == 'pit':
+                self.assertIn('PIT Event', text)
+                self.assertNotIn('Capstone Defense Stage', text)
+        csv = self.client.get(url, {'coverage': 'all', 'export_format': 'csv'})
+        self.assertIn('PIT', csv.content.decode('utf-8-sig'))
+        self.assertIn('Capstone', csv.content.decode('utf-8-sig'))
+
+    def test_report_candidates_preserve_student_context_and_visibility(self):
+        self.client.force_authenticate(user=self.admin)
+        url = '/api/reports/assessment-candidates/'
+        response = self.client.get(url, {'scope': 'pit', 'semester_id': self.semester.pk})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([team['id'] for team in response.data['teams']], [self.team_advised.pk])
+        context = response.data['student_contexts'][str(self.student.pk)]['contexts'][0]
+        self.assertEqual(context['team']['scope'], 'pit')
+        self.client.force_authenticate(user=self.adviser)
+        response = self.client.get(url)
+        self.assertEqual({team['id'] for team in response.data['teams']}, {self.team_advised.pk})
+
+    def test_individual_and_candidate_selection_respects_academic_period(self):
+        from decimal import Decimal
+        self.client.force_authenticate(user=self.admin)
+        period, _ = Semester.objects.get_or_create(school_year=self.school_year, label=Semester.SECOND)
+        historical_team = StudentTeam.objects.create(
+            name='PIT Other Period', project_title='Historical PIT Assessment',
+            level=StudentTeam.LEVEL_2_PIT, year_level='2nd Year',
+            semester=period, leader=self.student, adviser=self.adviser,
+        )
+        TeamGrade.objects.create(
+            team=historical_team, semester=period, scope='pit', stage_label='Year 2 Showcase',
+            panel_score=Decimal('80'), peer_score=Decimal('85'),
+            panel_weight=80, adviser_weight=0, peer_weight=20,
+        )
+        params = {'scope': 'pit', 'semester_id': period.pk}
+        candidates = self.client.get('/api/reports/assessment-candidates/', params)
+        self.assertEqual([team['id'] for team in candidates.data['teams']], [historical_team.pk])
+        report = self.client.get(f'/api/reports/individual-grade/{self.student.pk}/', {
+            **params, 'coverage': 'all', 'export_format': 'json',
+        })
+        self.assertEqual(report.status_code, 200)
+        self.assertEqual({row['team_name'] for row in report.data['rows']}, {historical_team.name})
+        self.assertEqual({row['assessment'] for row in report.data['rows']}, {'Year 2 Showcase'})
+
+    def test_scope_is_explicit_in_mixed_summary_and_roster_data(self):
+        self.client.force_authenticate(user=self.admin)
+        for endpoint in ('semester-grades', 'team-roster'):
+            response = self.client.get(f'/api/reports/{endpoint}/', {
+                'semester_id': self.semester.pk, 'export_format': 'json',
+            })
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual({row['scope'] for row in response.data['rows']}, {'Capstone', 'PIT'})
+            scoped = self.client.get(f'/api/reports/{endpoint}/', {
+                'semester_id': self.semester.pk, 'scope': 'pit', 'export_format': 'json',
+            })
+            self.assertEqual({row['scope'] for row in scoped.data['rows']}, {'PIT'})
+
+    def test_missing_required_panel_grade_is_pending_in_team_data_and_pdf(self):
+        import base64
+        import io
+        import pdfplumber
+
+        self.client.force_authenticate(user=self.admin)
+        self.grade_other.status = TeamGrade.STATUS_PENDING
+        self.grade_other.panel_score = None
+        self.grade_other.save(update_fields=['status', 'panel_score', 'final_grade'])
+        response = self.client.get(f'/api/reports/team-grade/{self.team_other.pk}/', {'export_format': 'json'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['rows'][0]['final_grade'], 'Pending')
+        self.assertEqual(response.data['rows'][0]['grade_status'], 'Pending grading')
+        with pdfplumber.open(io.BytesIO(base64.b64decode(response.data['pdf_base64']))) as pdf:
+            text = '\n'.join(page.extract_text() or '' for page in pdf.pages)
+            cells = [' '.join((cell or '').split()) for page in pdf.pages for table in page.extract_tables() for row in table for cell in row]
+        self.assertIn('Pending grading', cells)
+        self.assertNotIn('FAILED', text)
+
     def test_signatures_off_omits_certification_and_extra_page(self):
         import io
         import pdfplumber
@@ -252,6 +517,93 @@ class ReportsApiTests(APITestCase):
         response = self.client.get('/api/reports/audit-trail/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Content-Type'], 'application/pdf')
+
+    def test_pit_lead_report_center_is_limited_to_assigned_year(self):
+        import datetime
+        from defense.scheduler.models import DefenseSchedule
+        from authentication_access_control.models import SystemAuditLog
+
+        teams = {'3rd Year': self.team_advised}
+        for number, level, year in (
+            (1, StudentTeam.LEVEL_1_PIT, '1st Year'),
+            (2, StudentTeam.LEVEL_2_PIT, '2nd Year'),
+        ):
+            team = StudentTeam.objects.create(
+                name=f'PIT Year {number} Team', project_title=f'Year {number} Project',
+                level=level, year_level=year, semester=self.semester,
+                leader=self.student, adviser=self.adviser,
+            )
+            TeamGrade.objects.create(
+                team=team, semester=self.semester, scope='pit',
+                stage_label=f'PIT Year {number} Event', panel_score=80,
+                peer_score=85, panel_weight=80, adviser_weight=0, peer_weight=20,
+            )
+            teams[year] = team
+        for year, team in teams.items():
+            DefenseSchedule.objects.create(
+                scope='pit', team=team, semester=self.semester,
+                event_name=f'{year} PIT Event',
+                scheduled_date=datetime.date(2026, 10, 15),
+                start_time=datetime.time(9, 0), room='Room 1', created_by=self.admin,
+            )
+            SystemAuditLog.objects.create(
+                actor=self.admin, category=SystemAuditLog.CATEGORY_REPOSITORY,
+                action=f'repository.{year.replace(" ", "_")}',
+                target_type='VaultEntry', target_id=str(team.pk),
+                new_values={'entry_type': 'pit', 'year_level': year},
+            )
+        SystemAuditLog.objects.create(
+            actor=self.admin, category=SystemAuditLog.CATEGORY_REPOSITORY,
+            action='repository.unassigned_pit', target_type='VaultEntry', target_id='0',
+            new_values={'entry_type': 'pit'},
+        )
+        SystemAuditLog.objects.create(
+            actor=self.admin, category=SystemAuditLog.CATEGORY_REPOSITORY,
+            action='repository.cross_year_pit', target_type='VaultEntry', target_id='0',
+            old_values={'entry_type': 'pit', 'year_level': '1st Year'},
+            new_values={'entry_type': 'pit', 'year_level': '2nd Year'},
+        )
+
+        for year, team in teams.items():
+            with self.subTest(year=year):
+                self.pit_lead.pit_lead_year = year
+                self.pit_lead.save(update_fields=['pit_lead_year'])
+                self.client.force_authenticate(user=self.pit_lead)
+                candidates = self.client.get('/api/reports/assessment-candidates/')
+                self.assertEqual({item['id'] for item in candidates.data['teams']}, {team.pk})
+                for path, key in (
+                    ('semester-grades', 'team_name'),
+                    ('team-roster', 'team_name'),
+                    ('defense-schedules', 'team_name'),
+                ):
+                    response = self.client.get(f'/api/reports/{path}/', {
+                        'semester_id': self.semester.pk, 'export_format': 'json',
+                    })
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual({row[key] for row in response.data['rows']}, {team.name})
+                    self.assertEqual({row['scope'] for row in response.data['rows']}, {'PIT'})
+                individual = self.client.get(f'/api/reports/individual-grade/{self.student.pk}/', {
+                    'coverage': 'all', 'export_format': 'json',
+                })
+                self.assertEqual({row['team_name'] for row in individual.data['rows']}, {team.name})
+                own = self.client.get(f'/api/reports/team-grade/{team.pk}/', {'export_format': 'json'})
+                self.assertEqual(own.status_code, 200)
+                other_team = next(value for value in teams.values() if value.pk != team.pk)
+                denied = self.client.get(f'/api/reports/team-grade/{other_team.pk}/', {'export_format': 'json'})
+                self.assertEqual(denied.status_code, 403)
+                log = self.client.get('/api/reports/audit-trail/', {'export_format': 'json'})
+                self.assertEqual({row['action'] for row in log.data['rows']}, {
+                    f'repository.{year.replace(" ", "_")}',
+                })
+                self.assertEqual(self.client.get('/api/reports/user-directory/').status_code, 403)
+
+        self.pit_lead.pit_lead_year = ''
+        self.pit_lead.save(update_fields=['pit_lead_year'])
+        self.client.force_authenticate(user=self.pit_lead)
+        roster = self.client.get('/api/reports/team-roster/', {'export_format': 'json'})
+        self.assertEqual(roster.data['rows'], [])
+        candidates = self.client.get('/api/reports/assessment-candidates/')
+        self.assertEqual(candidates.data['teams'], [])
 
     def test_report_search_filters(self):
         self.client.force_authenticate(user=self.admin)

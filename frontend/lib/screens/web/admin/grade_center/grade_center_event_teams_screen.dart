@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -100,7 +101,7 @@ class _GradeCenterEventTeamsScreenState
             title: widget.title,
             subtitle:
                 '${grades.length} team${grades.length == 1 ? '' : 's'} · tap any row or student to view evaluation breakdown',
-            actions: OutlinedButton.icon(
+            actions: Wrap(spacing: 12, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [ReportExportMenu(reportId: widget.scope == 'pit' ? 'pit-grade-sheet' : 'capstone-grade-sheet', params: {'stage': widget.stageLabel, 'pit_event': widget.scope == 'pit' ? widget.stageLabel : ''}), OutlinedButton.icon(
               onPressed: widget.onBack,
               icon: Icon(
                 Icons.arrow_back_rounded,
@@ -134,7 +135,7 @@ class _GradeCenterEventTeamsScreenState
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
-            ),
+            )]),
           ),
           const SizedBox(height: 20),
 

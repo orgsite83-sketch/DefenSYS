@@ -49,14 +49,11 @@ class _DocumenterDashboardState extends ConsumerState<DocumenterDashboard>
     backgroundColor: DefensysTokens.backgroundOf(context),
     appBar: AppBar(
       automaticallyImplyLeading: false,
-      backgroundColor: DefensysTokens.surfaceOf(context),
-      foregroundColor: DefensysTokens.textPrimaryOf(context),
+      backgroundColor: DefensysTokens.maroon,
+      foregroundColor: Colors.white,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       toolbarHeight: 72,
-      shape: Border(
-        bottom: BorderSide(color: DefensysTokens.borderOf(context)),
-      ),
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -65,7 +62,7 @@ class _DocumenterDashboardState extends ConsumerState<DocumenterDashboard>
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: DefensysTokens.maroonTextOf(context),
+              color: Colors.white70,
             ),
           ),
           const SizedBox(height: 3),
@@ -74,7 +71,7 @@ class _DocumenterDashboardState extends ConsumerState<DocumenterDashboard>
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: DefensysTokens.textPrimaryOf(context),
+              color: Colors.white,
               fontSize: 17,
               fontWeight: FontWeight.w700,
               letterSpacing: -0.3,
@@ -86,6 +83,7 @@ class _DocumenterDashboardState extends ConsumerState<DocumenterDashboard>
         NotificationsBell(
           workspace: 'documenter',
           workspaceLabel: 'Minutes Documenter',
+          color: Colors.white,
         ),
         FacultyAppWorkspaceSwitcher(currentRoute: AppRoutes.documenter),
       ],

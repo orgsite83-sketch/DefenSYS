@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../widgets/shadcn/defensys_action_menu.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
@@ -1044,6 +1045,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             alignment: WrapAlignment.end,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
+              if (currentView == DefenseOperationsView.schedules) const ReportExportMenu(reportId: 'defense-schedules'),
               OutlinedButton.icon(
                 onPressed: _openManualScheduleDialog,
                 style: DefensysButtonStyles.secondary(context),

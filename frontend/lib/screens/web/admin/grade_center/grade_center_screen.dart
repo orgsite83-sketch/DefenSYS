@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -240,7 +241,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
             title: 'Evaluation & Grades',
             subtitle:
                 'Monitor real-time grading from Panelists, Advisors, and Peer-to-Peer rubrics.',
-            actions: null,
+            actions: const ReportExportMenu(reportId: 'semester-grades'),
           ),
           const SizedBox(height: 26),
           _buildStats(state),

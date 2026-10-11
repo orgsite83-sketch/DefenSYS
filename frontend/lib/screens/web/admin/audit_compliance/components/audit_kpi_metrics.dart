@@ -4,337 +4,278 @@ import 'package:defensys/theme/defensys_tokens.dart';
 
 class AuditKpiMetrics extends StatelessWidget {
   final SystemAuditState state;
+  final bool isAdmin;
+  final void Function(String track, String yearLevel)? onSelectScope;
+  final VoidCallback onRefresh;
 
-  const AuditKpiMetrics({super.key, required this.state});
+  const AuditKpiMetrics({
+    super.key,
+    required this.state,
+    required this.isAdmin,
+    required this.onSelectScope,
+    required this.onRefresh,
+  });
 
-  int _count(dynamic value, {int fallback = 0}) {
-    if (value is int) return value;
+  int _count(dynamic value) {
     if (value is num) return value.toInt();
-    if (value is String) return int.tryParse(value) ?? fallback;
-    return fallback;
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
   }
 
   @override
   Widget build(BuildContext context) {
-    final total = _count(state.counts['filtered'], fallback: state.logs.length);
-    final needsReview = _count(state.counts['needs_review']);
-    final reviewed = _count(state.counts['reviewed']);
+    final scopes =
+        <
+          ({
+            String title,
+            String track,
+            String year,
+            Map<String, dynamic> data,
+            String owner,
+          })
+        >[];
+    if (isAdmin) {
+      scopes.add((
+        title: 'Capstone',
+        track: 'capstone',
+        year: '',
+        data: state.capstoneProgress,
+        owner: 'Admin oversight',
+      ));
+    }
+    for (final row in state.pitProgress) {
+      final year = row['year_level']?.toString() ?? '';
+      if (year.isEmpty) continue;
+      if (!isAdmin && year != state.yearLevel) continue;
+      final leads = (row['leads'] as List? ?? [])
+          .whereType<Map>()
+          .map((lead) => lead['name']?.toString() ?? '')
+          .where((name) => name.isNotEmpty)
+          .join(', ');
+      scopes.add((
+        title: 'PIT · $year',
+        track: 'pit',
+        year: year,
+        data: row,
+        owner: leads.isEmpty ? 'No PIT Lead assigned' : leads,
+      ));
+    }
 
-    final progressPct = total == 0 ? 0 : ((reviewed / total) * 100).round();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Review coverage',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: DefensysTokens.textPrimaryOf(context),
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    isAdmin
+                        ? 'Capstone and PIT by year · search, process, action, and date filters apply'
+                        : 'Your assigned PIT year · search, process, action, and date filters apply',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: DefensysTokens.textSecondaryOf(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Refresh audit data',
+              onPressed: state.isLoading ? null : onRefresh,
+              icon: const Icon(Icons.refresh_rounded, size: 19),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (scopes.isEmpty)
+          Text(
+            'Review coverage will appear when audit data is loaded.',
+            style: TextStyle(color: DefensysTokens.textSecondaryOf(context)),
+          )
+        else
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = constraints.maxWidth >= 1180
+                  ? 4
+                  : constraints.maxWidth >= 620
+                  ? 2
+                  : 1;
+              final width =
+                  (constraints.maxWidth - (columns - 1) * 12) / columns;
+              return Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (final scope in scopes)
+                    SizedBox(
+                      width: width,
+                      child: _buildScopeCard(
+                        context,
+                        title: scope.title,
+                        data: scope.data,
+                        owner: scope.owner,
+                        isCapstone: scope.track == 'capstone',
+                        selected:
+                            state.track == scope.track &&
+                            state.yearLevel == scope.year,
+                        onTap: onSelectScope == null
+                            ? null
+                            : () => onSelectScope!(scope.track, scope.year),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+      ],
+    );
+  }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth;
-        if (width >= 900) {
-          // 4 columns in single row
-          return Row(
-            children: [
-              Expanded(
-                child: _buildMetricCard(
-                  context,
-                  icon: Icons.description_outlined,
-                  iconColor: const Color(0xFF475569),
-                  iconBg: const Color(0xFFF1F5F9),
-                  darkIconBg: const Color(0xFF1E293B),
-                  value: total.toString(),
-                  label: 'Total Events',
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: _buildMetricCard(
-                  context,
-                  icon: Icons.access_time_rounded,
-                  iconColor: const Color(0xFFD97706),
-                  iconBg: const Color(0xFFFEF3C7),
-                  darkIconBg: const Color(0xFF451A03),
-                  value: needsReview.toString(),
-                  label: 'Needs Review',
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: _buildMetricCard(
-                  context,
-                  icon: Icons.check_circle_outline_rounded,
-                  iconColor: const Color(0xFF059669),
-                  iconBg: const Color(0xFFDCFCE7),
-                  darkIconBg: const Color(0xFF064E3B),
-                  value: reviewed.toString(),
-                  label: 'Reviewed',
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: _buildProgressCard(
-                  context,
-                  icon: Icons.bar_chart_rounded,
-                  iconColor: const Color(0xFF2563EB),
-                  iconBg: const Color(0xFFDBEAFE),
-                  darkIconBg: const Color(0xFF1E3A8A),
-                  value: '$progressPct%',
-                  label: 'Review Progress',
-                  progress: progressPct / 100.0,
-                ),
-              ),
-            ],
-          );
-        } else if (width >= 560) {
-          // 2x2 grid
-          return Column(
+  Widget _buildScopeCard(
+    BuildContext context, {
+    required String title,
+    required Map<String, dynamic> data,
+    required String owner,
+    required bool isCapstone,
+    required bool selected,
+    required VoidCallback? onTap,
+  }) {
+    final total = _count(data['total']);
+    final reviewed = _count(data['reviewed']);
+    final pending = _count(data['pending']);
+    final leadReviews = _count(data['reviewed_by_lead']);
+    final adminReviews = _count(data['reviewed_by_admin']);
+    final progress = total == 0 ? 0.0 : (reviewed / total).clamp(0.0, 1.0);
+    final percent = (progress * 100).round();
+    final secondary = DefensysTokens.textSecondaryOf(context);
+    final isDark = DefensysTokens.isDark(context);
+    final selectedBorder = isDark
+        ? const Color(0xFF94A3B8)
+        : const Color(0xFF64748B);
+
+    return Semantics(
+      button: onTap != null,
+      selected: selected,
+      label: '$title, $reviewed of $total reviewed, $pending pending',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+        child: Container(
+          height: 178,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: DefensysTokens.surfaceOf(context),
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+            border: Border.all(
+              color: selected
+                  ? selectedBorder
+                  : DefensysTokens.borderOf(context),
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   Expanded(
-                    child: _buildMetricCard(
-                      context,
-                      icon: Icons.description_outlined,
-                      iconColor: const Color(0xFF475569),
-                      iconBg: const Color(0xFFF1F5F9),
-                      darkIconBg: const Color(0xFF1E293B),
-                      value: total.toString(),
-                      label: 'Total Events',
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: DefensysTokens.textPrimaryOf(context),
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildMetricCard(
-                      context,
-                      icon: Icons.access_time_rounded,
-                      iconColor: const Color(0xFFD97706),
-                      iconBg: const Color(0xFFFEF3C7),
-                      darkIconBg: const Color(0xFF451A03),
-                      value: needsReview.toString(),
-                      label: 'Needs Review',
+                  if (onTap != null)
+                    Icon(
+                      Icons.arrow_outward_rounded,
+                      size: 17,
+                      color: secondary,
                     ),
-                  ),
                 ],
               ),
               const SizedBox(height: 12),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Expanded(
-                    child: _buildMetricCard(
-                      context,
-                      icon: Icons.check_circle_outline_rounded,
-                      iconColor: const Color(0xFF059669),
-                      iconBg: const Color(0xFFDCFCE7),
-                      darkIconBg: const Color(0xFF064E3B),
-                      value: reviewed.toString(),
-                      label: 'Reviewed',
+                  Text(
+                    total == 0 ? '—' : '$percent%',
+                    style: TextStyle(
+                      fontSize: 27,
+                      height: 1,
+                      fontWeight: FontWeight.w800,
+                      color: DefensysTokens.textPrimaryOf(context),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 9),
                   Expanded(
-                    child: _buildProgressCard(
-                      context,
-                      icon: Icons.bar_chart_rounded,
-                      iconColor: const Color(0xFF2563EB),
-                      iconBg: const Color(0xFFDBEAFE),
-                      darkIconBg: const Color(0xFF1E3A8A),
-                      value: '$progressPct%',
-                      label: 'Review Progress',
-                      progress: progressPct / 100.0,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text(
+                        total == 0
+                            ? 'no events'
+                            : '$reviewed of $total reviewed',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: secondary),
+                      ),
                     ),
                   ),
                 ],
               ),
-            ],
-          );
-        } else {
-          // 1 column stack
-          return Column(
-            children: [
-              _buildMetricCard(
-                context,
-                icon: Icons.description_outlined,
-                iconColor: const Color(0xFF475569),
-                iconBg: const Color(0xFFF1F5F9),
-                darkIconBg: const Color(0xFF1E293B),
-                value: total.toString(),
-                label: 'Total Events',
+              const SizedBox(height: 11),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  value: progress,
+                  minHeight: 5,
+                  backgroundColor: DefensysTokens.borderOf(context),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    Color(0xFF059669),
+                  ),
+                ),
               ),
-              const SizedBox(height: 10),
-              _buildMetricCard(
-                context,
-                icon: Icons.access_time_rounded,
-                iconColor: const Color(0xFFD97706),
-                iconBg: const Color(0xFFFEF3C7),
-                darkIconBg: const Color(0xFF451A03),
-                value: needsReview.toString(),
-                label: 'Needs Review',
+              const Spacer(),
+              Text(
+                total == 0
+                    ? 'No events in this range'
+                    : '$pending awaiting review',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: DefensysTokens.textPrimaryOf(context),
+                ),
               ),
-              const SizedBox(height: 10),
-              _buildMetricCard(
-                context,
-                icon: Icons.check_circle_outline_rounded,
-                iconColor: const Color(0xFF059669),
-                iconBg: const Color(0xFFDCFCE7),
-                darkIconBg: const Color(0xFF064E3B),
-                value: reviewed.toString(),
-                label: 'Reviewed',
-              ),
-              const SizedBox(height: 10),
-              _buildProgressCard(
-                context,
-                icon: Icons.bar_chart_rounded,
-                iconColor: const Color(0xFF2563EB),
-                iconBg: const Color(0xFFDBEAFE),
-                darkIconBg: const Color(0xFF1E3A8A),
-                value: '$progressPct%',
-                label: 'Review Progress',
-                progress: progressPct / 100.0,
+              const SizedBox(height: 4),
+              Text(
+                total == 0
+                    ? owner
+                    : isCapstone
+                    ? '$adminReviews admin reviews'
+                    : '$owner · $leadReviews lead reviews',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11.5, color: secondary),
               ),
             ],
-          );
-        }
-      },
-    );
-  }
-
-  Widget _buildMetricCard(
-    BuildContext context, {
-    required IconData icon,
-    required Color iconColor,
-    required Color iconBg,
-    required Color darkIconBg,
-    required String value,
-    required String label,
-  }) {
-    final isDark = DefensysTokens.isDark(context);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-      decoration: BoxDecoration(
-        color: DefensysTokens.surfaceOf(context),
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-        border: Border.all(color: DefensysTokens.borderOf(context)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x04000000),
-            blurRadius: 4,
-            offset: Offset(0, 1),
           ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: isDark ? darkIconBg : iconBg,
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-            ),
-            child: Icon(icon, color: iconColor, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: DefensysTokens.textPrimaryOf(context),
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w500,
-                    color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProgressCard(
-    BuildContext context, {
-    required IconData icon,
-    required Color iconColor,
-    required Color iconBg,
-    required Color darkIconBg,
-    required String value,
-    required String label,
-    required double progress,
-  }) {
-    final isDark = DefensysTokens.isDark(context);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-      decoration: BoxDecoration(
-        color: DefensysTokens.surfaceOf(context),
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-        border: Border.all(color: DefensysTokens.borderOf(context)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x04000000),
-            blurRadius: 4,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: isDark ? darkIconBg : iconBg,
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-            ),
-            child: Icon(icon, color: iconColor, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: DefensysTokens.textPrimaryOf(context),
-                    letterSpacing: -0.5,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w500,
-                    color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: progress.clamp(0.0, 1.0),
-                    minHeight: 4,
-                    backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                    valueColor: AlwaysStoppedAnimation<Color>(DefensysTokens.maroonOf(context)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

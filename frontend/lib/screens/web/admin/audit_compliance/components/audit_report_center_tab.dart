@@ -1,3 +1,6 @@
+import 'package:go_router/go_router.dart';
+import 'package:defensys/widgets/export/report_catalog.dart';
+import 'package:defensys/widgets/export/report_export_configuration.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,10 +14,18 @@ import 'package:defensys/services/grading/grade_center_provider.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/widgets/export/export.dart';
+import 'package:defensys/widgets/table/defensys_segmented_control.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 
+bool _isPitLeadOnly(Map<String, dynamic>? user) =>
+    user?['is_pit_lead'] == true && user?['role'] != 'admin' && user?['is_superuser'] != true;
+
+String _assignedPitYear(Map<String, dynamic>? user) =>
+    (user?['pit_lead_year'] ?? '').toString().trim();
+
 class AuditReportCenterTab extends ConsumerStatefulWidget {
-  const AuditReportCenterTab({super.key});
+  const AuditReportCenterTab({super.key, this.reportQuery = const {}});
+  final Map<String, String> reportQuery;
 
   @override
   ConsumerState<AuditReportCenterTab> createState() => _AuditReportCenterTabState();
@@ -29,6 +40,10 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
   String _selectedRole = '';
   final _reportStartDateController = TextEditingController();
   final _reportEndDateController = TextEditingController();
+  final _reportSearchController = TextEditingController();
+  String _reportSearch = '';
+  String _catalogCategory = '';
+  bool _showCatalogFilters = false;
   String _reportCategoryFilter = '';
   String _selectedScope = '';
   String _reportTrackFilter = '';
@@ -36,17 +51,30 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
   @override
   void initState() {
     super.initState();
+    final initialUser = ref.read(authProvider).user;
+    if (_isPitLeadOnly(initialUser)) {
+      _selectedScope = 'pit';
+      _selectedLevel = 'pit';
+      _selectedYearLevel = _assignedPitYear(initialUser);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = ref.read(authProvider).user;
+      final restrictedPitLead = _isPitLeadOnly(user);
       final isPitLead = user?['is_pit_lead'] == true;
       final isPitInstructor = user?['is_pit_instructor'] == true;
-      if (isPitLead || isPitInstructor) {
-        if (mounted && _selectedScope.isEmpty) {
+      if (restrictedPitLead || isPitLead || isPitInstructor) {
+        if (mounted && (restrictedPitLead || _selectedScope.isEmpty)) {
           setState(() {
             _selectedScope = 'pit';
             _selectedLevel = 'pit';
+            if (restrictedPitLead) _selectedYearLevel = _assignedPitYear(user);
           });
         }
+      }
+      final initialReport = ReportCatalog.find(widget.reportQuery['report'] ?? '');
+      if (mounted && initialReport != null && ReportCatalog.visible(user).contains(initialReport)) {
+        final params = Map<String, String>.from(widget.reportQuery)..remove('tab')..remove('report')..remove('source');
+        showReportExportConfiguration(context: context, ref: ref, report: initialReport, params: params);
       }
       ref.read(academicPeriodProvider.notifier).fetchPeriods();
       ref.read(studentTeamsProvider.notifier).fetchTeams();
@@ -59,6 +87,7 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
   void dispose() {
     _reportStartDateController.dispose();
     _reportEndDateController.dispose();
+    _reportSearchController.dispose();
     super.dispose();
   }
 
@@ -69,112 +98,37 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
 
   Widget _buildReportCenter(BuildContext context) {
     final user = ref.watch(authProvider).user;
-    final isAdmin = user?['role']?.toString() == 'admin' || user?['is_superuser'] == true;
-    final isPitLead = user?['is_pit_lead'] == true;
-
-    final List<Map<String, dynamic>> gradingReports = [
-      {
-        'title': 'Team Grade Report Card',
-        'desc': 'Detailed grading summary and criterion assessment scores from panelists, adviser, and peers.',
-        'icon': Icons.badge_outlined,
-        'endpoint': 'team-grade',
-        'tag': 'Grades',
-        'meta': 'PDF • Team Breakdown',
-        'paramHint': 'Requires Team Selection',
-      },
-      {
-        'title': 'Individual Student Grade Audit Card',
-        'desc': 'Official confidential evaluation card detailing individual student performance, peer review contribution, panel remarks, and certification seal.',
-        'icon': Icons.person_outline,
-        'endpoint': 'individual-grade',
-        'tag': 'Audit Slip',
-        'meta': 'PDF • Individual Breakdown',
-        'paramHint': 'Requires Student Candidate',
-      },
-      {
-        'title': 'Capstone Stage Grade Sheet',
-        'desc': 'Official compiled grade sheet for a specific Capstone defense stage (Concept, Outline, Pre-Oral, Final).',
-        'icon': Icons.school_outlined,
-        'endpoint': 'semester-grades',
-        'scope': 'capstone',
-        'tag': 'Capstone',
-        'meta': 'PDF • Stage Matrix',
-        'paramHint': 'Capstone Stage Scope',
-      },
-      {
-        'title': 'PIT Event Grade Sheet',
-        'desc': 'Official compiled grade sheet for a specific Project in IT (PIT) event or year-level showcase.',
-        'icon': Icons.event_available_outlined,
-        'endpoint': 'semester-grades',
-        'scope': 'pit',
-        'tag': 'PIT Events',
-        'meta': 'PDF • Event Matrix',
-        'paramHint': 'PIT Event Scope',
-      },
-      {
-        'title': 'Semester Grade Summary',
-        'desc': 'Compilation sheet of all student teams and final pass/fail results for the semester across all scopes.',
-        'icon': Icons.grade_outlined,
-        'endpoint': 'semester-grades',
-        'tag': 'Summary',
-        'meta': 'PDF • Official Roster',
-        'paramHint': 'Semester & Scope Filter',
-      },
-    ];
-
-    final List<Map<String, dynamic>> operationsReports = [
-      {
-        'title': 'Defense Schedule Summary',
-        'desc': 'Compiled list of scheduled defense events, panels, times, and venue rooms.',
-        'icon': Icons.calendar_month_outlined,
-        'endpoint': 'defense-schedules',
-        'tag': 'Schedule',
-        'meta': 'PDF • Timetable',
-        'paramHint': 'Semester & Scope Filter',
-      },
-      {
-        'title': 'Team Roster Report',
-        'desc': 'Directory list of active student teams, project titles, leaders, and advisers.',
-        'icon': Icons.groups_outlined,
-        'endpoint': 'team-roster',
-        'tag': 'Roster',
-        'meta': 'PDF • Directory',
-        'paramHint': 'Semester & Level Filter',
-      },
-    ];
-
-    final List<Map<String, dynamic>> governanceReports = [
-      if (isAdmin)
-        {
-          'title': 'User Directory',
-          'desc': 'Complete list of registered accounts in the portal filtered by role and status.',
-          'icon': Icons.person_search_outlined,
-          'endpoint': 'user-directory',
-          'tag': 'Accounts',
-          'meta': 'PDF • System Users',
-          'paramHint': 'Role & Status Filter',
-        },
-      if (isAdmin || isPitLead)
-        {
-          'title': 'Audit Trail Export',
-          'desc': 'Compliance log register documenting all high-impact actions and access changes.',
-          'icon': Icons.receipt_long_outlined,
-          'endpoint': 'audit-trail',
-          'tag': 'Compliance',
-          'meta': 'PDF • Change Logs',
-          'paramHint': 'Date Range & Category Filter',
-        },
-    ];
-
-    final totalReports = gradingReports.length + operationsReports.length + governanceReports.length;
+    final restrictedPitLead = _isPitLeadOnly(user);
+    final catalogScope = restrictedPitLead ? 'pit' : _selectedScope;
+    final catalog = ReportCatalog.visible(user);
+    List<Map<String, dynamic>> group(String category) => catalog.where((report) => report.category == category).map((report) => report.toCatalogEntry()).toList();
+    final gradingReports = group('grading');
+    final operationsReports = group('operations');
+    final governanceReports = group('governance');
+    final setupReports = group('setup');
+    final totalReports = [...gradingReports, ...operationsReports, ...governanceReports, ...setupReports]
+        .where((report) => catalogScope.isEmpty || report['scope'] == null || report['scope'] == catalogScope).length;
+    final visibleGradingReports = _filterReports(gradingReports, 'grading');
+    final visibleOperationsReports = _filterReports(operationsReports, 'operations');
+    final visibleGovernanceReports = _filterReports(governanceReports, 'governance');
+    final visibleSetupReports = _filterReports(setupReports, 'setup');
+    final visibleCount =
+        visibleGradingReports.length +
+        visibleOperationsReports.length +
+        visibleGovernanceReports.length + visibleSetupReports.length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if ((widget.reportQuery['source'] ?? '').startsWith('/admin/') || (widget.reportQuery['source'] ?? '').startsWith('/faculty/'))
+          Padding(padding: const EdgeInsets.only(bottom: 12), child: TextButton.icon(icon: const Icon(Icons.arrow_back, size: 16), label: const Text('Back to source'), onPressed: () {
+            if (GoRouter.of(context).canPop()) { context.pop(); } else { context.go(widget.reportQuery['source']!); }
+          })),
         DefensysPageHeader(
           icon: Icons.summarize_outlined,
           title: 'Report Export Center',
-          subtitle: 'Generate and download official compliance PDF reports for academic audits.',
+          subtitle:
+              'Preview and export filtered academic records as PDF or Excel.',
           actions: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
@@ -195,7 +149,7 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '$totalReports Reports Ready for PDF Export',
+                  '$totalReports reports available',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -206,43 +160,335 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
             ),
           ),
         ),
+        const SizedBox(height: 20),
+        if (restrictedPitLead)
+          _buildPitLeadScopeBanner(_assignedPitYear(user))
+        else
+          DefensysSegmentedControl<String>(
+            value: _selectedScope,
+            items: const [
+              DefensysSegmentItem(value: '', label: 'All scopes'),
+              DefensysSegmentItem(value: 'capstone', label: 'Capstone'),
+              DefensysSegmentItem(value: 'pit', label: 'PIT'),
+            ],
+            onChanged: (value) => setState(() {
+              _selectedScope = value;
+              _selectedLevel = value;
+            }),
+          ),
+        const SizedBox(height: 12),
+        _buildReportSearch(visibleCount, totalReports),
         const SizedBox(height: 24),
 
         // Section 1: Academic Grading & Evaluation
-        _buildReportCategoryHeader(
-          title: 'ACADEMIC GRADING & EVALUATION',
-          subtitle: 'Official defense grades, individual evaluation slips, and semester compilation rosters.',
-          icon: Icons.assignment_turned_in_outlined,
-          count: gradingReports.length,
-        ),
-        const SizedBox(height: 12),
-        _buildReportCardsGrid(gradingReports),
-        const SizedBox(height: 28),
-
-        // Section 2: Defense Schedules & Team Rosters
-        _buildReportCategoryHeader(
-          title: 'DEFENSE OPERATIONS & ROSTERS',
-          subtitle: 'Defense timetable schedules, panel room assignments, and official team directories.',
-          icon: Icons.event_note_outlined,
-          count: operationsReports.length,
-        ),
-        const SizedBox(height: 12),
-        _buildReportCardsGrid(operationsReports),
-        const SizedBox(height: 28),
-
-        // Section 3: Governance & System Compliance
-        if (governanceReports.isNotEmpty) ...[
+        if (visibleGradingReports.isNotEmpty) ...[
           _buildReportCategoryHeader(
-            title: 'GOVERNANCE & SYSTEM COMPLIANCE',
-            subtitle: 'Institutional audit registers, evidence logs, and system account directories.',
-            icon: Icons.verified_user_outlined,
-            count: governanceReports.length,
+            title: 'ACADEMIC GRADING & EVALUATION',
+            subtitle:
+                'Official defense grades, individual evaluation slips, and semester compilation rosters.',
+            icon: Icons.assignment_turned_in_outlined,
+            count: visibleGradingReports.length,
           ),
           const SizedBox(height: 12),
-          _buildReportCardsGrid(governanceReports),
+          _buildReportList(visibleGradingReports),
+          const SizedBox(height: 24),
+        ],
+
+        // Section 2: Defense Schedules & Team Rosters
+        if (visibleOperationsReports.isNotEmpty) ...[
+          _buildReportCategoryHeader(
+            title: 'DEFENSE OPERATIONS & ROSTERS',
+            subtitle:
+                'Defense timetable schedules, panel room assignments, and official team directories.',
+            icon: Icons.event_note_outlined,
+            count: visibleOperationsReports.length,
+          ),
+          const SizedBox(height: 12),
+          _buildReportList(visibleOperationsReports),
+          const SizedBox(height: 24),
+        ],
+
+        // Section 3: Governance & System Compliance
+        if (visibleGovernanceReports.isNotEmpty) ...[
+          _buildReportCategoryHeader(
+            title: 'GOVERNANCE & SYSTEM COMPLIANCE',
+            subtitle:
+                'Institutional audit registers, evidence logs, and system account directories.',
+            icon: Icons.verified_user_outlined,
+            count: visibleGovernanceReports.length,
+          ),
+          const SizedBox(height: 12),
+          _buildReportList(visibleGovernanceReports),
           const SizedBox(height: 20),
         ],
+        if (visibleSetupReports.isNotEmpty) ...[
+          _buildReportCategoryHeader(title: 'ACADEMIC SETUP & REQUIREMENTS', subtitle: 'Academic periods, grading configuration and required deliverables.', icon: Icons.tune_outlined, count: visibleSetupReports.length),
+          const SizedBox(height: 12), _buildReportList(visibleSetupReports), const SizedBox(height: 24),
+        ],
+        if (visibleCount == 0) _buildNoReportsFound(),
       ],
+    );
+  }
+
+  List<Map<String, dynamic>> _filterReports(
+    List<Map<String, dynamic>> reports,
+    String category,
+  ) {
+    if (_catalogCategory.isNotEmpty && _catalogCategory != category) return [];
+    final effectiveScope = _isPitLeadOnly(ref.read(authProvider).user) ? 'pit' : _selectedScope;
+    final query = _reportSearch.trim().toLowerCase();
+    return reports.where((report) {
+      final scope = report['scope']?.toString() ?? '';
+      if (effectiveScope.isNotEmpty && scope.isNotEmpty && scope != effectiveScope) return false;
+      if (query.isEmpty) return true;
+      final searchable = [
+        report['title'],
+        report['desc'],
+        report['tag'],
+        report['paramHint'],
+      ].join(' ').toLowerCase();
+      return searchable.contains(query);
+    }).toList();
+  }
+
+  Widget _buildPitLeadScopeBanner(String year) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: DefensysTokens.surfaceOf(context),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.lock_outline_rounded, size: 17, color: DefensysTokens.maroonOf(context)),
+        const SizedBox(width: 8),
+        Text('PIT reports · ${year.isEmpty ? 'No assigned year level' : year}',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
+            color: DefensysTokens.textPrimaryOf(context))),
+      ]),
+    );
+  }
+
+  Widget _buildReportSearch(int visibleCount, int totalReports) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final search = SizedBox(
+          height: 40,
+          child: TextField(
+            controller: _reportSearchController,
+            onChanged: (value) => setState(() => _reportSearch = value),
+            style: TextStyle(fontSize: 13, color: DefensysTokens.textPrimaryOf(context)),
+            decoration: InputDecoration(
+              hintText: 'Search reports by name, topic, or required filter...',
+              hintStyle: TextStyle(
+                fontSize: 13,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+              prefixIcon: Icon(
+                Icons.search_rounded,
+                size: 18,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+              suffixIcon: _reportSearch.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Clear report search',
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      onPressed: () {
+                        _reportSearchController.clear();
+                        setState(() => _reportSearch = '');
+                      },
+                    ),
+              filled: true,
+              fillColor: DefensysTokens.isDark(context)
+                  ? DefensysTokens.mistInputFill
+                  : const Color(0xFFF8FAFC),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: DefensysTokens.maroonOf(context)),
+              ),
+            ),
+          ),
+        );
+        final filterButton = SizedBox(
+          height: 40,
+          child: OutlinedButton.icon(
+            onPressed: () => setState(() => _showCatalogFilters = !_showCatalogFilters),
+            icon: Icon(
+              _showCatalogFilters ? Icons.filter_alt_off_rounded : Icons.filter_alt_rounded,
+              size: 16,
+            ),
+            label: Text(_showCatalogFilters ? 'Hide Filters' : 'Filters'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _showCatalogFilters || _catalogCategory.isNotEmpty
+                  ? DefensysTokens.maroonOf(context)
+                  : DefensysTokens.textPrimaryOf(context),
+              side: BorderSide(
+                color: _showCatalogFilters || _catalogCategory.isNotEmpty
+                    ? DefensysTokens.maroonOf(context)
+                    : DefensysTokens.borderOf(context),
+              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+            ),
+          ),
+        );
+        final clearButton = SizedBox(
+          height: 40,
+          child: OutlinedButton.icon(
+            onPressed: () {
+              _reportSearchController.clear();
+              final restrictedPitLead = _isPitLeadOnly(ref.read(authProvider).user);
+              setState(() {
+                _reportSearch = '';
+                _catalogCategory = '';
+                _selectedScope = restrictedPitLead ? 'pit' : '';
+                _selectedLevel = _selectedScope;
+              });
+            },
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            label: const Text('Clear Filters'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: DefensysTokens.textSecondaryOf(context),
+              side: BorderSide(color: DefensysTokens.borderOf(context)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+            ),
+          ),
+        );
+        final count = Text(
+          _reportSearch.isEmpty && _catalogCategory.isEmpty
+              ? 'Browse reports by category'
+              : '$visibleCount of $totalReports reports',
+          style: TextStyle(
+            fontSize: 12,
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+        );
+        final toolbar = constraints.maxWidth < 580
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  search,
+                  const SizedBox(height: 10),
+                  Wrap(spacing: 10, runSpacing: 10, children: [filterButton, clearButton]),
+                ],
+              )
+            : Row(
+                children: [
+                  Expanded(child: search),
+                  const SizedBox(width: 12),
+                  filterButton,
+                  const SizedBox(width: 12),
+                  clearButton,
+                ],
+              );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            toolbar,
+            if (_showCatalogFilters) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.surfaceOf(context),
+                  border: Border.all(color: DefensysTokens.borderOf(context)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Report category', style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: DefensysTokens.textPrimaryOf(context),
+                    )),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _catalogCategoryChip('', 'All categories'),
+                        _catalogCategoryChip('grading', 'Academic grading & evaluation'),
+                        _catalogCategoryChip('operations', 'Defense operations & rosters'),
+                        _catalogCategoryChip('setup', 'Academic setup & requirements'),
+                        _catalogCategoryChip('governance', 'Governance & system compliance'),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            count,
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _catalogCategoryChip(String value, String label) {
+    return ChoiceChip(
+      label: Text(label),
+      selected: _catalogCategory == value,
+      onSelected: (_) => setState(() => _catalogCategory = value),
+      selectedColor: DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
+      side: BorderSide(
+        color: _catalogCategory == value
+            ? DefensysTokens.maroonOf(context)
+            : DefensysTokens.borderOf(context),
+      ),
+      labelStyle: TextStyle(
+        fontSize: 12,
+        color: _catalogCategory == value
+            ? DefensysTokens.maroonOf(context)
+            : DefensysTokens.textPrimaryOf(context),
+      ),
+    );
+  }
+
+  Widget _buildNoReportsFound() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
+      decoration: BoxDecoration(
+        color: DefensysTokens.surfaceOf(context),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
+      ),
+      child: Column(
+        children: [
+          Icon(
+            Icons.search_off_rounded,
+            size: 28,
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'No reports found',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: DefensysTokens.textPrimaryOf(context),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Try a report name, topic, or required filter.',
+            style: TextStyle(color: DefensysTokens.textSecondaryOf(context)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -263,235 +509,231 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
           child: Icon(icon, color: DefensysTokens.maroonOf(context), size: 16),
         ),
         const SizedBox(width: 10),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: DefensysTokens.textPrimaryOf(context),
-                    letterSpacing: 0.6,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1.5),
-                  decoration: BoxDecoration(
-                    color: DefensysTokens.isDark(context) ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                  ),
-                  child: Text(
-                    '$count',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
-                      color: DefensysTokens.textSecondaryOf(context),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                title,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: DefensysTokens.textPrimaryOf(context),
+                        letterSpacing: 0.6,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              style: TextStyle(
-                fontSize: 11.5,
-                color: DefensysTokens.textSecondaryOf(context),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 1.5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: DefensysTokens.isDark(context)
+                          ? DefensysTokens.surfaceHigherOf(context)
+                          : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(
+                        DefensysTokens.radiusPill,
+                      ),
+                    ),
+                    child: Text(
+                      '$count',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ],
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildReportCardsGrid(List<Map<String, dynamic>> reports) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final crossAxisCount = constraints.maxWidth >= 1150
-            ? 3
-            : constraints.maxWidth >= 720
-                ? 2
-                : 1;
-
-        if (crossAxisCount == 1) {
-          return Column(
-            children: reports
-                .map((r) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _buildReportCatalogCard(r),
-                    ))
-                .toList(),
-          );
-        }
-
-        // Chunk reports into rows for clean grid layout
-        final rows = <Widget>[];
-        for (var i = 0; i < reports.length; i += crossAxisCount) {
-          final rowItems = reports.skip(i).take(crossAxisCount).toList();
-          rows.add(
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (var j = 0; j < crossAxisCount; j++) ...[
-                  if (j > 0) const SizedBox(width: 16),
-                  Expanded(
-                    child: j < rowItems.length
-                        ? _buildReportCatalogCard(rowItems[j])
-                        : const SizedBox.shrink(),
-                  ),
-                ],
-              ],
-            ),
-          );
-          if (i + crossAxisCount < reports.length) {
-            rows.add(const SizedBox(height: 16));
-          }
-        }
-
-        return Column(children: rows);
-      },
-    );
-  }
-
-  Widget _buildReportCatalogCard(Map<String, dynamic> report) {
-    final title = report['title'] as String;
-    final desc = report['desc'] as String;
-    final icon = report['icon'] as IconData;
-    final tag = report['tag'] as String;
-    final paramHint = report['paramHint'] as String? ?? 'PDF Document';
-
+  Widget _buildReportList(List<Map<String, dynamic>> reports) {
     return Container(
       decoration: BoxDecoration(
         color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
         border: Border.all(color: DefensysTokens.borderOf(context)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x06000000),
-            blurRadius: 6,
-            offset: Offset(0, 2),
-          ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          for (var index = 0; index < reports.length; index++) ...[
+            if (index > 0)
+              Divider(
+                height: 1,
+                indent: 64,
+                color: DefensysTokens.borderOf(context),
+              ),
+            _buildReportRow(reports[index]),
+          ],
         ],
       ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-        child: InkWell(
-          onTap: () => _openReportExportDialog(context, report),
-          borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
+    );
+  }
+
+  Widget _buildReportRow(Map<String, dynamic> report) {
+    final title = report['title'] as String;
+    final desc = report['desc'] as String;
+    final icon = report['icon'] as IconData;
+    final paramHint = report['paramHint'] as String? ?? 'PDF Document';
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _openReportExportDialog(context, report),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact = constraints.maxWidth < 700;
+            final reportDetails = Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Top Header Row
-                Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                      ),
-                      child: Icon(icon, color: DefensysTokens.maroonOf(context), size: 20),
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: DefensysTokens.goldOf(context).withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                      ),
-                      child: Text(
-                        tag,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: DefensysTokens.goldOf(context),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-
-                // Report Title
                 Text(
                   title,
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: FontWeight.w700,
                     color: DefensysTokens.textPrimaryOf(context),
-                    height: 1.25,
                   ),
                 ),
-                const SizedBox(height: 6),
-
-                // Description
+                const SizedBox(height: 3),
+              Text(
+                report['scope'] == 'pit' ? 'PIT' : report['scope'] == 'capstone' ? 'Capstone'
+                    : ['user-directory', 'audit-trail'].contains(report['endpoint']) ? 'System reports'
+                    : _selectedScope.isEmpty ? 'Capstone & PIT' : _scopeLabel(_selectedScope),
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: DefensysTokens.maroonOf(context)),
+              ),
+              const SizedBox(height: 3),
                 Text(
                   desc,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: DefensysTokens.textSecondaryOf(context),
-                    height: 1.45,
-                  ),
-                  maxLines: 3,
+                  maxLines: compact ? 3 : 2,
                   overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 18),
-
-                Divider(height: 1, color: DefensysTokens.borderOf(context)),
-                const SizedBox(height: 14),
-
-                // Footer Row: Param Hint & Action Button
-                Row(
-                  children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Icon(Icons.tune_rounded, size: 13, color: DefensysTokens.textSecondaryOf(context)),
-                          const SizedBox(width: 5),
-                          Flexible(
-                            child: Text(
-                              paramHint,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: DefensysTokens.textSecondaryOf(context),
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton.icon(
-                      icon: const Icon(Icons.download_rounded, size: 14),
-                      label: const Text('Export PDF'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: DefensysTokens.maroonOf(context),
-                        foregroundColor: Colors.white,
-                        textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                        ),
-                        elevation: 0,
-                      ),
-                      onPressed: () => _openReportExportDialog(context, report),
-                    ),
-                  ],
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.35,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
                 ),
               ],
-            ),
-          ),
+            );
+            final filterHint = Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.tune_rounded,
+                  size: 14,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    paramHint,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: DefensysTokens.textSecondaryOf(context),
+                    ),
+                  ),
+                ),
+              ],
+            );
+            final exportButton = FilledButton.icon(
+              icon: const Icon(Icons.download_rounded, size: 15),
+              label: const Text('Configure export'),
+              style: FilledButton.styleFrom(
+                backgroundColor: DefensysTokens.maroonOf(context),
+                foregroundColor: Colors.white,
+                textStyle: const TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                ),
+                elevation: 0,
+              ),
+              onPressed: () => _openReportExportDialog(context, report),
+            );
+
+            return Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: compact ? 14 : 20,
+                vertical: compact ? 14 : 13,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: DefensysTokens.maroonOf(
+                        context,
+                      ).withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(
+                        DefensysTokens.radiusMd,
+                      ),
+                    ),
+                    child: Icon(
+                      icon,
+                      color: DefensysTokens.maroonOf(context),
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: compact
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              reportDetails,
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Expanded(child: filterHint),
+                                  const SizedBox(width: 8),
+                                  exportButton,
+                                ],
+                              ),
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              Expanded(child: reportDetails),
+                              const SizedBox(width: 20),
+                              SizedBox(width: 180, child: filterHint),
+                              const SizedBox(width: 20),
+                              exportButton,
+                            ],
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
@@ -499,16 +741,29 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
 
   /// Opens the Dedicated Export Configuration Dialog
   void _openReportExportDialog(BuildContext context, Map<String, dynamic> report) {
+    final definition = ReportCatalog.find(report['id']?.toString() ?? '');
+    if (definition != null && !definition.legacy) {
+      showReportExportConfiguration(context: context, ref: ref, report: definition, params: {if (_selectedScope.isNotEmpty) 'scope': _selectedScope});
+      return;
+    }
     final teamsState = ref.read(studentTeamsProvider);
     final academicState = ref.read(academicPeriodProvider);
     final defenseStagesState = ref.read(defenseStagesProvider);
     final gradeCenterState = ref.read(gradeCenterProvider);
+    final user = ref.read(authProvider).user;
+    final restrictedPitLead = _isPitLeadOnly(user);
+    final assignedYear = _assignedPitYear(user);
+    final visibleTeams = restrictedPitLead
+        ? teamsState.teams.where((team) =>
+            assignedYear.isNotEmpty && _teamScope(team) == 'pit' &&
+            team['year_level']?.toString() == assignedYear).toList()
+        : teamsState.teams;
 
     // Build combined students list from team members (primary) and unassigned students
     final Map<String, Map<String, dynamic>> studentMetaMap = {};
     final Map<String, Map<String, dynamic>> allStudentsMap = {};
 
-    for (final team in teamsState.teams) {
+    for (final team in visibleTeams) {
       final sec = team['section']?.toString() ?? team['year_level']?.toString();
       final leader = team['leader'] as Map<String, dynamic>?;
       if (leader != null) {
@@ -516,6 +771,13 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
         if (id != null) {
           allStudentsMap[id] = leader;
           studentMetaMap[id] = {
+            'student': leader,
+            'team': team,
+            'isLeader': true,
+            'contexts': [
+              ...?studentMetaMap[id]?['contexts'] as List<dynamic>?,
+              {'team': team, 'section': sec, 'isLeader': true},
+            ],
             'teamName': team['name'],
             'projectTitle': team['project_title'],
             'section': sec,
@@ -531,6 +793,13 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
             if (mId != null) {
               allStudentsMap[mId] = m;
               studentMetaMap[mId] = {
+                'student': m,
+                'team': team,
+                'isLeader': false,
+                'contexts': [
+                  ...?studentMetaMap[mId]?['contexts'] as List<dynamic>?,
+                  {'team': team, 'section': sec, 'isLeader': false},
+                ],
                 'teamName': team['name'],
                 'projectTitle': team['project_title'],
                 'section': sec,
@@ -542,11 +811,13 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
     }
 
     // If no team memberships, add raw students
-    for (final st in teamsState.students) {
+    for (final st in restrictedPitLead ? <Map<String, dynamic>>[] : teamsState.students) {
       final sId = st['id']?.toString();
       if (sId != null && !allStudentsMap.containsKey(sId)) {
         allStudentsMap[sId] = st;
         studentMetaMap[sId] = {
+          'student': st,
+          'contexts': <Map<String, dynamic>>[],
           'teamName': 'Unassigned',
           'projectTitle': null,
           'section': null,
@@ -554,7 +825,10 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
       }
     }
 
-    final List<Map<String, dynamic>> allStudentsList = allStudentsMap.values.toList();
+    final List<Map<String, dynamic>> allStudentsList = allStudentsMap.values.map((student) => {
+      ...student,
+      'name': student['name'] ?? '${student['first_name'] ?? ''} ${student['last_name'] ?? ''}'.trim(),
+    }).toList();
 
     // Extract student sections & counts
     final Set<String> studentSectionsSet = {};
@@ -571,7 +845,7 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
     // Extract team sections & counts
     final Set<String> teamSectionsSet = {};
     final Map<String, int> teamSectionCounts = {};
-    for (final team in teamsState.teams) {
+    for (final team in visibleTeams) {
       final sec = team['section']?.toString() ?? team['year_level']?.toString();
       if (sec != null && sec.trim().isNotEmpty) {
         teamSectionsSet.add(sec.trim());
@@ -605,10 +879,16 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
     }
     if (pitEvents.isEmpty) {
       pitEvents.addAll([
-        {'id': 1, 'event_name': '1st Year PIT'},
-        {'id': 2, 'event_name': '2nd Year PIT'},
-        {'id': 3, 'event_name': '3rd Year PIT'},
+        {'id': 1, 'event_name': '1st Year PIT', 'year_level': '1st Year'},
+        {'id': 2, 'event_name': '2nd Year PIT', 'year_level': '2nd Year'},
+        {'id': 3, 'event_name': '3rd Year PIT', 'year_level': '3rd Year'},
       ]);
+    }
+    if (restrictedPitLead) {
+      pitEvents.removeWhere((event) {
+        final eventYear = (event['year_level'] ?? '').toString().trim();
+        return eventYear.isNotEmpty && eventYear != assignedYear;
+      });
     }
 
     showDialog(
@@ -617,7 +897,7 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
       builder: (dialogCtx) {
         return _ReportExportConfigDialog(
           report: report,
-          currentUser: ref.read(authProvider).user,
+          currentUser: user,
           academicState: academicState,
           teamsState: teamsState,
           allStudents: allStudentsList,
@@ -631,14 +911,15 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
           initialSemesterId: _selectedSemesterId ?? academicState.activeSemester?['id']?.toString(),
           initialStudentId: _selectedStudentId,
           initialTeamId: _selectedTeamId,
-          initialScope: report['scope']?.toString() ?? _selectedScope,
-          initialLevel: _selectedLevel,
-          initialYearLevel: _selectedYearLevel,
+          initialScope: restrictedPitLead ? 'pit' : report['scope']?.toString() ?? _selectedScope,
+          initialLevel: restrictedPitLead ? 'pit' : _selectedLevel,
+          initialYearLevel: restrictedPitLead ? assignedYear : _selectedYearLevel,
           initialRole: _selectedRole,
           initialCategory: _reportCategoryFilter,
           initialTrack: _reportTrackFilter,
           initialStartDate: _reportStartDateController.text.trim(),
           initialEndDate: _reportEndDateController.text.trim(),
+          onFetchCandidates: (params) => ref.read(reportsProvider.notifier).fetchAssessmentCandidates(params),
           onDownload: (params) async {
             return await _triggerReportDownload(
               report,
@@ -646,6 +927,8 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
               teamId: params['teamId'],
               semesterId: params['semesterId'],
               scope: params['scope'],
+              coverage: params['coverage'],
+              gradeId: params['gradeId'],
               stage: params['stage'],
               pitEvent: params['pitEvent'],
               level: params['level'],
@@ -667,6 +950,8 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
               teamId: params['teamId'],
               semesterId: params['semesterId'],
               scope: params['scope'],
+              coverage: params['coverage'],
+              gradeId: params['gradeId'],
               stage: params['stage'],
               pitEvent: params['pitEvent'],
               level: params['level'],
@@ -690,7 +975,7 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
           ),
           onOpenTeamPicker: (currId) => _showTeamPickerDialog(
             context: context,
-            teams: teamsState.teams,
+            teams: visibleTeams,
             sections: teamSections,
             sectionCounts: teamSectionCounts,
             currentSelectedId: currId,
@@ -707,6 +992,8 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
     String? teamId,
     String? semesterId,
     String? scope,
+    String? coverage,
+    String? gradeId,
     String? stage,
     String? pitEvent,
     String? level,
@@ -721,6 +1008,15 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
   }) async {
     final endpoint = report['endpoint'] as String;
     final queryParams = <String, String>{};
+
+    if (endpoint == 'team-grade' || endpoint == 'individual-grade') {
+      final selectedScope = scope ?? _selectedScope;
+      final selectedSemester = semesterId ?? _selectedSemesterId;
+      if (selectedScope.isNotEmpty) queryParams['scope'] = selectedScope;
+      if (selectedSemester != null && selectedSemester.isNotEmpty) queryParams['semester_id'] = selectedSemester;
+      queryParams['coverage'] = coverage ?? 'latest';
+      if (gradeId != null && gradeId.isNotEmpty) queryParams['grade_id'] = gradeId;
+    }
 
     if (includeSignatures != null && includeSignatures.isNotEmpty) {
       queryParams['include_signatures'] = includeSignatures;
@@ -850,6 +1146,8 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
     String? teamId,
     String? semesterId,
     String? scope,
+    String? coverage,
+    String? gradeId,
     String? stage,
     String? pitEvent,
     String? level,
@@ -865,6 +1163,15 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
   }) async {
     final endpoint = report['endpoint'] as String;
     final queryParams = <String, String>{};
+
+    if (endpoint == 'team-grade' || endpoint == 'individual-grade') {
+      final selectedScope = scope ?? _selectedScope;
+      final selectedSemester = semesterId ?? _selectedSemesterId;
+      if (selectedScope.isNotEmpty) queryParams['scope'] = selectedScope;
+      if (selectedSemester != null && selectedSemester.isNotEmpty) queryParams['semester_id'] = selectedSemester;
+      queryParams['coverage'] = coverage ?? 'latest';
+      if (gradeId != null && gradeId.isNotEmpty) queryParams['grade_id'] = gradeId;
+    }
 
     if (includeSignatures != null && includeSignatures.isNotEmpty) {
       queryParams['include_signatures'] = includeSignatures;
@@ -993,6 +1300,17 @@ String _extractInitials(String name) {
   if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
   return '${parts[0][0]}${parts[parts.length - 1][0]}'.toUpperCase();
 }
+
+String _teamScope(Map<String, dynamic> team) {
+  final scope = team['scope']?.toString().toLowerCase() ?? '';
+  if (scope == 'capstone' || scope == 'pit' || scope == 'mixed') return scope;
+  final level = team['level']?.toString().toLowerCase() ?? '';
+  if (level.contains('capstone')) return 'capstone';
+  if (level.contains('pit')) return 'pit';
+  return '';
+}
+
+String _scopeLabel(String scope) => scope == 'capstone' ? 'Capstone' : scope == 'pit' ? 'PIT' : scope == 'mixed' ? 'Capstone & PIT' : 'Scope unavailable';
 
 InputDecoration _reportInputDecoration(BuildContext context, String hint) {
   return InputDecoration(
@@ -1904,6 +2222,7 @@ class _ReportExportConfigDialog extends StatefulWidget {
   final String initialEndDate;
   final Future<bool> Function(Map<String, String>) onDownload;
   final Future<ReportPreviewData?> Function(Map<String, String>) onFetchPreview;
+  final Future<Map<String, dynamic>?> Function(Map<String, String>) onFetchCandidates;
   final Future<String?> Function(String? currentId) onOpenStudentPicker;
   final Future<String?> Function(String? currentId) onOpenTeamPicker;
 
@@ -1933,6 +2252,7 @@ class _ReportExportConfigDialog extends StatefulWidget {
     required this.initialEndDate,
     required this.onDownload,
     required this.onFetchPreview,
+    required this.onFetchCandidates,
     required this.onOpenStudentPicker,
     required this.onOpenTeamPicker,
   });
@@ -1942,7 +2262,9 @@ class _ReportExportConfigDialog extends StatefulWidget {
 }
 
 class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
-  String _selectedFormat = 'pdf'; // 'pdf', 'xlsx', 'csv', 'doc'
+  bool get _restrictedPitLead => _isPitLeadOnly(widget.currentUser);
+  String get _assignedYear => _assignedPitYear(widget.currentUser);
+  String _selectedFormat = 'pdf'; // 'pdf', 'xlsx'
 
   String? _selectedSemesterId;
   String? _selectedStudentId;
@@ -1950,6 +2272,12 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
   String _selectedScope = '';
   String _selectedStage = '';
   String _selectedPitEvent = '';
+  String _selectedCoverage = 'latest';
+  List<Map<String, dynamic>> _candidateTeams = [];
+  List<Map<String, dynamic>> _candidateStudents = [];
+  Map<String, Map<String, dynamic>> _candidateStudentMeta = {};
+  List<Map<String, dynamic>> _availableAssessments = [];
+  int _candidateRequestId = 0;
   String _selectedLevel = '';
   String _selectedYearLevel = '';
   String _selectedRole = '';
@@ -1986,7 +2314,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
 
     String adviserName = 'Project Adviser / Panel Chair';
     if (_selectedTeamId != null) {
-      final t = widget.teamsState.teams.firstWhere(
+      final t = _candidateTeams.firstWhere(
         (elem) => elem['id']?.toString() == _selectedTeamId,
         orElse: () => <String, dynamic>{},
       );
@@ -2047,11 +2375,14 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
     _selectedSemesterId = widget.initialSemesterId;
     _selectedStudentId = widget.initialStudentId;
     _selectedTeamId = widget.initialTeamId;
-    _selectedScope = widget.initialScope;
+    _selectedScope = _restrictedPitLead ? 'pit' : widget.initialScope;
+    _candidateTeams = widget.teamsState.teams;
+    _candidateStudents = widget.allStudents;
+    _candidateStudentMeta = widget.studentMetaMap;
     _selectedStage = '';
     _selectedPitEvent = '';
-    _selectedLevel = widget.initialLevel;
-    _selectedYearLevel = widget.initialYearLevel;
+    _selectedLevel = _restrictedPitLead ? 'pit' : widget.initialLevel;
+    _selectedYearLevel = _restrictedPitLead ? _assignedYear : widget.initialYearLevel;
     _selectedRole = widget.initialRole;
     _reportCategoryFilter = widget.initialCategory;
     _reportTrackFilter = widget.initialTrack;
@@ -2065,6 +2396,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
 
     // Auto load preview if parameters are ready
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_selectedSemesterId != null || _selectedScope.isNotEmpty) _loadCandidates();
       _loadPreview();
     });
   }
@@ -2083,11 +2415,13 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
       if (_selectedStudentId != null) 'studentId': _selectedStudentId!,
       if (_selectedTeamId != null) 'teamId': _selectedTeamId!,
       if (_selectedSemesterId != null) 'semesterId': _selectedSemesterId!,
-      if (_selectedScope.isNotEmpty) 'scope': _selectedScope,
+      if (_restrictedPitLead) 'scope': 'pit' else if (_selectedScope.isNotEmpty) 'scope': _selectedScope,
+      'coverage': _selectedCoverage == 'all' ? 'all' : _selectedCoverage.startsWith('grade:') ? 'specific' : 'latest',
+      if (_selectedCoverage.startsWith('grade:')) 'gradeId': _selectedCoverage.substring(6),
       if (_selectedStage.isNotEmpty) 'stage': _selectedStage,
       if (_selectedPitEvent.isNotEmpty) 'pitEvent': _selectedPitEvent,
-      if (_selectedLevel.isNotEmpty) 'level': _selectedLevel,
-      if (_selectedYearLevel.isNotEmpty) 'yearLevel': _selectedYearLevel,
+      if (_restrictedPitLead) 'level': 'pit' else if (_selectedLevel.isNotEmpty) 'level': _selectedLevel,
+      if (_restrictedPitLead) 'yearLevel': _assignedYear else if (_selectedYearLevel.isNotEmpty) 'yearLevel': _selectedYearLevel,
       if (_selectedRole.isNotEmpty) 'role': _selectedRole,
       if (_reportCategoryFilter.isNotEmpty) 'category': _reportCategoryFilter,
       if (_reportTrackFilter.isNotEmpty) 'track': _reportTrackFilter,
@@ -2131,6 +2465,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
       setState(() {
         _isLoadingPreview = false;
         _previewData = preview;
+        if (preview != null) _availableAssessments = preview.assessments;
       });
     } catch (_) {
       if (!mounted || requestId != _previewRequestId) return;
@@ -2174,11 +2509,13 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
     final icon = widget.report['icon'] as IconData;
     final tag = widget.report['tag'] as String;
 
-    final selectedStudentMeta = _selectedStudentId != null ? widget.studentMetaMap[_selectedStudentId] : null;
-    final selectedStudentObj = selectedStudentMeta?['student'] as Map<String, dynamic>?;
+    final selectedStudentObj = _selectedStudentId == null ? null : _candidateStudents.firstWhere(
+      (student) => student['id']?.toString() == _selectedStudentId,
+      orElse: () => <String, dynamic>{},
+    );
 
     final selectedTeamObj = _selectedTeamId != null
-        ? widget.teamsState.teams.firstWhere(
+        ? _candidateTeams.firstWhere(
             (t) => t['id']?.toString() == _selectedTeamId,
             orElse: () => <String, dynamic>{},
           )
@@ -2192,7 +2529,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
           if (sem is Map) {
             semestersList.add({
               'id': sem['id']?.toString() ?? '',
-              'label': '${year['school_year'] ?? ''} | ${sem['label'] ?? ''}',
+              'label': '${year['school_year'] ?? year['label'] ?? ''} | ${sem['label'] ?? ''}',
             });
           }
         }
@@ -2284,6 +2621,9 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
               ),
             ),
 
+            if (endpoint == 'team-grade' || endpoint == 'individual-grade')
+              _buildAssessmentControls(semestersList),
+
             // 2. Main Two-Pane Split (Left: Selector / Filters, Right: Live Data Viewer)
             Expanded(
               child: Row(
@@ -2322,6 +2662,159 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
   }
 
   /// Left Pane: Either List of Items (Teams/Students) or Filter Parameters Form
+  bool _teamMatchesContext(Map<String, dynamic> team) {
+    if (_restrictedPitLead && (_assignedYear.isEmpty || _teamScope(team) != 'pit'
+        || team['year_level']?.toString() != _assignedYear)) {
+      return false;
+    }
+    if (_selectedScope.isNotEmpty && _teamScope(team) != _selectedScope
+        && !(team['scope'] == 'mixed' && (team['scopes'] as List? ?? []).contains(_selectedScope))) {
+      return false;
+    }
+    final semester = team['semester_id']?.toString();
+    return _selectedSemesterId == null || semester == null || semester == _selectedSemesterId;
+  }
+
+  List<String> get _candidateTeamSections => _candidateTeams.where(_teamMatchesContext)
+      .map((team) => (team['section'] ?? team['year_level'] ?? '').toString().trim())
+      .where((section) => section.isNotEmpty).toSet().toList()..sort();
+
+  List<String> get _candidateStudentSections => _candidateStudents
+      .map((student) => (_studentContext(student['id'].toString())?['section'] ?? '').toString().trim())
+      .where((section) => section.isNotEmpty).toSet().toList()..sort();
+
+  Future<void> _loadCandidates() async {
+    final requestId = ++_candidateRequestId;
+    final data = await widget.onFetchCandidates({
+      if (_restrictedPitLead) 'scope': 'pit' else if (_selectedScope.isNotEmpty) 'scope': _selectedScope,
+      if (_selectedSemesterId != null) 'semester_id': _selectedSemesterId!,
+    });
+    if (!mounted || requestId != _candidateRequestId || data == null || data['teams'] is! List) return;
+    setState(() {
+      _candidateTeams = (data['teams'] as List).whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList();
+      _candidateStudents = (data['students'] as List? ?? []).whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList();
+      _candidateStudentMeta = (data['student_contexts'] as Map? ?? {}).map((key, value) => MapEntry(key.toString(), Map<String, dynamic>.from(value as Map)));
+      if (_selectedTeamId != null && !_candidateTeams.any((team) => team['id']?.toString() == _selectedTeamId)) _selectedTeamId = null;
+      if (_selectedStudentId != null && !_candidateStudents.any((student) => student['id']?.toString() == _selectedStudentId)) _selectedStudentId = null;
+    });
+    _loadPreview();
+  }
+
+  Map<String, dynamic>? _studentContext(String id) {
+    final meta = _candidateStudentMeta[id];
+    final contexts = meta?['contexts'] as List<dynamic>?;
+    if (contexts != null) {
+      for (final item in contexts) {
+        if (item is Map<String, dynamic> && item['team'] is Map<String, dynamic>
+            && _teamMatchesContext(item['team'] as Map<String, dynamic>)) {
+          return item;
+        }
+      }
+      return null;
+    }
+    return meta;
+  }
+
+  String _studentContextLabel(String id) {
+    final contexts = (_candidateStudentMeta[id]?['contexts'] as List? ?? [])
+        .whereType<Map>().where((item) => item['team'] is Map<String, dynamic>
+            && _teamMatchesContext(item['team'] as Map<String, dynamic>)).toList();
+    final scopes = contexts.map((item) => _scopeLabel(_teamScope(item['team'] as Map<String, dynamic>))).toSet();
+    if (contexts.length > 1) return '${scopes.join(' & ')} · ${contexts.length} team / period contexts';
+    final meta = _studentContext(id);
+    final team = meta?['team'] as Map<String, dynamic>?;
+    return team == null ? 'No assessment context' : '${_scopeLabel(_teamScope(team))} · ${team['name']} · ${meta?['section'] ?? ''}';
+  }
+
+  Widget _buildAssessmentControls(List<Map<String, dynamic>> semesters) {
+    final assessments = _availableAssessments;
+    final selectedTeam = _candidateTeams.where((team) => team['id']?.toString() == _selectedTeamId).firstOrNull;
+    final effectiveScope = _selectedScope.isNotEmpty ? _selectedScope : selectedTeam == null ? '' : _teamScope(selectedTeam);
+    final noun = effectiveScope == 'pit' ? 'event' : effectiveScope == 'capstone' ? 'stage' : 'assessment';
+    final coverageItems = <DropdownMenuItem<String>>[
+      DropdownMenuItem(value: 'latest', child: Text('Latest recorded $noun')),
+      DropdownMenuItem(value: 'all', child: Text(effectiveScope == 'pit' ? 'All recorded events' : effectiveScope == 'capstone' ? 'All recorded stages' : 'All recorded stages / events')),
+      ...assessments.map((grade) => DropdownMenuItem(
+        value: 'grade:${grade['id']}',
+        child: Tooltip(
+          message: '${_scopeLabel(grade['scope']?.toString() ?? '')} · ${grade['stage_label']} · ${grade['team_name'] ?? ''} · ${grade['academic_period'] ?? ''}',
+          child: Text('${_scopeLabel(grade['scope']?.toString() ?? '')} · ${grade['stage_label']}${grade['academic_period'] == null ? '' : ' · ${grade['academic_period']}'}', overflow: TextOverflow.ellipsis),
+        ),
+      )),
+    ];
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: DefensysTokens.borderOf(context)))),
+      child: Wrap(
+        spacing: 12, runSpacing: 10,
+        children: [
+          SizedBox(width: 200, child: DropdownButtonFormField<String>(
+            key: ValueKey('assessment-scope-$_selectedScope'),
+            initialValue: _selectedScope,
+            isExpanded: true,
+            decoration: _reportInputDecoration(context, '').copyWith(labelText: 'Academic scope'),
+            items: _restrictedPitLead ? const [
+              DropdownMenuItem(value: 'pit', child: Text('PIT · assigned year')),
+            ] : const [
+              DropdownMenuItem(value: '', child: Text('All scopes')),
+              DropdownMenuItem(value: 'capstone', child: Text('Capstone')),
+              DropdownMenuItem(value: 'pit', child: Text('PIT')),
+            ],
+            onChanged: _restrictedPitLead ? null : (value) {
+              setState(() {
+                _selectedScope = value ?? '';
+                _selectedTeamId = null;
+                _selectedStudentId = null;
+                _selectedSectionFilter = '';
+                _selectedCoverage = 'latest';
+                _availableAssessments = [];
+                _previewData = null;
+              });
+              _loadCandidates();
+              _loadPreview();
+            },
+          )),
+          SizedBox(width: 245, child: DropdownButtonFormField<String>(
+            key: ValueKey('assessment-period-$_selectedSemesterId'),
+            initialValue: _selectedSemesterId,
+            isExpanded: true,
+            decoration: _reportInputDecoration(context, '').copyWith(labelText: 'Academic period'),
+            items: [
+              const DropdownMenuItem(value: null, child: Text('All academic periods')),
+              ...semesters.map((semester) => DropdownMenuItem(value: semester['id']?.toString(), child: Text(semester['label']?.toString() ?? ''))),
+              if (_selectedSemesterId != null && !semesters.any((semester) => semester['id']?.toString() == _selectedSemesterId))
+                DropdownMenuItem(value: _selectedSemesterId, child: const Text('Active academic period')),
+            ],
+            onChanged: (value) {
+              setState(() {
+                _selectedSemesterId = value;
+                _selectedTeamId = null;
+                _selectedStudentId = null;
+                _selectedCoverage = 'latest';
+                _availableAssessments = [];
+                _selectedSectionFilter = '';
+                _previewData = null;
+              });
+              _loadCandidates();
+              _loadPreview();
+            },
+          )),
+          SizedBox(width: 340, child: DropdownButtonFormField<String>(
+            key: ValueKey('assessment-coverage-$_selectedCoverage-${assessments.length}'),
+            initialValue: _selectedCoverage,
+            isExpanded: true,
+            decoration: _reportInputDecoration(context, '').copyWith(labelText: 'Report coverage'),
+            items: coverageItems,
+            onChanged: (value) {
+              setState(() => _selectedCoverage = value ?? 'latest');
+              _loadPreview();
+            },
+          )),
+        ],
+      ),
+    );
+  }
+
   Widget _buildLeftSelectorPane({
     required String endpoint,
     required List<Map<String, dynamic>> semestersList,
@@ -2342,7 +2835,8 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
   Widget _buildTeamListSelector() {
     final query = _selectorSearchController.text.trim().toLowerCase();
 
-    final filtered = widget.teamsState.teams.where((t) {
+    final filtered = _candidateTeams.where((t) {
+      if (!_teamMatchesContext(t)) return false;
       final sec = (t['section']?.toString() ?? t['year_level']?.toString() ?? '').trim();
 
       if (_selectedSectionFilter.isNotEmpty && sec != _selectedSectionFilter) {
@@ -2386,7 +2880,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                   ),
                   const Spacer(),
                   Text(
-                    '${filtered.length} of ${widget.teamsState.teams.length}',
+                    '${filtered.length} of ${_candidateTeams.length}',
                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: DefensysTokens.textSecondaryOf(context)),
                   ),
                 ],
@@ -2425,7 +2919,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                   ),
                 ),
               ),
-              if (widget.teamSections.isNotEmpty) ...[
+              if (_candidateTeamSections.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
@@ -2437,7 +2931,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                         onTap: () => setState(() => _selectedSectionFilter = ''),
                       ),
                       const SizedBox(width: 5),
-                      ...widget.teamSections.map((sec) {
+                      ..._candidateTeamSections.map((sec) {
                         return Padding(
                           padding: const EdgeInsets.only(right: 5),
                           child: _buildMiniFilterChip(
@@ -2486,7 +2980,12 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                       color: Colors.transparent,
                       child: InkWell(
                         onTap: () {
-                          setState(() => _selectedTeamId = tId);
+                          setState(() {
+                            _selectedTeamId = tId;
+                            if (_selectedCoverage.startsWith('grade:')) _selectedCoverage = 'latest';
+                            _previewData = null;
+                            _availableAssessments = [];
+                          });
                           _loadPreview();
                         },
                         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
@@ -2537,7 +3036,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
-                                        if (sec.isNotEmpty) ...[
+                                        ...[
                                           const SizedBox(width: 6),
                                           Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -2546,7 +3045,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                                               borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                                             ),
                                             child: Text(
-                                              sec,
+                                              '${_scopeLabel(_teamScope(t))}${sec.isEmpty ? '' : ' · $sec'}',
                                               style: TextStyle(
                                                 fontSize: 8.5,
                                                 fontWeight: FontWeight.w700,
@@ -2595,9 +3094,10 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
   Widget _buildStudentListSelector({required List<Map<String, dynamic>> semestersList}) {
     final query = _selectorSearchController.text.trim().toLowerCase();
 
-    final filtered = widget.allStudents.where((s) {
+    final filtered = _candidateStudents.where((s) {
       final sId = s['id']?.toString() ?? '';
-      final meta = widget.studentMetaMap[sId];
+      final meta = _studentContext(sId);
+      if (meta == null && (_selectedScope.isNotEmpty || _selectedSemesterId != null)) return false;
 
       if (_selectedSectionFilter.isNotEmpty && meta?['section'] != _selectedSectionFilter) {
         return false;
@@ -2642,7 +3142,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                   ),
                   const Spacer(),
                   Text(
-                    '${filtered.length} of ${widget.allStudents.length}',
+                    '${filtered.length} of ${_candidateStudents.length}',
                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: DefensysTokens.textSecondaryOf(context)),
                   ),
                 ],
@@ -2681,7 +3181,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                   ),
                 ),
               ),
-              if (widget.studentSections.isNotEmpty) ...[
+              if (_candidateStudentSections.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
@@ -2693,7 +3193,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                         onTap: () => setState(() => _selectedSectionFilter = ''),
                       ),
                       const SizedBox(width: 5),
-                      ...widget.studentSections.map((sec) {
+                      ..._candidateStudentSections.map((sec) {
                         return Padding(
                           padding: const EdgeInsets.only(right: 5),
                           child: _buildMiniFilterChip(
@@ -2732,19 +3232,23 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                   itemBuilder: (ctx, i) {
                     final s = filtered[i];
                     final sId = s['id']?.toString() ?? '';
-                    final meta = widget.studentMetaMap[sId];
+                    final meta = _studentContext(sId);
                     final name = s['name'] ?? s['username'] ?? 'Student';
                     final username = s['username']?.toString() ?? sId;
                     final team = meta?['team'] as Map<String, dynamic>?;
                     final isLeader = meta?['isLeader'] == true;
-                    final section = meta?['section'] as String?;
                     final isSelected = _selectedStudentId == sId;
 
                     return Material(
                       color: Colors.transparent,
                       child: InkWell(
                         onTap: () {
-                          setState(() => _selectedStudentId = sId);
+                          setState(() {
+                            _selectedStudentId = sId;
+                            if (_selectedCoverage.startsWith('grade:')) _selectedCoverage = 'latest';
+                            _previewData = null;
+                            _availableAssessments = [];
+                          });
                           _loadPreview();
                         },
                         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
@@ -2832,7 +3336,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
                                         if (team != null) ...[
                                           Expanded(
                                             child: Text(
-                                              '${team['name']} ${section != null ? "• $section" : ""}',
+                                              _studentContextLabel(sId),
                                               style: TextStyle(fontSize: 10.5, color: DefensysTokens.textSecondaryOf(context)),
                                               overflow: TextOverflow.ellipsis,
                                             ),
@@ -2914,12 +3418,14 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
               initialValue: _selectedScope,
               isExpanded: true,
               decoration: _reportInputDecoration(context, 'Filter scope...'),
-              items: const [
+              items: _restrictedPitLead ? const [
+                DropdownMenuItem(value: 'pit', child: Text('PIT · assigned year', style: TextStyle(fontSize: 12.5))),
+              ] : const [
                 DropdownMenuItem(value: '', child: Text('All Records (Capstone & PIT)', style: TextStyle(fontSize: 12.5))),
                 DropdownMenuItem(value: 'capstone', child: Text('Capstone Only', style: TextStyle(fontSize: 12.5))),
                 DropdownMenuItem(value: 'pit', child: Text('PIT Only', style: TextStyle(fontSize: 12.5))),
               ],
-              onChanged: (val) {
+              onChanged: _restrictedPitLead || widget.report['scope'] != null ? null : (val) {
                 setState(() {
                   _selectedScope = val ?? '';
                   if (_selectedScope == 'capstone') {
@@ -3002,12 +3508,14 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
               initialValue: _selectedLevel,
               isExpanded: true,
               decoration: _reportInputDecoration(context, 'Filter level...'),
-              items: const [
+              items: _restrictedPitLead ? const [
+                DropdownMenuItem(value: 'pit', child: Text('PIT Teams', style: TextStyle(fontSize: 12.5))),
+              ] : const [
                 DropdownMenuItem(value: '', child: Text('All Program Levels', style: TextStyle(fontSize: 12.5))),
                 DropdownMenuItem(value: 'capstone', child: Text('Capstone Teams', style: TextStyle(fontSize: 12.5))),
                 DropdownMenuItem(value: 'pit', child: Text('PIT Teams', style: TextStyle(fontSize: 12.5))),
               ],
-              onChanged: (val) {
+              onChanged: _restrictedPitLead ? null : (val) {
                 setState(() => _selectedLevel = val ?? '');
                 _loadPreview();
               },
@@ -3019,12 +3527,17 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
               initialValue: _selectedYearLevel,
               isExpanded: true,
               decoration: _reportInputDecoration(context, 'Filter year level...'),
-              items: const [
+              items: _restrictedPitLead ? [
+                DropdownMenuItem(value: _assignedYear, child: Text(_assignedYear.isEmpty ? 'No assigned year level' : _assignedYear,
+                    style: const TextStyle(fontSize: 12.5))),
+              ] : const [
                 DropdownMenuItem(value: '', child: Text('All Year Levels', style: TextStyle(fontSize: 12.5))),
+                DropdownMenuItem(value: '1st Year', child: Text('1st Year', style: TextStyle(fontSize: 12.5))),
+                DropdownMenuItem(value: '2nd Year', child: Text('2nd Year', style: TextStyle(fontSize: 12.5))),
                 DropdownMenuItem(value: '3rd Year', child: Text('3rd Year', style: TextStyle(fontSize: 12.5))),
                 DropdownMenuItem(value: '4th Year', child: Text('4th Year', style: TextStyle(fontSize: 12.5))),
               ],
-              onChanged: (val) {
+              onChanged: _restrictedPitLead ? null : (val) {
                 setState(() => _selectedYearLevel = val ?? '');
                 _loadPreview();
               },
@@ -3152,9 +3665,9 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
               ),
               onPressed: () {
                 setState(() {
-                  _selectedScope = '';
-                  _selectedLevel = '';
-                  _selectedYearLevel = '';
+                  _selectedScope = _restrictedPitLead ? 'pit' : '';
+                  _selectedLevel = _restrictedPitLead ? 'pit' : '';
+                  _selectedYearLevel = _restrictedPitLead ? _assignedYear : '';
                   _selectedRole = '';
                   _reportCategoryFilter = '';
                   _startDateController.clear();
@@ -3258,7 +3771,7 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
   /// Modal Bottom Footer Bar with Format Chooser Pills + Action Buttons
   Widget _buildModalFooter() {
     return DefensysExportFormatBar(
-      supportedFormats: const ['pdf', 'xlsx', 'csv', 'doc'],
+      supportedFormats: const ['pdf', 'xlsx'],
       selectedFormat: _selectedFormat,
       onFormatChanged: (fmt) => setState(() => _selectedFormat = fmt),
       includeSignatures: _includeSignatures,

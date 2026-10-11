@@ -2,12 +2,14 @@ from decimal import Decimal
 from reportlab.lib.units import inch
 from reportlab.platypus import Table, TableStyle, Paragraph, Spacer
 from reportlab.lib import colors
+from xml.sax.saxutils import escape
 
 from reports.pdf_builder import DefensysPdfReportBuilder
 from reports.pdf_styles import defensys_table_style
+from reports.grade_summary import assessment_scope_label, student_assessment_scores
 
 
-def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, include_signatures=False):
+def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, include_signatures=False, builder=None, coverage_label=None):
     """
     Generate an official USTP DIT PDF report detailing a team's Master Student Grade Sheet
     matrix and detailed panelist rubric criteria evaluation breakdown.
@@ -28,17 +30,17 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
     proponents_list = [f"{m[0].get_full_name() or m[0].username} (Leader)" if m[1] else (m[0].get_full_name() or m[0].username) for m in members]
     proponents_str = ", ".join(proponents_list) if proponents_list else "None listed"
 
-    builder = DefensysPdfReportBuilder(
-        title=f"Project Final Defense Evaluation Report — {team.name or 'Team'}",
-        subtitle=f"Official Defense Deliberation & Academic Grading Record · {team_grade.stage_label or 'Capstone Defense'}",
-        generated_by=generated_by_user,
-        show_sidebar=True,
-    )
+    owns_builder = builder is None
+    scope_label = assessment_scope_label(team_grade)
+    title = f"{scope_label} Team Grade Report - {escape(team.name or 'Team')}"
+    subtitle = f"Official Assessment Record - {escape(team_grade.stage_label)}"
+    if owns_builder:
+        builder = DefensysPdfReportBuilder(title=title, subtitle=subtitle, generated_by=generated_by_user)
 
     styles = builder.styles
 
     # 1. Official Institutional Header Banner & Document Title
-    builder.add_header()
+    builder.add_header(title=title, subtitle=subtitle)
 
     # 2. Metadata Grid
     stage_text = f"{team_grade.stage_label or 'Defense Stage'}"
@@ -46,10 +48,12 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
         stage_text += f" (Attempt #{team_grade.attempt_count})"
 
     metadata_rows = [
-        ("Title of Approved Project", team.project_title or team.name or "N/A"),
+        ("Project Title", escape(team_grade.project_title_snapshot or team.project_title or team.name or "N/A")),
+        ("Academic Scope", scope_label),
+        ("Report Coverage", escape(coverage_label or team_grade.stage_label)),
         ("Student Team & Section", f"{team.name or 'Team'} · {team.section or team.year_level or 'BSIT'}"),
         ("Academic Term / Semester", f"{semester.school_year.label if semester else ''} — {semester.label if semester else ''}"),
-        ("Capstone Defense Stage", stage_text),
+        ("Defense Stage" if team_grade.is_capstone else "PIT Event", escape(stage_text)),
         ("Proponents / Members", proponents_str),
         ("Project Adviser", adviser_name),
     ]
@@ -181,7 +185,8 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
     for idx, (student, is_leader) in enumerate(members, start=1):
         st_name = student.get_full_name() or student.username
         name_p = Paragraph(f"<b>{st_name}</b><br/><font size=6>(Leader)</font>" if is_leader else st_name, styles['TableCell'])
-        sg = team_grade.student_grades.filter(student=student).first()
+        sg = next((grade for grade in team_grade.student_grades.all() if grade.student_id == student.pk), None)
+        student_values = student_assessment_scores(team_grade, sg)
 
         row_cells = [
             Paragraph(str(idx), styles['TableCellCenter']),
@@ -205,30 +210,29 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
             else:
                 row_cells.append(Paragraph("—", styles['TableCellCenter']))
 
-        p_avg = (sum(panel_scores, Decimal('0')) / Decimal(len(panel_scores))).quantize(Decimal('0.01')) if panel_scores else team_grade.panel_score
+        p_avg = student_values['panel']
         row_cells.append(Paragraph(f"<b>{p_avg:.2f}%</b>" if p_avg is not None else "—", styles['TableCellBoldCenter']))
 
         p_w = (p_avg * Decimal(team_grade.panel_weight) / Decimal('100')).quantize(Decimal('0.01')) if p_avg is not None else Decimal('0.00')
         row_cells.append(Paragraph(f"{p_w:.2f}" if p_avg is not None else "—", styles['TableCellCenter']))
 
-        adv_score = team_grade.adviser_score
+        adv_score = student_values['adviser']
         adv_w = (adv_score * Decimal(team_grade.adviser_weight) / Decimal('100')).quantize(Decimal('0.01')) if (adv_score is not None and team_grade.adviser_weight > 0) else Decimal('0.00')
         if team_grade.is_capstone and team_grade.adviser_weight > 0:
             row_cells.append(Paragraph(f"{adv_score:.2f}%" if adv_score is not None else "—", styles['TableCellCenter']))
             row_cells.append(Paragraph(f"{adv_w:.2f}" if adv_score is not None else "—", styles['TableCellCenter']))
 
-        peer_score = sg.peer_score if (sg and sg.peer_score is not None) else team_grade.peer_score
+        peer_score = student_values['peer']
         peer_w = (peer_score * Decimal(team_grade.peer_weight) / Decimal('100')).quantize(Decimal('0.01')) if peer_score is not None else Decimal('0.00')
         row_cells.append(Paragraph(f"{peer_score:.2f}%" if peer_score is not None else "—", styles['TableCellCenter']))
         row_cells.append(Paragraph(f"{peer_w:.2f}" if peer_score is not None else "—", styles['TableCellCenter']))
 
-        total = p_w + adv_w + peer_w
-        row_cells.append(Paragraph(f"<b>{total:.2f}</b>", styles['TableCellBoldCenter']))
+        total = student_values['final']
+        row_cells.append(Paragraph(f"<b>{total:.2f}</b>" if total is not None else 'Pending', styles['TableCellBoldCenter']))
 
-        final_g = sg.final_grade if (sg and sg.final_grade is not None) else total
-        is_passed = (final_g is not None and final_g >= Decimal('75.00'))
-        status_tag = "<font size=6.5><b>PASSED</b></font>" if is_passed else "<font size=6.5><b>FAILED</b></font>"
-        row_cells.append(Paragraph(f"<b>{final_g:.2f}%</b><br/>{status_tag}" if final_g is not None else "PENDING", styles['TableCellBoldCenter']))
+        final_g = student_values['final']
+        status_tag = f"<font size=6.5><b>{student_values['status']}</b></font>"
+        row_cells.append(Paragraph(f"<b>{final_g:.2f}%</b><br/>{status_tag}" if final_g is not None else "Pending grading", styles['TableCellBoldCenter']))
 
         matrix_rows.append(row_cells)
 
@@ -337,4 +341,18 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
         include_signatures=include_signatures,
     )
 
+    return builder.build() if owns_builder else None
+
+
+def generate_team_grades_pdf(grade_records, generated_by_user, signatories=None, include_signatures=False, coverage_label=None):
+    """Produce one document with separate assessment sections and continuous page numbers."""
+    builder = DefensysPdfReportBuilder(generated_by=generated_by_user)
+    for index, grade in enumerate(grade_records):
+        if index:
+            builder.add_page_break()
+        generate_team_grade_pdf(
+            grade, generated_by_user, signatories=signatories,
+            include_signatures=include_signatures, builder=builder,
+            coverage_label=coverage_label or ('All recorded stages / events' if len(grade_records) > 1 else grade.stage_label),
+        )
     return builder.build()

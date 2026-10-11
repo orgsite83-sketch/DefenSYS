@@ -59,6 +59,64 @@ class AppSettingsScreen extends ConsumerWidget {
   }
 }
 
+class AppearanceSettingsSection extends ConsumerWidget {
+  const AppearanceSettingsSection({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
+    return _settingsSection(context, 'Appearance', [
+      DropdownButtonFormField<ThemeMode>(
+        isExpanded: true,
+        initialValue: themeMode,
+        decoration: const InputDecoration(
+          labelText: 'Theme',
+          border: OutlineInputBorder(),
+        ),
+        items: const [
+          DropdownMenuItem(
+            value: ThemeMode.system,
+            child: Text('Use device setting'),
+          ),
+          DropdownMenuItem(value: ThemeMode.light, child: Text('Light')),
+          DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark')),
+        ],
+        onChanged: (value) {
+          if (value != null) {
+            ref.read(themeModeProvider.notifier).setThemeMode(value);
+          }
+        },
+      ),
+    ]);
+  }
+}
+
+Widget _settingsSection(
+  BuildContext context,
+  String title,
+  List<Widget> children,
+) => Container(
+  padding: const EdgeInsets.all(20),
+  decoration: BoxDecoration(
+    color: DefensysTokens.panelOf(context),
+    border: Border.all(color: DefensysTokens.borderOf(context)),
+    borderRadius: BorderRadius.circular(12),
+  ),
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        title,
+        style: Theme.of(
+          context,
+        ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+      ),
+      const SizedBox(height: 12),
+      ...children,
+    ],
+  ),
+);
+
 /// Shared settings sections, using the enclosing page's scroll view.
 class AppSettingsContent extends ConsumerStatefulWidget {
   const AppSettingsContent({
@@ -66,11 +124,13 @@ class AppSettingsContent extends ConsumerStatefulWidget {
     this.installation,
     this.androidDownloadUrl,
     this.compactInstallation = false,
+    this.includeAppearance = true,
   });
 
   final AppInstallation? installation;
   final String? androidDownloadUrl;
   final bool compactInstallation;
+  final bool includeAppearance;
 
   @override
   ConsumerState<AppSettingsContent> createState() => _AppSettingsContentState();
@@ -137,30 +197,10 @@ class _AppSettingsContentState extends ConsumerState<AppSettingsContent> {
     }
   }
 
-  Widget _section(String title, List<Widget> children) => Container(
-    padding: const EdgeInsets.all(20),
-    decoration: BoxDecoration(
-      color: DefensysTokens.panelOf(context),
-      border: Border.all(color: DefensysTokens.borderOf(context)),
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: Theme.of(
-            context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 12),
-        ...children,
-      ],
-    ),
-  );
-
   Widget _installationSection(String title, List<Widget> children) {
-    if (!widget.compactInstallation) return _section(title, children);
+    if (!widget.compactInstallation) {
+      return _settingsSection(context, title, children);
+    }
     return Container(
       decoration: BoxDecoration(
         color: DefensysTokens.panelOf(context),
@@ -233,36 +273,13 @@ class _AppSettingsContentState extends ConsumerState<AppSettingsContent> {
       value:
           widget.androidDownloadUrl ?? AppDistributionConfig.androidDownloadUrl,
     );
-    final themeMode = ref.watch(themeModeProvider);
     final eligible = WorkspaceAccess.canUsePhone(user);
     final ios = status.platform == InstallPlatform.ios;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _section('Appearance', [
-          DropdownButtonFormField<ThemeMode>(
-            isExpanded: true,
-            initialValue: themeMode,
-            decoration: const InputDecoration(
-              labelText: 'Theme',
-              border: OutlineInputBorder(),
-            ),
-            items: const [
-              DropdownMenuItem(
-                value: ThemeMode.system,
-                child: Text('Use device setting'),
-              ),
-              DropdownMenuItem(value: ThemeMode.light, child: Text('Light')),
-              DropdownMenuItem(value: ThemeMode.dark, child: Text('Dark')),
-            ],
-            onChanged: (value) {
-              if (value != null) {
-                ref.read(themeModeProvider.notifier).setThemeMode(value);
-              }
-            },
-          ),
-        ]),
-        if (eligible) const SizedBox(height: 16),
+        if (widget.includeAppearance) const AppearanceSettingsSection(),
+        if (eligible && widget.includeAppearance) const SizedBox(height: 16),
         if (eligible && status.isWeb && !status.installed)
           _installationSection('Get DefenSYS on your phone', [
             Text(
@@ -355,7 +372,7 @@ class _AppSettingsContentState extends ConsumerState<AppSettingsContent> {
             ),
           ]),
         if (eligible && (!status.isWeb || status.installed))
-          _section('DefenSYS app', [
+          _settingsSection(context, 'DefenSYS app', [
             const ListTile(
               contentPadding: EdgeInsets.zero,
               leading: Icon(Icons.check_circle_outline),

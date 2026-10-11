@@ -5,6 +5,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.utils.dateparse import parse_date
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
@@ -22,26 +23,36 @@ from authentication_access_control.scopes import (
     audit_logs_for,
 )
 
-from grading.grades.models import TeamGrade, StudentStageGrade
 from defense.scheduler.models import DefenseSchedule
 from academic_period_management.models import Semester
 from academic_period_management.services import active_semester
 from authentication_access_control.models import SystemAuditLog
-from authentication_access_control.audit import log_high_impact_action
+from authentication_access_control.audit import log_high_impact_action, filter_audit_logs, audit_evidence
 
 # PDF Generators
-from reports.generators.team_grade_report import generate_team_grade_pdf
-from reports.generators.individual_grade_report import generate_individual_grade_pdf
 from reports.generators.semester_grades_report import generate_semester_grades_pdf
 from reports.generators.defense_schedule_report import generate_defense_schedule_pdf
 from reports.generators.team_roster_report import generate_team_roster_pdf
 from reports.generators.user_directory_report import generate_user_directory_pdf
-from reports.generators.audit_trail_report import generate_audit_trail_pdf
+from reports.generators.audit_trail_report import generate_audit_trail_pdf, generate_audit_trail_xlsx
+from reports.grade_summary import (
+    GRADE_OUTCOME_NOTE,
+    grade_outcome_label,
+    outcome_breakdown,
+    summarize_grade_records,
+)
 
 # Multi-Format & Preview Dispatcher
 from reports.export_formatters import handle_export_or_preview
 
 User = get_user_model()
+
+
+class ReportAPIView(APIView):
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        from reports.catalog_reports import validate_filters
+        validate_filters(request.query_params)
 
 
 def _parse_signature_params(request):
@@ -66,388 +77,39 @@ def _parse_signature_params(request):
     return include_signatures, signatories
 
 
-class TeamGradeReportView(APIView):
+class TeamGradeReportView(ReportAPIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, team_id):
-        visible_grades = grade_records_for(request.user).filter(team_id=team_id)
-        if not visible_grades.exists():
-            raise PermissionDenied("You do not have permission to view grade reports for this team.")
-        
-        grade_id = request.query_params.get('grade_id')
-        stage_id = request.query_params.get('stage_id')
-        export_format = request.query_params.get('export_format') or request.query_params.get('format')
-        
-        if grade_id:
-            grade_record = get_object_or_404(visible_grades, pk=grade_id)
-        elif stage_id:
-            grade_record = get_object_or_404(visible_grades, defense_stage_id=stage_id)
-        else:
-            grade_record = visible_grades.order_by('-created_at').first()
-            
-        generated_by = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username
-        
-        team = grade_record.team
-        semester = grade_record.semester
-        
-        # Build Summary KPIs
-        summary_kpis = [
-            {'label': 'Final Grade', 'value': f"{grade_record.final_grade:.2f}%" if grade_record.final_grade is not None else "Pending", 'badge': grade_record.result.upper() if grade_record.result else 'PENDING'},
-            {'label': 'Panel Score', 'value': f"{grade_record.panel_score:.2f}% ({grade_record.panel_weight}%)" if grade_record.panel_score is not None else "N/A"},
-            {'label': 'Adviser Score', 'value': f"{grade_record.adviser_score:.2f}% ({grade_record.adviser_weight}%)" if grade_record.adviser_score is not None else "N/A"},
-            {'label': 'Peer Score', 'value': f"{grade_record.peer_score:.2f}% ({grade_record.peer_weight}%)" if grade_record.peer_score is not None else "N/A"},
-        ]
-        
-        leader_name = f"{team.leader.first_name} {team.leader.last_name}".strip() or team.leader.username if team.leader else 'N/A'
-        adviser_name = f"{team.adviser.first_name} {team.adviser.last_name}".strip() or team.adviser.username if team.adviser else 'N/A'
-
-        metadata = [
-            {'label': 'Team Name', 'value': team.name},
-            {'label': 'Project Title', 'value': team.project_title or 'N/A'},
-            {'label': 'Section / Year', 'value': f"{team.section or ''} {team.year_level or ''}".strip() or 'N/A'},
-            {'label': 'Defense Stage', 'value': grade_record.stage_label},
-            {'label': 'Academic Period', 'value': f"{semester.school_year.label} {semester.label}" if semester else 'N/A'},
-            {'label': 'Leader', 'value': leader_name},
-            {'label': 'Adviser', 'value': adviser_name},
-            {'label': 'Overall Result', 'value': grade_record.result.upper() if grade_record.result else 'PENDING'},
-        ]
-        
-        # Build distinct panelists list
-        submissions = list(grade_record.panelist_submissions.all().prefetch_related('criterion_scores', 'panelist'))
-        distinct_panelists = []
-        seen_panelists = set()
-
-        for sub in submissions:
-            pan_key = (sub.panelist_id, sub.guest_code_id)
-            if pan_key not in seen_panelists and sub.student_id is None:
-                seen_panelists.add(pan_key)
-                name = sub.panelist.get_full_name() if sub.panelist else sub.guest_name
-                if not name:
-                    name = f"Panelist {len(distinct_panelists) + 1}"
-                
-                scores = list(sub.criterion_scores.all())
-                tot_score = sum((c.score for c in scores), Decimal('0'))
-                tot_max = sum((c.max_score_snapshot for c in scores), Decimal('0'))
-                pct = (tot_score / tot_max * Decimal('100')).quantize(Decimal('0.01')) if tot_max > 0 else None
-                
-                distinct_panelists.append({
-                    'index': len(distinct_panelists) + 1,
-                    'name': name,
-                    'pan_key': pan_key,
-                    'score': pct,
-                    'sub': sub,
-                })
-
-        if not distinct_panelists:
-            for sub in submissions:
-                pan_key = (sub.panelist_id, sub.guest_code_id)
-                if pan_key not in seen_panelists:
-                    seen_panelists.add(pan_key)
-                    name = sub.panelist.get_full_name() if sub.panelist else sub.guest_name
-                    if not name:
-                        name = f"Panelist {len(distinct_panelists) + 1}"
-                    distinct_panelists.append({
-                        'index': len(distinct_panelists) + 1,
-                        'name': name,
-                        'pan_key': pan_key,
-                        'score': None,
-                        'sub': sub,
-                    })
-
-        # Columns for Master Student Grade Sheet Matrix
-        columns = [
-            {'key': 'no', 'label': 'No.', 'align': 'center'},
-            {'key': 'name', 'label': 'Names', 'align': 'left'},
-        ]
-
-        for pan in distinct_panelists:
-            columns.append({
-                'key': f'panel_{pan["index"]}',
-                'label': f'Panel {pan["index"]} ({pan["name"]})',
-                'align': 'center',
-            })
-
-        columns.append({'key': 'panel_avg', 'label': 'Average', 'align': 'center'})
-        columns.append({'key': 'panel_weighted', 'label': f'GRADE {grade_record.panel_weight}%', 'align': 'center'})
-
-        if grade_record.is_capstone and grade_record.adviser_weight > 0:
-            columns.append({'key': 'adviser_rating', 'label': "Adviser's Rating", 'align': 'center'})
-            columns.append({'key': 'adviser_weighted', 'label': f'{grade_record.adviser_weight}%', 'align': 'center'})
-
-        columns.append({'key': 'peer_rating', 'label': 'Peer Rating', 'align': 'center'})
-        columns.append({'key': 'peer_weighted', 'label': f'{grade_record.peer_weight}%', 'align': 'center'})
-        columns.append({'key': 'total', 'label': 'TOTAL', 'align': 'center'})
-        columns.append({'key': 'final_grade', 'label': 'FINAL GRADE', 'align': 'center'})
-
-        # Rows for Master Student Grade Sheet Matrix
-        members = []
-        if team.leader:
-            members.append((team.leader, True))
-        for m in team.members.all():
-            if m != team.leader:
-                members.append((m, False))
-
-        rows = []
-        for idx, (student, is_leader) in enumerate(members, start=1):
-            st_name = student.get_full_name() or student.username
-            st_name_display = f"{st_name} (LEADER)" if is_leader else st_name
-            sg = grade_record.student_grades.filter(student=student).first()
-
-            row_data = {
-                'no': str(idx),
-                'name': st_name_display,
-            }
-
-            panel_scores = []
-            for pan in distinct_panelists:
-                sub_st = next((s for s in submissions if s.student_id == student.id and (s.panelist_id, s.guest_code_id) == pan['pan_key']), None)
-                if sub_st:
-                    scores = list(sub_st.criterion_scores.all())
-                    tot_score = sum((c.score for c in scores), Decimal('0'))
-                    tot_max = sum((c.max_score_snapshot for c in scores), Decimal('0'))
-                    p_score = (tot_score / tot_max * Decimal('100')).quantize(Decimal('0.01')) if tot_max > 0 else None
-                else:
-                    p_score = pan['score']
-
-                if p_score is not None:
-                    panel_scores.append(p_score)
-                    row_data[f'panel_{pan["index"]}'] = f"{p_score:.1f}%"
-                else:
-                    row_data[f'panel_{pan["index"]}'] = "—"
-
-            p_avg = (sum(panel_scores, Decimal('0')) / Decimal(len(panel_scores))).quantize(Decimal('0.01')) if panel_scores else grade_record.panel_score
-            row_data['panel_avg'] = f"{p_avg:.2f}%" if p_avg is not None else "—"
-
-            p_w = (p_avg * Decimal(grade_record.panel_weight) / Decimal('100')).quantize(Decimal('0.01')) if p_avg is not None else Decimal('0.00')
-            row_data['panel_weighted'] = f"{p_w:.2f}" if p_avg is not None else "—"
-
-            adv_score = grade_record.adviser_score
-            adv_w = (adv_score * Decimal(grade_record.adviser_weight) / Decimal('100')).quantize(Decimal('0.01')) if (adv_score is not None and grade_record.adviser_weight > 0) else Decimal('0.00')
-            if grade_record.is_capstone and grade_record.adviser_weight > 0:
-                row_data['adviser_rating'] = f"{adv_score:.2f}%" if adv_score is not None else "—"
-                row_data['adviser_weighted'] = f"{adv_w:.2f}" if adv_score is not None else "—"
-
-            peer_score = sg.peer_score if (sg and sg.peer_score is not None) else grade_record.peer_score
-            peer_w = (peer_score * Decimal(grade_record.peer_weight) / Decimal('100')).quantize(Decimal('0.01')) if peer_score is not None else Decimal('0.00')
-            row_data['peer_rating'] = f"{peer_score:.2f}%" if peer_score is not None else "—"
-            row_data['peer_weighted'] = f"{peer_w:.2f}" if peer_score is not None else "—"
-
-            total = p_w + adv_w + peer_w
-            row_data['total'] = f"{total:.2f}"
-
-            final_g = sg.final_grade if (sg and sg.final_grade is not None) else total
-            status_str = "PASSED" if (final_g is not None and final_g >= Decimal('75.00')) else ("FAILED" if final_g is not None else "PENDING")
-            row_data['final_grade'] = f"{final_g:.2f}%  [{status_str}]" if final_g is not None else "PENDING"
-
-            rows.append(row_data)
-
-        # Fallback if no members found
-        if not rows:
-            rows.append({
-                'no': '1',
-                'name': leader_name,
-                'panel_avg': f"{grade_record.panel_score:.2f}%" if grade_record.panel_score is not None else "—",
-                'panel_weighted': f"{(grade_record.panel_score * Decimal(grade_record.panel_weight) / Decimal('100')):.2f}" if grade_record.panel_score is not None else "—",
-                'peer_rating': f"{grade_record.peer_score:.2f}%" if grade_record.peer_score is not None else "—",
-                'peer_weighted': f"{(grade_record.peer_score * Decimal(grade_record.peer_weight) / Decimal('100')):.2f}" if grade_record.peer_score is not None else "—",
-                'total': f"{grade_record.final_grade:.2f}" if grade_record.final_grade is not None else "—",
-                'final_grade': f"{grade_record.final_grade:.2f}%  [{grade_record.result.upper() if grade_record.result else 'PENDING'}]" if grade_record.final_grade is not None else "PENDING",
-            })
-            
-        team_name_safe = "".join(c for c in grade_record.team.name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
-        stage_safe = "".join(c for c in grade_record.stage_label if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
-        filename = f"DefenSYS_Team_Grade_{team_name_safe}_{stage_safe}"
-
-        # Audit Trail Logging if not preview
-        if export_format not in ('json', 'preview', 'data'):
-            log_high_impact_action(
-                category='compliance',
-                action='report.generate_team_grade',
-                target=grade_record.team,
-                target_id=grade_record.team.id,
-                reason=f"Exported Team Grade Report ({export_format or 'pdf'}) for {grade_record.team.name} ({grade_record.stage_label})",
-                request=request,
-                new_values={
-                    'team_id': grade_record.team.id,
-                    'team_name': grade_record.team.name,
-                    'stage': grade_record.stage_label,
-                    'format': export_format or 'pdf',
-                },
-            )
-
+        from reports.assessment_reports import export_assessment_report
         include_signatures, signatories = _parse_signature_params(request)
-
-        return handle_export_or_preview(
-            export_format=export_format,
-            title=f"Team Grade Report — {grade_record.team.name}",
-            subtitle=f"Stage: {grade_record.stage_label} • Period: {semester.school_year.label} {semester.label}" if semester else grade_record.stage_label,
-            summary_kpis=summary_kpis,
-            metadata=metadata,
-            columns=columns,
-            rows=rows,
-            filename=filename,
-            pdf_generator_func=lambda: generate_team_grade_pdf(
-                grade_record, generated_by, signatories=signatories, include_signatures=include_signatures
-            ),
+        return export_assessment_report(
+            request, team_id=team_id, include_signatures=include_signatures,
+            signatories=signatories,
         )
 
 
-class IndividualGradeReportView(APIView):
+class AssessmentCandidatesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from reports.assessment_reports import assessment_candidates
+        return assessment_candidates(request)
+
+
+class IndividualGradeReportView(ReportAPIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, student_id):
-        student = get_object_or_404(User, pk=student_id, role='student')
-        export_format = request.query_params.get('export_format') or request.query_params.get('format')
-        
-        is_self = request.user.id == student.id
-        team = None
-        if hasattr(student, 'led_teams') and student.led_teams.exists():
-            team = student.led_teams.first()
-        if not team:
-            membership = getattr(student, 'team_memberships', None)
-            if membership and membership.exists():
-                team = membership.first().team
-        if not team:
-            team = StudentTeam.objects.filter(Q(leader=student) | Q(members=student)).first()
-        
-        if not is_self:
-            if team:
-                visible_grades = grade_records_for(request.user).filter(team=team)
-                if not visible_grades.exists() and not is_admin_user(request.user):
-                    raise PermissionDenied("You do not have permission to generate individual grade audit cards for this student.")
-            else:
-                if not is_admin_user(request.user):
-                    raise PermissionDenied("You do not have permission to view this student's grade audit card.")
-
-        if not team:
-            return Response(
-                {"detail": "This student is not currently assigned to a team."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        grade_id = request.query_params.get('grade_id')
-        stage_id = request.query_params.get('stage_id')
-        semester_id = request.query_params.get('semester_id')
-
-        team_grades = TeamGrade.objects.filter(team=team)
-        if semester_id:
-            team_grades = team_grades.filter(semester_id=semester_id)
-        if grade_id:
-            team_grade = get_object_or_404(team_grades, pk=grade_id)
-        elif stage_id:
-            team_grade = get_object_or_404(team_grades, defense_stage_id=stage_id)
-        else:
-            team_grade = team_grades.order_by('-updated_at', '-id').first()
-
-        if not team_grade:
-            return Response(
-                {"detail": "No evaluation records found for this student."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        student_grade = StudentStageGrade.objects.filter(team_grade=team_grade, student=student).first()
-        generated_by = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username
-        
-        student_name = student.get_full_name() or student.username
-        semester = team_grade.semester
-        
-        # Effective individual grades
-        st_final = student_grade.final_grade if student_grade and student_grade.final_grade is not None else team_grade.final_grade
-        st_result = "PASSED" if (st_final is not None and st_final >= Decimal('75.00')) else ("FAILED" if st_final is not None else (team_grade.result.upper() if team_grade.result else 'PENDING'))
-        peer_score_str = f"{student_grade.peer_score:.2f}%" if (student_grade and student_grade.peer_score is not None) else (f"{team_grade.peer_score:.2f}%" if team_grade.peer_score is not None else "N/A")
-
-        summary_kpis = [
-            {'label': 'Student ID', 'value': student.username},
-            {'label': 'Individual Final Grade', 'value': f"{st_final:.2f}%" if st_final is not None else "Pending", 'badge': st_result},
-            {'label': 'Base Team Grade', 'value': f"{team_grade.final_grade:.2f}%" if team_grade.final_grade is not None else "Pending"},
-            {'label': 'Peer Score', 'value': peer_score_str},
-        ]
-
-        metadata = [
-            {'label': 'Student Name', 'value': student_name},
-            {'label': 'Student ID', 'value': student.username},
-            {'label': 'Assigned Team', 'value': team.name},
-            {'label': 'Project Title', 'value': team.project_title or 'N/A'},
-            {'label': 'Section / Year', 'value': f"{team.section or ''} {team.year_level or ''}".strip() or 'N/A'},
-            {'label': 'Defense Stage', 'value': team_grade.stage_label},
-            {'label': 'Academic Period', 'value': f"{semester.school_year.label} {semester.label}" if semester else 'N/A'},
-            {'label': 'Final Outcome', 'value': st_result},
-        ]
-
-        columns = [
-            {'key': 'component', 'label': 'Grade Component', 'align': 'left'},
-            {'key': 'weight', 'label': 'Contribution', 'align': 'center'},
-            {'key': 'score', 'label': 'Score / Rating', 'align': 'center'},
-            {'key': 'remarks', 'label': 'Evaluation & Peer Remarks', 'align': 'left'},
-        ]
-
-        rows = [
-            {
-                'component': 'Base Team Defense Score',
-                'weight': f"{team_grade.panel_weight}% Panel",
-                'score': f"{team_grade.panel_score:.2f}%" if team_grade.panel_score is not None else "Pending",
-                'remarks': 'Panelists defense deliberation average',
-            },
-            {
-                'component': 'Adviser Evaluation Score',
-                'weight': f"{team_grade.adviser_weight}% Adviser",
-                'score': f"{team_grade.adviser_score:.2f}%" if team_grade.adviser_score is not None else "N/A",
-                'remarks': f"Assessed by {team.adviser.first_name} {team.adviser.last_name}".strip() if team.adviser else "Faculty Adviser",
-            },
-            {
-                'component': 'Peer Evaluation Score',
-                'weight': f"{team_grade.peer_weight}% Peer",
-                'score': peer_score_str,
-                'remarks': 'Peer group individual contribution rating',
-            },
-            {
-                'component': 'FINAL INDIVIDUAL CERTIFIED GRADE',
-                'weight': 'Composite',
-                'score': f"{st_final:.2f}%" if st_final is not None else "Pending",
-                'remarks': f"Official Audit Status: {st_result}",
-            },
-        ]
-
-        student_name_safe = "".join(c for c in student_name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
-        stage_safe = "".join(c for c in team_grade.stage_label if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
-        filename = f"DefenSYS_Individual_Grade_{student_name_safe}_{stage_safe}"
-
-        if export_format not in ('json', 'preview', 'data'):
-            log_high_impact_action(
-                category='compliance',
-                action='report.generate_individual_grade',
-                target=student,
-                target_id=student.id,
-                reason=f"Exported Individual Grade Audit ({export_format or 'pdf'}) for {student.username} ({team_grade.stage_label})",
-                request=request,
-                new_values={
-                    'student_id': student.id,
-                    'student_name': student_name,
-                    'team_id': team.id,
-                    'team_name': team.name,
-                    'stage': team_grade.stage_label,
-                    'format': export_format or 'pdf',
-                },
-            )
-
+        from reports.assessment_reports import export_assessment_report
         include_signatures, signatories = _parse_signature_params(request)
-
-        return handle_export_or_preview(
-            export_format=export_format,
-            title=f"Individual Grade Audit — {student_name}",
-            subtitle=f"ID: {student.username} • Team: {team.name} • Stage: {team_grade.stage_label}",
-            summary_kpis=summary_kpis,
-            metadata=metadata,
-            columns=columns,
-            rows=rows,
-            filename=filename,
-            pdf_generator_func=lambda: generate_individual_grade_pdf(
-                student, student_grade, team_grade, generated_by, signatories=signatories, include_signatures=include_signatures
-            ),
+        return export_assessment_report(
+            request, student_id=student_id, include_signatures=include_signatures,
+            signatories=signatories,
         )
 
 
-class SemesterGradesReportView(APIView):
+class SemesterGradesReportView(ReportAPIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -485,6 +147,8 @@ class SemesterGradesReportView(APIView):
             ).distinct()
         if year_level:
             queryset = queryset.filter(team__year_level=year_level)
+        if request.query_params.get('section'):
+            queryset = queryset.filter(team__section=request.query_params['section'])
         if status_filter:
             queryset = queryset.filter(status=status_filter)
         if scope and scope != 'all':
@@ -505,13 +169,8 @@ class SemesterGradesReportView(APIView):
         grade_records = list(queryset.select_related('team', 'team__adviser', 'team__leader'))
         generated_by = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username
         
-        # Summary metrics
-        total_records = len(grade_records)
-        passed_count = sum(1 for g in grade_records if g.result == 'passed')
-        failed_count = sum(1 for g in grade_records if g.result == 'failed')
-        pending_count = sum(1 for g in grade_records if g.result == 'pending' or not g.result)
-        completed_grades = [g.final_grade for g in grade_records if g.final_grade is not None]
-        avg_grade = sum(completed_grades) / len(completed_grades) if completed_grades else Decimal('0.00')
+        summary = summarize_grade_records(grade_records)
+        average_label = f"{summary['average']:.2f}%" if summary['average'] is not None else "N/A"
 
         # Determine dynamic title & subtitle
         if scope == 'capstone' and stage_filter:
@@ -531,21 +190,24 @@ class SemesterGradesReportView(APIView):
             scope_label = "All Academic Scopes (Capstone & PIT)"
 
         summary_kpis = [
-            {'label': 'Total Graded Teams', 'value': str(total_records)},
-            {'label': 'Passed Count', 'value': str(passed_count), 'badge': 'PASSED'},
-            {'label': 'Revisions / Failed', 'value': str(failed_count), 'badge': 'REVISION' if failed_count > 0 else 'NONE'},
-            {'label': 'Cohort Average', 'value': f"{avg_grade:.2f}%" if completed_grades else "N/A"},
+            {'label': 'Teams in Report', 'value': str(summary['team_count'])},
+            {'label': 'Stage / Event Records', 'value': str(summary['record_count'])},
+            {'label': 'Passed / Approved', 'value': str(summary['outcomes']['passed'])},
+            {'label': 'Mean Recorded Grade', 'value': average_label},
         ]
 
         metadata = [
             {'label': 'Academic Period', 'value': f"{semester.school_year.label} — {semester.label}"},
             {'label': 'Academic Scope', 'value': scope_label},
-            {'label': 'Total Graded Teams', 'value': str(total_records)},
-            {'label': 'Passed / Failed / Pending', 'value': f"{passed_count} Passed / {failed_count} Failed / {pending_count} Pending"},
-            {'label': 'Cohort Average Grade', 'value': f"{avg_grade:.2f}%" if completed_grades else "N/A"},
+            {'label': 'Teams in Report', 'value': str(summary['team_count'])},
+            {'label': 'Stage / Event Records', 'value': str(summary['record_count'])},
+            {'label': 'Outcome Breakdown', 'value': outcome_breakdown(summary)},
+            {'label': 'Mean Recorded Grade', 'value': average_label},
+            {'label': 'Outcome Basis', 'value': GRADE_OUTCOME_NOTE},
         ]
 
         columns = [
+            {'key': 'scope', 'label': 'Scope', 'align': 'center'},
             {'key': 'team_name', 'label': 'Team Name', 'align': 'left'},
             {'key': 'project_title', 'label': 'Project Title', 'align': 'left'},
             {'key': 'section', 'label': 'Section', 'align': 'center'},
@@ -555,7 +217,7 @@ class SemesterGradesReportView(APIView):
             {'key': 'adviser_score', 'label': 'Adviser Score', 'align': 'center'},
             {'key': 'peer_score', 'label': 'Peer Score', 'align': 'center'},
             {'key': 'final_grade', 'label': 'Final Grade', 'align': 'center'},
-            {'key': 'result', 'label': 'Result', 'align': 'center'},
+            {'key': 'result', 'label': 'Outcome', 'align': 'center'},
         ]
 
         rows = []
@@ -563,8 +225,9 @@ class SemesterGradesReportView(APIView):
             sec = gr.team.section or gr.team.year_level or 'N/A'
             adv = f"{gr.team.adviser.first_name} {gr.team.adviser.last_name}".strip() if gr.team.adviser else "Unassigned"
             rows.append({
+                'scope': 'Capstone' if gr.is_capstone else 'PIT',
                 'team_name': gr.team.name,
-                'project_title': gr.team.project_title or 'N/A',
+                'project_title': gr.project_title_snapshot or gr.team.project_title or 'N/A',
                 'section': sec,
                 'stage': gr.stage_label,
                 'adviser': adv,
@@ -572,7 +235,7 @@ class SemesterGradesReportView(APIView):
                 'adviser_score': f"{gr.adviser_score:.2f}%" if gr.adviser_score is not None else "N/A",
                 'peer_score': f"{gr.peer_score:.2f}%" if gr.peer_score is not None else "Pending",
                 'final_grade': f"{gr.final_grade:.2f}%" if gr.final_grade is not None else "Pending",
-                'result': gr.result.upper() if gr.result else "PENDING",
+                'result': grade_outcome_label(gr),
             })
 
         sem_label_safe = "".join(c for c in semester.school_year.label if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
@@ -589,14 +252,15 @@ class SemesterGradesReportView(APIView):
             metadata=metadata,
             columns=columns,
             rows=rows,
-            filename=filename,
+            filename=filename, generated_by=generated_by,
+            include_signatures=include_signatures, signatories=signatories,
             pdf_generator_func=lambda: generate_semester_grades_pdf(
                 semester, grade_records, generated_by, signatories=signatories, include_signatures=include_signatures
             ),
         )
 
 
-class DefenseScheduleReportView(APIView):
+class DefenseScheduleReportView(ReportAPIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -635,11 +299,24 @@ class DefenseScheduleReportView(APIView):
             if str(stage_filter).isdigit():
                 queryset = queryset.filter(defense_stage_id=int(stage_filter))
             else:
-                queryset = queryset.filter(Q(stage_label__icontains=stage_filter) | Q(event_name__icontains=stage_filter))
+                queryset = queryset.filter(Q(defense_stage__label__icontains=stage_filter) | Q(event_name__icontains=stage_filter))
         if status_filter:
             queryset = queryset.filter(status=status_filter)
         if date_filter:
             queryset = queryset.filter(scheduled_date=date_filter)
+        if request.query_params.get('source_context') == 'defense-board':
+            from defense.board.views import filter_board_queryset
+            queryset = filter_board_queryset(request, base_queryset)
+        else:
+            if request.query_params.get('section'):
+                queryset = queryset.filter(team__section__iexact=request.query_params['section'])
+            adviser = request.query_params.get('adviser', '')
+            if adviser.isdigit():
+                queryset = queryset.filter(team__adviser_id=adviser)
+        if request.query_params.get('start_date'):
+            queryset = queryset.filter(scheduled_date__gte=request.query_params['start_date'])
+        if request.query_params.get('end_date'):
+            queryset = queryset.filter(scheduled_date__lte=request.query_params['end_date'])
             
         schedules = list(
             queryset.select_related('team', 'defense_stage', 'team__adviser')
@@ -666,6 +343,7 @@ class DefenseScheduleReportView(APIView):
         ]
 
         columns = [
+            {'key': 'scope', 'label': 'Scope', 'align': 'center'},
             {'key': 'scheduled_date', 'label': 'Date', 'align': 'center'},
             {'key': 'time_slot', 'label': 'Time Slot', 'align': 'center'},
             {'key': 'team_name', 'label': 'Team Name', 'align': 'left'},
@@ -696,6 +374,7 @@ class DefenseScheduleReportView(APIView):
                 time_slot_str = "TBD"
 
             rows.append({
+                'scope': 'Capstone' if s.scope == 'capstone' else 'PIT',
                 'scheduled_date': s.scheduled_date.strftime('%Y-%m-%d') if s.scheduled_date else "Unscheduled",
                 'time_slot': time_slot_str,
                 'team_name': t_name,
@@ -719,14 +398,15 @@ class DefenseScheduleReportView(APIView):
             metadata=metadata,
             columns=columns,
             rows=rows,
-            filename=filename,
+            filename=filename, generated_by=generated_by,
+            include_signatures=include_signatures, signatories=signatories,
             pdf_generator_func=lambda: generate_defense_schedule_pdf(
                 semester, schedules, generated_by, signatories=signatories, include_signatures=include_signatures
             ),
         )
 
 
-class TeamRosterReportView(APIView):
+class TeamRosterReportView(ReportAPIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -739,16 +419,36 @@ class TeamRosterReportView(APIView):
             semester = active_semester()
             
         queryset = visible_teams_for(request.user)
+        term_context = request.query_params.get('term_context')
+        if term_context in ('history', 'active', 'all'):
+            from student_teams.term_scope import apply_team_scope
+            queryset = apply_team_scope(queryset, scope=term_context, user=request.user)
+            if term_context in ('history', 'all') and not semester_id:
+                semester = None
         if semester:
             queryset = queryset.filter(semester=semester)
             
-        level = request.query_params.get('level', '').strip()
+        level = (request.query_params.get('scope') or request.query_params.get('level', '')).strip()
+        if level == 'all':
+            level = ''
         year_level = request.query_params.get('year_level', '').strip()
         
         if level:
             queryset = queryset.filter(level__icontains=level)
         if year_level:
             queryset = queryset.filter(year_level=year_level)
+        for key in ('section', 'status'):
+            if request.query_params.get(key):
+                queryset = queryset.filter(**{key: request.query_params[key]})
+        search = request.query_params.get('search', '').strip()
+        if search:
+            queryset = queryset.filter(Q(name__icontains=search) | Q(project_title__icontains=search)
+                | Q(leader__first_name__icontains=search) | Q(leader__last_name__icontains=search) | Q(leader__username__icontains=search)
+                | Q(adviser__first_name__icontains=search) | Q(adviser__last_name__icontains=search) | Q(adviser__username__icontains=search))
+        event = request.query_params.get('pit_event')
+        if event:
+            queryset = queryset.filter(Q(current_defense_stage=event) | Q(defense_schedules__event_name=event)
+                                      | Q(grade_records__stage_label=event) | Q(deliverable_submissions__stage_label=event)).distinct()
             
         teams = list(
             queryset.select_related('leader', 'adviser')
@@ -772,6 +472,7 @@ class TeamRosterReportView(APIView):
         ]
 
         columns = [
+            {'key': 'scope', 'label': 'Scope', 'align': 'center'},
             {'key': 'team_name', 'label': 'Team Name', 'align': 'left'},
             {'key': 'project_title', 'label': 'Project Title', 'align': 'left'},
             {'key': 'section', 'label': 'Section / Year', 'align': 'center'},
@@ -791,6 +492,7 @@ class TeamRosterReportView(APIView):
                 if m.student
             ]
             rows.append({
+                'scope': 'PIT' if t.is_pit else 'Capstone',
                 'team_name': t.name,
                 'project_title': t.project_title or 'N/A',
                 'section': f"{t.section or ''} {t.year_level or ''}".strip() or 'N/A',
@@ -814,14 +516,15 @@ class TeamRosterReportView(APIView):
             metadata=metadata,
             columns=columns,
             rows=rows,
-            filename=filename,
+            filename=filename, generated_by=generated_by,
+            include_signatures=include_signatures, signatories=signatories,
             pdf_generator_func=lambda: generate_team_roster_pdf(
                 semester, teams, generated_by, signatories=signatories, include_signatures=include_signatures
             ),
         )
 
 
-class UserDirectoryReportView(APIView):
+class UserDirectoryReportView(ReportAPIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -833,6 +536,9 @@ class UserDirectoryReportView(APIView):
         status_filter = request.query_params.get('status', '').strip()
         
         queryset = User.objects.all()
+        search = request.query_params.get('search', '').strip()
+        if search:
+            queryset = queryset.filter(Q(first_name__icontains=search) | Q(last_name__icontains=search) | Q(username__icontains=search) | Q(email__icontains=search))
         if role:
             queryset = queryset.filter(role=role)
         if status_filter:
@@ -892,14 +598,15 @@ class UserDirectoryReportView(APIView):
             metadata=metadata,
             columns=columns,
             rows=rows,
-            filename=filename,
+            filename=filename, generated_by=generated_by,
+            include_signatures=include_signatures, signatories=signatories,
             pdf_generator_func=lambda: generate_user_directory_pdf(
                 users, generated_by, signatories=signatories, include_signatures=include_signatures
             ),
         )
 
 
-class AuditTrailReportView(APIView):
+class AuditTrailReportView(ReportAPIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -926,63 +633,38 @@ class AuditTrailReportView(APIView):
             queryset = queryset.filter(id=log_id)
             filters_desc['Audit Entry ID'] = f"#{log_id}"
         if category:
-            queryset = queryset.filter(category=category)
             filters_desc['Category'] = category
         if action:
-            queryset = queryset.filter(action=action)
             filters_desc['Action'] = action
         if review_status:
-            queryset = queryset.filter(review_status=review_status)
             filters_desc['Review Status'] = review_status
         if actor_id:
-            queryset = queryset.filter(actor_id=actor_id)
             actor = User.objects.filter(id=actor_id).first()
             if actor:
                 filters_desc['Responsible User'] = f"{actor.first_name} {actor.last_name}".strip() or actor.username
         if start_date:
-            queryset = queryset.filter(created_at__date__gte=start_date)
             filters_desc['Start Date'] = start_date.strftime('%Y-%m-%d')
         if end_date:
-            queryset = queryset.filter(created_at__date__lte=end_date)
             filters_desc['End Date'] = end_date.strftime('%Y-%m-%d')
         if track:
             filters_desc['Academic Track'] = track.upper()
-            pit_marker = (
-                Q(old_values__entry_type='pit')
-                | Q(new_values__entry_type='pit')
-                | Q(old_values__scope='pit')
-                | Q(new_values__scope='pit')
-                | Q(old_values__track='pit')
-                | Q(new_values__track='pit')
-            )
-            if track == 'pit':
-                queryset = queryset.filter(pit_marker)
-            elif track == 'capstone':
-                pit_ids = queryset.filter(pit_marker).values_list('id', flat=True)
-                queryset = queryset.exclude(id__in=pit_ids)
         if year_level:
             filters_desc['Year Level'] = year_level
-            year_marker = (
-                Q(old_values__year_level=year_level)
-                | Q(new_values__year_level=year_level)
-                | Q(old_values__team_year_level=year_level)
-                | Q(new_values__team_year_level=year_level)
-                | Q(old_values__pit_year_level=year_level)
-                | Q(new_values__pit_year_level=year_level)
-            )
-            queryset = queryset.filter(year_marker)
         if search:
-            queryset = queryset.filter(
-                Q(action__icontains=search)
-                | Q(target_type__icontains=search)
-                | Q(target_id__icontains=search)
-                | Q(reason__icontains=search)
-            )
             filters_desc['Search query'] = search
             
-        queryset = queryset.order_by('-created_at')
-        limit = min(max(int(request.query_params.get('limit', 1000)), 1), 2000)
-        logs = list(queryset.select_related('actor')[:limit])
+        queryset = filter_audit_logs(base_queryset, request.query_params)
+        if log_id:
+            queryset = queryset.filter(id=log_id)
+        queryset = queryset.order_by('-created_at', '-id')
+        try:
+            limit = min(max(int(request.query_params.get('limit', 1000)), 1), 2000)
+        except (TypeError, ValueError):
+            return Response({'detail': 'Limit must be an integer.'}, status=status.HTTP_400_BAD_REQUEST)
+        logs = list(queryset.select_related('actor').prefetch_related('reviews')[:limit])
+        from authentication_access_control.audit_references import AuditReferenceResolver
+        reference_resolver = AuditReferenceResolver(logs)
+        matching_count = queryset.count() if len(logs) == limit else len(logs)
         generated_by = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username
 
         summary_kpis = [
@@ -995,27 +677,57 @@ class AuditTrailReportView(APIView):
             {'label': 'Total Events', 'value': str(len(logs))},
             {'label': 'Category Filter', 'value': category.upper() if category else 'ALL'},
             {'label': 'Date Scope', 'value': f"{filters_desc.get('Start Date', 'All')} → {filters_desc.get('End Date', 'Present')}"},
+            {'label': 'Time Zone', 'value': timezone.get_current_timezone_name()},
+            {'label': 'Review Tracking', 'value': 'Evidence captured means saved event data; pending review means no current completed review.'},
         ]
+        if matching_count > len(logs):
+            metadata.append({'label': 'Export Scope', 'value': f'Latest {len(logs)} of {matching_count} matching events (export limit {limit}).'})
+            filters_desc['Export Scope'] = f'Latest {len(logs)} of {matching_count} matching events'
+        for label, value in filters_desc.items():
+            if label not in ('Category', 'Start Date', 'End Date', 'Export Scope'):
+                metadata.append({'label': label, 'value': value})
 
         columns = [
-            {'key': 'created_at', 'label': 'Timestamp', 'align': 'center'},
+            {'key': 'created_at', 'label': 'Timestamp', 'align': 'center', 'type': 'datetime', 'width': 23, 'number_format': 'm/d/yyyy hh:mm'},
             {'key': 'actor', 'label': 'Responsible User', 'align': 'left'},
             {'key': 'category', 'label': 'Category', 'align': 'center'},
             {'key': 'action', 'label': 'Action', 'align': 'left'},
             {'key': 'target', 'label': 'Target Entity', 'align': 'left'},
-            {'key': 'reason', 'label': 'Audit Reason / Description', 'align': 'left'},
+            {'key': 'reason', 'label': 'Reason for Change', 'align': 'left', 'width': 44},
+            {'key': 'evidence_status', 'label': 'Evidence Status', 'align': 'left', 'width': 26, 'link_to': 'Event Evidence'},
+            {'key': 'review_status', 'label': 'Review Status', 'align': 'left'},
+            {'key': 'reviewed_by', 'label': 'Reviewed By', 'align': 'left'},
+            {'key': 'reviewer_role', 'label': 'Reviewer Role', 'align': 'left'},
+            {'key': 'reviewed_at', 'label': 'Last Review Timestamp', 'align': 'left', 'type': 'datetime', 'width': 23, 'number_format': 'm/d/yyyy hh:mm'},
+            {'key': 'review_history', 'label': 'Review History', 'align': 'left', 'width': 36, 'link_to': 'Review History'},
         ]
 
         rows = []
         for log in logs:
-            actor_name = f"{log.actor.first_name} {log.actor.last_name}".strip() or log.actor.username if log.actor else (log.actor_display or "System")
+            actor_name = (log.actor.get_full_name().strip() or log.actor.username) if log.actor else 'System'
+            evidence = audit_evidence(log)
+            has_review = bool(log.reviewed_by_name or log.reviewed_at or log.review_status == 'reviewed')
             rows.append({
-                'created_at': log.created_at.strftime('%Y-%m-%d %H:%M') if log.created_at else "N/A",
+                'event_id': log.pk,
+                'created_at': timezone.localtime(log.created_at).isoformat() if log.created_at else 'Not recorded',
                 'actor': actor_name,
                 'category': log.category.upper() if log.category else "SYSTEM",
                 'action': log.action,
-                'target': f"{log.target_type or 'Entity'}: {log.target_id or ''}".strip(': '),
-                'reason': log.reason or "No details provided",
+                'target': reference_resolver.target_label(log),
+                'evidence_status': evidence['label'],
+                'evidence_summary': evidence['summary'],
+                'reason_required': evidence['reason_required'],
+                'reason': log.reason or ('Reason required - not recorded' if evidence['reason_required'] else 'Not required for this event'),
+                'review_status': 'Reviewed' if log.review_status == 'reviewed' else 'Pending review',
+                'reviewed_by': log.reviewed_by_name or ('Reviewer not recorded' if has_review else 'Pending review'),
+                'reviewer_role': ('PIT Lead · ' + log.reviewed_by_year) if log.reviewed_by_role == 'pit_lead' else ('Admin' if log.reviewed_by_role == 'admin' else ('Not recorded' if has_review else 'Not applicable')),
+                'reviewed_at': timezone.localtime(log.reviewed_at).isoformat() if log.reviewed_at else ('Not recorded' if has_review else 'Not reviewed'),
+                'review_history': '\n'.join(
+                    f'{review.created_at.isoformat()} | {review.reviewer_name} '
+                    f'({"PIT Lead - " + review.reviewer_year if review.reviewer_role == "pit_lead" else ("Admin" if review.reviewer_role == "admin" else "Role not recorded")}) | '
+                    f'{review.get_from_status_display()} -> {review.get_to_status_display()} | {review.reason}'
+                    for review in log.reviews.all()
+                ) or 'No review history recorded',
             })
 
         if log_id and len(logs) == 1:
@@ -1027,6 +739,12 @@ class AuditTrailReportView(APIView):
 
         include_signatures, signatories = _parse_signature_params(request)
 
+        if (export_format or '').strip().lower() in ('xlsx', 'excel', 'sheet'):
+            return generate_audit_trail_xlsx(
+                logs, title, metadata, columns, rows, filename, generated_by,
+                include_signatures=include_signatures, signatories=signatories,
+            )
+
         return handle_export_or_preview(
             export_format=export_format,
             title=title,
@@ -1035,7 +753,8 @@ class AuditTrailReportView(APIView):
             metadata=metadata,
             columns=columns,
             rows=rows,
-            filename=filename,
+            filename=filename, generated_by=generated_by,
+            include_signatures=include_signatures, signatories=signatories,
             pdf_generator_func=lambda: generate_audit_trail_pdf(
                 logs, filters_desc, generated_by, signatories=signatories, include_signatures=include_signatures
             ),

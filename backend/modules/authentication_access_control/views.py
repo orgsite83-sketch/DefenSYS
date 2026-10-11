@@ -1,8 +1,10 @@
 import logging
 import os
+from datetime import timedelta
 from django.contrib.auth import get_user_model
-from django.db.models import Q
-from django.utils.dateparse import parse_date
+from django.db.models import Q, Count, Max
+from django.db.models.functions import Coalesce
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.exceptions import PermissionDenied
@@ -22,6 +24,8 @@ from .serializers import (
 )
 from .models import SystemAuditLog
 from .scopes import audit_logs_for, can_review_audit_logs
+from .scopes import is_admin_user
+from .audit import audit_track_marker, filter_audit_logs, pit_audit_logs_for_year, review_audit_log
 
 
 logger = logging.getLogger(__name__)
@@ -227,6 +231,9 @@ class SystemAuditLogListView(APIView):
             raise PermissionDenied('Audit Trail is available to admins and assigned PIT leaders.')
         base_queryset = audit_logs_for(request.user)
         queryset = self._filter_queryset(request, base_queryset)
+        count_queryset = filter_audit_logs(base_queryset, request.query_params, include_status=False)
+        pit_progress = self._pit_progress(request, base_queryset)
+        capstone_progress = self._capstone_progress(request, base_queryset) if is_admin_user(request.user) else None
 
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(queryset, request, view=self)
@@ -242,7 +249,9 @@ class SystemAuditLogListView(APIView):
                 'page_size': paginator.get_page_size(request),
                 'limit': paginator.get_page_size(request),
                 'audit_logs': serializer.data,
-                'counts': self._counts(queryset),
+                'counts': self._counts(count_queryset),
+                'pit_progress': pit_progress,
+                'capstone_progress': capstone_progress,
                 'options': self._options(base_queryset),
             })
 
@@ -256,68 +265,72 @@ class SystemAuditLogListView(APIView):
             'page_size': len(serializer.data),
             'limit': len(serializer.data),
             'audit_logs': serializer.data,
-            'counts': self._counts(queryset),
+            'counts': self._counts(count_queryset),
+            'pit_progress': pit_progress,
+            'capstone_progress': capstone_progress,
             'options': self._options(base_queryset),
         })
 
     def _filter_queryset(self, request, queryset):
-        category = request.query_params.get('category', '').strip()
-        action = request.query_params.get('action', '').strip()
-        review_status = request.query_params.get('review_status', '').strip()
-        actor_id = request.query_params.get('actor', '').strip()
-        search = request.query_params.get('search', '').strip()
-        start_date = parse_date(request.query_params.get('start_date', '').strip())
-        end_date = parse_date(request.query_params.get('end_date', '').strip())
-        track = request.query_params.get('track', '').strip().lower()
-        year_level = request.query_params.get('year_level', '').strip()
+        return filter_audit_logs(queryset, request.query_params)
 
-        if category:
-            queryset = queryset.filter(category=category)
-        if action:
-            queryset = queryset.filter(action=action)
-        if review_status:
-            queryset = queryset.filter(review_status=review_status)
-        if actor_id:
-            queryset = queryset.filter(actor_id=actor_id)
-        if start_date:
-            queryset = queryset.filter(created_at__date__gte=start_date)
-        if end_date:
-            queryset = queryset.filter(created_at__date__lte=end_date)
-        if track:
-            pit_marker = (
-                Q(old_values__entry_type='pit')
-                | Q(new_values__entry_type='pit')
-                | Q(old_values__scope='pit')
-                | Q(new_values__scope='pit')
-                | Q(old_values__track='pit')
-                | Q(new_values__track='pit')
+    def _capstone_progress(self, request, queryset):
+        # The four overview cards share search, date, action, and process filters.
+        # They ignore the register's selected scope and review-status tab.
+        queryset = filter_audit_logs(queryset, request.query_params, include_scope=False, include_status=False)
+        queryset = queryset.filter(audit_track_marker('capstone'))
+        pit_ids = queryset.filter(audit_track_marker('pit')).values('pk')
+        queryset = queryset.exclude(pk__in=pit_ids)
+        counts = queryset.aggregate(
+            total=Count('id'),
+            reviewed=Count('id', filter=Q(review_status=SystemAuditLog.REVIEW_REVIEWED)),
+            reviewed_by_admin=Count('id', filter=Q(
+                review_status=SystemAuditLog.REVIEW_REVIEWED, reviewed_by_role='admin',
+            )),
+        )
+        return {
+            **counts,
+            'pending': counts['total'] - counts['reviewed'],
+        }
+
+    def _pit_progress(self, request, queryset):
+        # Keep oversight visible when the admin's register is focused on Capstone.
+        queryset = filter_audit_logs(queryset, request.query_params, include_scope=False, include_status=False)
+        leads = User.objects.filter(is_pit_lead=True, is_active=True).exclude(pit_lead_year__isnull=True)
+        if is_admin_user(request.user):
+            years = {'1st Year', '2nd Year', '3rd Year'} | set(leads.values_list('pit_lead_year', flat=True))
+        else:
+            years = {request.user.pit_lead_year}
+        overdue_before = timezone.now() - timedelta(days=7)
+        results = []
+        for year in sorted(value for value in years if value):
+            records = pit_audit_logs_for_year(queryset, year)
+            counts = records.aggregate(
+                total=Count('id'),
+                reviewed=Count('id', filter=Q(review_status=SystemAuditLog.REVIEW_REVIEWED)),
+                reviewed_by_lead=Count('id', filter=Q(
+                    review_status=SystemAuditLog.REVIEW_REVIEWED,
+                    reviewed_by_role='pit_lead', reviewed_by_year=year,
+                )),
+                requires_reason=Count('id', filter=Q(review_status=SystemAuditLog.REVIEW_REQUIRES_REASON)),
             )
-            if track == 'pit':
-                queryset = queryset.filter(pit_marker)
-            elif track == 'capstone':
-                pit_ids = queryset.filter(pit_marker).values_list('id', flat=True)
-                queryset = queryset.exclude(id__in=pit_ids)
-        if year_level:
-            year_marker = (
-                Q(old_values__year_level=year_level)
-                | Q(new_values__year_level=year_level)
-                | Q(old_values__team_year_level=year_level)
-                | Q(new_values__team_year_level=year_level)
-                | Q(old_values__pit_year_level=year_level)
-                | Q(new_values__pit_year_level=year_level)
-            )
-            queryset = queryset.filter(year_marker)
-        if search:
-            queryset = queryset.filter(
-                Q(action__icontains=search)
-                | Q(target_type__icontains=search)
-                | Q(target_id__icontains=search)
-                | Q(reason__icontains=search)
-                | Q(actor__username__icontains=search)
-                | Q(actor__first_name__icontains=search)
-                | Q(actor__last_name__icontains=search)
-            )
-        return queryset
+            latest = records.filter(reviewed_at__isnull=False).order_by('-reviewed_at', '-id').first()
+            pending = records.exclude(review_status=SystemAuditLog.REVIEW_REVIEWED)
+            overdue = pending.annotate(last_decision=Coalesce(Max('reviews__created_at'), 'created_at')).filter(
+                last_decision__lt=overdue_before,
+            ).count()
+            results.append({
+                'year_level': year, **counts, 'pending': counts['total'] - counts['reviewed'],
+                'overdue': overdue, 'overdue_days': 7,
+                'leads': [
+                    {'id': user.pk, 'name': user.get_full_name().strip() or user.username}
+                    for user in leads.filter(pit_lead_year=year).order_by('username')
+                ],
+                'last_reviewed_by': latest.reviewed_by_name if latest else '',
+                'last_reviewed_role': latest.reviewed_by_role if latest else '',
+                'last_reviewed_at': latest.reviewed_at if latest else None,
+            })
+        return results
 
 
     def _counts(self, queryset):
@@ -330,6 +343,7 @@ class SystemAuditLogListView(APIView):
                 review_status__in=[
                     SystemAuditLog.REVIEW_NEEDS_REVIEW,
                     SystemAuditLog.REVIEW_REQUIRES_REASON,
+                    SystemAuditLog.REVIEW_CAPTURED,
                 ],
             ).count(),
             'requires_reason': queryset.filter(
@@ -376,21 +390,17 @@ class SystemAuditLogReviewView(APIView):
         if not can_review_audit_logs(request.user):
             raise PermissionDenied('Audit Trail is available to admins and assigned PIT leaders.')
         base_queryset = audit_logs_for(request.user)
+        new_status = request.data.get('review_status', SystemAuditLog.REVIEW_REVIEWED)
+        note = request.data.get('reason', '')
+        if not isinstance(new_status, str) or not isinstance(note, str):
+            return Response({'detail': 'Review status and reason must be text.'}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            log = base_queryset.get(pk=pk)
+            log = review_audit_log(
+                queryset=base_queryset, pk=pk, reviewer=request.user,
+                new_status=new_status.strip(), reason=note.strip(),
+            )
         except SystemAuditLog.DoesNotExist:
             return Response({'detail': 'Audit log record not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-        new_status = request.data.get('review_status', SystemAuditLog.REVIEW_REVIEWED).strip()
-        if new_status not in [choice[0] for choice in SystemAuditLog.REVIEW_STATUS_CHOICES]:
-            return Response({'detail': 'Invalid review status.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        log.review_status = new_status
-        note = request.data.get('reason', '').strip()
-        if note:
-            existing = f"{log.reason}\n" if log.reason else ""
-            log.reason = f"{existing}[Reviewed by {request.user.username}]: {note}".strip()
-        log.save(update_fields=['review_status', 'reason'])
 
         serializer = SystemAuditLogSerializer(log)
         return Response({

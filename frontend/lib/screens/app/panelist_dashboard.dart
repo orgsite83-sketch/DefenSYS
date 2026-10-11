@@ -48,7 +48,9 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
   String? _selectedScheduleId;
   String? _selectedStageKey;
   String? _selectedSessionKey;
-  bool _showHistory = false;
+  bool _resultsShowHistory = false;
+  String? _historySessionKey;
+  String? _historyStageKey;
   final _workspaceTabs = ShadTabsController<bool>(value: false);
   bool _loading = true;
   bool _resultsLoading = false;
@@ -61,14 +63,18 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
   List<TeamData> _teams = [];
   List<Map<String, dynamic>> _results = [];
 
-  List<PanelistStage> get _stages {
+  List<PanelistStage> _stagesForTeams(List<TeamData> teams) {
     final stages = <String, PanelistStage>{};
-    for (final team in _sessionTeams) {
+    for (final team in teams) {
       final stage = PanelistStage.forTeam(team);
       stages[stage.key] = stage;
     }
     return stages.values.toList();
   }
+
+  List<PanelistStage> get _stages => _stagesForTeams(_sessionTeams);
+  List<PanelistStage> get _historyStages =>
+      _stagesForTeams(_historySessionTeams);
 
   List<PanelistSession> get _sessions {
     final grouped = <String, List<TeamData>>{};
@@ -81,16 +87,26 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
     ]..sort((a, b) => a.startsAt.compareTo(b.startsAt));
   }
 
-  List<PanelistSession> get _modeSessions {
+  List<PanelistSession> _sessionsForMode({required bool history}) {
     final sessions = _sessions;
     return sessions
-        .where((session) => session.isHistory(sessions) == _showHistory)
+        .where((session) => session.isHistory(sessions) == history)
         .toList();
   }
 
+  List<PanelistSession> get _activeSessions => _sessionsForMode(history: false);
+  List<PanelistSession> get _historySessions => _sessionsForMode(history: true);
+
   List<TeamData> get _sessionTeams =>
-      _modeSessions
+      _activeSessions
           .where((session) => session.key == _selectedSessionKey)
+          .firstOrNull
+          ?.teams ??
+      [];
+
+  List<TeamData> get _historySessionTeams =>
+      _historySessions
+          .where((session) => session.key == _historySessionKey)
           .firstOrNull
           ?.teams ??
       [];
@@ -99,13 +115,25 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
       .where((team) => PanelistStage.forTeam(team).key == _selectedStageKey)
       .toList();
 
+  String? get _resultsSessionKey =>
+      _resultsShowHistory ? _historySessionKey : _selectedSessionKey;
+  String? get _resultsStageKey =>
+      _resultsShowHistory ? _historyStageKey : _selectedStageKey;
+  List<TeamData> get _resultsTeams => _resultsShowHistory
+      ? _historySessionTeams
+            .where(
+              (team) => PanelistStage.forTeam(team).key == _historyStageKey,
+            )
+            .toList()
+      : _visibleTeams;
+
   List<Map<String, dynamic>> get _visibleResults => _results
       .where(
         (result) =>
-            _visibleTeams.any(
+            _resultsTeams.any(
               (team) => team.scheduleId == result['schedule_id']?.toString(),
             ) &&
-            PanelistStage.forResult(result).key == _selectedStageKey,
+            PanelistStage.forResult(result).key == _resultsStageKey,
       )
       .toList();
 
@@ -117,7 +145,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
   }
 
   void _ensureStageSelection() {
-    final sessions = _modeSessions;
+    final sessions = _activeSessions;
     if (!sessions.any((session) => session.key == _selectedSessionKey)) {
       final today = TeamData.manilaToday;
       final preferred =
@@ -148,6 +176,23 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
         ? PanelistStage.forTeam(preferred).key
         : _stages.firstOrNull?.key;
     _selectedScheduleId = null;
+  }
+
+  void _ensureHistorySelection() {
+    if (!_resultsShowHistory && _historySessionKey == null) return;
+    final sessions = _historySessions;
+    if (!sessions.any((session) => session.key == _historySessionKey)) {
+      _historySessionKey = sessions.lastOrNull?.key;
+      _historyStageKey = null;
+    }
+    final stages = _historyStages;
+    if (stages.any((stage) => stage.key == _historyStageKey)) return;
+    _historyStageKey =
+        stages
+            .where((stage) => stage.key == _selectedStageKey)
+            .firstOrNull
+            ?.key ??
+        stages.firstOrNull?.key;
   }
 
   String? get _stagePreferenceKey {
@@ -185,11 +230,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
     }
   }
 
-  Future<void> _changeWorkspace({
-    String? stageKey,
-    String? sessionKey,
-    bool? history,
-  }) async {
+  Future<void> _changeWorkspace({String? stageKey, String? sessionKey}) async {
     if (_navigating || _loading) return;
     _navigating = true;
     _workspaceChangeError = null;
@@ -210,7 +251,6 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
           _selectedSessionKey = sessionKey;
           _selectedStageKey = null;
         }
-        if (history != null) _showHistory = history;
         _selectedScheduleId = null;
         _ensureStageSelection();
       });
@@ -218,10 +258,37 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
     } finally {
       _navigating = false;
       if (mounted) {
-        _workspaceTabs.select(_showHistory);
+        _workspaceTabs.select(_resultsShowHistory);
         setState(() {});
       }
     }
+  }
+
+  void _changeResultsHistory({
+    bool? history,
+    String? sessionKey,
+    String? stageKey,
+  }) {
+    if (_navigating || _loading) return;
+    if (sessionKey != null &&
+        !_historySessions.any((session) => session.key == sessionKey)) {
+      return;
+    }
+    if (stageKey != null &&
+        !_historyStages.any((stage) => stage.key == stageKey)) {
+      return;
+    }
+    setState(() {
+      if (history != null) _resultsShowHistory = history;
+      if (sessionKey != null) {
+        _historySessionKey = sessionKey;
+        _historyStageKey = null;
+      }
+      if (stageKey != null) _historyStageKey = stageKey;
+      _ensureHistorySelection();
+      _workspaceChangeError = null;
+    });
+    _workspaceTabs.select(_resultsShowHistory);
   }
 
   bool get _isGuest =>
@@ -279,6 +346,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
             .toList();
         setState(() {
           _ensureStageSelection();
+          _ensureHistorySelection();
           _resultsLoading = false;
           _resultsError = null;
         });
@@ -473,6 +541,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
 
         setState(() {
           _ensureStageSelection();
+          _ensureHistorySelection();
           _selectedScheduleId =
               _visibleTeams.any((team) => team.scheduleId == selectedSchedule)
               ? selectedSchedule
@@ -482,7 +551,6 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
         });
         await _loadResults();
         if (mounted &&
-            !_showHistory &&
             previousTeams.isNotEmpty &&
             previousSession != _selectedSessionKey &&
             _sessions.any(
@@ -497,7 +565,12 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
               ),
               action: SnackBarAction(
                 label: 'History',
-                onPressed: () => _changeWorkspace(history: true),
+                onPressed: () async {
+                  await _selectDestination(2);
+                  if (mounted && _selectedIndex == 2) {
+                    _changeResultsHistory(history: true);
+                  }
+                },
               ),
             ),
           );
@@ -568,12 +641,14 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
 
   Future<String?> _pickSession(
     BuildContext context,
-    List<PanelistSession> sessions,
-  ) async {
+    List<PanelistSession> sessions, {
+    bool history = false,
+    String? selectedSessionKey,
+  }) async {
     var query = '';
     final ordered = [...sessions]
       ..sort(
-        (a, b) => _showHistory
+        (a, b) => history
             ? b.startsAt.compareTo(a.startsAt)
             : a.startsAt.compareTo(b.startsAt),
       );
@@ -616,9 +691,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
                       child: Text(
-                        _showHistory
-                            ? 'Choose a past session'
-                            : 'Choose a session',
+                        history ? 'Choose a past session' : 'Choose a session',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
@@ -650,7 +723,8 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
                               itemBuilder: (context, index) {
                                 final item = filtered[index];
                                 final selected =
-                                    item.key == _selectedSessionKey;
+                                    item.key ==
+                                    (selectedSessionKey ?? _selectedSessionKey);
                                 final newDay =
                                     index == 0 ||
                                     filtered[index - 1].day != item.day;
@@ -791,36 +865,48 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
     );
   }
 
-  Widget _buildWorkspaceControls({VoidCallback? onSelectionChanged}) {
-    final stages = _stages;
+  Widget _buildWorkspaceControls({
+    bool resultsView = false,
+    VoidCallback? onSelectionChanged,
+  }) {
+    final showHistory = resultsView && _resultsShowHistory;
+    final selectedStageKey = showHistory ? _historyStageKey : _selectedStageKey;
+    final selectedSessionKey = showHistory
+        ? _historySessionKey
+        : _selectedSessionKey;
+    final stages = showHistory ? _historyStages : _stages;
     final selected = stages
-        .where((stage) => stage.key == _selectedStageKey)
+        .where((stage) => stage.key == selectedStageKey)
         .firstOrNull;
     final sessions = _sessions;
     final activeCount = sessions
         .where((session) => !session.isHistory(sessions))
         .length;
     final historyCount = sessions.length - activeCount;
-    final availableSessions = _modeSessions;
+    final availableSessions = showHistory ? _historySessions : _activeSessions;
     final session = availableSessions
-        .where((session) => session.key == _selectedSessionKey)
+        .where((session) => session.key == selectedSessionKey)
         .firstOrNull;
     final showSessionSelect =
         availableSessions.isNotEmpty &&
-        (_showHistory || availableSessions.length > 1);
+        (showHistory || availableSessions.length > 1);
     final showStageSelect =
-        stages.isNotEmpty && (_showHistory || stages.length > 1);
+        stages.isNotEmpty && (showHistory || stages.length > 1);
     final multipleTerms = stages.map((stage) => stage.term).toSet().length > 1;
     Future<void> select({
       String? stageKey,
       String? sessionKey,
       bool? history,
     }) async {
-      await _changeWorkspace(
-        stageKey: stageKey,
-        sessionKey: sessionKey,
-        history: history,
-      );
+      if (history != null || showHistory) {
+        _changeResultsHistory(
+          history: history,
+          stageKey: stageKey,
+          sessionKey: sessionKey,
+        );
+      } else {
+        await _changeWorkspace(stageKey: stageKey, sessionKey: sessionKey);
+      }
       onSelectionChanged?.call();
     }
 
@@ -829,30 +915,32 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          PanelistSegmentedTabs<bool>(
-            key: const ValueKey('panel-workspace-tabs'),
-            controller: _workspaceTabs,
-            onChanged: (history) => select(history: history),
-            segments: [
-              PanelistSegment(
-                value: false,
-                key: const ValueKey('panel-active-view'),
-                label: MediaQuery.sizeOf(context).width < 480
-                    ? 'Active'
-                    : 'Active sessions',
-                icon: Icons.event_available_outlined,
-                count: '$activeCount',
-              ),
-              PanelistSegment(
-                value: true,
-                key: const ValueKey('panel-history-view'),
-                label: 'History',
-                icon: Icons.history_rounded,
-                count: '$historyCount',
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
+          if (resultsView) ...[
+            PanelistSegmentedTabs<bool>(
+              key: const ValueKey('panel-workspace-tabs'),
+              controller: _workspaceTabs,
+              onChanged: (history) => select(history: history),
+              segments: [
+                PanelistSegment(
+                  value: false,
+                  key: const ValueKey('panel-active-view'),
+                  label: MediaQuery.sizeOf(context).width < 480
+                      ? 'Active'
+                      : 'Active sessions',
+                  icon: Icons.event_available_outlined,
+                  count: '$activeCount',
+                ),
+                PanelistSegment(
+                  value: true,
+                  key: const ValueKey('panel-history-view'),
+                  label: 'History',
+                  icon: Icons.history_rounded,
+                  count: '$historyCount',
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
           if (_workspaceChangeError != null) ...[
             ShadAlert.destructive(description: Text(_workspaceChangeError!)),
             const SizedBox(height: 12),
@@ -874,8 +962,13 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
                 key: const ValueKey('panel-session-selector'),
                 borderRadius: BorderRadius.circular(10),
                 onTap: () async {
-                  final choice = await _pickSession(context, availableSessions);
-                  if (choice != null && choice != _selectedSessionKey) {
+                  final choice = await _pickSession(
+                    context,
+                    availableSessions,
+                    history: showHistory,
+                    selectedSessionKey: selectedSessionKey,
+                  );
+                  if (choice != null && choice != selectedSessionKey) {
                     await select(sessionKey: choice);
                   }
                 },
@@ -939,10 +1032,10 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
               children: [
                 for (final stage in stages)
                   Semantics(
-                    selected: stage.key == _selectedStageKey,
+                    selected: stage.key == selectedStageKey,
                     button: true,
                     child: Material(
-                      color: stage.key == _selectedStageKey
+                      color: stage.key == selectedStageKey
                           ? DefensysTokens.maroonOf(
                               context,
                             ).withValues(alpha: .07)
@@ -960,7 +1053,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(9),
                             border: Border.all(
-                              color: stage.key == _selectedStageKey
+                              color: stage.key == selectedStageKey
                                   ? DefensysTokens.maroonOf(context)
                                   : DefensysTokens.borderOf(context),
                             ),
@@ -971,10 +1064,10 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
                                 : stage.label,
                             style: TextStyle(
                               fontSize: 12,
-                              fontWeight: stage.key == _selectedStageKey
+                              fontWeight: stage.key == selectedStageKey
                                   ? FontWeight.w700
                                   : FontWeight.w500,
-                              color: stage.key == _selectedStageKey
+                              color: stage.key == selectedStageKey
                                   ? DefensysTokens.maroonTextOf(context)
                                   : DefensysTokens.textPrimaryOf(context),
                             ),
@@ -987,7 +1080,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
             ),
             const SizedBox(height: 12),
           ],
-          if (!_showHistory &&
+          if (!showHistory &&
               session != null &&
               selected != null &&
               (!showSessionSelect || !showStageSelect))
@@ -1018,13 +1111,179 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
     );
   }
 
+  Widget _buildAssignmentSessionCard() {
+    final activeSessions = _activeSessions;
+    final session = activeSessions
+        .where((item) => item.key == _selectedSessionKey)
+        .firstOrNull;
+    final stage = _stages
+        .where((item) => item.key == _selectedStageKey)
+        .firstOrNull;
+    if (session == null || stage == null) return const SizedBox.shrink();
+
+    final teams = _visibleTeams;
+    final finished = teams.where((team) => team.panelWorkFinished).length;
+    final total = teams.length;
+    final stages = _stages;
+    final multipleTerms = stages.map((item) => item.term).toSet().length > 1;
+    final room = session.teams.first.displayRoom;
+    final roomLabel = RegExp(r'^\d').hasMatch(room) ? 'Room $room' : room;
+
+    return Container(
+      key: const ValueKey('panel-active-session-card'),
+      padding: const EdgeInsets.fromLTRB(15, 12, 15, 13),
+      decoration: BoxDecoration(
+        color: DefensysTokens.surfaceOf(context),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.event_available_outlined,
+                size: 15,
+                color: DefensysTokens.maroonTextOf(context),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'CURRENT SESSION',
+                  style: TextStyle(
+                    color: DefensysTokens.maroonTextOf(context),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ),
+              if (activeSessions.length > 1)
+                TextButton.icon(
+                  key: const ValueKey('panel-session-selector'),
+                  onPressed: () async {
+                    final choice = await _pickSession(context, activeSessions);
+                    if (choice != null && choice != _selectedSessionKey) {
+                      await _changeWorkspace(sessionKey: choice);
+                    }
+                  },
+                  icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+                  label: const Text('Change'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: DefensysTokens.maroonTextOf(context),
+                    minimumSize: const Size(0, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    textStyle: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            stage.label,
+            style: TextStyle(
+              color: DefensysTokens.textPrimaryOf(context),
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.25,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            '${DateFormat('EEE, MMM d · h:mm a').format(session.startsAt)} · $roomLabel',
+            style: TextStyle(
+              color: DefensysTokens.textSecondaryOf(context),
+              fontSize: 12,
+            ),
+          ),
+          if (stages.length > 1) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              key: const ValueKey('panel-stage-selector'),
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final option in stages)
+                  ChoiceChip(
+                    key: ValueKey('panel-stage-option-${option.key}'),
+                    label: Text(
+                      multipleTerms
+                          ? '${option.label} · ${option.term}'
+                          : option.label,
+                    ),
+                    selected: option.key == _selectedStageKey,
+                    showCheckmark: false,
+                    visualDensity: VisualDensity.compact,
+                    labelStyle: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: option.key == _selectedStageKey
+                          ? DefensysTokens.maroonTextOf(context)
+                          : DefensysTokens.textSecondaryOf(context),
+                    ),
+                    selectedColor: DefensysTokens.maroonOf(
+                      context,
+                    ).withValues(alpha: 0.08),
+                    backgroundColor: DefensysTokens.surfaceOf(context),
+                    side: BorderSide(
+                      color: option.key == _selectedStageKey
+                          ? DefensysTokens.maroonOf(context)
+                          : DefensysTokens.borderOf(context),
+                    ),
+                    onSelected: (_) => _changeWorkspace(stageKey: option.key),
+                  ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '$total ${total == 1 ? 'team' : 'teams'}',
+                  style: TextStyle(
+                    color: DefensysTokens.textPrimaryOf(context),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                '$finished of $total complete',
+                style: TextStyle(
+                  color: DefensysTokens.textSecondaryOf(context),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: total == 0 ? 0 : finished / total,
+              minHeight: 4,
+              backgroundColor: DefensysTokens.surfaceHigherOf(context),
+              color: DefensysTokens.maroonOf(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showWorkspaceSheet(BuildContext context) => showShadSheet<void>(
     context: context,
     builder: (sheetContext) => DefensysShadcnScope(
       child: StatefulBuilder(
         builder: (context, refreshControls) => ShadSheet(
           key: const ValueKey('panel-workspace-sheet'),
-          title: const Text('Sessions & history'),
+          title: const Text('Active session'),
           isScrollControlled: true,
           scrollable: true,
           expandCrossSide: true,
@@ -1056,41 +1315,23 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(24, 48, 24, 24),
       children: [
-        Icon(
-          _showHistory ? Icons.history : Icons.assignment_outlined,
+        const Icon(
+          Icons.assignment_outlined,
           size: 40,
           color: DefensysTokens.textSecondary,
         ),
         const SizedBox(height: 16),
-        Text(
-          _showHistory
-              ? 'No earlier grading sessions'
-              : 'No active assignments for this session',
+        const Text(
+          'No active assignments',
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
-        Text(
-          _showHistory
-              ? 'A finished day moves to History when another session is assigned.'
-              : 'Choose another session or view earlier evaluations in History.',
+        const Text(
+          'New defense assignments will appear here when scheduled.',
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 13,
-            color: DefensysTokens.textSecondary,
-          ),
+          style: TextStyle(fontSize: 13, color: DefensysTokens.textSecondary),
         ),
-        if (!_showHistory &&
-            _sessions.any((session) => session.isHistory(_sessions))) ...[
-          const SizedBox(height: 16),
-          Center(
-            child: ShadButton.outline(
-              onPressed: () => _changeWorkspace(history: true),
-              leading: const Icon(LucideIcons.history, size: 16),
-              child: const Text('View history'),
-            ),
-          ),
-        ],
       ],
     ),
   );
@@ -1104,7 +1345,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
     return DefensysShadcnScope(
       child: Column(
         children: [
-          if (_selectedIndex != 1) _buildWorkspaceControls(),
+          if (_selectedIndex == 2) _buildWorkspaceControls(resultsView: true),
           Expanded(
             child: IndexedStack(
               index: _selectedIndex.clamp(0, 2),
@@ -1113,11 +1354,12 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
                     ? _buildEmptyWorkspace()
                     : AssignmentsTab(
                         key: ValueKey(
-                          'assignments-$_selectedSessionKey-$_selectedStageKey-$_showHistory',
+                          'assignments-$_selectedSessionKey-$_selectedStageKey',
                         ),
                         teams: teams,
                         compactHeader: true,
-                        history: _showHistory,
+                        sessionHeader: _buildAssignmentSessionCard(),
+                        showGroupHeaders: false,
                         onOpenGradeSheet: _openGradeSheet,
                         onRefresh: _loadData,
                       ),
@@ -1131,26 +1373,24 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
                   onGradesSubmitted: () => _loadData(showLoading: false),
                   onEvaluationChanged: () => setState(() {}),
                   onRefresh: _loadData,
-                  emptyMessage: _showHistory
-                      ? 'No evaluations in this earlier session'
-                      : 'No active assignments for this session',
+                  emptyMessage: 'No active assignments for this session',
                   stageScoped: true,
                 ),
                 OverallResultsTab(
                   key: ValueKey(
-                    'results-$_selectedSessionKey-$_selectedStageKey-$_showHistory',
+                    'results-$_resultsSessionKey-$_resultsStageKey-$_resultsShowHistory',
                   ),
                   results: _visibleResults,
                   showStageFilters: false,
                   initiallyExpanded: false,
-                  emptyMessage: _showHistory
+                  emptyMessage: _resultsShowHistory
                       ? 'No submitted results for this earlier session.'
                       : 'No submitted results for this session and stage.',
                   loading: _resultsLoading,
                   error: _resultsError,
                   onRetry: _loadResults,
                   onRefresh: _loadData,
-                  onOpenGradeSheet: teams.isEmpty
+                  onOpenGradeSheet: _resultsShowHistory || teams.isEmpty
                       ? null
                       : () => _selectDestination(1),
                 ),
@@ -1186,7 +1426,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
                   child: Builder(
                     builder: (context) => IconButton(
                       key: const ValueKey('open-panel-workspace'),
-                      tooltip: 'Sessions & history',
+                      tooltip: 'Active session',
                       icon: const Icon(Icons.tune_rounded),
                       onPressed: () => _showWorkspaceSheet(context),
                     ),

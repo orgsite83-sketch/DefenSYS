@@ -4,17 +4,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
+import '../auth_provider.dart';
 
 final systemAuditProvider =
     NotifierProvider<SystemAuditNotifier, SystemAuditState>(
-  SystemAuditNotifier.new,
-);
+      SystemAuditNotifier.new,
+    );
 
 class SystemAuditState {
   final bool isLoading;
   final List<Map<String, dynamic>> logs;
   final Map<String, dynamic> counts;
   final Map<String, dynamic> options;
+  final List<Map<String, dynamic>> pitProgress;
+  final Map<String, dynamic> capstoneProgress;
   final String category;
   final String reviewStatus;
   final String action;
@@ -35,6 +38,8 @@ class SystemAuditState {
     this.logs = const [],
     this.counts = const {},
     this.options = const {},
+    this.pitProgress = const [],
+    this.capstoneProgress = const {},
     this.category = '',
     this.reviewStatus = '',
     this.action = '',
@@ -56,6 +61,8 @@ class SystemAuditState {
     List<Map<String, dynamic>>? logs,
     Map<String, dynamic>? counts,
     Map<String, dynamic>? options,
+    List<Map<String, dynamic>>? pitProgress,
+    Map<String, dynamic>? capstoneProgress,
     String? category,
     String? reviewStatus,
     String? action,
@@ -78,6 +85,8 @@ class SystemAuditState {
       logs: logs ?? this.logs,
       counts: counts ?? this.counts,
       options: options ?? this.options,
+      pitProgress: pitProgress ?? this.pitProgress,
+      capstoneProgress: capstoneProgress ?? this.capstoneProgress,
       category: category ?? this.category,
       reviewStatus: reviewStatus ?? this.reviewStatus,
       action: action ?? this.action,
@@ -97,12 +106,39 @@ class SystemAuditState {
 }
 
 class SystemAuditNotifier extends Notifier<SystemAuditState> {
+  int _requestId = 0;
+
   @override
-  SystemAuditState build() => const SystemAuditState();
+  SystemAuditState build() {
+    final identity = ref.watch(
+      authProvider.select(
+        (auth) => (
+          auth.user?['id'],
+          auth.user?['role'],
+          auth.user?['is_superuser'],
+          auth.user?['is_pit_lead'],
+          auth.user?['pit_lead_year'],
+        ),
+      ),
+    );
+    _requestId++;
+    final isAdmin = identity.$2 == 'admin' || identity.$3 == true;
+    return SystemAuditState(
+      track: isAdmin ? 'capstone' : (identity.$4 == true ? 'pit' : ''),
+      yearLevel: !isAdmin && identity.$4 == true
+          ? identity.$5?.toString() ?? ''
+          : '',
+    );
+  }
 
   Future<void> fetch({int? page}) async {
+    final requestId = ++_requestId;
     final targetPage = page ?? state.currentPage;
-    state = state.copyWith(isLoading: true, currentPage: targetPage, clearError: true);
+    state = state.copyWith(
+      isLoading: true,
+      currentPage: targetPage,
+      clearError: true,
+    );
     final params = <String, String>{
       'page': targetPage.toString(),
       'page_size': state.pageSize.toString(),
@@ -115,20 +151,37 @@ class SystemAuditNotifier extends Notifier<SystemAuditState> {
       if (state.track.isNotEmpty) 'track': state.track,
       if (state.yearLevel.isNotEmpty) 'year_level': state.yearLevel,
     };
-    final uri = Uri.parse('${ApiConfig.baseUrl}/audit-logs/').replace(
-      queryParameters: params.isEmpty ? null : params,
-    );
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/audit-logs/',
+    ).replace(queryParameters: params.isEmpty ? null : params);
     try {
       final response = await ref.read(authenticatedHttpClientProvider).get(uri);
       final body = jsonDecode(response.body) as Map<String, dynamic>;
+      if (requestId != _requestId) return;
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw Exception(body['detail']?.toString() ?? 'Unable to load audit logs.');
+        throw Exception(
+          body['detail']?.toString() ?? 'Unable to load audit logs.',
+        );
       }
+      final logs = List<Map<String, dynamic>>.from(
+        body['audit_logs'] ?? const [],
+      );
+      final selected = logs
+          .where((log) => log['id'] == state.selectedLog?['id'])
+          .firstOrNull;
       state = state.copyWith(
         isLoading: false,
-        logs: List<Map<String, dynamic>>.from(body['audit_logs'] ?? const []),
+        logs: logs,
+        selectedLog: selected,
+        clearSelectedLog: selected == null,
         counts: Map<String, dynamic>.from(body['counts'] ?? const {}),
         options: Map<String, dynamic>.from(body['options'] ?? const {}),
+        pitProgress: List<Map<String, dynamic>>.from(
+          body['pit_progress'] ?? const [],
+        ),
+        capstoneProgress: body['capstone_progress'] is Map
+            ? Map<String, dynamic>.from(body['capstone_progress'])
+            : const {},
         currentPage: (body['current_page'] as num?)?.toInt() ?? targetPage,
         totalPages: (body['total_pages'] as num?)?.toInt() ?? 1,
         totalCount: (body['count'] as num?)?.toInt() ?? 0,
@@ -136,6 +189,7 @@ class SystemAuditNotifier extends Notifier<SystemAuditState> {
         clearError: true,
       );
     } catch (e) {
+      if (requestId != _requestId) return;
       state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
@@ -179,13 +233,28 @@ class SystemAuditNotifier extends Notifier<SystemAuditState> {
   }
 
   void setTrack(String value) {
-    state = state.copyWith(track: value, currentPage: 1);
+    setScope(value);
+  }
+
+  void setScope(String track, {String yearLevel = ''}) {
+    final user = ref.read(authProvider).user;
+    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    if (!isAdmin && user?['is_pit_lead'] == true) {
+      track = 'pit';
+      yearLevel = user?['pit_lead_year']?.toString() ?? '';
+    }
+    state = state.copyWith(
+      track: track,
+      yearLevel: yearLevel,
+      currentPage: 1,
+      reviewStatus: '',
+      clearSelectedLog: true,
+    );
     fetch(page: 1);
   }
 
   void setYearLevel(String value) {
-    state = state.copyWith(yearLevel: value, currentPage: 1);
-    fetch(page: 1);
+    setScope(state.track, yearLevel: value);
   }
 
   void setSearch(String value) {
@@ -204,17 +273,24 @@ class SystemAuditNotifier extends Notifier<SystemAuditState> {
     state = state.copyWith(selectedLog: log);
   }
 
-  Future<bool> updateReviewStatus(int logId, String reviewStatus, {String? reason}) async {
+  Future<bool> updateReviewStatus(
+    int logId,
+    String reviewStatus, {
+    String? reason,
+  }) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}/audit-logs/$logId/review/');
     try {
-      final response = await ref.read(authenticatedHttpClientProvider).patch(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'review_status': reviewStatus,
-          if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
-        }),
-      );
+      final response = await ref
+          .read(authenticatedHttpClientProvider)
+          .patch(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'review_status': reviewStatus,
+              if (reason != null && reason.trim().isNotEmpty)
+                'reason': reason.trim(),
+            }),
+          );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
         final updatedLog = Map<String, dynamic>.from(body['audit_log'] ?? {});
@@ -224,13 +300,17 @@ class SystemAuditNotifier extends Notifier<SystemAuditState> {
         }).toList();
         state = state.copyWith(
           logs: newLogs,
-          selectedLog: state.selectedLog?['id'] == logId ? updatedLog : state.selectedLog,
+          selectedLog: state.selectedLog?['id'] == logId
+              ? updatedLog
+              : state.selectedLog,
         );
-        fetch();
+        await fetch();
         return true;
       } else {
         final body = jsonDecode(response.body);
-        throw Exception(body['detail']?.toString() ?? 'Failed to update review status.');
+        throw Exception(
+          body['detail']?.toString() ?? 'Failed to update review status.',
+        );
       }
     } catch (e) {
       state = state.copyWith(error: e.toString());

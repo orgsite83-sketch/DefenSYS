@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:defensys/services/project_archive_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/theme/defensys_button_styles.dart';
@@ -175,18 +176,7 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
           ),
           const SizedBox(width: 12),
         ],
-        OutlinedButton.icon(
-          icon: Icon(
-            state.isExporting
-                ? Icons.hourglass_top_rounded
-                : Icons.file_download_rounded,
-          ),
-          label: Text(
-            state.isExporting ? 'Exporting...' : 'Export Archive Records',
-          ),
-          onPressed: (state.isSaving || state.isExporting) ? null : onExportCsv,
-          style: DefensysButtonStyles.secondary(context),
-        ),
+        ReportExportMenu(reportId: 'project-records', enabled: !state.isSaving),
       ],
     );
   }

@@ -27,15 +27,25 @@ class AuditFilterToolbar extends StatelessWidget {
     final isDark = DefensysTokens.isDark(context);
 
     final categories = (state.options['categories'] as List<dynamic>? ?? [])
-        .map((c) => c is Map ? Map<String, dynamic>.from(c) : <String, dynamic>{})
+        .map(
+          (c) => c is Map ? Map<String, dynamic>.from(c) : <String, dynamic>{},
+        )
         .toList();
 
     final actions = (state.options['actions'] as List<dynamic>? ?? [])
         .map((a) => a.toString())
         .toList();
 
-    final hasDateFilter = state.startDate.isNotEmpty || state.endDate.isNotEmpty;
-    final hasScopeFilter = state.track.isNotEmpty || state.yearLevel.isNotEmpty;
+    final hasDateFilter =
+        state.startDate.isNotEmpty || state.endDate.isNotEmpty;
+    final hasScopeFilter =
+        state.track != 'capstone' || state.yearLevel.isNotEmpty;
+    final scopeLabel = switch (state.track) {
+      'capstone' => 'Capstone',
+      'pit' => state.yearLevel.isEmpty ? 'All PIT' : 'PIT · ${state.yearLevel}',
+      'system' => 'System',
+      _ => 'All activity',
+    };
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -54,7 +64,9 @@ class AuditFilterToolbar extends StatelessWidget {
               Icon(
                 Icons.search_rounded,
                 size: 18,
-                color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                color: isDark
+                    ? const Color(0xFF94A3B8)
+                    : DefensysTokens.steelGrey,
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -65,14 +77,20 @@ class AuditFilterToolbar extends StatelessWidget {
                     color: DefensysTokens.textPrimaryOf(context),
                   ),
                   decoration: InputDecoration(
-                    hintText: 'Search audit logs (e.g. rubric, user, action, project...)',
+                    hintText:
+                        'Search audit logs (e.g. rubric, user, action, project...)',
                     hintStyle: TextStyle(
                       fontSize: 13,
-                      color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                      color: isDark
+                          ? const Color(0xFF64748B)
+                          : const Color(0xFF94A3B8),
                     ),
                     isDense: true,
                     contentPadding: EdgeInsets.zero,
+                    filled: false,
                     border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
                   ),
                   onSubmitted: onSearchSubmitted,
                 ),
@@ -82,7 +100,10 @@ class AuditFilterToolbar extends StatelessWidget {
                   icon: const Icon(Icons.close_rounded, size: 16),
                   splashRadius: 16,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                  constraints: const BoxConstraints(
+                    minWidth: 20,
+                    minHeight: 20,
+                  ),
                   onPressed: () {
                     searchController.clear();
                     onSearchSubmitted('');
@@ -102,7 +123,10 @@ class AuditFilterToolbar extends StatelessWidget {
               context,
               value: state.category.isEmpty ? '' : state.category,
               items: [
-                const DropdownMenuItem(value: '', child: Text('All Process Areas')),
+                const DropdownMenuItem(
+                  value: '',
+                  child: Text('All Process Areas'),
+                ),
                 ...categories.map((c) {
                   final val = c['value']?.toString() ?? '';
                   final lbl = c['label']?.toString() ?? val;
@@ -118,10 +142,9 @@ class AuditFilterToolbar extends StatelessWidget {
               value: state.action.isEmpty ? '' : state.action,
               items: [
                 const DropdownMenuItem(value: '', child: Text('All Actions')),
-                ...actions.map((act) => DropdownMenuItem(
-                      value: act,
-                      child: Text(act),
-                    )),
+                ...actions.map(
+                  (act) => DropdownMenuItem(value: act, child: Text(act)),
+                ),
               ],
               onChanged: (val) => onActionChanged(val ?? ''),
             ),
@@ -130,7 +153,9 @@ class AuditFilterToolbar extends StatelessWidget {
             _buildButton(
               context,
               icon: Icons.calendar_today_outlined,
-              label: hasDateFilter ? '${state.startDate} – ${state.endDate}' : 'Date Range',
+              label: hasDateFilter
+                  ? '${state.startDate} – ${state.endDate}'
+                  : 'Date Range',
               isActive: hasDateFilter,
               onTap: onSelectDateRange,
             ),
@@ -141,7 +166,7 @@ class AuditFilterToolbar extends StatelessWidget {
               icon: Icons.tune_rounded,
               label: 'More Filters',
               isActive: hasScopeFilter,
-              badgeText: hasScopeFilter ? 'Active' : null,
+              badgeText: scopeLabel,
               onTap: onOpenMoreFilters,
             ),
           ],
@@ -149,21 +174,23 @@ class AuditFilterToolbar extends StatelessWidget {
 
         if (isWide) {
           return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(child: searchInput),
               const SizedBox(width: 12),
-              filterControls,
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: constraints.maxWidth - 332,
+                ),
+                child: filterControls,
+              ),
             ],
           );
         }
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            searchInput,
-            const SizedBox(height: 10),
-            filterControls,
-          ],
+          children: [searchInput, const SizedBox(height: 10), filterControls],
         );
       },
     );
@@ -224,12 +251,12 @@ class AuditFilterToolbar extends StatelessWidget {
         height: 40,
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
-          color: isActive
-              ? (isDark ? const Color(0x26800000) : const Color(0xFFFDF2F2))
-              : DefensysTokens.surfaceOf(context),
+          color: DefensysTokens.surfaceOf(context),
           borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
           border: Border.all(
-            color: isActive ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
+            color: isActive
+                ? (isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8))
+                : DefensysTokens.borderOf(context),
           ),
         ),
         child: Row(
@@ -238,9 +265,9 @@ class AuditFilterToolbar extends StatelessWidget {
             Icon(
               icon,
               size: 15,
-              color: isActive
-                  ? DefensysTokens.maroonOf(context)
-                  : (isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey),
+              color: isDark
+                  ? const Color(0xFF94A3B8)
+                  : DefensysTokens.steelGrey,
             ),
             const SizedBox(width: 7),
             Text(
@@ -248,25 +275,30 @@ class AuditFilterToolbar extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                color: isActive
-                    ? DefensysTokens.maroonOf(context)
-                    : DefensysTokens.textPrimaryOf(context),
+                color: DefensysTokens.textPrimaryOf(context),
               ),
             ),
             if (badgeText != null) ...[
               const SizedBox(width: 6),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 5,
+                  vertical: 1.5,
+                ),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroonOf(context),
-                  borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                  color: isDark
+                      ? const Color(0xFF334155)
+                      : const Color(0xFFE2E8F0),
+                  borderRadius: BorderRadius.circular(
+                    DefensysTokens.radiusPill,
+                  ),
                 ),
                 child: Text(
                   badgeText,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                    color: DefensysTokens.textPrimaryOf(context),
                   ),
                 ),
               ),

@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -112,6 +113,8 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Align(alignment: Alignment.centerRight, child: ReportExportMenu(reportId: 'student-enrollment', params: {'year_level': _yearLevelFilter, 'section': _sectionFilter})),
+        const SizedBox(height: 12),
         // Stat Cards
         Row(
           children: [

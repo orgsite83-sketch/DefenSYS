@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
@@ -210,6 +211,8 @@ class _FacultyStaffViewState extends ConsumerState<FacultyStaffView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Align(alignment: Alignment.centerRight, child: ReportExportMenu(reportId: 'faculty-directory', params: {'search': _searchController.text.trim(), 'role': _selectedRole})),
+        const SizedBox(height: 12),
         // Stat Cards
         Row(
           children: [

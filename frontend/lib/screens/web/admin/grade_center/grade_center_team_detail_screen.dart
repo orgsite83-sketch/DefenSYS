@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -334,6 +335,8 @@ class _GradeCenterTeamDetailScreenState
                   ],
                 ),
               ),
+              ReportExportMenu(reportId: _activeViewIndex == 1 && _selectedStudentId != null ? 'individual-grade' : 'team-grade', params: {'coverage': 'specific', 'grade_id': widget.gradeId.toString(), 'team_id': grade['team_id'].toString(), 'scope': grade['scope'].toString(), 'semester_id': grade['semester_id'].toString(), if (_selectedStudentId != null) 'student_id': _selectedStudentId.toString()}),
+              const SizedBox(width: 8),
               IconButton(
                 tooltip: 'Refresh grades',
                 onPressed: state.isRefreshingGrade ? null : _reloadGrade,

@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -206,6 +207,7 @@ class _CurriculumAnalyticsScreenState
                               onPressed: () => _fetch(q),
                               child: const Text('Refresh'),
                             ),
+                            const ReportExportMenu(reportId: 'curriculum-summary'),
                             ShadButton(
                               size: ShadButtonSize.sm,
                               enabled: !state.isLoading && data.isNotEmpty,

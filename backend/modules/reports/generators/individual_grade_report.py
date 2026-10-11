@@ -1,9 +1,11 @@
 from decimal import Decimal
 from reportlab.lib.units import inch
 from reports.pdf_builder import DefensysPdfReportBuilder
+from reports.grade_summary import assessment_scope_label, student_assessment_scores
+from xml.sax.saxutils import escape
 
 
-def generate_individual_grade_pdf(student, student_grade, team_grade, generated_by_user, signatories=None, include_signatures=False):
+def generate_individual_grade_pdf(student, student_grade, team_grade, generated_by_user, signatories=None, include_signatures=False, builder=None, coverage_label=None):
     """
     Generate an official USTP DIT confidential PDF report detailing an individual student's grades,
     peer evaluation score contribution, panel assessment, and official audit summary.
@@ -13,14 +15,15 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
     student_name = student.get_full_name() or student.username
     adviser_name = f"{team.adviser.first_name} {team.adviser.last_name}".strip() if team.adviser else "Unassigned"
 
-    builder = DefensysPdfReportBuilder(
-        title=f"Individual Student Grade Audit Report — {student_name}",
-        subtitle=f"Certified Academic Performance & Defense Breakdown · {team_grade.stage_label or 'Defense Stage'}",
-        generated_by=generated_by_user,
-    )
+    owns_builder = builder is None
+    scope_label = assessment_scope_label(team_grade)
+    title = f"{scope_label} Individual Grade Audit Report - {escape(student_name)}"
+    subtitle = f"Academic Performance Breakdown - {escape(team_grade.stage_label)}"
+    if owns_builder:
+        builder = DefensysPdfReportBuilder(title=title, subtitle=subtitle, generated_by=generated_by_user)
 
     # 1. Official Header Banner & Document Title
-    builder.add_header()
+    builder.add_header(title=title, subtitle=subtitle)
 
     # 2. Metadata Grid
     stage_text = f"{team_grade.stage_label or 'Defense Stage'}"
@@ -30,9 +33,11 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
     metadata_rows = [
         ("Student Candidate", f"{student_name} (ID: {student.username})"),
         ("Student Team & Section", f"{team.name or 'Team'} · {team.section or team.year_level or 'BSIT'}"),
-        ("Title of Approved Project", team.project_title or team.name or "N/A"),
+        ("Project Title", escape(team_grade.project_title_snapshot or team.project_title or team.name or "N/A")),
+        ("Academic Scope", scope_label),
+        ("Report Coverage", escape(coverage_label or team_grade.stage_label)),
         ("Academic Term / Semester", f"{semester.school_year.label if semester else ''} — {semester.label if semester else ''}"),
-        ("Capstone Defense Stage", stage_text),
+        ("Defense Stage" if team_grade.is_capstone else "PIT Event", escape(stage_text)),
         ("Project Adviser", adviser_name),
     ]
 
@@ -52,20 +57,9 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
         return f"{val:.2f}%" if val is not None else "Pending"
 
     # Effective student scores
-    student_panel = student_grade.panel_score if student_grade and student_grade.panel_score is not None else team_grade.panel_score
-    student_adviser = student_grade.adviser_score if student_grade and student_grade.adviser_score is not None else team_grade.adviser_score
-    student_peer = student_grade.peer_score if student_grade and student_grade.peer_score is not None else team_grade.peer_score
-
-    if student_grade and student_grade.final_grade is not None:
-        student_final = student_grade.final_grade
-    else:
-        if student_panel is not None and student_peer is not None:
-            tot = student_panel * Decimal(team_grade.panel_weight) + student_peer * Decimal(team_grade.peer_weight)
-            if team_grade.is_capstone and team_grade.adviser_weight > 0 and student_adviser is not None:
-                tot += student_adviser * Decimal(team_grade.adviser_weight)
-            student_final = (tot / Decimal('100')).quantize(Decimal('0.01'))
-        else:
-            student_final = team_grade.final_grade
+    values = student_assessment_scores(team_grade, student_grade)
+    student_panel, student_adviser, student_peer = values['panel'], values['adviser'], values['peer']
+    student_final = values['final']
 
     headers = [
         "Assessment Component",
@@ -121,9 +115,7 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
     ])
 
     # Final Result
-    status_str = "PASSED" if (student_final is not None and student_final >= Decimal('75.00')) else "FAILED / RE-DEFENSE"
-    if student_final is None:
-        status_str = "PENDING"
+    status_str = values['status']
 
     rows.append([
         "TOTAL OFFICIAL GRADE",
@@ -136,7 +128,7 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
     builder.add_table(
         headers=headers,
         rows=rows,
-        col_widths=[2.0 * inch, 0.8 * inch, 1.0 * inch, 1.0 * inch, 2.2 * inch],
+        col_widths=[builder.usable_width * ratio for ratio in (.28, .09, .15, .15, .33)],
         alignments=['left', 'center', 'center', 'center', 'left'],
         bold_cols=[0, 4],
     )
@@ -158,7 +150,7 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
         builder.add_table(
             headers=rem_headers,
             rows=rem_rows,
-            col_widths=[2.2 * inch, 4.8 * inch],
+            col_widths=[builder.usable_width * .30, builder.usable_width * .70],
             bold_cols=[0],
         )
 
@@ -174,4 +166,18 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
         include_signatures=include_signatures,
     )
 
+    return builder.build() if owns_builder else None
+
+
+def generate_individual_grades_pdf(student, grade_records, generated_by_user, signatories=None, include_signatures=False, coverage_label=None):
+    builder = DefensysPdfReportBuilder(generated_by=generated_by_user)
+    for index, grade in enumerate(grade_records):
+        if index:
+            builder.add_page_break()
+        student_grade = next((item for item in grade.student_grades.all() if item.student_id == student.pk), None)
+        generate_individual_grade_pdf(
+            student, student_grade, grade, generated_by_user,
+            signatories=signatories, include_signatures=include_signatures, builder=builder,
+            coverage_label=coverage_label or ('All recorded stages / events' if len(grade_records) > 1 else grade.stage_label),
+        )
     return builder.build()

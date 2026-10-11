@@ -5,7 +5,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.settings import api_settings
 
-from .models import SystemAuditLog, User
+from .models import SystemAuditLog, SystemAuditReview, User
 from .tokens import DefensysRefreshToken, REMEMBER_ME_CLAIM
 
 
@@ -111,13 +111,34 @@ class UserSerializer(serializers.ModelSerializer):
         return assignment.section if assignment else None
 
 
+class SystemAuditReviewSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SystemAuditReview
+        fields = [
+            'id', 'reviewer', 'reviewer_name', 'reviewer_role', 'reviewer_year',
+            'from_status', 'to_status', 'reason', 'created_at',
+        ]
+
+
+class SystemAuditLogListSerializer(serializers.ListSerializer):
+    def to_representation(self, data):
+        from .audit_references import AuditReferenceResolver
+
+        logs = list(data.all() if hasattr(data, 'all') else data)
+        self.context['audit_reference_resolver'] = AuditReferenceResolver(logs)
+        return super().to_representation(logs)
+
+
 class SystemAuditLogSerializer(serializers.ModelSerializer):
+    review_history = SystemAuditReviewSerializer(source='reviews', many=True, read_only=True)
     actor_name = serializers.SerializerMethodField()
     category_label = serializers.CharField(source='get_category_display', read_only=True)
     review_status_label = serializers.CharField(source='get_review_status_display', read_only=True)
+    evidence = serializers.SerializerMethodField()
 
     class Meta:
         model = SystemAuditLog
+        list_serializer_class = SystemAuditLogListSerializer
         fields = [
             'id',
             'actor',
@@ -132,10 +153,31 @@ class SystemAuditLogSerializer(serializers.ModelSerializer):
             'reason',
             'review_status',
             'review_status_label',
+            'evidence',
+            'reviewed_by',
+            'reviewed_at',
+            'reviewed_by_name',
+            'reviewed_by_role',
+            'reviewed_by_year',
+            'review_history',
             'ip_address',
             'user_agent',
             'created_at',
         ]
+
+    def to_representation(self, instance):
+        from .audit_references import AuditReferenceResolver
+
+        result = super().to_representation(instance)
+        resolver = self.context.get('audit_reference_resolver') or AuditReferenceResolver([instance])
+        result['target_label'] = resolver.target_label(instance)
+        result['display_old_values'] = resolver.display_values(instance, 'old_values')
+        result['display_new_values'] = resolver.display_values(instance, 'new_values')
+        return result
+
+    def get_evidence(self, obj):
+        from .audit import audit_evidence
+        return audit_evidence(obj)
 
     def get_actor_name(self, obj):
         if obj.actor is None:

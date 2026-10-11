@@ -2,15 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 
 class AuditHeaderAndExport extends StatelessWidget {
-  final VoidCallback onExportCurrentView;
-  final VoidCallback onExportCsv;
+  final VoidCallback onExportExcel;
   final VoidCallback onExportPdf;
   final VoidCallback onOpenReportCenter;
 
   const AuditHeaderAndExport({
     super.key,
-    required this.onExportCurrentView,
-    required this.onExportCsv,
+    required this.onExportExcel,
     required this.onExportPdf,
     required this.onOpenReportCenter,
   });
@@ -68,11 +66,8 @@ class AuditHeaderAndExport extends StatelessWidget {
               elevation: 4,
               onSelected: (val) {
                 switch (val) {
-                  case 'current':
-                    onExportCurrentView();
-                    break;
-                  case 'csv':
-                    onExportCsv();
+                  case 'xlsx':
+                    onExportExcel();
                     break;
                   case 'pdf':
                     onExportPdf();
@@ -85,15 +80,9 @@ class AuditHeaderAndExport extends StatelessWidget {
               itemBuilder: (context) => [
                 _buildMenuItem(
                   context,
-                  value: 'current',
-                  icon: Icons.file_download_outlined,
-                  label: 'Export current view',
-                ),
-                _buildMenuItem(
-                  context,
-                  value: 'csv',
-                  icon: Icons.table_chart_outlined,
-                  label: 'Export CSV',
+                  value: 'xlsx',
+                  icon: Icons.table_view_outlined,
+                  label: 'Export Excel',
                 ),
                 _buildMenuItem(
                   context,
@@ -173,12 +162,16 @@ class AuditHeaderAndExport extends StatelessWidget {
             color: DefensysTokens.textPrimaryOf(context),
           ),
           const SizedBox(width: 10),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: DefensysTokens.textPrimaryOf(context),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: DefensysTokens.textPrimaryOf(context),
+              ),
             ),
           ),
         ],

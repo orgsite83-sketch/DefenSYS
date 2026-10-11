@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -75,7 +76,7 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
               icon: Icons.show_chart_rounded,
               title: 'Welcome back, Admin!',
               subtitle: 'Here is what is happening in the IT Department today.',
-              actions: OutlinedButton.icon(
+              actions: Wrap(spacing: 12, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [const ReportExportMenu(reportId: 'overview'), OutlinedButton.icon(
                 onPressed: dashState.isRefreshing
                     ? null
                     : () {
@@ -103,7 +104,7 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
                   ),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 ),
-              ),
+              )]),
             ),
             const SizedBox(height: 20),
             if (initialLoad)

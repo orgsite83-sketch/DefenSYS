@@ -118,7 +118,7 @@ class DefensysExportConfig {
   /// Default downloaded filename without extension
   final String defaultFilename;
 
-  /// Supported formats (e.g. ['pdf', 'xlsx', 'csv', 'doc'] or ['pdf', 'doc'])
+  /// Supported report formats.
   final List<String> supportedFormats;
 
   /// Default format selected initially
@@ -164,7 +164,7 @@ class DefensysExportConfig {
     this.tag = 'OFFICIAL RECORD',
     this.icon = Icons.file_download_outlined,
     required this.defaultFilename,
-    this.supportedFormats = const ['pdf', 'xlsx', 'csv', 'doc'],
+    this.supportedFormats = const ['pdf', 'xlsx'],
     this.initialFormat = 'pdf',
     this.initialSignatories = const [],
     this.allowSignatoryCustomization = true,

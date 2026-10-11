@@ -1462,6 +1462,7 @@ class GradeContextService:
             action='grade.finalize_for_archive',
             target=grade,
             actor=user,
+            strict=True,
             old_values=old_values,
             new_values=grade_audit_values(
                 grade,
@@ -2504,6 +2505,7 @@ class StageCompletionService:
                 category=SystemAuditLog.CATEGORY_GRADE_CENTER,
                 action='grading.official_completion',
                 target=config,
+                strict=True,
                 target_type=config.__class__.__name__,
                 target_id=config.pk,
                 actor=user,
@@ -2570,6 +2572,7 @@ class StageCompletionService:
             return settings_payload
 
 
+@transaction.atomic
 def update_group_settings(
     *,
     semester,
@@ -2652,6 +2655,7 @@ def update_group_settings(
             category=SystemAuditLog.CATEGORY_GRADE_CENTER,
             action='grading.settings_update',
             target=config,
+            strict=True,
             target_type=config.__class__.__name__,
             target_id=config.pk,
             actor=user,

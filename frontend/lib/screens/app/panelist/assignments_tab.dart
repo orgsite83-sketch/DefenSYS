@@ -3,7 +3,6 @@ import 'package:intl/intl.dart';
 
 import '../../../theme/defensys_tokens.dart';
 import 'panelist_models.dart';
-import 'widgets/panelist_segmented_tabs.dart';
 
 class AssignmentsTab extends StatefulWidget {
   final List<TeamData> teams;
@@ -11,6 +10,8 @@ class AssignmentsTab extends StatefulWidget {
   final Future<void> Function()? onRefresh;
   final bool compactHeader;
   final bool history;
+  final Widget? sessionHeader;
+  final bool showGroupHeaders;
 
   const AssignmentsTab({
     super.key,
@@ -19,6 +20,8 @@ class AssignmentsTab extends StatefulWidget {
     this.onRefresh,
     this.compactHeader = false,
     this.history = false,
+    this.sessionHeader,
+    this.showGroupHeaders = true,
   });
 
   @override
@@ -101,6 +104,10 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       children: [
+        if (widget.sessionHeader != null) ...[
+          widget.sessionHeader!,
+          const SizedBox(height: 16),
+        ],
         if (!widget.compactHeader) ...[
           _buildHeader(),
           const SizedBox(height: 12),
@@ -117,6 +124,10 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
         const SizedBox(height: 16),
         if (filteredEntries.isEmpty)
           _buildEmptyFilteredView()
+        else if (!widget.showGroupHeaders)
+          ...filteredEntries.map(
+            (entry) => _buildTimelineCard(entry.key, entry.value),
+          )
         else
           ...groupedEntries.entries.map((group) {
             return _buildGroupSection(group.key, group.value);
@@ -286,7 +297,6 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
   }
 
   Widget _buildWorkloadTriageBar() {
-    final total = widget.teams.length;
     final submitted = widget.teams.where((t) => t.isPosted).length;
     final pending = widget.teams
         .where((t) => t.gradingAvailable && !t.isPosted)
@@ -305,7 +315,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
           children: [
             Expanded(
               child: Text(
-                'Session assignments',
+                'Assigned teams',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -313,49 +323,21 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                 ),
               ),
             ),
-            Text(
-              '$total ${total == 1 ? 'team' : 'teams'}',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: DefensysTokens.textSecondaryOf(context),
-              ),
-            ),
           ],
         ),
-        const SizedBox(height: 10),
-        LayoutBuilder(
-          builder: (context, constraints) => PanelistSegmentedTabs<String>(
-            key: const ValueKey('assignment-status-tabs'),
-            value: _statusFilter,
-            stacked: constraints.maxWidth < 560,
-            secondary: true,
-            onChanged: (value) => setState(() => _statusFilter = value),
-            segments: [
-              PanelistSegment(
-                value: 'all',
-                label: 'All Teams',
-                icon: Icons.view_list_outlined,
-                count: '$total',
-              ),
-              PanelistSegment(
-                value: 'upcoming',
-                label: 'Upcoming',
-                icon: Icons.event_outlined,
-                count: '$upcoming',
-              ),
-              PanelistSegment(
-                value: 'pending',
-                label: 'Needs Grading',
-                icon: Icons.rate_review_outlined,
-                count: '$pending',
-              ),
-              PanelistSegment(
-                value: 'submitted',
-                label: 'Submitted',
-                icon: Icons.check_circle_outline_rounded,
-                count: '$submitted',
-              ),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            key: const ValueKey('assignment-status-filters'),
+            children: [
+              _statusChip('All Teams', 'all', widget.teams.length),
+              const SizedBox(width: 6),
+              _statusChip('Needs Grading', 'pending', pending),
+              const SizedBox(width: 6),
+              _statusChip('Upcoming', 'upcoming', upcoming),
+              const SizedBox(width: 6),
+              _statusChip('Submitted', 'submitted', submitted),
             ],
           ),
         ),
@@ -383,6 +365,49 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
           ),
         ],
       ],
+    );
+  }
+
+  Widget _statusChip(String label, String value, int count) {
+    final selected = _statusFilter == value;
+    return ChoiceChip(
+      selected: selected,
+      showCheckmark: false,
+      onSelected: (_) => setState(() => _statusFilter = value),
+      backgroundColor: DefensysTokens.surfaceOf(context),
+      selectedColor: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
+      side: BorderSide(
+        color: selected
+            ? DefensysTokens.maroonOf(context)
+            : DefensysTokens.borderOf(context),
+      ),
+      visualDensity: VisualDensity.compact,
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+              color: selected
+                  ? DefensysTokens.maroonTextOf(context)
+                  : DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            '$count',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: selected
+                  ? DefensysTokens.maroonTextOf(context)
+                  : DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

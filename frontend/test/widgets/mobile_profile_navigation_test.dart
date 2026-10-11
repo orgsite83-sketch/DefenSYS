@@ -145,7 +145,12 @@ void main() {
           );
           await tester.tap(destination('Profile'));
           await tester.pumpAndSettle();
-          expect(find.byType(AppSettingsContent), findsOneWidget);
+          expect(find.byType(AppSettingsContent, skipOffstage: false), findsOneWidget);
+          expect(find.text('Account'), findsOneWidget);
+          expect(find.text('Settings'), findsOneWidget);
+          expect(find.text('Security'), findsOneWidget);
+          expect(find.text('Guides & information'), findsOneWidget);
+          expect(find.text('Account activity'), findsOneWidget);
           expect(find.byTooltip('Settings'), findsNothing);
           expect(find.text('Appearance Theme'), findsNothing);
           await capturePreview(
@@ -166,6 +171,37 @@ void main() {
       );
     }
   }
+
+  testWidgets('Student library stays above the grouped profile sections', (
+    tester,
+  ) async {
+    await show(tester, role: 'student', width: 320);
+    await tester.tap(destination('Profile'));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.getTopLeft(find.text('Change Photo')).dy,
+      lessThan(tester.getTopLeft(find.text('My library')).dy),
+    );
+    expect(
+      tester.getTopLeft(find.text('My library')).dy,
+      lessThan(tester.getTopLeft(find.text('Account')).dy),
+    );
+    expect(find.text('Recent'), findsOneWidget);
+    expect(find.text('Saved'), findsOneWidget);
+    expect(find.text('Activity'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Account'));
+    await tester.tap(find.text('Account'));
+    await tester.pumpAndSettle();
+    expect(find.text('Identity & Account Details'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Guides & information'));
+    await tester.tap(find.text('Guides & information'));
+    await tester.pumpAndSettle();
+    expect(find.text('About DefenSYS'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'Faculty profile remains available during assignment load and failure',
@@ -200,6 +236,8 @@ void main() {
   testWidgets('Profile form survives switching faculty tabs', (tester) async {
     await show(tester);
     await tester.tap(destination('Profile'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Security'));
     await tester.pumpAndSettle();
     final field = find.widgetWithText(TextFormField, 'Current Password');
     await tester.ensureVisible(field);

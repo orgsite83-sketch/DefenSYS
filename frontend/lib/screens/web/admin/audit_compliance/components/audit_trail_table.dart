@@ -35,7 +35,8 @@ class AuditTrailTable extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = DefensysTokens.isDark(context);
     final logs = state.logs;
-    final selectedLog = state.selectedLog ?? (logs.isNotEmpty ? logs.first : null);
+    final selectedLog =
+        state.selectedLog ?? (logs.isNotEmpty ? logs.first : null);
     final selectedId = selectedLog?['id'];
 
     return Container(
@@ -63,8 +64,12 @@ class AuditTrailTable extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                    color: DefensysTokens.maroonOf(
+                      context,
+                    ).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(
+                      DefensysTokens.radiusSm,
+                    ),
                   ),
                   child: Icon(
                     Icons.receipt_long_outlined,
@@ -84,17 +89,26 @@ class AuditTrailTable extends StatelessWidget {
                 ),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 3.5,
+                  ),
                   decoration: BoxDecoration(
-                    color: isDark ? const Color(0xFF2A2932) : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                    color: isDark
+                        ? const Color(0xFF2A2932)
+                        : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(
+                      DefensysTokens.radiusPill,
+                    ),
                   ),
                   child: Text(
                     '${state.totalCount} entries',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : DefensysTokens.steelGrey,
                     ),
                   ),
                 ),
@@ -107,9 +121,7 @@ class AuditTrailTable extends StatelessWidget {
           if (state.isLoading && logs.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 80),
-              child: Center(
-                child: CircularProgressIndicator(strokeWidth: 2.5),
-              ),
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2.5)),
             )
           else if (logs.isEmpty)
             Padding(
@@ -120,7 +132,9 @@ class AuditTrailTable extends StatelessWidget {
                   Icon(
                     Icons.history_toggle_off_rounded,
                     size: 40,
-                    color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8),
+                    color: isDark
+                        ? const Color(0xFF64748B)
+                        : const Color(0xFF94A3B8),
                   ),
                   const SizedBox(height: 12),
                   Text(
@@ -136,7 +150,9 @@ class AuditTrailTable extends StatelessWidget {
                     'Try adjusting your search query, process area, or date filter.',
                     style: TextStyle(
                       fontSize: 13,
-                      color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : DefensysTokens.steelGrey,
                     ),
                   ),
                 ],
@@ -165,7 +181,9 @@ class AuditTrailTable extends StatelessWidget {
                       dataRowMinHeight: 48,
                       dataRowMaxHeight: 52,
                       headingRowColor: WidgetStateProperty.all(
-                        isDark ? const Color(0xFF1E1D24) : const Color(0xFFF8FAFC),
+                        isDark
+                            ? const Color(0xFF1E1D24)
+                            : const Color(0xFFF8FAFC),
                       ),
                       columns: [
                         _buildColumnHeader(context, 'DATE / TIME'),
@@ -217,6 +235,7 @@ class AuditTrailTable extends StatelessWidget {
   }) {
     final isDark = DefensysTokens.isDark(context);
     final rawAction = log['action']?.toString() ?? '';
+    final actionLabel = AuditFormatUtils.formatAction(rawAction, log);
     final processArea = AuditFormatUtils.formatProcessArea(log);
     final actor = log['actor_name']?.toString() ?? 'System';
     final status = log['review_status']?.toString() ?? 'needs_review';
@@ -224,12 +243,15 @@ class AuditTrailTable extends StatelessWidget {
     final isDelete = AuditFormatUtils.isDeleteAction(rawAction);
 
     final selectedBg = isDark
-        ? const Color(0x22800000)
-        : const Color(0xFFFDF2F2); // Subtle maroon tint
-    final hoverBg = isDark ? const Color(0xFF222129) : const Color(0xFFF8FAFC);
+        ? const Color(0xFF2B2A30)
+        : const Color(0xFFF4F4F5);
+    final hoverBg = isDark ? const Color(0xFF28272D) : const Color(0xFFFAFAFA);
+    final selectionMarker = isDark
+        ? const Color(0xFFD4D4D8)
+        : const Color(0xFF475569);
 
     return DataRow(
-      selected: false,
+      selected: isSelected,
       onSelectChanged: (_) => onSelectLog(log),
       color: WidgetStateProperty.resolveWith<Color?>((states) {
         if (isSelected) return selectedBg;
@@ -237,16 +259,16 @@ class AuditTrailTable extends StatelessWidget {
         return Colors.transparent;
       }),
       cells: [
-        // 1. DATE / TIME: Red indicator bar (if selected) + clock icon + timestamp
+        // 1. DATE / TIME: Quiet selection marker and neutral text.
         DataCell(
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 3,
+                width: 2,
                 height: 24,
                 decoration: BoxDecoration(
-                  color: isSelected ? DefensysTokens.maroonOf(context) : Colors.transparent,
+                  color: isSelected ? selectionMarker : Colors.transparent,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -254,19 +276,17 @@ class AuditTrailTable extends StatelessWidget {
               Icon(
                 Icons.schedule,
                 size: 14,
-                color: isSelected
-                    ? DefensysTokens.maroonOf(context)
-                    : (isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey),
+                color: isDark
+                    ? const Color(0xFF94A3B8)
+                    : DefensysTokens.steelGrey,
               ),
               const SizedBox(width: 6),
               Text(
                 timestamp,
                 style: TextStyle(
                   fontSize: 12.5,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  color: isSelected
-                      ? DefensysTokens.maroonOf(context)
-                      : DefensysTokens.textPrimaryOf(context),
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                  color: DefensysTokens.textPrimaryOf(context),
                 ),
               ),
             ],
@@ -281,7 +301,9 @@ class AuditTrailTable extends StatelessWidget {
               Icon(
                 Icons.star_outline_rounded,
                 size: 15,
-                color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                color: isDark
+                    ? const Color(0xFF94A3B8)
+                    : DefensysTokens.steelGrey,
               ),
               const SizedBox(width: 6),
               ConstrainedBox(
@@ -301,29 +323,24 @@ class AuditTrailTable extends StatelessWidget {
           ),
         ),
 
-        // 3. CONTROL ACTIVITY: Technical code pill (e.g. rubric.create)
+        // 3. CONTROL ACTIVITY: Readable label; raw code remains in the details.
         DataCell(
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF2A2932) : const Color(0xFFF1F5F9),
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-              border: Border.all(
-                color: isDark ? const Color(0xFF383742) : const Color(0xFFE2E8F0),
+          Tooltip(
+            message: rawAction,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 220),
+              child: Text(
+                actionLabel,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: isDelete
+                      ? const Color(0xFFDC2626)
+                      : DefensysTokens.textPrimaryOf(context),
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-            ),
-            child: Text(
-              rawAction,
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
-                fontFamily: 'monospace',
-                color: isDelete
-                    ? const Color(0xFFDC2626)
-                    : (isDark ? const Color(0xFFCBD5E1) : const Color(0xFF334155)),
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ),
         ),
@@ -337,7 +354,9 @@ class AuditTrailTable extends StatelessWidget {
                 width: 22,
                 height: 22,
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
+                  color: DefensysTokens.maroonOf(
+                    context,
+                  ).withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
                 alignment: Alignment.center,
@@ -370,13 +389,24 @@ class AuditTrailTable extends StatelessWidget {
 
         // 5. REVIEW STATUS: Pill badge (Needs Review, Reviewed, or Deleted)
         DataCell(
-          _buildStatusBadge(context, status, isDelete: isDelete),
+          Tooltip(
+            message: (log['reviewed_by_name']?.toString() ?? '').isEmpty
+                ? (status == 'reviewed'
+                      ? 'Reviewer not recorded'
+                      : 'Pending review')
+                : 'Reviewed by ${log['reviewed_by_name']} · ${AuditFormatUtils.reviewRole(log['reviewed_by_role']?.toString(), log['reviewed_by_year']?.toString())}\n${AuditFormatUtils.formatTimestamp(log['reviewed_at']?.toString())}',
+            child: _buildStatusBadge(context, status),
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildStatusBadge(BuildContext context, String status, {bool isDelete = false}) {
+  Widget _buildStatusBadge(
+    BuildContext context,
+    String status, {
+    bool isDelete = false,
+  }) {
     final isDark = DefensysTokens.isDark(context);
 
     if (isDelete) {
@@ -476,7 +506,9 @@ class AuditTrailTable extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: DefensysTokens.borderOf(context))),
+        border: Border(
+          top: BorderSide(color: DefensysTokens.borderOf(context)),
+        ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -490,7 +522,9 @@ class AuditTrailTable extends StatelessWidget {
                   'Rows: ',
                   style: TextStyle(
                     fontSize: 12,
-                    color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                    color: isDark
+                        ? const Color(0xFF94A3B8)
+                        : DefensysTokens.steelGrey,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -521,7 +555,9 @@ class AuditTrailTable extends StatelessWidget {
                     'Showing $start–$end of $total',
                     style: TextStyle(
                       fontSize: 12,
-                      color: isDark ? const Color(0xFF94A3B8) : DefensysTokens.steelGrey,
+                      color: isDark
+                          ? const Color(0xFF94A3B8)
+                          : DefensysTokens.steelGrey,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -556,7 +592,9 @@ class AuditTrailTable extends StatelessWidget {
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                 splashRadius: 16,
-                onPressed: page < totalPages ? () => onPageChanged(page + 1) : null,
+                onPressed: page < totalPages
+                    ? () => onPageChanged(page + 1)
+                    : null,
               ),
             ],
           ),
