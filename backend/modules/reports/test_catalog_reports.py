@@ -16,7 +16,7 @@ from defense.scheduler.models import DefenseSchedule, PitEventGradingConfig
 from user_management.academic_records.models import StudentAcademicRecord
 from user_management.models import ExternalEvaluator, GuestPanelistCode
 from repository.archive.models import ArchiveEntry
-from reports.catalog_reports import BUILDERS
+from reports.catalog_reports import BUILDERS, render_pdf, column, dataset
 
 
 class CatalogReportTests(APITestCase):
@@ -75,28 +75,196 @@ class CatalogReportTests(APITestCase):
                     if format_value == 'json':
                         self.assertTrue(response.data.get('pdf_base64'), f'{kind}: PDF preview failed')
                         self.assertIn('rows', response.data)
+                        self.assertNotIn('excel_preview_error', response.data)
+                        self.assertTrue(response.data['excel_workbook_preview']['sheets'])
                     elif format_value == 'pdf':
                         self.assertTrue(response.content.startswith(b'%PDF'))
+                        self.assert_official_template(response.content)
+                        output = Path(__file__).resolve().parents[3] / '.tmp'
+                        output.mkdir(exist_ok=True)
+                        (output / f'{kind}-official-template-qa.pdf').write_bytes(response.content)
                     else:
                         workbook = openpyxl.load_workbook(io.BytesIO(response.content))
-                        self.assertTrue(workbook.active.freeze_panes)
-                        self.assertTrue(workbook.active.auto_filter.ref)
+                        for sheet in workbook:
+                            if kind in ('defense-stage-setup', 'pit-event-setup'):
+                                header_row = int(sheet.auto_filter.ref.split(':')[0][1:])
+                                self.assertEqual(sheet.cell(header_row, 1).value, 'Deliverable Code')
+                                self.assertEqual(sheet.freeze_panes, f'A{header_row + 1}')
+                            else:
+                                self.assertEqual(sheet.freeze_panes, 'A4')
+                                self.assertTrue(sheet.auto_filter.ref.startswith('A3:'))
+                            self.assertTrue(sheet.sheet_view.showGridLines)
+                            self.assertTrue(sheet['A1'].value)
+                            self.assertTrue(sheet['A2'].value)
+
+    def assert_official_template(self, content):
+        import pdfplumber
+        with pdfplumber.open(io.BytesIO(content)) as document:
+            self.assertTrue(document.pages)
+            for page in document.pages:
+                self.assertEqual((page.width, page.height), (612, 792))
+                # The full-width institutional letterhead and left policy panel
+                # must be present on every page, just as in the grade reports.
+                self.assertTrue(any(abs(image['x0']) < 1 and abs(image['width'] - 612) < 1 for image in page.images))
+                self.assertTrue(any(abs(image['x0'] - 24) < 1 and abs(image['width'] - 93.6) < 1 for image in page.images))
+                self.assertIn('Page ', page.extract_text() or '')
+
+    def test_wide_pdf_register_keeps_every_field_readable_across_pages(self):
+        columns = [column(f'field_{index}', f'Column {index}', 24, type='datetime' if index == 11 else 'text')
+                   for index in range(12)]
+        rows = [{f'field_{index}': ('2040-10-15T01:30:00+00:00' if index == 11 else f'Record {record} / Value {index}')
+                 for index in range(12)} for record in range(1, 13)]
+        spec = dataset('Wide Register', columns, rows)
+        content = render_pdf(spec, [{'label': 'Records', 'value': 12}], 'Export Administrator', False, [])
+        output = Path(__file__).resolve().parents[3] / '.tmp'
+        output.mkdir(exist_ok=True)
+        (output / 'wide-register-official-template-qa.pdf').write_bytes(content)
+        self.assert_official_template(content)
+        import pdfplumber
+        with pdfplumber.open(io.BytesIO(content)) as document:
+            text = '\n'.join(page.extract_text() or '' for page in document.pages)
+            for index in range(12):
+                self.assertIn(f'Column {index}', text)
+            self.assertIn('Record 12 / Value 10', text)
+            self.assertIn('09:30 AM', text)
+            self.assertNotIn('+00:00', text)
+            self.assertGreater(len(document.pages), 1)
+            for page in document.pages:
+                self.assertTrue(all(0 <= char['x0'] < char['x1'] <= 612 for char in page.chars))
+        empty = render_pdf(dataset('Empty Register', columns, []), [{'label': 'Records', 'value': 0}], 'Export Administrator', False, [])
+        self.assert_official_template(empty)
 
     def test_rubric_export_preserves_complete_criteria_and_effective_weights(self):
         response = self.report(f'/api/reports/rubrics/{self.rubric.pk}/', {'export_format': 'xlsx'})
         self.assertEqual(response.status_code, 200)
         workbook = openpyxl.load_workbook(io.BytesIO(response.content))
-        self.assertIn('Criteria', workbook.sheetnames)
+        self.assertEqual(workbook.sheetnames, ['Rubric Details'])
         main_text = str(list(workbook.active.values))
         self.assertIn('Panel: 60%', main_text)
-        values = list(workbook['Criteria'].values)
-        description = ''.join(str(row[2]) for row in values if row[0] == self.rubric.name)
+        sheet = workbook.active
+        description_start = next(cell.row for row in sheet for cell in row if cell.value == '1. System Design - Description')
+        description = ''.join(str(sheet.cell(row, 1).value or '') for row in range(description_start + 1, sheet.max_row + 1))
         self.assertEqual(description, self.description)
+        criterion_row = next(row for row in sheet if row[1].value == 'System Design')
+        self.assertEqual(criterion_row[4].value, 100)
+        self.assertEqual(criterion_row[4].number_format, '0.00')
+        preview = self.report(f'/api/reports/rubrics/{self.rubric.pk}/').data
+        self.assertNotIn('excel_preview_error', preview)
+        self.assertEqual(preview['excel_workbook_preview']['sheets'][0]['name'], 'Rubric Details')
         pdf = self.report(f'/api/reports/rubrics/{self.rubric.pk}/', {'export_format': 'pdf'})
         self.assertTrue(pdf.content.startswith(b'%PDF'))
         output = Path(__file__).resolve().parents[3] / '.tmp'
         output.mkdir(exist_ok=True)
         (output / 'rubric-export-qa.pdf').write_bytes(pdf.content)
+        import base64
+        import pdfplumber
+        with pdfplumber.open(io.BytesIO(base64.b64decode(preview['excel_workbook_preview']['sheets'][0]['pdf_base64']))) as document:
+            self.assertTrue(all(char['top'] >= 20 for page in document.pages for char in page.chars))
+            self.assertTrue(all(self.rubric.name in (page.extract_text() or '') for page in document.pages))
+            self.assertIn('COMPLETE DESCRIPTION END', '\n'.join(page.extract_text() or '' for page in document.pages))
+        (output / 'rubric-workbook-qa.xlsx').write_bytes(response.content)
+        (output / 'rubric-workbook-preview-qa.pdf').write_bytes(base64.b64decode(preview['excel_workbook_preview']['sheets'][0]['pdf_base64']))
+
+    def test_rubric_publication_is_separate_from_actual_grading_assignment_and_exports_are_read_only(self):
+        draft = Rubric.objects.create(name='Draft Proposal Guide', scope='capstone', semester=self.sem,
+            defense_stage=self.stage, evaluation_type='adviser', status='draft', created_by=self.admin)
+        published = Rubric.objects.create(name='Published Unassigned Guide', scope='capstone', semester=self.sem,
+            defense_stage=self.stage, evaluation_type='peer', status='published', created_by=self.admin)
+        unused_stage = DefenseStage.objects.create(label='Unconfigured Export Stage', display_order=99)
+        Rubric.objects.create(name='Unconfigured Stage Guide', scope='capstone', semester=self.sem,
+            defense_stage=unused_stage, evaluation_type='panel', status='draft', created_by=self.admin)
+        count = StageGradingConfig.objects.count()
+        with patch('defense.stages.grading_config.get_or_create_stage_grading_config', side_effect=AssertionError('Exports must not create grading configuration')):
+            preview = self.report('/api/reports/rubrics/', {'scope': 'capstone'}).data
+            rows = {row['name']: row for row in preview['rows']}
+            self.assertEqual(rows[draft.name]['status'], 'Draft')
+            self.assertEqual(rows[draft.name]['assignment_status'], 'Not assigned')
+            self.assertEqual(rows[published.name]['status'], 'Published')
+            self.assertEqual(rows[published.name]['assignment_status'], 'Not assigned')
+            self.assertEqual(rows[published.name]['stage'], self.stage.label)
+            self.assertEqual(rows[published.name]['weights'], 'No grading assignment')
+            self.assertEqual(rows[self.rubric.name]['assignment_status'], 'Assigned')
+            self.assertIn('Panel: 60%', rows[self.rubric.name]['weights'])
+            for fmt in ('pdf', 'xlsx'):
+                response = self.report('/api/reports/rubrics/', {'scope': 'capstone', 'export_format': fmt})
+                self.assertEqual(response.status_code, 200)
+                output = Path(__file__).resolve().parents[3] / '.tmp'
+                output.mkdir(exist_ok=True)
+                (output / f'rubric-status-catalog-qa.{fmt}').write_bytes(response.content)
+        self.assertEqual(StageGradingConfig.objects.count(), count)
+        workbook = openpyxl.load_workbook(io.BytesIO(response.content))
+        main = workbook['Report Data']
+        headers = [cell.value for cell in main[3]]
+        self.assertIn('Publication Status', headers)
+        self.assertIn('Grading Assignment', headers)
+        self.assertEqual(workbook.sheetnames, ['Report Data', 'Assignments', 'Criteria'])
+        assigned_row = next(row for row in main if row[1].value == self.rubric.name)
+        self.assertTrue(assigned_row[headers.index('Grading Assignment')].hyperlink.location.startswith("'Assignments'!"))
+        self.assertTrue(assigned_row[1].hyperlink.location.startswith("'Criteria'!"))
+        StageGradingConfig.objects.filter(defense_stage=self.stage, semester=self.sem).update(adviser_rubric=draft)
+        row = next(row for row in self.report('/api/reports/rubrics/').data['rows'] if row['name'] == draft.name)
+        self.assertEqual((row['status'], row['assignment_status']), ('Draft', 'Assigned'))
+
+    def test_rubric_export_lists_all_actual_stage_and_event_assignments(self):
+        StageGradingConfig.objects.create(defense_stage=self.stage, semester=self.old_sem,
+            panel_rubric=self.rubric, panel_weight=50, adviser_weight=30, peer_weight=20)
+        PitEventGradingConfig.objects.create(semester=self.sem, event_name='IT Hackathon',
+            panel_rubric=self.pit_rubric, panel_weight=60, peer_weight=40)
+        preview = self.report('/api/reports/rubrics/', {'term_context': 'all'}).data
+        rows = {row['name']: row for row in preview['rows']}
+        self.assertIn(self.old_sem.display_name, rows[self.rubric.name]['assigned_to'])
+        self.assertIn('IT Olympics', rows[self.pit_rubric.name]['assigned_to'])
+        self.assertIn('IT Hackathon', rows[self.pit_rubric.name]['assigned_to'])
+        self.assertEqual(len([row for row in preview['sections'][0]['rows'] if row['rubric'] == self.rubric.name]), 2)
+        pdf = self.report('/api/reports/rubrics/', {'export_format': 'pdf'})
+        import pdfplumber
+        with pdfplumber.open(io.BytesIO(pdf.content)) as document:
+            text = '\n'.join(page.extract_text() or '' for page in document.pages)
+            self.assertIn('Rubric Inventory', text)
+            self.assertIn('Publication Status', text)
+            self.assertIn('Actual Grading Assignments', text)
+            self.assertIn('IT Hackathon', text)
+            # The inventory page precedes the groups and must not inherit
+            # the last rubric's continuation footer during canvas replay.
+            self.assertFalse(any('Rubric ' in line and ' - ' in line
+                                 for line in (document.pages[0].extract_text() or '').splitlines()))
+            self.assertTrue(all('Proposal Quality Guide' in (page.extract_text() or '') for page in document.pages
+                                if 'Design evidence' in (page.extract_text() or '')))
+
+    def test_stage_setup_groups_each_stage_with_its_rubrics_and_requirements(self):
+        second = DefenseStage.objects.create(label='Export Final Defense', display_order=98)
+        StageDeliverable.objects.create(defense_stage=second, deliverable_id='F1', label='Final Manuscript', required=True)
+        params = {'semester_id': self.sem.pk, 'search': 'Export'}
+        pdf = self.report('/api/reports/defense-stage-setup/', {**params, 'export_format': 'pdf'})
+        import pdfplumber
+        with pdfplumber.open(io.BytesIO(pdf.content)) as document:
+            proposal = next(page.extract_text() or '' for page in document.pages if 'Proposal Paper' in (page.extract_text() or ''))
+            final = next(page.extract_text() or '' for page in document.pages if 'Final Manuscript' in (page.extract_text() or ''))
+            self.assertIn(self.stage.label, proposal)
+            self.assertIn(self.rubric.name, proposal)
+            self.assertNotIn('Final Manuscript', proposal)
+            self.assertIn(second.label, final)
+            self.assertNotIn('Proposal Paper', final)
+            self.assertNotIn('Record numbers link', proposal)
+        xlsx = self.report('/api/reports/defense-stage-setup/', {**params, 'export_format': 'xlsx'})
+        output = Path(__file__).resolve().parents[3] / '.tmp'
+        output.mkdir(exist_ok=True)
+        (output / 'grouped-stage-config-qa.pdf').write_bytes(pdf.content)
+        (output / 'grouped-stage-config-qa.xlsx').write_bytes(xlsx.content)
+        import base64
+        preview = self.report('/api/reports/defense-stage-setup/', params).data
+        for index, sheet in enumerate(preview['excel_workbook_preview']['sheets'], 1):
+            (output / f'grouped-stage-workbook-preview-{index}-qa.pdf').write_bytes(base64.b64decode(sheet['pdf_base64']))
+        workbook = openpyxl.load_workbook(io.BytesIO(xlsx.content))
+        self.assertEqual(workbook.sheetnames, [self.stage.label, second.label])
+        self.assertIn('Proposal Paper', str(list(workbook[self.stage.label].values)))
+        self.assertNotIn('Final Manuscript', str(list(workbook[self.stage.label].values)))
+        self.assertIn('Final Manuscript', str(list(workbook[second.label].values)))
+
+    def test_stage_dropdown_options_supply_names_scopes_and_periods(self):
+        response = self.report('/api/reports/catalog-options/', {'report': 'defense-stage-setup'})
+        self.assertIn({'value': self.stage.label, 'label': self.stage.label, 'scope': 'capstone'}, response.data['stage_choices'])
+        self.assertIn({'value': 'IT Olympics', 'label': 'IT Olympics', 'scope': 'pit', 'semester_id': self.sem.pk}, response.data['stage_choices'])
 
     def test_project_register_filters_all_rows_and_uses_excel_dates(self):
         params = {'search': 'Student Performance', 'type': 'capstone', 'year_level': '4th Year', 'academic_year': self.year.label, 'export_format': 'xlsx', 'page_size': 1}

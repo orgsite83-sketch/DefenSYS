@@ -112,6 +112,112 @@ class ReportsApiTests(APITestCase):
             status=TeamGrade.STATUS_PUBLISHED,
         )
 
+    def test_formatted_grade_workbooks_remove_repeated_context_and_duplicate_totals(self):
+        import base64
+        import io
+        from pathlib import Path
+        import openpyxl
+        import pdfplumber
+        self.client.force_authenticate(user=self.admin)
+        output = Path(__file__).resolve().parents[3] / '.tmp'
+        output.mkdir(exist_ok=True)
+        self.student.first_name, self.student.last_name = 'Adrian', 'Valdez'
+        self.student.save(update_fields=['first_name', 'last_name'])
+        for index, (first, last) in enumerate((('Stephanie', 'Yap'), ('Jerome', 'De Leon'), ('Camille', 'Roxas')), 1):
+            member = User.objects.create_user(username=f'workbook-preview-student-{index}', role='student', first_name=first, last_name=last)
+            TeamMembership.objects.create(team=self.team_other, student=member)
+        for kind, record_id in (('team-grade', self.team_other.pk), ('individual-grade', self.student.pk)):
+            url = f'/api/reports/{kind}/{record_id}/'
+            params = {'scope': 'capstone', 'semester_id': self.semester.pk}
+            preview = self.client.get(url, {**params, 'export_format': 'json'})
+            export = self.client.get(url, {**params, 'export_format': 'xlsx'})
+            self.assertEqual(export.status_code, 200)
+            self.assertEqual(preview.status_code, 200)
+            self.assertNotIn('excel_preview_error', preview.data)
+            workbook = openpyxl.load_workbook(io.BytesIO(export.content))
+            self.assertEqual([sheet['name'] for sheet in preview.data['excel_workbook_preview']['sheets']], workbook.sheetnames)
+            sheet = workbook.active
+            header = openpyxl.utils.range_boundaries(sheet.auto_filter.ref)[1]
+            labels = [cell.value for cell in sheet[header]]
+            for repeated in ('Scope', 'Stage / Event', 'Academic Period', 'Team', 'Panel Weight', 'Panel Evaluators'):
+                self.assertNotIn(repeated, labels)
+            self.assertGreater(header, 3)
+            self.assertFalse(sheet.protection.sheet)
+            self.assertEqual(sheet.freeze_panes, f'A{header + 1}')
+            if kind == 'team-grade':
+                values = dict(zip(labels, [cell.value for cell in sheet[header + 1]]))
+                self.assertEqual(values['Panel Contribution\n(50%)'], 37.5)
+                self.assertEqual(values['Total Score'], float(self.grade_other.final_grade))
+                self.assertEqual(values['Grade Status'], 'Grade passed')
+                self.assertEqual(sum(label in labels for label in ('Total Score', 'Final Grade')), 1)
+            else:
+                self.assertIn('Weighted Contribution', labels)
+                data_rows = list(sheet.iter_rows(min_row=header + 1))
+                self.assertEqual(data_rows[0][3].value, 37.5)
+                self.assertEqual(data_rows[-1][0].value, 'TOTAL OFFICIAL GRADE')
+            pdf_bytes = base64.b64decode(preview.data['excel_workbook_preview']['sheets'][0]['pdf_base64'])
+            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+                text = '\n'.join(page.extract_text() or '' for page in pdf.pages)
+                self.assertTrue(all(char['top'] >= 0 for page in pdf.pages for char in page.chars))
+            self.assertIn('Other Project', text)
+            self.assertIn(f'{self.grade_other.final_grade:.2f}', text)
+            (output / f'{kind}-workbook-qa.xlsx').write_bytes(export.content)
+            (output / f'{kind}-workbook-preview-qa.pdf').write_bytes(pdf_bytes)
+
+    def test_all_stage_workbook_has_separate_assessment_sheets(self):
+        import io
+        import openpyxl
+        stage, _ = DefenseStage.objects.get_or_create(label='Project Proposal', defaults={'display_order': 2})
+        TeamGrade.objects.create(team=self.team_other, semester=self.semester, scope='capstone', stage_label=stage.label,
+                                 defense_stage=stage, panel_score=80, adviser_score=85, peer_score=90, final_grade=84,
+                                 panel_weight=50, adviser_weight=30, peer_weight=20)
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(f'/api/reports/team-grade/{self.team_other.pk}/', {'coverage': 'all', 'export_format': 'xlsx'})
+        workbook = openpyxl.load_workbook(io.BytesIO(response.content))
+        self.assertEqual(workbook.sheetnames, ['Concept Proposal', 'Project Proposal'])
+        for sheet in workbook:
+            metadata = [cell.value for row in sheet for cell in row]
+            self.assertIn(sheet.title, metadata)
+            self.assertIn('All recorded stages / events', metadata)
+
+    def test_workbook_preserves_criteria_long_feedback_and_attempt_history(self):
+        import io
+        import openpyxl
+        from datetime import date, time
+        from defense.scheduler.models import DefenseSchedule
+        from grading.rubrics.models import Rubric, RubricCriterion
+        from grading.grades.models import PanelistGradeSubmission, PanelistCriterionScore, GradeAttemptHistory
+        rubric = Rubric.objects.create(name='Test Scoring Guide', scope='capstone', semester=self.semester,
+                                       defense_stage=self.stage, evaluation_type='panel', created_by=self.admin)
+        criterion = RubricCriterion.objects.create(rubric=rubric, name='System Design', weight=100, max_score=10, scale=Rubric.SCALE_10)
+        schedule = DefenseSchedule.objects.create(team=self.team_other, semester=self.semester, defense_stage=self.stage,
+                                                  scope='capstone', scheduled_date=date(2026, 6, 18), start_time=time(8), room='Room A')
+        remarks = '=Literal feedback. ' * 100 + 'COMPLETE FEEDBACK END'
+        submission = PanelistGradeSubmission.objects.create(team_grade=self.grade_other, schedule=schedule,
+                                                             panelist=self.other_adviser, remarks=remarks)
+        PanelistCriterionScore.objects.create(submission=submission, criterion=criterion, criterion_name_snapshot=criterion.name,
+                                              score=9, max_score_snapshot=10)
+        GradeAttemptHistory.objects.create(team_grade=self.grade_other, attempt_number=1, schedule=schedule,
+                                           panel_score=70, final_grade=70, verdict='approved', verdict_remarks='First attempt')
+        self.client.force_authenticate(user=self.admin)
+        url = f'/api/reports/team-grade/{self.team_other.pk}/'
+        export = self.client.get(url, {'export_format': 'xlsx'})
+        self.assertEqual(export.status_code, 200)
+        workbook = openpyxl.load_workbook(io.BytesIO(export.content))
+        feedback = next(sheet for sheet in workbook if sheet.title.endswith('Feedback'))
+        header = openpyxl.utils.range_boundaries(feedback.auto_filter.ref)[1]
+        self.assertEqual(''.join(row[3].value for row in feedback.iter_rows(min_row=header + 1)), remarks)
+        self.assertFalse(any(cell.data_type == 'f' for sheet in workbook for row in sheet for cell in row))
+        history = next(sheet for sheet in workbook if sheet.title.endswith('History'))
+        header = openpyxl.utils.range_boundaries(history.auto_filter.ref)[1]
+        self.assertEqual(history.cell(header + 1, 2).value.date(), date(2026, 6, 18))
+        self.assertEqual(history.cell(header + 1, 5).value, 'Approved')
+        preview = self.client.get(url, {'export_format': 'json'})
+        self.assertEqual(preview.status_code, 200)
+        self.assertTrue(preview.data['pdf_base64'])
+        self.assertNotIn('excel_preview_error', preview.data)
+        self.assertEqual([sheet['name'] for sheet in preview.data['excel_workbook_preview']['sheets']], workbook.sheetnames)
+
     def test_anonymous_access_denied(self):
         endpoints = [
             f'/api/reports/team-grade/{self.team_advised.id}/',

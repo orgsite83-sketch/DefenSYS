@@ -1,4 +1,5 @@
 import os
+from xml.sax.saxutils import escape
 from datetime import datetime
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
@@ -101,6 +102,10 @@ class NumberedCanvas(canvas.Canvas):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._saved_page_states = []
+        # Every saved page needs this key, including overview pages before
+        # the first group. Otherwise replaying a state without the key keeps
+        # the final group's context on the overview footer.
+        self._report_section_context = ''
 
     def showPage(self):
         self._saved_page_states.append(dict(self.__dict__))
@@ -162,6 +167,19 @@ class NumberedCanvas(canvas.Canvas):
             self.setStrokeColor(BORDER_GREY)
             self.setLineWidth(0.5)
             self.line(28, top_y - 7, page_w - 28, top_y - 7)
+
+        # Optional group label stays visible on continuation pages. Grouped
+        # report builders reserve 64pt below the content for these two lines.
+        context = getattr(self, '_report_section_context', '')
+        if context:
+            left = getattr(doc, 'leftMargin', 28)
+            right = getattr(doc, 'rightMargin', 28)
+            label = Paragraph(escape(context), ParagraphStyle(
+                'ReportPageContext', fontName='Times-Bold', fontSize=7.5, leading=9,
+                textColor=colors.HexColor('#374151'),
+            ))
+            label.wrap(page_w - left - right, 22)
+            label.drawOn(self, left, 42)
 
         # 2. Bottom Footer on all pages
         generated_by = getattr(doc, 'generated_by', 'System Administrator')

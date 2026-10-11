@@ -1,3 +1,4 @@
+import 'package:defensys/utils/rubric_scoring.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -665,6 +666,7 @@ class _GradeCenterEventTeamsScreenState
           final panScores = <String, double?>{};
           for (final pan in stagePanelists) {
             panScores[pan.key] = _getPanelistScoreForStudent(
+              grade: grade,
               breakdowns: breakdowns,
               panelistKey: pan.key,
               studentId: sId,
@@ -1861,10 +1863,14 @@ class _GradeCenterEventTeamsScreenState
   }
 
   double? _getPanelistScoreForStudent({
+    required Map<String, dynamic> grade,
     required List<Map<String, dynamic>> breakdowns,
     required String panelistKey,
     required int? studentId,
   }) {
+    if (grade['panel_evaluation_scores'] is List) {
+      return recordedPanelPercentage(grade, panelistKey, studentId);
+    }
     final rows = breakdowns.where((b) {
       if (b['evaluation_type'] != 'panel') return false;
 
@@ -1890,19 +1896,11 @@ class _GradeCenterEventTeamsScreenState
 
     if (rows.isEmpty) return null;
 
-    double totalScore = 0;
-    double totalMax = 0;
-    for (final r in rows) {
-      final s = asDouble(r['score']);
-      final m = asDouble(r['max_score']) ?? 10.0;
-      if (s != null && m > 0) {
-        totalScore += s;
-        totalMax += m;
-      }
-    }
-
-    if (totalMax <= 0) return null;
-    return (totalScore / totalMax * 100.0).clamp(0.0, 100.0);
+    return rubricPercentage(rows.map((row) => RubricScore(
+      asDouble(row['score']) ?? 0,
+      asDouble(row['max_score']) ?? 10,
+      rubricWeight(row['weight_snapshot']),
+    )));
   }
 }
 

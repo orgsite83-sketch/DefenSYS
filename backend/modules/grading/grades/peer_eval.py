@@ -155,10 +155,10 @@ def _build_peer_scores_for_complete_grade(grade, memberships):
         )
         averages = []
         for submission in submissions:
-            if submission.max_score <= 0:
+            percentage = submission.normalized_score
+            if percentage is None:
                 continue
-            ratio = submission.total_score / submission.max_score
-            averages.append(ratio * Decimal('100'))
+            averages.append(percentage)
 
         if not averages:
             peer_scores[evaluatee.id] = None
@@ -261,16 +261,21 @@ def submit_student_peer_evaluation(*, evaluator, team_id, evaluatee_id, breakdow
     reason = peer_grading_unavailable_reason(grade)
     if reason:
         raise ValidationError({'peer_eval': reason})
-    require_matching_rubric(grade, Rubric.EVAL_PEER)
+    rubric = require_matching_rubric(grade, Rubric.EVAL_PEER)
     if PeerEvaluationSubmission.objects.filter(team_grade=grade, evaluator=evaluator, evaluatee=evaluatee).exists():
         raise ValidationError({'peer_eval': 'This peer evaluation has already been submitted and is read-only.'})
 
-    total_decimal = Decimal(str(total)).quantize(Decimal('0.01'))
-    max_decimal = Decimal(str(max_score)).quantize(Decimal('0.01'))
-    if max_decimal <= 0:
-        raise ValidationError({'max': 'Max score must be greater than 0.'})
-    if total_decimal < 0 or total_decimal > max_decimal:
-        raise ValidationError({'total': 'Total score must be between 0 and max.'})
+    from .scoring import rubric_score_rows, rubric_rows_percentage
+    rows = rubric_score_rows(rubric, breakdown, name_key='criteriaName')
+    total_decimal = sum((row['score'] for row in rows), Decimal('0'))
+    max_decimal = sum((row['max_score'] for row in rows), Decimal('0'))
+    weighted_score = rubric_rows_percentage(rows)
+    recorded_breakdown = [
+        {'criterion_id': row['criterion'].pk, 'criteriaName': row['criterion'].name,
+         'score': float(row['score']), 'max': float(row['max_score']),
+         'weight_snapshot': str(row['weight'])}
+        for row in rows
+    ]
 
     PeerEvaluationSubmission.objects.update_or_create(
         team_grade=grade,
@@ -279,7 +284,8 @@ def submit_student_peer_evaluation(*, evaluator, team_id, evaluatee_id, breakdow
         defaults={
             'total_score': total_decimal,
             'max_score': max_decimal,
-            'breakdown': breakdown or [],
+            'weighted_score': weighted_score,
+            'breakdown': recorded_breakdown,
         },
     )
     sync_peer_summaries(grade)
@@ -313,8 +319,10 @@ def peer_criteria_payload(team, stage_label=None):
     if rubric:
         return [
             {
+                'id': criterion.pk,
                 'name': criterion.name,
                 'maxScore': float(criterion.max_score),
+                'weight': str(criterion.weight),
                 'description': criterion.description or '',
             }
             for criterion in rubric.criteria.order_by('display_order', 'id')
@@ -344,6 +352,7 @@ def peer_submissions_for_evaluator(team, evaluator, stage_label=None):
             'evaluateeName': display_name(row.evaluatee),
             'total': float(row.total_score),
             'max': float(row.max_score),
+            'percentage': float(row.normalized_score) if row.normalized_score is not None else None,
             'breakdown': row.breakdown or [],
             'stage': grade.stage_label,
         }

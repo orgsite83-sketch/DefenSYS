@@ -63,7 +63,9 @@ def snapshot(grade):
     values['schedule_revision'] = grade.schedule.revision if grade.schedule_id else None
     values['team_status'] = grade.team.status
     values['criteria'] = [{'id': row.pk, 'submission_id': row.submission_id, 'score': str(row.score), 'max_score': str(row.max_score_snapshot),
-                           'criterion': row.criterion_name_snapshot, 'student_id': row.submission.student_id,
+                           'criterion': row.criterion_name_snapshot,
+                           'weight_snapshot': str(row.weight_snapshot) if row.weight_snapshot is not None else None,
+                           'student_id': row.submission.student_id,
                            'student_name': (row.submission.student.get_full_name() or row.submission.student.username) if row.submission.student else 'Team',
                            'evaluator': (row.submission.panelist.get_full_name() or row.submission.panelist.username) if row.submission.panelist else row.submission.guest_name}
                           for row in PanelistCriterionScore.objects.filter(submission__team_grade=grade, submission__schedule_id=grade.schedule_id).select_related('submission__panelist', 'submission__student').order_by('pk')]
@@ -99,7 +101,9 @@ def correction_details(grade):
                          'student_reference': submission.student.username if submission.student_id else 'Team',
                          'student': (submission.student.get_full_name() or submission.student.username) if submission.student else 'Team',
                          'criterion': score.criterion_name_snapshot, 'score': str(score.score),
-                         'max_score': str(score.max_score_snapshot), 'is_void': submission.is_void})
+                         'max_score': str(score.max_score_snapshot),
+                         'weight_snapshot': str(score.weight_snapshot) if score.weight_snapshot is not None else None,
+                         'is_void': submission.is_void})
     from .services import group_settings_for_grade
     return {'scores': rows, 'updated_at': grade.updated_at.isoformat(),
             'requires_approval': protected_grade(grade),

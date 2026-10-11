@@ -82,7 +82,7 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
         builder.add_spacer(0.07)
 
     # Attempt History & ISO Audit Traceability (if past attempts exist)
-    histories = list(team_grade.attempt_history.all().order_by('attempt_number'))
+    histories = list(team_grade.attempt_history.select_related('schedule').order_by('attempt_number'))
     if histories:
         builder.add_section_header("Defense Attempt History & Traceability Log")
         hist_headers = [
@@ -95,7 +95,7 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
         ]
         hist_rows = [hist_headers]
         for h in histories:
-            h_date = h.scheduled_date.strftime('%b %d, %Y') if h.scheduled_date else "—"
+            h_date = h.schedule.scheduled_date.strftime('%b %d, %Y') if h.schedule else "—"
             h_verdict = dict(team_grade.VERDICT_CHOICES).get(h.verdict, h.verdict.replace('_', ' ').title()) if h.verdict else ("PASSED" if (h.final_grade and h.final_grade >= 75) else "FAILED")
             hist_rows.append([
                 Paragraph(f"#{h.attempt_number}", styles['TableCellCenter']),
@@ -124,9 +124,8 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
                 name = f"Panelist {len(distinct_panelists) + 1}"
 
             scores = list(sub.criterion_scores.all())
-            tot_score = sum((c.score for c in scores), Decimal('0'))
-            tot_max = sum((c.max_score_snapshot for c in scores), Decimal('0'))
-            pct = (tot_score / tot_max * Decimal('100')).quantize(Decimal('0.01')) if tot_max > 0 else None
+            from grading.grades.services import panelist_percentage_from_criterion_scores
+            pct = panelist_percentage_from_criterion_scores(scores)
 
             distinct_panelists.append({
                 'index': len(distinct_panelists) + 1,
@@ -197,10 +196,12 @@ def generate_team_grade_pdf(team_grade, generated_by_user, signatories=None, inc
         for pan in distinct_panelists:
             sub_st = next((s for s in submissions if s.student_id == student.id and (s.panelist_id, s.guest_code_id) == pan['pan_key']), None)
             if sub_st:
-                scores = list(sub_st.criterion_scores.all())
-                tot_score = sum((c.score for c in scores), Decimal('0'))
-                tot_max = sum((c.max_score_snapshot for c in scores), Decimal('0'))
-                p_score = (tot_score / tot_max * Decimal('100')).quantize(Decimal('0.01')) if tot_max > 0 else None
+                scores = [score for submission in submissions
+                          if (submission.panelist_id, submission.guest_code_id) == pan['pan_key']
+                          and submission.student_id in (None, student.id)
+                          for score in submission.criterion_scores.all()]
+                from grading.grades.services import panelist_percentage_from_criterion_scores
+                p_score = panelist_percentage_from_criterion_scores(scores)
             else:
                 p_score = pan['score']
 

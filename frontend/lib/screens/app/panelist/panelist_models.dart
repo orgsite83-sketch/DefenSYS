@@ -292,6 +292,7 @@ class Criterion {
   final int? id;
   final String name;
   final double maxScore;
+  final double? weight;
   final String description;
   double? score;
   Criterion(
@@ -300,6 +301,7 @@ class Criterion {
     this.id,
     this.score,
     this.description = '',
+    this.weight,
   });
   bool get isScored =>
       score != null && score!.isFinite && score! >= 0 && score! <= maxScore;

@@ -57,6 +57,7 @@ class GradeBreakdownSerializer(serializers.ModelSerializer):
             'criterion_name',
             'score',
             'max_score',
+            'weight_snapshot',
             'normalized_score',
             'remarks',
             'display_order',
@@ -113,6 +114,7 @@ class TeamGradeSerializer(serializers.ModelSerializer):
     result = serializers.CharField(read_only=True)
     panelists = serializers.SerializerMethodField()
     breakdowns = serializers.SerializerMethodField()
+    panel_evaluation_scores = serializers.SerializerMethodField()
     panel_evaluators_submitted = serializers.SerializerMethodField()
     panel_evaluators_required = serializers.SerializerMethodField()
     peer_per_student = StudentStageGradeSerializer(source='student_grades', many=True, read_only=True)
@@ -184,6 +186,7 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             'result',
             'panelists',
             'breakdowns',
+            'panel_evaluation_scores',
             'peer_per_student',
             'members',
             'peer_eval_complete',
@@ -225,7 +228,10 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             for m in memberships
         ]
 
-    def get_breakdowns(self, obj):
+    def _active_breakdowns(self, obj):
+        cache = getattr(self, '_breakdown_rows', {})
+        if obj.pk in cache:
+            return cache[obj.pk]
         # Filtering a related queryset would discard its prefetched rows.
         prefetched = getattr(obj, '_prefetched_objects_cache', {}).get('breakdowns')
         rows = (
@@ -233,7 +239,30 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             if prefetched is not None
             else obj.breakdowns.filter(is_void=False).select_related('rubric', 'student')
         )
-        return GradeBreakdownSerializer(rows, many=True).data
+        cache[obj.pk] = list(rows)
+        self._breakdown_rows = cache
+        return cache[obj.pk]
+
+    def get_breakdowns(self, obj):
+        return GradeBreakdownSerializer(self._active_breakdowns(obj), many=True).data
+
+    def get_panel_evaluation_scores(self, obj):
+        from .services import _panelist_key_from_breakdown_remarks, panelist_percentage_from_breakdowns
+        groups = {}
+        for row in self._active_breakdowns(obj):
+            if row.evaluation_type == GradeBreakdown.EVAL_PANEL:
+                key = _panelist_key_from_breakdown_remarks(row.remarks)
+                groups.setdefault(key, []).append(row)
+        values = []
+        for key, rows in groups.items():
+            panelist_key = key.split(':', 1)[-1].strip() if ':' in key else key
+            students = {row.student_id for row in rows if row.student_id is not None} or {None}
+            for student_id in sorted(students, key=lambda value: value or 0):
+                selected = [row for row in rows if row.student_id in (None, student_id)]
+                percentage = panelist_percentage_from_breakdowns(selected)
+                values.append({'panelist_key': panelist_key, 'student_id': student_id,
+                               'percentage': str(percentage) if percentage is not None else None})
+        return values
 
     def get_panel_evaluators_submitted(self, obj):
         return self._grading_readiness(obj)['panel_evaluators_submitted']

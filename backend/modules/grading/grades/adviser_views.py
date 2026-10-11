@@ -85,146 +85,57 @@ class _AdviserGradeSubmitSerializer(drf_serializers.Serializer):
         memberships = list(grade.team.memberships.select_related('student').all())
         student_map = {m.student_id: m.student for m in memberships}
 
-        GradeBreakdown.objects.filter(
-            team_grade=grade, evaluation_type=GradeBreakdown.EVAL_ADVISER
-        ).delete()
+        from .scoring import rubric_score_rows, rubric_rows_percentage
 
         breakdowns = []
         student_adviser_scores = {}
 
-        if target_type == Rubric.TARGET_INDIVIDUAL:
-            if not student_submissions:
-                raise drf_serializers.ValidationError(
-                    {'student_submissions': 'Student submissions are required for individual adviser rubrics.'}
-                )
-            for sub in student_submissions:
-                s_id = sub.get('student_id')
-                student_user = student_map.get(s_id)
-                if not student_user:
-                    continue
-                s_scores = sub.get('criteria_scores', [])
-                total_s = Decimal('0')
-                max_s = Decimal('0')
-                for idx, cs in enumerate(s_scores):
-                    try:
-                        s_val = Decimal(str(cs.get('score', 0)))
-                        m_val = Decimal(str(cs.get('max_score', 10)))
-                    except Exception:
-                        s_val = Decimal('0')
-                        m_val = Decimal('10')
-                    total_s += s_val
-                    max_s += m_val
-                    breakdowns.append(
-                        GradeBreakdown(
-                            team_grade=grade,
-                            student=student_user,
-                            rubric=rubric,
-                            evaluation_type=GradeBreakdown.EVAL_ADVISER,
-                            criterion_name=str(cs.get('criterion_name', '')),
-                            score=s_val,
-                            max_score=m_val,
-                            display_order=int(cs.get('display_order', idx)),
-                        )
-                    )
-                if max_s > 0:
-                    student_adviser_scores[s_id] = (total_s / max_s * Decimal('100')).quantize(Decimal('0.01'))
-                else:
-                    student_adviser_scores[s_id] = Decimal('0.00')
+        def record(rows, student=None):
+            breakdowns.extend(
+                GradeBreakdown(
+                    team_grade=grade, student=student, rubric=rubric,
+                    evaluation_type=GradeBreakdown.EVAL_ADVISER,
+                    criterion_name=row['criterion'].name, score=row['score'],
+                    max_score=row['max_score'], weight_snapshot=row['weight'],
+                    display_order=row['criterion'].display_order,
+                ) for row in rows
+            )
 
-        elif target_type == Rubric.TARGET_BOTH:
-            team_total = Decimal('0')
-            team_max = Decimal('0')
-            for idx, cs in enumerate(team_criteria_scores):
-                try:
-                    s_val = Decimal(str(cs.get('score', 0)))
-                    m_val = Decimal(str(cs.get('max_score', 10)))
-                except Exception:
-                    s_val = Decimal('0')
-                    m_val = Decimal('10')
-                team_total += s_val
-                team_max += m_val
-                breakdowns.append(
-                    GradeBreakdown(
-                        team_grade=grade,
-                        student=None,
-                        rubric=rubric,
-                        evaluation_type=GradeBreakdown.EVAL_ADVISER,
-                        criterion_name=str(cs.get('criterion_name', '')),
-                        score=s_val,
-                        max_score=m_val,
-                        display_order=int(cs.get('display_order', idx)),
-                    )
+        try:
+            team_rows = []
+            if target_type in (Rubric.TARGET_TEAM, Rubric.TARGET_BOTH):
+                team_rows = rubric_score_rows(
+                    rubric, team_criteria_scores,
+                    target_type=Rubric.TARGET_TEAM if target_type == Rubric.TARGET_BOTH else None,
                 )
+                record(team_rows)
 
-            sub_map = {s.get('student_id'): s.get('criteria_scores', []) for s in student_submissions}
-            for m in memberships:
-                s_id = m.student_id
-                s_scores = sub_map.get(s_id, [])
-                ind_total = Decimal('0')
-                ind_max = Decimal('0')
-                for idx, cs in enumerate(s_scores):
-                    try:
-                        s_val = Decimal(str(cs.get('score', 0)))
-                        m_val = Decimal(str(cs.get('max_score', 10)))
-                    except Exception:
-                        s_val = Decimal('0')
-                        m_val = Decimal('10')
-                    ind_total += s_val
-                    ind_max += m_val
-                    breakdowns.append(
-                        GradeBreakdown(
-                            team_grade=grade,
-                            student=m.student,
-                            rubric=rubric,
-                            evaluation_type=GradeBreakdown.EVAL_ADVISER,
-                            criterion_name=str(cs.get('criterion_name', '')),
-                            score=s_val,
-                            max_score=m_val,
-                            display_order=int(cs.get('display_order', idx)),
-                        )
-                    )
-                combined_total = team_total + ind_total
-                combined_max = team_max + ind_max
-                if combined_max > 0:
-                    student_adviser_scores[s_id] = (combined_total / combined_max * Decimal('100')).quantize(Decimal('0.01'))
-                else:
-                    student_adviser_scores[s_id] = Decimal('0.00')
-
-        else:  # Rubric.TARGET_TEAM
-            if not team_criteria_scores:
-                raise drf_serializers.ValidationError(
-                    {'criteria_scores': 'Criteria scores are required for adviser grading.'}
-                )
-            team_total = Decimal('0')
-            team_max = Decimal('0')
-            for idx, cs in enumerate(team_criteria_scores):
-                try:
-                    s_val = Decimal(str(cs.get('score', 0)))
-                    m_val = Decimal(str(cs.get('max_score', 10)))
-                except Exception:
-                    s_val = Decimal('0')
-                    m_val = Decimal('10')
-                team_total += s_val
-                team_max += m_val
-                breakdowns.append(
-                    GradeBreakdown(
-                        team_grade=grade,
-                        student=None,
-                        rubric=rubric,
-                        evaluation_type=GradeBreakdown.EVAL_ADVISER,
-                        criterion_name=str(cs.get('criterion_name', '')),
-                        score=s_val,
-                        max_score=m_val,
-                        display_order=int(cs.get('display_order', idx)),
-                    )
-                )
-            if team_max > 0:
-                team_score = (team_total / team_max * Decimal('100')).quantize(Decimal('0.01'))
+            if target_type == Rubric.TARGET_TEAM:
+                team_score = rubric_rows_percentage(team_rows)
+                student_adviser_scores = {membership.student_id: team_score for membership in memberships}
             else:
-                team_score = self.validated_data.get('adviser_score') or Decimal('0.00')
-            for m in memberships:
-                student_adviser_scores[m.student_id] = team_score
+                submitted_students = set()
+                for sub in student_submissions:
+                    s_id = drf_serializers.IntegerField(min_value=1).run_validation(sub.get('student_id'))
+                    if s_id not in student_map or s_id in submitted_students:
+                        raise DjangoValidationError({'student_submissions': 'Submit each current team member exactly once.'})
+                    submitted_students.add(s_id)
+                    rows = rubric_score_rows(
+                        rubric, sub.get('criteria_scores'),
+                        target_type=Rubric.TARGET_INDIVIDUAL if target_type == Rubric.TARGET_BOTH else None,
+                    )
+                    record(rows, student_map[s_id])
+                    student_adviser_scores[s_id] = rubric_rows_percentage(team_rows + rows)
+                if submitted_students != set(student_map):
+                    raise DjangoValidationError({'student_submissions': 'Score every current team member.'})
+        except DjangoValidationError as exc:
+            raise drf_serializers.ValidationError(
+                exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}
+            ) from exc
 
+        GradeBreakdown.objects.filter(
+            team_grade=grade, evaluation_type=GradeBreakdown.EVAL_ADVISER
+        ).delete()
         if breakdowns:
             GradeBreakdown.objects.bulk_create(breakdowns)
 
@@ -240,8 +151,6 @@ class _AdviserGradeSubmitSerializer(drf_serializers.Serializer):
 
         if all_student_scores:
             grade.adviser_score = (sum(all_student_scores) / Decimal(len(all_student_scores))).quantize(Decimal('0.01'))
-        elif self.validated_data.get('adviser_score') is not None:
-            grade.adviser_score = self.validated_data['adviser_score']
 
         grade.save()
         # The grade may have been read with these relations before bulk writes.

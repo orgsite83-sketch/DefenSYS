@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:defensys/utils/rubric_scoring.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../services/bridge_service.dart';
@@ -159,7 +160,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       final max = (sub['max'] as num?)?.toDouble();
       if (total == null || max == null || max <= 0) continue;
 
-      final ratio = total / max;
+      final ratio = ((sub['percentage'] as num?)?.toDouble() ?? total / max * 100) / 100;
       for (final c in _effectiveCriteria) {
         final criteriaName = c['name'] as String;
         final cMax = ((c['maxScore'] as num?) ?? 5).toDouble();
@@ -566,10 +567,15 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       return;
     }
 
+    final preview = rubricPercentage(_effectiveCriteria.map((criterion) => RubricScore(
+      scores[criterion['name']] ?? 0,
+      ((criterion['maxScore'] as num?) ?? 5).toDouble(),
+      rubricWeight(criterion['weight']),
+    )));
     final confirmed = await confirmLock(
       context,
       title: 'Submit Peer Evaluation?',
-      message: 'Your evaluation for $name will be saved and permanently locked.',
+      message: 'Your evaluation for $name will be saved and permanently locked.${preview == null ? '' : ' Evaluation score: ${preview.toStringAsFixed(2)}%.'}',
       confirmLabel: 'Submit',
       icon: Icons.save_rounded,
       confirmColor: DefensysTokens.saveActionBg,
@@ -580,6 +586,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
 
     try {
       final breakdown = scores.entries.map((e) => {
+        'criterion_id': _effectiveCriteria.firstWhere((criterion) => criterion['name'] == e.key)['id'],
         'criteriaName': e.key,
         'score': e.value,
         'max': _effectiveCriteria.firstWhere(

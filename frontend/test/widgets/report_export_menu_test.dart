@@ -170,7 +170,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Report filters'), findsOneWidget);
+    expect(find.text('EXPORT FILTERS'), findsOneWidget);
     expect(find.text('Proposal Quality Guide'), findsOneWidget);
     expect(reports.endpoint, 'rubrics/17/');
     await tester.tap(find.text('Cancel').last);
@@ -240,7 +240,7 @@ void main() {
           'search': 'Proposal & Design',
           'status': 'published',
         });
-        expect(find.text('Report filters'), findsNothing);
+        expect(find.text('EXPORT FILTERS'), findsNothing);
         await tester.pump(const Duration(seconds: 4));
         await tester.pumpAndSettle();
       }
@@ -310,7 +310,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Report Center'));
       await tester.pumpAndSettle();
-      expect(find.text('Report filters'), findsOneWidget);
+      expect(find.text('EXPORT FILTERS'), findsOneWidget);
       expect(find.text('Proposal Quality Guide'), findsOneWidget);
       expect(reports.endpoint, 'rubrics/17/');
       expect(reports.params?['semester_id'], '3');

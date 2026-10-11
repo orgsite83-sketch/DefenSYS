@@ -1,6 +1,8 @@
 """Read-only datasets for contextual exports and the Report Center catalog."""
 
 from xml.sax.saxutils import escape
+from math import ceil
+from reportlab.pdfbase.pdfmetrics import stringWidth
 
 from django.contrib.auth import get_user_model
 from django.db.models import Q
@@ -10,7 +12,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from datetime import date
+from datetime import date, datetime
 
 from academic_period_management.models import Semester, SchoolYear
 from academic_period_management.services import active_semester
@@ -138,7 +140,6 @@ def faculty_directory(request):
 
 def rubric_reports(request, rubric_id=None):
     from grading.rubrics.views import rubric_queryset_for_read, filter_rubrics
-    from grading.rubrics.serializers import RubricSerializer
     if is_pit_lead_only(request.user):
         require_manager(request)
     queryset = filter_rubrics(request, rubric_queryset_for_read(request.user))
@@ -150,37 +151,8 @@ def rubric_reports(request, rubric_id=None):
     if rubric_id is not None:
         queryset = queryset.filter(pk=get_object_or_404(queryset, pk=rubric_id).pk)
     rubrics = list(queryset.order_by('name', 'pk'))
-    rows, criteria, details = [], [], []
-    for rubric, values in zip(rubrics, RubricSerializer(rubrics, many=True).data):
-        effective = values.get('weights')
-        if rubric.scope == 'pit':
-            from defense.scheduler.models import PitEventGradingConfig
-            config = PitEventGradingConfig.objects.filter(semester=rubric.semester).filter(Q(panel_rubric=rubric) | Q(peer_rubric=rubric)).first()
-            effective = {'panel': config.panel_weight, 'peer': config.peer_weight} if config else None
-        weights = ', '.join(f'{key.title()}: {value}%' for key, value in (effective or {}).items()) or 'Not assigned to a grading configuration'
-        row = {'name': rubric.name, 'scope': rubric.get_scope_display(), 'semester': rubric.semester.display_name,
-               'stage': values.get('event_name') if rubric.scope == 'pit' else values.get('defense_stage_label') or 'All Stages',
-               'evaluation_type': rubric.get_evaluation_type_display(), 'target': rubric.get_target_type_display(),
-               'status': rubric.get_status_display(), 'criteria': len(values['criteria']), 'weights': weights}
-        rows.append(row)
-        details.append({'rubric': row, 'criteria': list(rubric.criteria.all())})
-        for criterion in rubric.criteria.all():
-            description = criterion.description or ''
-            parts = [description[i:i + 1000] for i in range(0, len(description), 1000)] or ['']
-            for index, part in enumerate(parts):
-                criteria.append({'rubric': rubric.name, 'criterion': criterion.name, 'description': part,
-                                 'part': index + 1, 'order': criterion.display_order, 'scale': criterion.get_scale_display(),
-                                 'max_score': criterion.max_score, 'weight': str(criterion.weight),
-                                 'target': criterion.get_target_type_display()})
-    criteria_columns = [column('rubric', 'Rubric', 32), column('criterion', 'Criterion', 32), column('description', 'Description', 66),
-        column('part', 'Text Part', 12), column('order', 'Order', 12), column('scale', 'Scoring Scale', 22),
-        column('max_score', 'Maximum Score', 18), column('weight', 'Criterion Weight', 18), column('target', 'Target', 20)]
-    return dataset('Rubric Details' if rubric_id else 'Rubric Catalog', [column('name', 'Rubric', 34), column('scope', 'Scope', 16),
-        column('semester', 'Academic Period', 36), column('stage', 'Stage / Event', 28), column('evaluation_type', 'Evaluator Type', 20),
-        column('target', 'Target', 18), column('status', 'Status', 18), column('criteria', 'Criteria', 12), column('weights', 'Grade Distribution', 38)],
-        rows, details=details, extra_sheets=[{'name': 'Criteria', 'title': 'Complete Rubric Criteria', 'metadata': [],
-                                            'columns': criteria_columns, 'rows': criteria}],
-        sections=[{'title': 'Complete Rubric Criteria', 'columns': criteria_columns, 'rows': criteria}])
+    from reports.rubric_exports import build_rubric_spec
+    return build_rubric_spec(rubrics, individual=rubric_id is not None)
 
 
 def project_records(request):
@@ -243,7 +215,7 @@ def external_evaluators(request):
                                     'date': schedule.scheduled_date.isoformat(), 'time': schedule.start_time.strftime('%H:%M'),
                                     'room': schedule.room, 'active': 'Active' if invitation_is_available(invitation) else 'Expired / revoked'})
     assignment_columns = [column('evaluator', 'Evaluator', 32), column('team', 'Team', 30), column('stage', 'Stage / Event', 30),
-                          column('date', 'Date', 18), column('time', 'Time', 18), column('room', 'Room'), column('active', 'Assignment Status')]
+                          column('date', 'Date', 18, type='date'), column('time', 'Time', 18), column('room', 'Room'), column('active', 'Assignment Status')]
     if assignment_view:
         return dataset('External Evaluator Defense Assignments', assignment_columns, assignments)
     return dataset('External Evaluators & Defense Assignments', [column('name', 'Evaluator', 32), column('email', 'Email', 34),
@@ -258,7 +230,7 @@ def setup_report(request, *, pit=False):
     from repository.project_archive.services import pit_event_matches_year_level
     require_manager(request) if pit else require_admin(request)
     selected = period(request)
-    rows, requirements = [], []
+    rows, requirements, groups = [], [], []
     if pit:
         items = PitEventGradingConfig.objects.select_related('semester__school_year', 'panel_rubric', 'peer_rubric').prefetch_related('deliverables')
         if selected:
@@ -279,17 +251,31 @@ def setup_report(request, *, pit=False):
                'status': 'Officially complete' if config and config.is_officially_complete else 'Configured' if config else 'Not configured',
                'requirements': len(item.deliverables.all()), 'panel': name_rubric(config, 'panel'),
                'adviser': 'Not applicable' if pit else name_rubric(config, 'adviser'), 'peer': name_rubric(config, 'peer'),
-               'weights': ', '.join(f'{role.title()}: {getattr(config, role + "_weight", 0)}%' for role in (('panel', 'peer') if pit else ('panel', 'adviser', 'peer'))) if config else 'Not configured'}
+               'weights': ', '.join(f'{role.title()}: {getattr(config, role + "_weight", 0)}%' for role in (('panel', 'peer') if pit else ('panel', 'adviser', 'peer'))) if config else 'Not configured',
+               'peer_enabled': 'Enabled' if config and config.peer_grading_enabled else 'Disabled' if config else 'Not configured'}
         rows.append(row)
+        group_requirements = []
         for deliverable in item.deliverables.all():
-            requirements.append({'stage': label, 'code': deliverable.deliverable_id, 'label': deliverable.label,
-                                 'type': deliverable.get_deliverable_type_display(), 'required': deliverable.required})
+            requirement = {'stage': label, 'code': deliverable.deliverable_id, 'label': deliverable.label,
+                           'type': deliverable.get_deliverable_type_display(), 'required': deliverable.required}
+            requirements.append(requirement)
+            group_requirements.append(requirement)
+        rubric_rows = []
+        for role in (('panel', 'peer') if pit else ('panel', 'adviser', 'peer')):
+            rubric = getattr(config, f'{role}_rubric', None) if config else None
+            rubric_rows.append({'role': role.title(), 'rubric': rubric.name if rubric else 'Not assigned',
+                               'publication': rubric.get_status_display() if rubric else '-',
+                               'contribution': f'{getattr(config, role + "_weight")}%' if config else 'Not configured'})
+        groups.append({'configuration': row, 'rubrics': rubric_rows, 'requirements': group_requirements})
     requirement_columns = [column('stage', 'Stage / Event', 30), column('code', 'Deliverable Code', 22),
                            column('label', 'Requirement', 44), column('type', 'Submission Phase'), column('required', 'Required', 16)]
+    from reports.stage_setup_exports import stage_document_sheets
     return dataset('PIT Event Configuration & Requirements' if pit else 'Defense Stage Configuration & Requirements',
         [column('stage', 'Stage / Event', 30), column('scope', 'Scope', 14), column('semester', 'Academic Period', 36),
          column('status', 'Setup Status'), column('requirements', 'Requirements', 16), column('panel', 'Panel Rubric', 34),
-         column('adviser', 'Adviser Rubric', 34), column('peer', 'Peer Rubric', 34), column('weights', 'Grade Distribution', 38)], rows,
+         column('adviser', 'Adviser Rubric', 34), column('peer', 'Peer Rubric', 34), column('weights', 'Grade Distribution', 38),
+         column('peer_enabled', 'Peer Grading Setting', 24)], rows,
+        report_layout='stage_setup', stage_groups=groups, document_sheets=stage_document_sheets(groups),
         extra_sheets=[{'name': 'Requirements', 'title': 'Deliverable Requirements', 'metadata': [], 'columns': requirement_columns, 'rows': requirements}],
         sections=[{'title': 'Deliverable Requirements', 'columns': requirement_columns, 'rows': requirements}])
 
@@ -388,6 +374,8 @@ class CatalogOptionsView(APIView):
     def get(self, request):
         from grading.rubrics.views import rubric_queryset_for_read
         from defense.stages.models import DefenseStage
+        from defense.scheduler.models import PitEventGradingConfig
+        from repository.project_archive.services import pit_event_matches_year_level
         validate_filters(request.query_params)
         teams = visible_teams_for(request.user)
         rubrics = rubric_queryset_for_read(request.user)
@@ -395,43 +383,114 @@ class CatalogOptionsView(APIView):
             require_manager(request)
             rubrics = rubrics.filter(scope='pit')
         students = get_user_model().objects.filter(Q(team_memberships__team__in=teams) | Q(led_teams__in=teams)).distinct()
+        stages = DefenseStage.objects.order_by('display_order', 'pk')
+        if request.query_params.get('report') != 'defense-stage-setup':
+            stages = stages.filter(is_active=True)
+        stage_choices = [{'value': stage.label, 'label': stage.label, 'scope': 'capstone'} for stage in stages]
+        for event in PitEventGradingConfig.objects.select_related('semester__school_year').order_by('semester_id', 'event_name'):
+            if is_pit_lead_only(request.user) and not pit_event_matches_year_level(event.event_name, request.user.pit_lead_year):
+                continue
+            stage_choices.append({'value': event.event_name, 'label': event.event_name,
+                                  'scope': 'pit', 'semester_id': event.semester_id})
+        active = active_semester()
         return Response({
             'semesters': [{'id': item.pk, 'label': item.display_name} for item in Semester.objects.select_related('school_year').order_by('-school_year__label', 'label')],
             'rubrics': [{'id': item.pk, 'label': f'{item.name} — {item.semester.display_name}', 'semester_id': item.semester_id, 'scope': item.scope} for item in rubrics],
             'teams': [{'id': item.pk, 'label': f'{item.name} — {item.project_title}', 'semester_id': item.semester_id, 'scope': 'capstone' if item.is_capstone else 'pit'} for item in teams],
             'students': [{'id': item.pk, 'label': f'{name(item)} ({item.username})'} for item in students],
-            'stages': [{'id': item.pk, 'label': item.label} for item in DefenseStage.objects.filter(is_active=True).order_by('display_order')],
+            'stages': [{'id': item.pk, 'label': item.label} for item in stages],
+            'stage_choices': stage_choices,
+            'default_semester_id': active.pk if active else None,
         })
 
 
+def _pdf_cell(value, column_spec):
+    """Use human dates and boolean labels in the official document only."""
+    if value is None:
+        return 'Not recorded'
+    if isinstance(value, bool):
+        return 'Yes' if value else 'No'
+    if value and column_spec.get('type') in ('date', 'datetime'):
+        try:
+            if column_spec['type'] == 'datetime':
+                parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+                if timezone.is_aware(parsed):
+                    parsed = timezone.localtime(parsed)
+                value = parsed.strftime('%b %d, %Y\n%I:%M %p')
+            else:
+                value = date.fromisoformat(str(value)).strftime('%b %d, %Y')
+        except ValueError:
+            pass
+    return escape(str(value)).replace('\n', '<br/>')
+
+
+def _pdf_column_widths(builder, columns, width):
+    """Fit headers at the template's normal font size, without splitting words."""
+    style = builder.styles['TableHeader']
+    minimums = [max(stringWidth(word, style.fontName, style.fontSize) for word in item['label'].split()) + 11
+                for item in columns]
+    total = sum(item['width'] for item in columns)
+    preferred = [width * item['width'] / total for item in columns]
+    remaining = width - sum(minimums)
+    if remaining < 0:
+        return preferred
+    flexible = [max(0, desired - minimum) for desired, minimum in zip(preferred, minimums)]
+    available = sum(flexible)
+    if not available:
+        return [minimum + remaining / len(columns) for minimum in minimums]
+    return [minimum + remaining * extra / available for minimum, extra in zip(minimums, flexible)]
+
+
+def _add_catalog_pdf_table(builder, section):
+    """Keep the portrait template readable without dropping wide register fields.
+
+    Wide registers are divided into short batches and column sections, linked
+    by row numbers. Column headings repeat when a table continues on a page.
+    The original flat dataset and Excel layout are unaffected.
+    """
+    builder.add_section_header(escape(section['title']))
+    if not section['rows']:
+        builder.add_paragraph('No records match the selected filters.')
+        return
+    columns = section['columns']
+    if len(columns) <= 6:
+        rows = [[_pdf_cell(row.get(item['key']), item) for item in columns] for row in section['rows']]
+        builder.add_table([escape(item['label']) for item in columns], rows,
+            col_widths=_pdf_column_widths(builder, columns, builder.usable_width), repeat_headers=True)
+        return
+
+    builder.add_paragraph('Record numbers link the matching rows in each table section.', style_name='BodyMuted')
+    # Balance the sections so the last table is not a single orphaned field.
+    group_size = ceil(len(columns) / ceil(len(columns) / 5))
+    groups = [columns[start:start + group_size] for start in range(0, len(columns), group_size)]
+    for start in range(0, len(section['rows']), 4):
+        batch = section['rows'][start:start + 4]
+        label = f'Record {start + 1}' if len(batch) == 1 else f'Records {start + 1}-{start + len(batch)}'
+        builder.add_subsection_header(label)
+        for group in groups:
+            rows = [[str(start + index + 1), *[_pdf_cell(row.get(item['key']), item) for item in group]]
+                    for index, row in enumerate(batch)]
+            builder.add_table(['No.', *[escape(item['label']) for item in group]], rows,
+                col_widths=[24, *_pdf_column_widths(builder, group, builder.usable_width - 24)],
+                repeat_headers=True)
+
+
 def render_pdf(spec, metadata, generated_by, include_signatures, signatories):
-    detailed = bool(spec.get('details'))
-    builder = DefensysPdfReportBuilder(title=spec['title'], generated_by=generated_by,
-        orientation='portrait' if detailed else 'landscape', show_sidebar=False)
+    # The same official portrait letterhead, policy sidebar and footer used by
+    # the grade reports, including all continuation pages.
+    builder = DefensysPdfReportBuilder(title=spec['title'], subtitle='Official Institutional Record',
+        generated_by=generated_by, bottom_margin=64 if spec.get('report_layout') else 36)
     builder.add_header()
     builder.add_metadata_grid([(escape(item['label']), escape(str(item['value']))) for item in metadata])
-    if detailed:
-        for detail in spec['details']:
-            row = detail['rubric']
-            builder.add_section_header(escape(row['name']))
-            builder.add_paragraph(escape(f'{row["scope"]} / {row["semester"]} / {row["stage"]} / {row["status"]}'))
-            builder.add_paragraph(escape(f'{row["evaluation_type"]} / {row["target"]} / {row["weights"]}'))
-            for criterion in detail['criteria']:
-                builder.add_subsection_header(escape(criterion.name))
-                builder.add_paragraph(escape(f'{criterion.get_scale_display()} / Maximum: {criterion.max_score} / Weight: {criterion.weight} / {criterion.get_target_type_display()}'))
-                if criterion.description:
-                    builder.add_paragraph(escape(criterion.description).replace('\n', '<br/>'))
+    if spec.get('report_layout') == 'rubrics':
+        from reports.rubric_exports import render_rubric_sections
+        render_rubric_sections(builder, spec)
+    elif spec.get('report_layout') == 'stage_setup':
+        from reports.stage_setup_exports import render_stage_setup_sections
+        render_stage_setup_sections(builder, spec)
     else:
-        for section in [spec, *spec.get('sections', [])]:
-            builder.add_section_header(escape(section['title']))
-            if not section['rows']:
-                builder.add_paragraph('No records match the selected filters.')
-                continue
-            columns = section['columns']
-            total = sum(item['width'] for item in columns)
-            widths = [builder.usable_width * item['width'] / total for item in columns]
-            rows = [[escape(str(row.get(item['key'], '') if row.get(item['key']) is not None else 'Not recorded')).replace('\n', '<br/>') for item in columns] for row in section['rows']]
-            builder.add_table([escape(item['label']) for item in columns], rows, col_widths=widths, repeat_headers=True)
+        for section in [{**spec, 'title': 'Recorded Entries'}, *spec.get('sections', [])]:
+            _add_catalog_pdf_table(builder, section)
     builder.add_signatures(include_signatures=include_signatures, signatories=signatories, prepared_by=generated_by)
     return builder.build()
 
@@ -446,7 +505,7 @@ class CatalogReportView(APIView):
         metadata = [{'label': 'Records', 'value': len(spec['rows'])}, {'label': 'Generated by', 'value': generated_by},
                     {'label': 'Time Zone', 'value': timezone.get_current_timezone_name()}]
         for key, value in request.query_params.items():
-            if value and key not in ('export_format', 'format', 'include_signatures', 'signatories', 'page', 'page_size', 'source'):
+            if value and key not in ('export_format', 'format', 'include_signatures', 'signatories', 'page', 'page_size', 'source', 'source_context', 'custom_filename'):
                 if key == 'semester_id':
                     value = period(request, default_active=False).display_name
                 elif key == 'rubric_id':
@@ -456,18 +515,30 @@ class CatalogReportView(APIView):
                     value = get_object_or_404(visible_teams_for(request.user), pk=value).name
                 elif key.endswith('_id'):
                     continue
-                metadata.append({'label': key.replace('_', ' ').title(), 'value': value})
+                label = {'semester_id': 'Academic Period', 'rubric_id': 'Selected Rubric',
+                         'team_id': 'Selected Team', 'scope': 'Academic Scope', 'type': 'Academic Scope',
+                         'term_context': 'Term Coverage', 'stage': 'Selected Stage / Event'}.get(key, key.replace('_', ' ').title())
+                if key in ('scope', 'type'):
+                    value = {'capstone': 'Capstone', 'pit': 'PIT'}.get(value, value)
+                if key == 'term_context':
+                    value = {'active': 'Active term', 'history': 'Historical terms', 'all': 'All terms'}.get(value, value)
+                metadata.append({'label': label, 'value': value})
         if is_pit_lead_only(request.user):
             metadata += [{'label': 'Scope', 'value': 'PIT'}, {'label': 'Assigned Year', 'value': request.user.pit_lead_year}]
         from reports.views import _parse_signature_params
         include_signatures, signatories = _parse_signature_params(request)
         filename = f'DefenSYS_{spec["title"].replace(" ", "_").replace("&", "and")}_{timezone.localdate():%Y-%m-%d}'
         export_format = request.query_params.get('export_format') or request.query_params.get('format')
+        document_sheets = spec.get('document_sheets')
+        if rubric_id is not None and spec.get('details'):
+            from reports.document_workbooks import rubric_document_sheets
+            document_sheets = rubric_document_sheets(spec['details'][0])
         if (export_format or '').lower() in ('xlsx', 'excel', 'sheet'):
             return generate_xlsx_response(spec['title'], metadata, spec['columns'], spec['rows'], filename,
                 extra_sheets=spec.get('extra_sheets'), generated_by=generated_by,
-                include_signatures=include_signatures, signatories=signatories)
+                include_signatures=include_signatures, signatories=signatories, document_sheets=document_sheets)
         return handle_export_or_preview(export_format, spec['title'], 'Filtered records from DefenSYS',
-            [{'label': 'Records', 'value': str(len(spec['rows']))}], metadata, spec['columns'], spec['rows'], filename,
+            spec.get('summary_kpis', [{'label': 'Records', 'value': str(len(spec['rows']))}]), metadata, spec['columns'], spec['rows'], filename,
             lambda: render_pdf(spec, metadata, generated_by, include_signatures, signatories),
-            sections=spec.get('sections'), generated_by=generated_by, include_signatures=include_signatures, signatories=signatories)
+            sections=spec.get('sections'), generated_by=generated_by, include_signatures=include_signatures, signatories=signatories,
+            extra_sheets=spec.get('extra_sheets'), document_sheets=document_sheets)

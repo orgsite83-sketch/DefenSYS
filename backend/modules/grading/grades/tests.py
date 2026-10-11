@@ -224,6 +224,7 @@ class GradeCenterApiTests(APITestCase):
 
     def test_adviser_save_response_contains_new_breakdowns_and_student_scores(self):
         grade = self._capstone_grade()
+        self.adviser_rubric.criteria.update(name='Current criterion')
         GradeBreakdown.objects.create(team_grade=grade, rubric=self.adviser_rubric,
             evaluation_type=Rubric.EVAL_ADVISER, criterion_name='Old criterion',
             score=2, max_score=10)

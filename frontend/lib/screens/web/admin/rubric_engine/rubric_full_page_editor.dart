@@ -763,8 +763,8 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   Widget _buildWeightAssistantBar() {
     final total = _totalCriteriaWeight;
     final count = _criteria.length;
-    final isOver = total > 100.01;
-    final isUnder = total < 99.99;
+    final isOver = total > 100.000001;
+    final isUnder = total < 99.999999;
 
     final progressRatio = (total / 100.0).clamp(0.0, 1.0);
     Color statusColor = const Color(0xFF16A34A);
@@ -776,13 +776,13 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       statusColor = const Color(0xFFDC2626);
       statusBg = _isDark ? const Color(0xFF450A0A) : const Color(0xFFFEF2F2);
       statusBorder = _isDark ? const Color(0xFF991B1B) : const Color(0xFFFECACA);
-      final overAmt = (total - 100).toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '');
+      final overAmt = (total - 100).toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
       statusText = 'Exceeds 100% by $overAmt%';
     } else if (isUnder) {
       statusColor = const Color(0xFFD97706);
       statusBg = _isDark ? const Color(0xFF451A03) : const Color(0xFFFFFBEB);
       statusBorder = _isDark ? const Color(0xFF92400E) : const Color(0xFFFDE68A);
-      final remAmt = (100 - total).toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '');
+      final remAmt = (100 - total).toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
       statusText = '$remAmt% Unallocated';
     }
 
@@ -811,7 +811,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                 ),
               ),
               Text(
-                '${total.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '')}% of 100%',
+                '${total.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '')}% of 100%',
                 style: TextStyle(
                   fontFamily: DefensysUi.fontFamily,
                   fontWeight: FontWeight.w800,
@@ -1205,8 +1205,11 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         return 'Enter a valid max score for each criterion.';
       }
       final weight = num.tryParse(draft.weight.text.trim());
-      if (weight == null || weight <= 0) {
-        return 'Enter a valid weight for each criterion.';
+      if (weight == null || !weight.isFinite || weight <= 0 || weight > 100) {
+        return 'Enter a weight greater than 0% and at most 100% for each criterion.';
+      }
+      if ((weight * 100 - (weight * 100).round()).abs() > 0.000001) {
+        return 'Criterion weights can have at most two decimal places.';
       }
     }
 
@@ -1218,6 +1221,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       }
     }
 
+    if ((_totalCriteriaWeight - 100).abs() > 0.000001) {
+      return 'Criterion weights must total 100%. Current total: ${_totalCriteriaWeight.toStringAsFixed(2)}%.';
+    }
     return null;
   }
 
@@ -1275,46 +1281,6 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                       height: 1.4,
                     ),
                   ),
-                  if (status == 'published') ...[
-                    Builder(
-                      builder: (context) {
-                        final total = _totalCriteriaWeight;
-                        if ((total - 100).abs() <= 0.05) return const SizedBox.shrink();
-                        return Container(
-                          margin: const EdgeInsets.only(top: 12),
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: _isDark ? const Color(0xFF451A03) : const Color(0xFFFFFBEB),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: _isDark ? const Color(0xFF92400E) : const Color(0xFFFDE68A),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.warning_amber_rounded,
-                                size: 16,
-                                color: _isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Criterion weights currently total ${total.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '')}% (standard target is 100%).',
-                                  style: TextStyle(
-                                    fontFamily: DefensysUi.fontFamily,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: _isDark ? const Color(0xFFFDE68A) : const Color(0xFF92400E),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ],
                 ],
               ),
             ),

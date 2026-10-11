@@ -11,7 +11,10 @@ from academic_period_management.serializers import SemesterSerializer
 from defense.stages.models import DefenseStage
 from defense.stages.serializers import DefenseStageSerializer
 from .models import Rubric
-from .serializers import RubricSerializer, RubricWeightsSerializer, RubricWriteSerializer
+from .serializers import (
+    RubricSerializer, RubricWeightsSerializer, RubricWriteSerializer,
+    validate_criterion_weights,
+)
 from user_management.permissions import CanManageModule
 
 
@@ -361,6 +364,7 @@ class RubricPublishView(APIView):
                 {'criteria': 'At least one criterion is required before publishing.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        validate_criterion_weights(rubric.criteria.values_list('weight', flat=True))
         old_status = rubric.status
         rubric.status = Rubric.STATUS_PUBLISHED
         rubric.save()

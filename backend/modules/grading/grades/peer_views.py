@@ -11,9 +11,10 @@ from .peer_eval import submit_student_peer_evaluation
 class PeerEvaluationSubmitSerializer(serializers.Serializer):
     teamId = serializers.IntegerField()
     evaluateeId = serializers.IntegerField()
-    breakdown = serializers.ListField(child=serializers.DictField(), required=False, default=list)
-    total = serializers.DecimalField(max_digits=7, decimal_places=2)
-    max = serializers.DecimalField(max_digits=7, decimal_places=2)
+    breakdown = serializers.ListField(child=serializers.DictField(), min_length=1)
+    # Accepted for older clients; the backend derives both from rubric criterion scores.
+    total = serializers.DecimalField(max_digits=7, decimal_places=2, required=False)
+    max = serializers.DecimalField(max_digits=7, decimal_places=2, required=False)
     stage = serializers.CharField(required=False, allow_blank=True, default='')
 
 
@@ -31,8 +32,8 @@ class StudentPeerEvaluationSubmitView(APIView):
                 team_id=data['teamId'],
                 evaluatee_id=data['evaluateeId'],
                 breakdown=data.get('breakdown') or [],
-                total=data['total'],
-                max_score=data['max'],
+                total=data.get('total'),
+                max_score=data.get('max'),
                 stage_label=data.get('stage') or None,
             )
         except DjangoValidationError as exc:

@@ -29,6 +29,14 @@ class FakeAuthNotifier extends AuthNotifier {
 }
 
 class FakeRubricNotifier extends RubricEngineNotifier {
+  Map<String, dynamic>? savedPayload;
+
+  @override
+  Future<bool> updateRubric(int rubricId, Map<String, dynamic> payload) async {
+    savedPayload = payload;
+    return true;
+  }
+
   @override
   RubricEngineState build() {
     return const RubricEngineState(
@@ -114,6 +122,92 @@ class FakeNotificationsNotifier extends NotificationsNotifier {
 }
 
 void main() {
+  Future<ProviderContainer> pumpWeightEditor(
+    WidgetTester tester,
+    List<Object> weights, {
+    bool readOnly = false,
+  }) async {
+    tester.view.physicalSize = const Size(1400, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final container = ProviderContainer(overrides: [
+      authProvider.overrideWith(() => FakeAuthNotifier()),
+      rubricEngineProvider.overrideWith(() => FakeRubricNotifier()),
+      dashboardProvider('faculty').overrideWith(() => FakeFacultyDashboardNotifier()),
+    ]);
+    addTearDown(container.dispose);
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: container,
+      child: MaterialApp(home: Scaffold(body: RubricFullPageEditor(
+        rubric: {
+          'id': 1, 'name': 'Saved weights', 'scope': 'capstone',
+          'evaluation_type': 'panel', 'semester_id': 1,
+          'criteria': [for (var i = 0; i < weights.length; i++) {
+            'name': 'Criterion $i', 'weight': weights[i], 'max_score': 10,
+            'display_order': i,
+          }],
+        },
+        readOnly: readOnly,
+        onBack: () {},
+      ))),
+    ));
+    await tester.pumpAndSettle();
+    return container;
+  }
+
+  testWidgets('incomplete totals block draft, publish and unsaved draft saves', (tester) async {
+    final container = await pumpWeightEditor(tester, [1, 1, 1, 1]);
+    final notifier = container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
+    for (final label in ['Save as Draft', 'Publish Rubric']) {
+      final button = find.text(label);
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(notifier.savedPayload, isNull);
+    }
+    final saveDraft = container.read(unsavedChangesSaveDraftProvider)!;
+    expect(await saveDraft(), isFalse);
+    expect(notifier.savedPayload, isNull);
+    await tester.pumpAndSettle(const Duration(seconds: 5));
+  });
+
+  testWidgets('one hundredth under 100 is visible and blocked until corrected', (tester) async {
+    final container = await pumpWeightEditor(tester, [99.99]);
+    expect(find.text('99.99% of 100%'), findsOneWidget);
+    expect(find.text('0.01% Unallocated'), findsOneWidget);
+    final saveDraft = container.read(unsavedChangesSaveDraftProvider)!;
+    expect(await saveDraft(), isFalse);
+    final weightField = find.byWidgetPredicate((widget) =>
+        widget is TextField && widget.decoration?.labelText == 'WEIGHT');
+    await tester.ensureVisible(weightField);
+    await tester.enterText(weightField, '100');
+    await tester.pumpAndSettle();
+    expect(await saveDraft(), isTrue);
+    final notifier = container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
+    expect((notifier.savedPayload!['criteria'] as List).single['weight'], 100);
+    await tester.pumpAndSettle(const Duration(seconds: 5));
+  });
+
+  testWidgets('decimal percentages loaded from the API survive saving', (tester) async {
+    final container = await pumpWeightEditor(tester, ['33.33', '33.33', '33.34']);
+    expect(find.text('100% of 100%'), findsOneWidget);
+    expect(await container.read(unsavedChangesSaveDraftProvider)!(), isTrue);
+    final notifier = container.read(rubricEngineProvider.notifier) as FakeRubricNotifier;
+    expect((notifier.savedPayload!['criteria'] as List).map((item) => item['weight']).toList(), [33.33, 33.33, 33.34]);
+    await tester.pumpAndSettle(const Duration(seconds: 5));
+  });
+
+  testWidgets('locked rubric displays all four saved percentages as 100 total', (tester) async {
+    await pumpWeightEditor(tester, [25, 25, 25, 25], readOnly: true);
+    expect(find.text('100% of 100%'), findsOneWidget);
+    final weightFields = tester.widgetList<TextField>(find.byWidgetPredicate((widget) =>
+        widget is TextField && widget.decoration?.labelText == 'WEIGHT'));
+    expect(weightFields.map((widget) => widget.controller!.text).toList(), ['25', '25', '25', '25']);
+    expect(weightFields.every((widget) => widget.enabled == false), isTrue);
+  });
+
   testWidgets('Clicking Create Standard Rubric opens editor without crash', (tester) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;

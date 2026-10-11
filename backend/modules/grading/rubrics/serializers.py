@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.contrib.auth import get_user_model
 from django.db import models, transaction
 from rest_framework import serializers
@@ -21,6 +23,11 @@ def display_name(user):
 
 
 class RubricCriterionSerializer(serializers.ModelSerializer):
+    weight = serializers.DecimalField(
+        max_digits=5, decimal_places=2,
+        min_value=Decimal('0.01'), max_value=Decimal('100'),
+    )
+
     class Meta:
         model = RubricCriterion
         fields = [
@@ -34,6 +41,19 @@ class RubricCriterionSerializer(serializers.ModelSerializer):
             'target_type',
         ]
         read_only_fields = ['id']
+
+
+def validate_criterion_weights(weights):
+    weights = list(weights)
+    if not weights or any(weight <= 0 or weight > 100 for weight in weights):
+        raise serializers.ValidationError({
+            'criteria': 'Each criterion weight must be greater than 0% and at most 100%.',
+        })
+    total = sum(weights, Decimal('0'))
+    if total != Decimal('100'):
+        raise serializers.ValidationError({
+            'criteria': f'Criterion weights must total 100%. Current total: {total:.2f}%.',
+        })
 
 
 class RubricSerializer(serializers.ModelSerializer):
@@ -462,7 +482,7 @@ class RubricWriteSerializer(serializers.Serializer):
                 'description': (item.get('description') or '').strip(),
                 'scale': scale,
                 'max_score': item.get('max_score') or default_max_score(scale),
-                'weight': item.get('weight', 1),
+                'weight': item['weight'],
                 'display_order': item.get('display_order', index),
                 'target_type': criterion_target_type,
             })
@@ -477,6 +497,7 @@ class RubricWriteSerializer(serializers.Serializer):
                 raise serializers.ValidationError({
                     'criteria': "Rubrics set to 'Both (Team & Individual)' must contain at least one Team criterion and at least one Individual criterion. If all criteria are Team-based, please set the Scoring Target to 'Team'."
                 })
+        validate_criterion_weights(item['weight'] for item in normalized)
         return normalized
 
     def _sync_criteria(self, rubric, criteria):

@@ -10,6 +10,12 @@ final reportsProvider = NotifierProvider<ReportsNotifier, ReportsState>(
   ReportsNotifier.new,
 );
 
+class ExcelWorksheetPreview {
+  const ExcelWorksheetPreview({required this.name, required this.pdfBytes});
+  final String name;
+  final Uint8List pdfBytes;
+}
+
 class ReportPreviewData {
   final String title;
   final String subtitle;
@@ -21,6 +27,10 @@ class ReportPreviewData {
   final List<Map<String, dynamic>> rows;
   final List<Map<String, dynamic>> sections;
   final List<Map<String, dynamic>> assessments;
+  final List<String> excelHeader;
+  final List<Map<String, dynamic>> excelSheets;
+  final List<ExcelWorksheetPreview> workbookSheets;
+  final String? excelPreviewError;
   final int totalRows;
   final String? pdfBase64;
 
@@ -44,11 +54,42 @@ class ReportPreviewData {
     required this.rows,
     this.sections = const [],
     this.assessments = const [],
+    this.excelHeader = const [],
+    this.excelSheets = const [],
+    this.workbookSheets = const [],
+    this.excelPreviewError,
     required this.totalRows,
     this.pdfBase64,
   });
 
   factory ReportPreviewData.fromJson(Map<String, dynamic> json) {
+    final workbookSheets = <ExcelWorksheetPreview>[];
+    final workbook = json['excel_workbook_preview'];
+    var invalidWorkbookPreview = false;
+    if (json.containsKey('excel_workbook_preview') &&
+        (workbook is! Map || workbook['sheets'] is! List)) {
+      invalidWorkbookPreview = true;
+    }
+    if (workbook is Map && workbook['sheets'] is List) {
+      for (final sheet in (workbook['sheets'] as List).whereType<Map>()) {
+        final encoded = sheet['pdf_base64'];
+        if (encoded is String && encoded.isNotEmpty) {
+          try {
+            workbookSheets.add(
+              ExcelWorksheetPreview(
+                name: sheet['name']?.toString() ?? 'Worksheet',
+                pdfBytes: base64Decode(encoded),
+              ),
+            );
+          } catch (_) {
+            invalidWorkbookPreview = true;
+          }
+        } else {
+          invalidWorkbookPreview = true;
+        }
+      }
+      if (workbookSheets.isEmpty) invalidWorkbookPreview = true;
+    }
     final kpis = <Map<String, dynamic>>[];
     if (json['summary_kpis'] is List) {
       for (final item in json['summary_kpis'] as List) {
@@ -94,11 +135,31 @@ class ReportPreviewData {
       columns: cols,
       rows: rws,
       sections: sects,
+      excelHeader:
+          (json['excel_header'] as List?)
+              ?.map((item) => item.toString())
+              .toList() ??
+          const [],
+      excelSheets:
+          (json['excel_sheets'] as List?)
+              ?.whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList() ??
+          const [],
       assessments: json['assessments'] is List
-          ? (json['assessments'] as List).whereType<Map>().map((item) => Map<String, dynamic>.from(item)).toList()
+          ? (json['assessments'] as List)
+                .whereType<Map>()
+                .map((item) => Map<String, dynamic>.from(item))
+                .toList()
           : const [],
       totalRows: (json['total_rows'] as num?)?.toInt() ?? rws.length,
       pdfBase64: json['pdf_base64']?.toString(),
+      workbookSheets: invalidWorkbookPreview ? const [] : workbookSheets,
+      excelPreviewError:
+          json['excel_preview_error']?.toString() ??
+          (invalidWorkbookPreview
+              ? 'Unable to load the workbook preview. Refresh or download the Excel file.'
+              : null),
     );
   }
 }
@@ -138,8 +199,12 @@ class ReportsState {
 }
 
 class ReportsNotifier extends Notifier<ReportsState> {
-  Future<Map<String, dynamic>?> fetchAssessmentCandidates(Map<String, String> queryParams) async {
-    final uri = Uri.parse('${ApiConfig.baseUrl}/reports/assessment-candidates/').replace(queryParameters: queryParams);
+  Future<Map<String, dynamic>?> fetchAssessmentCandidates(
+    Map<String, String> queryParams,
+  ) async {
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/reports/assessment-candidates/',
+    ).replace(queryParameters: queryParams);
     try {
       final response = await ref.read(authenticatedHttpClientProvider).get(uri);
       if (response.statusCode != 200) return null;
@@ -149,6 +214,7 @@ class ReportsNotifier extends Notifier<ReportsState> {
       return null;
     }
   }
+
   @override
   ReportsState build() => const ReportsState();
 
@@ -162,9 +228,9 @@ class ReportsNotifier extends Notifier<ReportsState> {
     final params = Map<String, String>.from(queryParams);
     params['export_format'] = 'json';
 
-    final uri = Uri.parse('${ApiConfig.baseUrl}/reports/$endpoint').replace(
-      queryParameters: params.isEmpty ? null : params,
-    );
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/reports/$endpoint',
+    ).replace(queryParameters: params.isEmpty ? null : params);
 
     try {
       final response = await ref.read(authenticatedHttpClientProvider).get(uri);
@@ -209,9 +275,9 @@ class ReportsNotifier extends Notifier<ReportsState> {
     final params = Map<String, String>.from(queryParams);
     params['export_format'] = exportFormat;
 
-    final uri = Uri.parse('${ApiConfig.baseUrl}/reports/$endpoint').replace(
-      queryParameters: params.isEmpty ? null : params,
-    );
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/reports/$endpoint',
+    ).replace(queryParameters: params.isEmpty ? null : params);
 
     try {
       final response = await ref.read(authenticatedHttpClientProvider).get(uri);
@@ -256,12 +322,13 @@ class ReportsNotifier extends Notifier<ReportsState> {
         final ext = exportFormat == 'xlsx'
             ? '.xlsx'
             : exportFormat == 'csv'
-                ? '.csv'
-                : exportFormat == 'doc' || exportFormat == 'docx'
-                    ? '.doc'
-                    : '.pdf';
+            ? '.csv'
+            : exportFormat == 'doc' || exportFormat == 'docx'
+            ? '.doc'
+            : '.pdf';
         if (!filename.toLowerCase().endsWith(ext)) {
-          filename = '${filename.replaceAll(RegExp(r'\.(pdf|csv|xlsx|doc|docx)$', caseSensitive: false), '')}$ext';
+          filename =
+              '${filename.replaceAll(RegExp(r'\.(pdf|csv|xlsx|doc|docx)$', caseSensitive: false), '')}$ext';
         }
       }
 
@@ -272,7 +339,8 @@ class ReportsNotifier extends Notifier<ReportsState> {
           break;
         case 'xlsx':
         case 'excel':
-          mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+          mimeType =
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
           break;
         case 'doc':
         case 'docx':

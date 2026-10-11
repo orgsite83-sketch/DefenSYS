@@ -17,7 +17,7 @@ class RubricAuditCaptureTests(APITestCase):
         self.payload = {
             'name': 'Evidence rubric', 'scope': 'capstone', 'semester_id': self.semester.pk,
             'evaluation_type': 'panel', 'scale': Rubric.SCALE_10,
-            'criteria': [{'name': 'Original criterion', 'max_score': 10, 'weight': 1}],
+            'criteria': [{'name': 'Original criterion', 'max_score': 10, 'weight': 100}],
         }
 
     def create_rubric(self):
@@ -33,7 +33,7 @@ class RubricAuditCaptureTests(APITestCase):
 
     def test_criterion_only_edit_records_before_and_after_with_supplied_reason(self):
         rubric = self.create_rubric()
-        payload = {**self.payload, 'criteria': [{'name': 'Revised criterion', 'max_score': 10, 'weight': 1}], 'reason': 'Corrected criterion wording.'}
+        payload = {**self.payload, 'criteria': [{'name': 'Revised criterion', 'max_score': 10, 'weight': 100}], 'reason': 'Corrected criterion wording.'}
         response = self.client.patch(f'/api/grading/rubrics/{rubric.pk}/', payload, format='json')
         self.assertEqual(response.status_code, 200)
         log = SystemAuditLog.objects.get(action='rubric.update')

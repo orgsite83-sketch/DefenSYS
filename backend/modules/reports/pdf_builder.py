@@ -43,6 +43,17 @@ from reports.pdf_styles import (
 )
 
 
+class _ReportSectionContext(Flowable):
+    """Carry the current group name into the numbered canvas on later pages."""
+    def __init__(self, text):
+        super().__init__()
+        self.text = text
+        self.width = self.height = 0
+
+    def draw(self):
+        self.canv._report_section_context = self.text
+
+
 class DefensysPdfReportBuilder:
     """
     Centralized, high-level fluent builder for institutional USTP DefenSYS PDF exports.
@@ -407,6 +418,11 @@ class DefensysPdfReportBuilder:
         Inserts a page break.
         """
         self.story.append(PageBreak())
+        return self
+
+    def add_page_context(self, text):
+        """Label continuation pages of an individual stage or rubric section."""
+        self.story.append(_ReportSectionContext(text))
         return self
 
     def add_flowable(self, flowable: Flowable):

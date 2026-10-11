@@ -25,6 +25,7 @@ import '../../widgets/confirm_dialog.dart';
 import '../../widgets/offline_banner.dart';
 import '../../widgets/defensys_skeleton.dart';
 import '../../widgets/error_banner.dart';
+import '../../widgets/shadcn/defensys_filter_chip.dart';
 import '../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../../config/api_config.dart';
 import '../../navigation/admin_route_paths.dart';
@@ -1208,32 +1209,12 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
               runSpacing: 6,
               children: [
                 for (final option in stages)
-                  ChoiceChip(
+                  DefensysFilterChip(
                     key: ValueKey('panel-stage-option-${option.key}'),
-                    label: Text(
-                      multipleTerms
-                          ? '${option.label} · ${option.term}'
-                          : option.label,
-                    ),
+                    label: multipleTerms
+                        ? '${option.label} · ${option.term}'
+                        : option.label,
                     selected: option.key == _selectedStageKey,
-                    showCheckmark: false,
-                    visualDensity: VisualDensity.compact,
-                    labelStyle: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: option.key == _selectedStageKey
-                          ? DefensysTokens.maroonTextOf(context)
-                          : DefensysTokens.textSecondaryOf(context),
-                    ),
-                    selectedColor: DefensysTokens.maroonOf(
-                      context,
-                    ).withValues(alpha: 0.08),
-                    backgroundColor: DefensysTokens.surfaceOf(context),
-                    side: BorderSide(
-                      color: option.key == _selectedStageKey
-                          ? DefensysTokens.maroonOf(context)
-                          : DefensysTokens.borderOf(context),
-                    ),
                     onSelected: (_) => _changeWorkspace(stageKey: option.key),
                   ),
               ],

@@ -128,7 +128,6 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
     state = state.copyWith(isSaving: true, clearError: true, clearMessage: true);
     try {
       final body = <String, dynamic>{
-        if (adviserScore != null) 'adviser_score': adviserScore,
         if (rubricId != null) 'rubric_id': rubricId,
         if (criteriaScores.isNotEmpty) 'criteria_scores': criteriaScores,
         if (teamCriteriaScores.isNotEmpty) 'team_criteria_scores': teamCriteriaScores,

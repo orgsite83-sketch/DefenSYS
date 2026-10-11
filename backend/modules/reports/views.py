@@ -213,10 +213,10 @@ class SemesterGradesReportView(ReportAPIView):
             {'key': 'section', 'label': 'Section', 'align': 'center'},
             {'key': 'stage', 'label': 'Stage / Event', 'align': 'left'},
             {'key': 'adviser', 'label': 'Adviser', 'align': 'left'},
-            {'key': 'panel_score', 'label': 'Panel Score', 'align': 'center'},
-            {'key': 'adviser_score', 'label': 'Adviser Score', 'align': 'center'},
-            {'key': 'peer_score', 'label': 'Peer Score', 'align': 'center'},
-            {'key': 'final_grade', 'label': 'Final Grade', 'align': 'center'},
+            {'key': 'panel_score', 'type': 'percentage', 'label': 'Panel Score', 'align': 'center'},
+            {'key': 'adviser_score', 'type': 'percentage', 'label': 'Adviser Score', 'align': 'center'},
+            {'key': 'peer_score', 'type': 'percentage', 'label': 'Peer Score', 'align': 'center'},
+            {'key': 'final_grade', 'type': 'percentage', 'label': 'Final Grade', 'align': 'center'},
             {'key': 'result', 'label': 'Outcome', 'align': 'center'},
         ]
 
@@ -344,7 +344,7 @@ class DefenseScheduleReportView(ReportAPIView):
 
         columns = [
             {'key': 'scope', 'label': 'Scope', 'align': 'center'},
-            {'key': 'scheduled_date', 'label': 'Date', 'align': 'center'},
+            {'key': 'scheduled_date', 'type': 'date', 'label': 'Date', 'align': 'center'},
             {'key': 'time_slot', 'label': 'Time Slot', 'align': 'center'},
             {'key': 'team_name', 'label': 'Team Name', 'align': 'left'},
             {'key': 'stage', 'label': 'Stage / Event', 'align': 'left'},
@@ -478,7 +478,7 @@ class TeamRosterReportView(ReportAPIView):
             {'key': 'section', 'label': 'Section / Year', 'align': 'center'},
             {'key': 'leader', 'label': 'Team Leader', 'align': 'left'},
             {'key': 'adviser', 'label': 'Faculty Adviser', 'align': 'left'},
-            {'key': 'members_count', 'label': 'Size', 'align': 'center'},
+            {'key': 'members_count', 'type': 'integer', 'label': 'Size', 'align': 'center'},
             {'key': 'members_list', 'label': 'Team Members', 'align': 'left'},
         ]
 
@@ -571,7 +571,7 @@ class UserDirectoryReportView(ReportAPIView):
             {'key': 'role', 'label': 'System Role', 'align': 'center'},
             {'key': 'email', 'label': 'Email Address', 'align': 'left'},
             {'key': 'status', 'label': 'Status', 'align': 'center'},
-            {'key': 'date_joined', 'label': 'Date Registered', 'align': 'center'},
+            {'key': 'date_joined', 'type': 'date', 'label': 'Date Registered', 'align': 'center'},
         ]
 
         rows = []
@@ -749,6 +749,10 @@ class AuditTrailReportView(ReportAPIView):
             export_format=export_format,
             title=title,
             subtitle=f"Log extract generated on {datetime.now().strftime('%Y-%m-%d %I:%M %p')}",
+            xlsx_generator_func=lambda: generate_audit_trail_xlsx(
+                logs, title, metadata, columns, rows, filename, generated_by,
+                include_signatures=include_signatures, signatories=signatories,
+            ),
             summary_kpis=summary_kpis,
             metadata=metadata,
             columns=columns,

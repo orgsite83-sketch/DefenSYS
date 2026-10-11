@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:defensys/utils/rubric_scoring.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -131,6 +132,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
             (c['name'] ?? 'Criterion').toString(),
             ((c['max_score'] as num?) ?? 10).toDouble(),
             id: int.tryParse(c['id']?.toString() ?? ''),
+            weight: rubricWeight(c['weight']),
             description: (c['description'] ?? '').toString(),
           );
         })
@@ -270,16 +272,8 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   }
 
   double _panelSubmissionPercentage(List<Criterion> criteria) {
-    final maximum = criteria.fold<double>(
-      0,
-      (sum, criterion) => sum + criterion.maxScore,
-    );
-    if (maximum <= 0) return 0;
-    final total = criteria.fold<double>(
-      0,
-      (sum, criterion) => sum + (criterion.score ?? 0),
-    );
-    return total / maximum * 100;
+    return rubricPercentage(criteria.map((criterion) =>
+        RubricScore(criterion.score ?? 0, criterion.maxScore, criterion.weight))) ?? 0;
   }
 
   List<Map<String, dynamic>> _evaluationSubmissions(TeamData team) {
@@ -732,7 +726,11 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     final required = _requiredCriteria(team);
     final entered = required.where((criterion) => criterion.isScored).length;
     final complete = _isComplete(team);
-    final panelPct = complete ? _panelSubmissionPercentage(required) : null;
+    final panelPct = !complete ? null : team.targetType == 'team'
+        ? _panelSubmissionPercentage(_criteria)
+        : team.memberDetails.map((member) => _panelSubmissionPercentage([
+            ..._criteria, ...?_studentCriteria[member.id],
+          ])).reduce((a, b) => a + b) / team.memberDetails.length;
     final busy =
         _isSubmittingGrades ||
         _isReviewingGrades ||

@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 import 'package:defensys/widgets/export/report_catalog.dart';
 import 'package:defensys/widgets/export/report_export_configuration.dart';
+import 'package:defensys/widgets/export/defensys_report_dialog_shell.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +15,7 @@ import 'package:defensys/services/grading/grade_center_provider.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/widgets/export/export.dart';
+import 'package:defensys/widgets/shadcn/defensys_filter_chip.dart';
 import 'package:defensys/widgets/table/defensys_segmented_control.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 
@@ -439,22 +441,10 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
   }
 
   Widget _catalogCategoryChip(String value, String label) {
-    return ChoiceChip(
-      label: Text(label),
+    return DefensysFilterChip(
+      label: label,
       selected: _catalogCategory == value,
       onSelected: (_) => setState(() => _catalogCategory = value),
-      selectedColor: DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
-      side: BorderSide(
-        color: _catalogCategory == value
-            ? DefensysTokens.maroonOf(context)
-            : DefensysTokens.borderOf(context),
-      ),
-      labelStyle: TextStyle(
-        fontSize: 12,
-        color: _catalogCategory == value
-            ? DefensysTokens.maroonOf(context)
-            : DefensysTokens.textPrimaryOf(context),
-      ),
     );
   }
 
@@ -2536,128 +2526,21 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
       }
     }
 
-    return Dialog(
-      backgroundColor: DefensysTokens.surfaceOf(context),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 1120,
-          maxHeight: MediaQuery.of(context).size.height * 0.90,
-        ),
-        child: Column(
-          children: [
-            // 1. Modal Institutional Header
-            Container(
-              padding: const EdgeInsets.fromLTRB(22, 16, 20, 16),
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(color: DefensysTokens.maroonOf(context), width: 4),
-                  bottom: BorderSide(color: DefensysTokens.borderOf(context)),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                    ),
-                    child: Icon(icon, color: DefensysTokens.maroonOf(context), size: 22),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                title,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800,
-                                  color: DefensysTokens.textPrimaryOf(context),
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                              ),
-                              child: Text(
-                                tag,
-                                style: TextStyle(
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: DefensysTokens.maroonOf(context),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          desc,
-                          style: TextStyle(fontSize: 11.5, color: DefensysTokens.textSecondaryOf(context)),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.close_rounded, size: 20, color: DefensysTokens.textSecondaryOf(context)),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
-              ),
-            ),
-
-            if (endpoint == 'team-grade' || endpoint == 'individual-grade')
-              _buildAssessmentControls(semestersList),
-
-            // 2. Main Two-Pane Split (Left: Selector / Filters, Right: Live Data Viewer)
-            Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Left Pane (Width: 380)
-                  SizedBox(
-                    width: 380,
-                    child: _buildLeftSelectorPane(
-                      endpoint: endpoint,
-                      semestersList: semestersList,
-                    ),
-                  ),
-
-                  // Vertical Separator
-                  VerticalDivider(width: 1, thickness: 1, color: DefensysTokens.borderOf(context)),
-
-                  // Right Pane: Live Data Preview
-                  Expanded(
-                    child: _buildRightPreviewPane(
-                      endpoint: endpoint,
-                      selectedStudentObj: selectedStudentObj,
-                      selectedTeamObj: selectedTeamObj,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // 3. Modal Bottom Footer (Format selector pills + Download button)
-            _buildModalFooter(),
-          ],
-        ),
+    return DefensysReportDialogShell(
+      title: title,
+      subtitle: desc,
+      icon: icon,
+      tag: tag,
+      onClose: () => Navigator.of(context).pop(),
+      controls: endpoint == 'team-grade' || endpoint == 'individual-grade'
+          ? _buildAssessmentControls(semestersList) : null,
+      filters: _buildLeftSelectorPane(endpoint: endpoint, semestersList: semestersList),
+      preview: _buildRightPreviewPane(
+        endpoint: endpoint,
+        selectedStudentObj: selectedStudentObj,
+        selectedTeamObj: selectedTeamObj,
       ),
+      footer: _buildModalFooter(),
     );
   }
 

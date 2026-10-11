@@ -361,6 +361,7 @@ class GradeBreakdown(models.Model):
     criterion_name = models.CharField(max_length=160)
     score = models.DecimalField(max_digits=7, decimal_places=2)
     max_score = models.DecimalField(max_digits=7, decimal_places=2)
+    weight_snapshot = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     remarks = models.TextField(blank=True)
     display_order = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -491,6 +492,7 @@ class PanelistCriterionScore(models.Model):
     criterion_name_snapshot = models.CharField(max_length=160)
     score = models.DecimalField(max_digits=7, decimal_places=2)
     max_score_snapshot = models.DecimalField(max_digits=7, decimal_places=2)
+    weight_snapshot = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     display_order = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -588,6 +590,7 @@ class PeerEvaluationSubmission(models.Model):
     )
     total_score = models.DecimalField(max_digits=7, decimal_places=2)
     max_score = models.DecimalField(max_digits=7, decimal_places=2)
+    weighted_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     breakdown = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -602,6 +605,14 @@ class PeerEvaluationSubmission(models.Model):
                 name='unique_peer_submission_per_evaluator_evaluatee',
             ),
         ]
+
+    @property
+    def normalized_score(self):
+        if self.weighted_score is not None:
+            return self.weighted_score
+        if self.max_score <= 0:
+            return None
+        return self.total_score / self.max_score * 100
 
     def __str__(self):
         return f'{self.evaluator} → {self.evaluatee} ({self.team_grade})'

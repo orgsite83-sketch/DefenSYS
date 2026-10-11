@@ -8,11 +8,13 @@ import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 class DefensysPdfViewer extends StatefulWidget {
   final Uint8List pdfBytes;
   final String title;
+  final String documentType;
 
   const DefensysPdfViewer({
     super.key,
     required this.pdfBytes,
     this.title = 'Document Preview',
+    this.documentType = 'PDF',
   });
 
   @override
@@ -75,7 +77,9 @@ class _DefensysPdfViewerState extends State<DefensysPdfViewer> {
                     Expanded(
                       child: Text(
                         _pageCount == 0
-                            ? (compact ? 'PDF' : 'PDF preview')
+                            ? (compact
+                                  ? widget.documentType
+                                  : '${widget.documentType} preview')
                             : '$_pageCount ${_pageCount == 1 ? 'page' : 'pages'}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -144,13 +148,13 @@ class _DefensysPdfViewerState extends State<DefensysPdfViewer> {
           ),
           Expanded(
             child: _loadFailed
-                ? const Center(
+                ? Center(
                     child: Padding(
-                      padding: EdgeInsets.all(24),
+                      padding: const EdgeInsets.all(24),
                       child: Text(
-                        'Unable to preview this PDF. Try opening or downloading the file.',
+                        'Unable to preview this ${widget.documentType}. Try refreshing or downloading the file.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Color(0xFF475569)),
+                        style: const TextStyle(color: Color(0xFF475569)),
                       ),
                     ),
                   )

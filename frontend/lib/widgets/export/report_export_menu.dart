@@ -4,9 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../services/auth_provider.dart';
 import '../../services/reports_provider.dart';
-import '../../theme/defensys_button_styles.dart';
 import '../../toasts/feedback_toast.dart';
 import 'report_catalog.dart';
+import 'export_dropdown_button.dart';
 import 'report_export_configuration.dart';
 import 'report_source_context.dart';
 
@@ -117,58 +117,10 @@ class _ReportExportMenuState extends ConsumerState<ReportExportMenu> {
     ).any((report) => report.id == widget.reportId)) {
       return const SizedBox.shrink();
     }
-    return PopupMenuButton<String>(
-      enabled: widget.enabled && !_downloading,
-      tooltip: 'Export filtered records',
+    return ExportDropdownButton(
+      enabled: widget.enabled,
+      isLoading: _downloading,
       onSelected: _select,
-      itemBuilder: (_) => const [
-        PopupMenuItem(
-          value: 'xlsx',
-          child: ListTile(
-            dense: true,
-            leading: Icon(Icons.table_view_outlined, size: 18),
-            title: Text('Export Excel'),
-          ),
-        ),
-        PopupMenuItem(
-          value: 'pdf',
-          child: ListTile(
-            dense: true,
-            leading: Icon(Icons.picture_as_pdf_outlined, size: 18),
-            title: Text('Export PDF'),
-          ),
-        ),
-        PopupMenuDivider(),
-        PopupMenuItem(
-          value: 'report_center',
-          child: ListTile(
-            dense: true,
-            leading: Icon(Icons.summarize_outlined, size: 18),
-            title: Text('Report Center'),
-          ),
-        ),
-      ],
-      child: IgnorePointer(
-        child: OutlinedButton.icon(
-          onPressed: widget.enabled && !_downloading ? () {} : null,
-          style: DefensysButtonStyles.secondary(context),
-          icon: _downloading
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.file_download_outlined, size: 17),
-          label: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(_downloading ? 'Exporting…' : 'Export'),
-              const SizedBox(width: 6),
-              const Icon(Icons.expand_more, size: 16),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

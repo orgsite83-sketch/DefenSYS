@@ -80,20 +80,13 @@ def _panelist_key_from_breakdown_remarks(remarks):
 
 
 def panelist_percentage_from_breakdowns(breakdowns):
-    """panel_pct = sum(score) / sum(max_score) * 100 for one panelist's criteria rows."""
-    total_score = sum((row.score for row in breakdowns), Decimal('0'))
-    total_max = sum((row.max_score for row in breakdowns), Decimal('0'))
-    if total_max <= 0:
-        return None
-    return (total_score / total_max * Decimal('100')).quantize(Decimal('0.01'))
+    from .scoring import evaluation_percentage
+    return evaluation_percentage((row.score, row.max_score, row.weight_snapshot) for row in breakdowns)
 
 
 def panelist_percentage_from_criterion_scores(scores):
-    total_score = sum((row.score for row in scores), Decimal('0'))
-    total_max = sum((row.max_score_snapshot for row in scores), Decimal('0'))
-    if total_max <= 0:
-        return None
-    return (total_score / total_max * Decimal('100')).quantize(Decimal('0.01'))
+    from .scoring import evaluation_percentage
+    return evaluation_percentage((row.score, row.max_score_snapshot, row.weight_snapshot) for row in scores)
 
 
 def panelist_remark_key_for_user(user):
@@ -125,7 +118,8 @@ def panelist_result_payload(team_grade, panelist_key):
     progress = schedule_progress(team_grade.schedule) if team_grade.schedule_id else {}
     total_score = sum((row.score for row in rows), Decimal('0'))
     total_max = sum((row.max_score for row in rows), Decimal('0'))
-    percentage = panelist_percentage_from_breakdowns(rows) or Decimal('0')
+    from .scoring import panelist_overall_percentage
+    percentage = panelist_overall_percentage(rows, maximum_attr='max_score') or Decimal('0')
 
     team_status = ('Approved' if team_grade.status == TeamGrade.STATUS_PUBLISHED and team_grade.result == 'passed'
                    else 'Failed' if team_grade.result == 'failed' else 'Pending')
@@ -188,6 +182,7 @@ def panelist_result_payload(team_grade, panelist_key):
                 'criteriaName': row.criterion_name,
                 'score': float(row.score),
                 'max': float(row.max_score),
+                'weight_snapshot': float(row.weight_snapshot) if row.weight_snapshot is not None else None,
                 'student_name': (
                     f"{row.student.first_name} {row.student.last_name}".strip()
                     or row.student.username
@@ -242,7 +237,8 @@ def previous_panel_attempt_results(submissions):
         scores = [score for row in rows for score in row.criterion_scores.all()]
         if not scores:
             continue
-        percentage = panelist_percentage_from_criterion_scores(scores)
+        from .scoring import panelist_overall_percentage
+        percentage = panelist_overall_percentage(scores, maximum_attr='max_score_snapshot')
         weights = ({'panel_weight': snapshot.panel_weight, 'peer_weight': snapshot.peer_weight,
                     'adviser_weight': snapshot.adviser_weight} if snapshot else weights_for_schedule(schedule))
         verdict = snapshot.verdict if snapshot else ''
@@ -261,6 +257,7 @@ def previous_panel_attempt_results(submissions):
             'criteria': [{
                 'criteriaName': score.criterion_name_snapshot, 'score': float(score.score),
                 'max': float(score.max_score_snapshot), 'student_id': row.student_id,
+                'weight_snapshot': float(score.weight_snapshot) if score.weight_snapshot is not None else None,
                 'student_name': display_name(row.student) if row.student_id else None,
             } for row in rows for score in row.criterion_scores.all()],
             'memberGrades': [],
@@ -355,10 +352,8 @@ def recompute_panel_score(team_grade):
                         scores_to_sum.extend(student_sub.criterion_scores.all())
                     
                     if scores_to_sum:
-                        total_score = sum((row.score for row in scores_to_sum), Decimal('0'))
-                        total_max = sum((row.max_score_snapshot for row in scores_to_sum), Decimal('0'))
-                        if total_max > 0:
-                            pct = (total_score / total_max * Decimal('100')).quantize(Decimal('0.01'))
+                        pct = panelist_percentage_from_criterion_scores(scores_to_sum)
+                        if pct is not None:
                             percentages.append(pct)
                 
                 sg = StudentStageGrade.objects.get(team_grade=team_grade, student=student)
@@ -470,10 +465,8 @@ def recompute_panel_score(team_grade):
                 
                 rows_to_sum = team_bd + student_bd
                 if rows_to_sum:
-                    total_score = sum((row.score for row in rows_to_sum), Decimal('0'))
-                    total_max = sum((row.max_score for row in rows_to_sum), Decimal('0'))
-                    if total_max > 0:
-                        pct = (total_score / total_max * Decimal('100')).quantize(Decimal('0.01'))
+                    pct = panelist_percentage_from_breakdowns(rows_to_sum)
+                    if pct is not None:
                         percentages.append(pct)
             
             sg = StudentStageGrade.objects.get(team_grade=team_grade, student=student)
@@ -616,7 +609,7 @@ def _validated_panel_criterion_rows(schedule, criteria_scores, student=None):
         except Exception as exc:
             raise ValidationError({'score': 'Score must be numeric.'}) from exc
         max_score = Decimal(str(criterion.max_score))
-        if score < 0 or score > max_score:
+        if not score.is_finite() or score < 0 or score > max_score:
             raise ValidationError({'score': 'Score must be between 0 and max score.'})
         rows.append({
             'criterion': criterion,
@@ -706,6 +699,7 @@ def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=Non
             criterion_name_snapshot=row['criterion'].name,
             score=row['score'],
             max_score_snapshot=row['max_score'],
+            weight_snapshot=row['criterion'].weight,
             display_order=row['criterion'].display_order,
         )
         for row in rows
@@ -729,6 +723,7 @@ def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=Non
             criterion_name=row['criterion'].name,
             score=row['score'],
             max_score=row['max_score'],
+            weight_snapshot=row['criterion'].weight,
             remarks=remark,
             display_order=row['criterion'].display_order,
         )
@@ -1745,6 +1740,7 @@ def assigned_adviser_rubric_payload(grade):
             'name': criterion.name,
             'description': criterion.description,
             'max_score': criterion.max_score,
+            'weight': str(criterion.weight),
             'display_order': criterion.display_order,
             'target_type': criterion.target_type,
         }
@@ -1764,6 +1760,7 @@ def rebuild_component_breakdown(grade, evaluation_type, ratio):
         {
             'name': criterion.name,
             'max_score': Decimal(str(criterion.max_score)),
+            'weight': criterion.weight,
             'display_order': criterion.display_order,
         }
         for criterion in rubric.criteria.all()
@@ -1786,13 +1783,12 @@ def rebuild_component_breakdown(grade, evaluation_type, ratio):
                 criterion_name=row['name'],
                 score=score,
                 max_score=max_score,
+                weight_snapshot=row['weight'],
                 display_order=row['display_order'],
             )
         )
     GradeBreakdown.objects.bulk_create(breakdowns)
-    if max_total <= 0:
-        return None
-    return (total / max_total * Decimal('100')).quantize(Decimal('0.01'))
+    return panelist_percentage_from_breakdowns(breakdowns)
 
 
 

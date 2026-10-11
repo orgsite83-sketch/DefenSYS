@@ -1,3 +1,4 @@
+import 'package:defensys/utils/rubric_scoring.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -583,8 +584,7 @@ class _GradeFormState extends ConsumerState<_GradeForm> {
     final criteria = (_selectedRubric!['criteria'] as List? ?? []);
     final targetType = _selectedRubric!['target_type']?.toString() ?? 'team';
 
-    double total = 0;
-    double maxTotal = 0;
+    final scoreRows = <RubricScore>[];
 
     for (final c in criteria) {
       final cMap = c as Map;
@@ -594,17 +594,14 @@ class _GradeFormState extends ConsumerState<_GradeForm> {
 
       if (targetType == 'team' || (targetType == 'both' && cTarget == 'team')) {
         final entered = double.tryParse(_teamScoreCtrl[name]?.text ?? '') ?? 0;
-        total += entered.clamp(0, maxScore);
-        maxTotal += maxScore;
+        scoreRows.add(RubricScore(entered.clamp(0, maxScore).toDouble(), maxScore, rubricWeight(cMap['weight'])));
       } else if (targetType == 'individual' || (targetType == 'both' && cTarget == 'individual')) {
         final entered = double.tryParse(_studentScoreCtrl[studentId]?[name]?.text ?? '') ?? 0;
-        total += entered.clamp(0, maxScore);
-        maxTotal += maxScore;
+        scoreRows.add(RubricScore(entered.clamp(0, maxScore).toDouble(), maxScore, rubricWeight(cMap['weight'])));
       }
     }
 
-    if (maxTotal == 0) return 0;
-    return (total / maxTotal * 100).clamp(0, 100);
+    return rubricPercentage(scoreRows) ?? 0;
   }
 
   double _computeOverallTeamScore() {
@@ -1373,7 +1370,8 @@ class _GradeFormState extends ConsumerState<_GradeForm> {
       final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
       final entered = (double.tryParse(_teamScoreCtrl[name]?.text ?? '') ?? 0).clamp(0, maxScore);
       teamCriteriaScores.add({
-        'criterion_name': name,
+        'criterion_id': c['id'],
+          'criterion_name': name,
         'score': entered,
         'max_score': maxScore,
         'display_order': c['display_order'] ?? 0,
@@ -1391,6 +1389,7 @@ class _GradeFormState extends ConsumerState<_GradeForm> {
         final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
         final entered = (double.tryParse(ctrlMap[name]?.text ?? '') ?? 0).clamp(0, maxScore);
         studentCritScores.add({
+          'criterion_id': c['id'],
           'criterion_name': name,
           'score': entered,
           'max_score': maxScore,

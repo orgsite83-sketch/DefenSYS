@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../../theme/defensys_tokens.dart';
+import '../../../widgets/shadcn/defensys_filter_chip.dart';
 import 'panelist_models.dart';
 
 class AssignmentsTab extends StatefulWidget {
@@ -369,45 +370,11 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
   }
 
   Widget _statusChip(String label, String value, int count) {
-    final selected = _statusFilter == value;
-    return ChoiceChip(
-      selected: selected,
-      showCheckmark: false,
+    return DefensysFilterChip(
+      label: label,
+      count: count,
+      selected: _statusFilter == value,
       onSelected: (_) => setState(() => _statusFilter = value),
-      backgroundColor: DefensysTokens.surfaceOf(context),
-      selectedColor: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
-      side: BorderSide(
-        color: selected
-            ? DefensysTokens.maroonOf(context)
-            : DefensysTokens.borderOf(context),
-      ),
-      visualDensity: VisualDensity.compact,
-      label: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-              color: selected
-                  ? DefensysTokens.maroonTextOf(context)
-                  : DefensysTokens.textSecondaryOf(context),
-            ),
-          ),
-          const SizedBox(width: 5),
-          Text(
-            '$count',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: selected
-                  ? DefensysTokens.maroonTextOf(context)
-                  : DefensysTokens.textSecondaryOf(context),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -489,28 +456,10 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
   }
 
   Widget _scopeFilterChip(String label, String value, {Color? color}) {
-    final isSelected = _scopeFilter == value;
-    final activeColor = color ?? DefensysTokens.maroon;
-
-    return FilterChip(
-      selected: isSelected,
-      label: Text(label),
-      labelStyle: TextStyle(
-        fontSize: 11,
-        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-        color: isSelected ? Colors.white : Colors.grey.shade800,
-      ),
-      selectedColor: activeColor,
-      backgroundColor: Colors.white,
-      checkmarkColor: Colors.white,
-      side: BorderSide(
-        color: isSelected ? activeColor : Colors.grey.shade300,
-        width: 1,
-      ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      visualDensity: VisualDensity.compact,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+    return DefensysFilterChip(
+      label: label,
+      selected: _scopeFilter == value,
+      activeColor: color ?? DefensysTokens.maroonOf(context),
       onSelected: (_) => setState(() => _scopeFilter = value),
     );
   }

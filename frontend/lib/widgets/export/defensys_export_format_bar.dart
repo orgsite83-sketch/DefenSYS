@@ -2,18 +2,8 @@ import 'package:flutter/material.dart';
 import '../../theme/defensys_tokens.dart';
 import 'defensys_export_models.dart';
 
-/// Reusable modal footer bar with format pills, signatory trigger, and action buttons.
+/// Shared format, signature and download controls for every report workspace.
 class DefensysExportFormatBar extends StatelessWidget {
-  final List<String> supportedFormats;
-  final String selectedFormat;
-  final ValueChanged<String> onFormatChanged;
-  final bool includeSignatures;
-  final int signatoriesCount;
-  final VoidCallback onOpenSignatoryCustomizer;
-  final bool isDownloading;
-  final VoidCallback onCancel;
-  final VoidCallback onDownload;
-
   const DefensysExportFormatBar({
     super.key,
     required this.supportedFormats,
@@ -25,172 +15,203 @@ class DefensysExportFormatBar extends StatelessWidget {
     required this.isDownloading,
     required this.onCancel,
     required this.onDownload,
+    this.allowSignatoryCustomization = true,
   });
+
+  final List<String> supportedFormats;
+  final String selectedFormat;
+  final ValueChanged<String> onFormatChanged;
+  final bool includeSignatures, isDownloading, allowSignatoryCustomization;
+  final int signatoriesCount;
+  final VoidCallback onOpenSignatoryCustomizer, onCancel, onDownload;
 
   @override
   Widget build(BuildContext context) {
-    final formats = DefensysExportFormat.all
-        .where((f) => supportedFormats.contains(f.id))
-        .toList();
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      decoration: const BoxDecoration(
-        color: Color(0xFFF8FAFC),
-        border: Border(top: BorderSide(color: DefensysTokens.border)),
+    final secondary = DefensysTokens.textSecondaryOf(context);
+    final formats = DefensysExportFormat.all.where(
+      (format) => supportedFormats.contains(format.id),
+    );
+    final controls = <Widget>[
+      Text(
+        'FILE FORMAT:',
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          color: secondary,
+          letterSpacing: .5,
+        ),
       ),
-      child: Row(
-        children: [
-          // Format Selector Label
-          const Text(
-            'FILE FORMAT:',
-            style: TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w800,
-              color: DefensysTokens.steelGrey,
-              letterSpacing: 0.5,
-            ),
+      ...formats.map(
+        (format) => _pill(
+          context,
+          icon: format.icon,
+          label: format.label,
+          selected: selectedFormat.toLowerCase() == format.id,
+          color: format.color,
+          onTap: () => onFormatChanged(format.id),
+        ),
+      ),
+      if (allowSignatoryCustomization)
+        _pill(
+          context,
+          icon: includeSignatures
+              ? Icons.history_edu_rounded
+              : Icons.edit_off_outlined,
+          label: includeSignatures
+              ? 'Signatures ($signatoriesCount)'
+              : 'Signatures (Off)',
+          selected: includeSignatures,
+          color: const Color(0xFFB45309),
+          trailing: Icons.tune_rounded,
+          onTap: onOpenSignatoryCustomizer,
+        ),
+    ];
+    final actions = <Widget>[
+      OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: DefensysTokens.textPrimaryOf(context),
+          side: BorderSide(color: DefensysTokens.borderOf(context)),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
           ),
-          const SizedBox(width: 10),
-
-          // Format Selector Pills
-          ...formats.map((fmt) {
-            final isSelected = selectedFormat.toLowerCase() == fmt.id;
-
-            return Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () => onFormatChanged(fmt.id),
-                  borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 120),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: isSelected ? fmt.color.withValues(alpha: 0.08) : Colors.white,
-                      borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                      border: Border.all(
-                        color: isSelected ? fmt.color : const Color(0xFFCBD5E1),
-                        width: isSelected ? 1.5 : 1,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          fmt.icon,
-                          size: 14,
-                          color: isSelected ? fmt.color : DefensysTokens.steelGrey,
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          fmt.label,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                            color: isSelected ? fmt.color : DefensysTokens.textDark,
-                          ),
-                        ),
-                      ],
-                    ),
+        ),
+        onPressed: isDownloading ? null : onCancel,
+        child: const Text('Cancel', style: TextStyle(fontSize: 12)),
+      ),
+      FilledButton.icon(
+        style: FilledButton.styleFrom(
+          backgroundColor: DefensysTokens.maroonOf(context),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+          ),
+        ),
+        icon: isDownloading
+            ? const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              )
+            : const Icon(Icons.file_download_outlined, size: 16),
+        label: Text(
+          isDownloading
+              ? 'Generating ${selectedFormat.toUpperCase()}...'
+              : 'Download ${selectedFormat.toUpperCase()} Export',
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+        ),
+        onPressed: isDownloading ? null : onDownload,
+      ),
+    ];
+    return Container(
+      key: const ValueKey('report-export-footer'),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      decoration: BoxDecoration(
+        color: DefensysTokens.isDark(context)
+            ? DefensysTokens.surfaceHigherOf(context)
+            : const Color(0xFFF8FAFC),
+        border: Border(
+          top: BorderSide(color: DefensysTokens.borderOf(context)),
+        ),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth >= 900) {
+            return Row(
+              children: [
+                Expanded(
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: controls,
                   ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                actions.first,
+                const SizedBox(width: 8),
+                actions.last,
+              ],
             );
-          }),
+          }
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: controls,
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 8,
+                children: actions,
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 
-          // Signatures Customizer Trigger Pill
-          Container(
-            height: 20,
-            width: 1,
-            color: const Color(0xFFCBD5E1),
-            margin: const EdgeInsets.symmetric(horizontal: 10),
+  Widget _pill(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required bool selected,
+    required Color color,
+    required VoidCallback onTap,
+    IconData? trailing,
+  }) {
+    final foreground = selected
+        ? color
+        : DefensysTokens.textSecondaryOf(context);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: selected
+                ? color.withValues(alpha: .08)
+                : DefensysTokens.surfaceOf(context),
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+            border: Border.all(
+              color: selected ? color : DefensysTokens.borderOf(context),
+              width: selected ? 1.5 : 1,
+            ),
           ),
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onOpenSignatoryCustomizer,
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 120),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: includeSignatures ? const Color(0xFFFEF3C7) : const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                  border: Border.all(
-                    color: includeSignatures ? const Color(0xFFF59E0B) : const Color(0xFFCBD5E1),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      includeSignatures ? Icons.history_edu_rounded : Icons.edit_off_outlined,
-                      size: 14,
-                      color: includeSignatures ? const Color(0xFFB45309) : DefensysTokens.steelGrey,
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      includeSignatures ? 'Signatures ($signatoriesCount)' : 'Signatures (Off)',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: includeSignatures ? const Color(0xFF92400E) : DefensysTokens.steelGrey,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.tune_rounded,
-                      size: 12,
-                      color: includeSignatures ? const Color(0xFFB45309) : DefensysTokens.steelGrey,
-                    ),
-                  ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14, color: foreground),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                  color: foreground,
                 ),
               ),
-            ),
+              if (trailing != null) ...[
+                const SizedBox(width: 4),
+                Icon(trailing, size: 12, color: foreground),
+              ],
+            ],
           ),
-
-          const Spacer(),
-
-          // Cancel Button
-          OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: DefensysTokens.textDark,
-              side: const BorderSide(color: DefensysTokens.border),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DefensysTokens.radiusMd)),
-            ),
-            onPressed: isDownloading ? null : onCancel,
-            child: const Text('Cancel', style: TextStyle(fontSize: 12)),
-          ),
-          const SizedBox(width: 8),
-
-          // Download Primary Action
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: DefensysTokens.maroon,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DefensysTokens.radiusMd)),
-            ),
-            icon: isDownloading
-                ? const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                  )
-                : const Icon(Icons.file_download_outlined, size: 16),
-            label: Text(
-              isDownloading
-                  ? 'Generating ${selectedFormat.toUpperCase()}...'
-                  : 'Download ${selectedFormat.toUpperCase()} Export',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-            ),
-            onPressed: isDownloading ? null : onDownload,
-          ),
-        ],
+        ),
       ),
     );
   }

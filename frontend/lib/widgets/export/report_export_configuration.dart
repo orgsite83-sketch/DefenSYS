@@ -6,6 +6,7 @@ import '../../services/auth_provider.dart';
 import '../../services/network/authenticated_client.dart';
 import '../../services/reports_provider.dart';
 import '../../toasts/feedback_toast.dart';
+import '../../theme/defensys_tokens.dart';
 import 'defensys_export_dialog.dart';
 import 'defensys_export_models.dart';
 import 'report_catalog.dart';
@@ -109,12 +110,13 @@ class _ReportConfigurationState extends ConsumerState<_ReportConfiguration> {
       config: DefensysExportConfig(
         title: report.title,
         subtitle: report.description,
+        tag: report.category,
         icon: report.icon,
         defaultFilename:
             'DefenSYS_${report.id}_${DateTime.now().toIso8601String().substring(0, 10)}',
         initialFormat: widget.initialFormat,
         initialParams: _scoped(widget.params),
-        leftPaneWidth: 320,
+        leftPaneWidth: 380,
         leftPaneBuilder: (_, params, update, refresh) => _ReportFilters(
           report: report,
           params: params,
@@ -122,6 +124,7 @@ class _ReportConfigurationState extends ConsumerState<_ReportConfiguration> {
           loading: _loadingOptions,
           error: _optionsError,
           onChanged: update,
+          onReset: () => update(_scoped({})),
           onRetry: _loadOptions,
           pitLead:
               ref.read(authProvider).user?['is_pit_lead'] == true &&
@@ -181,6 +184,7 @@ class _ReportFilters extends StatefulWidget {
     required this.loading,
     required this.error,
     required this.onChanged,
+    required this.onReset,
     required this.onRetry,
     required this.pitLead,
   });
@@ -191,12 +195,28 @@ class _ReportFilters extends StatefulWidget {
   final String? error;
   final ValueChanged<Map<String, String>> onChanged;
   final VoidCallback onRetry;
+  final VoidCallback onReset;
   @override
   State<_ReportFilters> createState() => _ReportFiltersState();
 }
 
 class _ReportFiltersState extends State<_ReportFilters> {
   final Map<String, TextEditingController> _controllers = {};
+
+  @override
+  void didUpdateWidget(covariant _ReportFilters oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    for (final entry in _controllers.entries) {
+      final text = widget.params[entry.key] ?? '';
+      if (entry.value.text.trim() != text) {
+        entry.value.value = TextEditingValue(
+          text: text,
+          selection: TextSelection.collapsed(offset: text.length),
+        );
+      }
+    }
+  }
+
   @override
   void dispose() {
     for (final controller in _controllers.values) {
@@ -213,6 +233,9 @@ class _ReportFiltersState extends State<_ReportFilters> {
         'team_id',
         'student_id',
         'grade_id',
+        'stage',
+        'pit_event',
+        'stage_id',
       ]) {
         next.remove(selector);
       }
@@ -223,6 +246,47 @@ class _ReportFiltersState extends State<_ReportFilters> {
   }
 
   List<Map<String, String>>? _choices(String key) {
+    if (key == 'stage' || key == 'pit_event') {
+      final scope = widget.report.id == 'defense-stage-setup'
+          ? 'capstone'
+          : widget.report.id == 'pit-event-setup' || key == 'pit_event'
+          ? 'pit'
+          : widget.params['scope'] ??
+                widget.params['type'] ??
+                widget.report.scope;
+      final semester =
+          widget.params['semester_id'] ??
+          widget.options['default_semester_id']?.toString() ??
+          '';
+      final contexts =
+          widget.options['stage_choices'] as List? ??
+          [
+            for (final stage in widget.options['stages'] as List? ?? [])
+              {
+                'value': stage['label'],
+                'label': stage['label'],
+                'scope': 'capstone',
+              },
+          ];
+      final seen = <String>{};
+      return contexts
+          .whereType<Map>()
+          .where(
+            (row) =>
+                (scope.isEmpty || row['scope'] == scope) &&
+                (row['semester_id'] == null ||
+                    semester.isEmpty ||
+                    row['semester_id'].toString() == semester),
+          )
+          .where((row) => seen.add(row['value'].toString()))
+          .map(
+            (row) => {
+              'value': row['value'].toString(),
+              'label': row['label'].toString(),
+            },
+          )
+          .toList();
+    }
     final source = const {
       'semester_id': 'semesters',
       'rubric_id': 'rubrics',
@@ -297,101 +361,158 @@ class _ReportFiltersState extends State<_ReportFilters> {
         ].contains(key),
       ),
     };
-    return SingleChildScrollView(
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
           children: [
-            const Text(
-              'Report filters',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Exports include every matching record across pages.',
-              style: TextStyle(fontSize: 12),
-            ),
-            const SizedBox(height: 16),
-            if (widget.loading) const LinearProgressIndicator(),
-            if (widget.error != null) ...[
-              Text(widget.error!),
-              TextButton(
-                onPressed: widget.onRetry,
-                child: const Text('Retry selections'),
+            Text(
+              'EXPORT FILTERS',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: DefensysTokens.textSecondaryOf(context),
+                letterSpacing: .5,
               ),
-            ],
-            for (final key in fields) ...[
-              if (key == 'grade_id')
-                const Text(
-                  'Selected recorded assessment',
-                  style: TextStyle(fontSize: 12),
-                )
-              else if (widget.pitLead &&
-                  ['scope', 'type', 'year_level', 'track'].contains(key))
-                Text(
-                  '${ReportCatalog.filterLabel(key)}: ${widget.params[key] ?? 'PIT'} (assigned)',
-                  style: const TextStyle(fontSize: 12),
-                )
-              else if (_choices(key) != null)
-                Builder(
-                  builder: (_) {
-                    final choices = _choices(key)!;
-                    final current = widget.params[key] ?? '';
-                    if (current.isNotEmpty &&
-                        !choices.any((choice) => choice['value'] == current)) {
-                      choices.add({
-                        'value': current,
-                        'label': sourceIdField(key)
-                            ? (widget.loading
-                                  ? 'Loading selected record…'
-                                  : 'Selected record unavailable for these filters')
-                            : current,
-                      });
-                    }
-                    return DropdownButtonFormField<String>(
-                      key: ValueKey('$key:$current:${widget.loading}'),
-                      initialValue: current,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                        labelText: ReportCatalog.filterLabel(key),
-                        border: const OutlineInputBorder(),
-                      ),
-                      items: [
-                        const DropdownMenuItem(
-                          value: '',
-                          child: Text('All / default'),
-                        ),
-                        ...choices.map(
-                          (choice) => DropdownMenuItem(
-                            value: choice['value'],
-                            child: Text(
-                              choice['label']!,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                      ],
-                      onChanged: (value) => _change(key, value ?? ''),
-                    );
-                  },
-                )
-              else
-                TextField(
-                  controller: _controllers.putIfAbsent(
-                    key,
-                    () => TextEditingController(text: widget.params[key] ?? ''),
-                  ),
-                  decoration: InputDecoration(
-                    labelText: ReportCatalog.filterLabel(key),
-                    hintText: key.endsWith('_date') ? 'YYYY-MM-DD' : 'All',
-                    border: const OutlineInputBorder(),
-                  ),
-                  onChanged: (value) => _change(key, value.trim()),
-                ),
-              const SizedBox(height: 12),
-            ],
+            ),
+            const SizedBox(width: 6),
+            Tooltip(
+              message: 'Exports include every matching record across pages.',
+              child: Icon(
+                Icons.info_outline,
+                size: 14,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+            ),
           ],
+        ),
+        const SizedBox(height: 14),
+        if (widget.loading) const LinearProgressIndicator(),
+        if (widget.error != null) ...[
+          Text(widget.error!, style: const TextStyle(fontSize: 12)),
+          TextButton(
+            onPressed: widget.onRetry,
+            child: const Text('Retry selections'),
+          ),
+        ],
+        for (final key in fields) ...[
+          Text(
+            ReportCatalog.filterLabel(key).toUpperCase(),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: DefensysTokens.textSecondaryOf(context),
+              letterSpacing: .5,
+            ),
+          ),
+          const SizedBox(height: 6),
+          _field(key),
+          const SizedBox(height: 16),
+        ],
+        OutlinedButton.icon(
+          icon: const Icon(Icons.refresh_rounded, size: 15),
+          label: const Text('Reset All Filters'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: DefensysTokens.maroonOf(context),
+            side: BorderSide(
+              color: DefensysTokens.maroonOf(context).withValues(alpha: .3),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+            ),
+          ),
+          onPressed: widget.onReset,
+        ),
+      ],
+    );
+  }
+
+  Widget _field(String key) {
+    if (key == 'grade_id') {
+      return const Text(
+        'Selected recorded assessment',
+        style: TextStyle(fontSize: 12),
+      );
+    }
+    if (widget.pitLead &&
+        ['scope', 'type', 'year_level', 'track'].contains(key)) {
+      return Text(
+        '${widget.params[key] ?? 'PIT'} (assigned)',
+        style: const TextStyle(fontSize: 12.5),
+      );
+    }
+    final choices = _choices(key);
+    if (choices != null) {
+      final current = widget.params[key] ?? '';
+      if (current.isNotEmpty &&
+          !choices.any((choice) => choice['value'] == current)) {
+        choices.add({
+          'value': current,
+          'label': sourceIdField(key)
+              ? (widget.loading
+                    ? 'Loading selected record...'
+                    : 'Selected record unavailable for these filters')
+              : current,
+        });
+      }
+      return DropdownButtonFormField<String>(
+        key: ValueKey('$key:$current:${widget.loading}'),
+        initialValue: current,
+        isExpanded: true,
+        style: TextStyle(
+          fontFamily: DefensysTokens.fontFamilyInter,
+          fontSize: 12.5,
+          color: DefensysTokens.textPrimaryOf(context),
+        ),
+        decoration: _decoration(),
+        items: [
+          const DropdownMenuItem(value: '', child: Text('All / default')),
+          ...choices.map(
+            (choice) => DropdownMenuItem(
+              value: choice['value'],
+              child: Text(choice['label']!, overflow: TextOverflow.ellipsis),
+            ),
+          ),
+        ],
+        onChanged: (value) => _change(key, value ?? ''),
+      );
+    }
+    return TextField(
+      key: ValueKey('report-filter-$key'),
+      controller: _controllers.putIfAbsent(
+        key,
+        () => TextEditingController(text: widget.params[key] ?? ''),
+      ),
+      style: TextStyle(
+        fontSize: 12.5,
+        color: DefensysTokens.textPrimaryOf(context),
+      ),
+      decoration: _decoration().copyWith(
+        hintText: key.endsWith('_date') ? 'YYYY-MM-DD' : 'All',
+      ),
+      onChanged: (value) => _change(key, value.trim()),
+    );
+  }
+
+  InputDecoration _decoration() {
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+      borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
+    );
+    return InputDecoration(
+      isDense: true,
+      filled: true,
+      fillColor: DefensysTokens.isDark(context)
+          ? DefensysTokens.surfaceHigherOf(context)
+          : const Color(0xFFF8FAFC),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      border: border,
+      enabledBorder: border,
+      focusedBorder: border.copyWith(
+        borderSide: BorderSide(
+          color: DefensysTokens.maroonOf(context),
+          width: 1.5,
         ),
       ),
     );

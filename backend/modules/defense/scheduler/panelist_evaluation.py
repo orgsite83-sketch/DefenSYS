@@ -59,7 +59,7 @@ def evaluation_context(schedule, grade=None):
         'rubric': schedule.rubric_id,
         'target': rubric.target_type if rubric else None,
         'criteria': list(rubric.criteria.order_by('id').values(
-            'id', 'name', 'max_score', 'target_type', 'scale',
+            'id', 'name', 'max_score', 'weight', 'target_type', 'scale',
         )) if rubric else [],
         'members': sorted(schedule.team.memberships.values_list('student_id', flat=True)),
         'attempt': grade.attempt_count if grade else 1,

@@ -1,3 +1,4 @@
+import 'package:defensys/utils/rubric_scoring.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/services/adviser_grading_provider.dart';
@@ -362,8 +363,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     final teamCrits = _getTeamCriteria(rubric);
     final indCrits = _getIndividualCriteria(rubric);
 
-    double total = 0;
-    double maxTotal = 0;
+    final scoreRows = <RubricScore>[];
 
     final teamSubMap = widget.teamCriteriaScoreCtrls[key] ?? const {};
     if (targetType == 'team' || targetType == 'both') {
@@ -371,8 +371,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
         final name = c['name']?.toString() ?? '';
         final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
         final entered = double.tryParse(teamSubMap[name]?.text ?? '') ?? 0;
-        total += entered.clamp(0, maxScore);
-        maxTotal += maxScore;
+        scoreRows.add(RubricScore(entered.clamp(0, maxScore).toDouble(), maxScore, rubricWeight(c['weight'])));
       }
     }
 
@@ -382,13 +381,11 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
         final name = c['name']?.toString() ?? '';
         final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
         final entered = double.tryParse(studentSubMap[name]?.text ?? '') ?? 0;
-        total += entered.clamp(0, maxScore);
-        maxTotal += maxScore;
+        scoreRows.add(RubricScore(entered.clamp(0, maxScore).toDouble(), maxScore, rubricWeight(c['weight'])));
       }
     }
 
-    if (maxTotal == 0) return 0;
-    return (total / maxTotal * 100).clamp(0, 100);
+    return rubricPercentage(scoreRows) ?? 0;
   }
 
   double _computeOverallTeamScore(
@@ -547,6 +544,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
         final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
         final entered = (double.tryParse(teamSubMap[name]?.text ?? '') ?? 0).clamp(0, maxScore);
         final entry = {
+          'criterion_id': c['id'],
           'criterion_name': name,
           'score': entered,
           'max_score': maxScore,
@@ -567,7 +565,8 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
           final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
           final entered = (double.tryParse(studentSubMap[name]?.text ?? '') ?? 0).clamp(0, maxScore);
           sScores.add({
-            'criterion_name': name,
+            'criterion_id': c['id'],
+          'criterion_name': name,
             'score': entered,
             'max_score': maxScore,
             'display_order': c['display_order'] ?? 0,

@@ -158,11 +158,9 @@ def _team_rows(grade):
         }
         for number, (key, name) in enumerate(panelists.items(), start=1):
             matching = [item for item in submissions if (item.panelist_id, item.guest_code_id) == key and item.student_id in (None, student.pk)]
-            submission = next((item for item in matching if item.student_id == student.pk), matching[0] if matching else None)
-            criteria = list(submission.criterion_scores.all()) if submission else []
-            earned = sum(item.score for item in criteria)
-            maximum = sum(item.max_score_snapshot for item in criteria)
-            row[f'panel_{number}'] = _percent(earned / maximum * 100 if maximum else None)
+            criteria = [score for item in matching for score in item.criterion_scores.all()]
+            from grading.grades.services import panelist_percentage_from_criterion_scores
+            row[f'panel_{number}'] = _percent(panelist_percentage_from_criterion_scores(criteria))
             row[f'panel_{number}_label'] = name or 'Guest panelist'
         rows.append(row)
     return rows
@@ -247,6 +245,16 @@ def export_assessment_report(request, *, team_id=None, student_id=None, include_
         pdf_generator = lambda: generate_team_grades_pdf(
             records, generated_by, signatories=signatories, include_signatures=include_signatures, coverage_label=coverage_label,
         )
+    percentage_keys = {
+        'weight', 'score', 'panel_avg', 'panel_weight', 'adviser_rating', 'adviser_weight',
+        'peer_rating', 'peer_weight', 'final_grade', 'panel_weighted', 'adviser_weighted',
+        'peer_weighted', 'total',
+    }
+    for column in columns:
+        if column['key'] in percentage_keys:
+            column['type'] = 'percentage'
+        elif column['key'] == 'no':
+            column['type'] = 'integer'
     sections = [{
         'title': f'{assessment_scope_label(grade)} - {grade.stage_label} - {grade.team.name}',
         'columns': columns, 'rows': row_builder(grade),
@@ -268,13 +276,15 @@ def export_assessment_report(request, *, team_id=None, student_id=None, include_
             new_values={'grade_ids': [grade.pk for grade in records], 'scope': scope_label, 'coverage': coverage_label},
         )
     filename = 'DefenSYS_' + '_'.join(''.join(c for c in value if c.isalnum() or c in ' -_').strip().replace(' ', '_') for value in (scope_label, kind, name, coverage_label))
+    from reports.assessment_workbooks import assessment_document_sheets
+    document_sheets = assessment_document_sheets(records, student=student, team_rows=_team_rows, coverage=coverage_label) if (export_format or '').lower() in ('json', 'preview', 'data', 'xlsx', 'excel', 'sheet') else None
     response = handle_export_or_preview(
         export_format=export_format, title=title,
         subtitle=f'{scope_label} - {coverage_label} - {metadata[2]["value"]}',
         summary_kpis=[{'label': 'Assessment Records', 'value': str(len(records))}],
         metadata=metadata, columns=columns, rows=rows, sections=sections,
         filename=filename, generated_by=generated_by, pdf_generator_func=pdf_generator,
-        include_signatures=include_signatures, signatories=signatories,
+        include_signatures=include_signatures, signatories=signatories, document_sheets=document_sheets,
     )
     if hasattr(response, 'data'):
         response.data['assessments'] = [{
