@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from repository.archive.models import ArchiveEntry
 from .services import (
     augment_deliverable_missing_rows,
+    cancel_archive_file_replacement,
     filter_entries,
     override_pit_status,
     replace_archive_file,
@@ -119,7 +120,21 @@ class ProjectArchiveRequestResubmissionView(APIView):
         if not entry_id:
             raise ValidationError({'entry_id': 'Archive entry id is required.'})
         try:
-            request_archive_resubmission(request.user, entry_id, status, feedback=feedback)
+            request_archive_resubmission(request.user, entry_id, status, feedback=feedback, request=request)
+        except DjangoValidationError as exc:
+            _raise_drf_validation_error(exc)
+        return Response(repository_audit_payload(request))
+
+
+class ProjectArchiveCancelReplacementView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        entry_id = request.data.get('entry_id')
+        if not entry_id:
+            raise ValidationError({'entry_id': 'Archive entry id is required.'})
+        try:
+            cancel_archive_file_replacement(request.user, entry_id, request.data.get('reason', ''), request=request)
         except DjangoValidationError as exc:
             _raise_drf_validation_error(exc)
         return Response(repository_audit_payload(request))

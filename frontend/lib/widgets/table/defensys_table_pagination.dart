@@ -51,17 +51,19 @@ class DefensysTablePagination extends StatelessWidget {
 
         final infoText = Text(
           'Showing $start–$end of $totalItems $itemLabel',
-          style: DefensysTableTokens.paginationTextStyle,
+          style: DefensysTableTokens.paginationTextStyle.copyWith(
+            color: DefensysTokens.textSecondaryOf(context),
+          ),
         );
 
         final rowsPicker = Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
+            Text(
               'Rows per page',
               style: TextStyle(
                 fontFamily: DefensysTokens.fontFamily,
-                color: Color(0xFF5D6678),
+                color: DefensysTokens.textSecondaryOf(context),
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
               ),
@@ -71,9 +73,9 @@ class DefensysTablePagination extends StatelessWidget {
               height: 32,
               padding: const EdgeInsets.symmetric(horizontal: 8),
               decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFFD1D5DB)),
+                border: Border.all(color: DefensysTokens.borderOf(context)),
                 borderRadius: BorderRadius.circular(6),
-                color: Colors.white,
+                color: DefensysTokens.surfaceHigherOf(context),
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<int>(
@@ -81,22 +83,20 @@ class DefensysTablePagination extends StatelessWidget {
                       ? rowsPerPage
                       : rowsPerPageOptions.first,
                   isDense: true,
-                  icon: const Icon(
+                  dropdownColor: DefensysTokens.surfaceOf(context),
+                  icon: Icon(
                     Icons.keyboard_arrow_down_rounded,
                     size: 16,
-                    color: Color(0xFF64748B),
+                    color: DefensysTokens.textSecondaryOf(context),
                   ),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: DefensysTokens.fontFamily,
-                    color: Color(0xFF1E293B),
+                    color: DefensysTokens.textPrimaryOf(context),
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
                   items: rowsPerPageOptions.map((n) {
-                    return DropdownMenuItem<int>(
-                      value: n,
-                      child: Text('$n'),
-                    );
+                    return DropdownMenuItem<int>(value: n, child: Text('$n'));
                   }).toList(),
                   onChanged: (value) {
                     if (value != null) {
@@ -135,7 +135,9 @@ class DefensysTablePagination extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Text(
                   'Page ${safePage + 1} of $totalPages',
-                  style: DefensysTableTokens.paginationTextStyle,
+                  style: DefensysTableTokens.paginationTextStyle.copyWith(
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
                 ),
               ),
             ],
@@ -195,13 +197,13 @@ class _PageNavButton extends StatelessWidget {
         onPressed: enabled ? onTap : null,
         style: OutlinedButton.styleFrom(
           padding: EdgeInsets.zero,
-          foregroundColor: const Color(0xFF1E293B),
-          disabledForegroundColor: const Color(0xFFCBD5E1),
-          side: const BorderSide(color: Color(0xFFE2E8F0)),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(6),
-          ),
-          backgroundColor: Colors.white,
+          foregroundColor: DefensysTokens.textPrimaryOf(context),
+          disabledForegroundColor: DefensysTokens.textSecondaryOf(
+            context,
+          ).withValues(alpha: .4),
+          side: BorderSide(color: DefensysTokens.borderOf(context)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+          backgroundColor: DefensysTokens.surfaceOf(context),
         ),
         child: Icon(icon, size: 18),
       ),
@@ -229,14 +231,18 @@ class _PageNumberButton extends StatelessWidget {
         onPressed: onTap,
         style: OutlinedButton.styleFrom(
           padding: EdgeInsets.zero,
-          backgroundColor: isSelected ? DefensysTokens.maroon : Colors.white,
-          foregroundColor: isSelected ? Colors.white : const Color(0xFF334155),
+          backgroundColor: isSelected
+              ? DefensysTokens.maroonOf(context)
+              : DefensysTokens.surfaceOf(context),
+          foregroundColor: isSelected
+              ? Colors.white
+              : DefensysTokens.textPrimaryOf(context),
           side: BorderSide(
-            color: isSelected ? DefensysTokens.maroon : const Color(0xFFE2E8F0),
+            color: isSelected
+                ? DefensysTokens.maroonOf(context)
+                : DefensysTokens.borderOf(context),
           ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(6),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
         ),
         child: Text(
           '$pageNumber',

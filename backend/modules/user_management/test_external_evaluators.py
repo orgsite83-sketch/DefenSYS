@@ -387,12 +387,56 @@ class ExternalEvaluatorTests(APITestCase):
 
     def test_evaluator_edit_preserves_invitation_and_grade_identity(self):
         invitation = self.invite()
+        original_code = invitation.code
+        original_version = invitation.access_version
+        token = self.guest(invitation)
+        response = self.client.post(SCHEDULES + 'guest-submit-grades/', {
+            'team_id': invitation.defense_schedule.team_id,
+            'schedule_id': invitation.defense_schedule_id,
+            'criteria_scores': fixtures.DefenseSchedulerApiTests.criteria_scores(self, 8),
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        submission = PanelistGradeSubmission.objects.get(guest_code_id=str(invitation.pk))
+        original_submission = (submission.pk, submission.guest_name, submission.guest_code)
+        self.client.credentials()
+        self.client.force_authenticate(self.admin)
         response = self.client.patch(f'{DIRECTORY}{self.evaluator.pk}/', {'name': 'Dr. Lina Santos Cruz', 'institution': 'Updated University'}, format='json')
         self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['invitations'][0]['guest_name'], 'Dr. Lina Santos Cruz')
+        self.assertEqual(response.data['invitations'][0]['submitted_count'], 1)
         self.evaluator.refresh_from_db()
         invitation.refresh_from_db()
         self.assertEqual(self.evaluator.name, 'Dr. Lina Santos Cruz')
         self.assertEqual(invitation.guest_name, 'Dr. Lina Santos')
+        self.assertEqual(invitation.code, original_code)
+        self.assertEqual(invitation.access_version, original_version)
+        submission.refresh_from_db()
+        self.assertEqual((submission.pk, submission.guest_name, submission.guest_code), original_submission)
+        self.client.force_authenticate(user=None)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        results = self.client.get(SCHEDULES + 'guest-panelist-results/')
+        self.assertEqual(results.status_code, 200, results.data)
+        self.assertEqual(len(results.data['results']), 1)
+
+    def test_existing_invitations_display_directory_name_with_legacy_fallback(self):
+        schedule = self.schedule()
+        expired = GuestPanelistCode.objects.create(
+            evaluator=self.evaluator, guest_name='Old directory name',
+            defense_schedule=schedule, expires_at=timezone.now() - timedelta(days=1),
+        )
+        revoked = GuestPanelistCode.objects.create(
+            evaluator=self.evaluator, guest_name='Old directory name',
+            defense_schedule=schedule, is_active=False,
+        )
+        legacy = GuestPanelistCode.objects.create(guest_name='Legacy Guest', defense_schedule=schedule)
+        response = self.client.get(DIRECTORY)
+        self.assertEqual(response.status_code, 200, response.data)
+        invitations = {item['id']: item for item in response.data['invitations']}
+        self.assertEqual(invitations[expired.pk]['guest_name'], self.evaluator.name)
+        self.assertEqual(invitations[expired.pk]['status'], 'Expired')
+        self.assertEqual(invitations[revoked.pk]['guest_name'], self.evaluator.name)
+        self.assertEqual(invitations[revoked.pk]['status'], 'Revoked')
+        self.assertEqual(invitations[legacy.pk]['guest_name'], 'Legacy Guest')
 
     def test_expiry_cannot_precede_an_assigned_future_defense(self):
         slot = self.schedule(scheduled_date=timezone.localdate() + timedelta(days=2))

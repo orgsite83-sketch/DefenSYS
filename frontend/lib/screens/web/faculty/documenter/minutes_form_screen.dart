@@ -728,18 +728,26 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
         backgroundColor: DefensysTokens.backgroundOf(context),
         appBar: AppBar(
           backgroundColor: DefensysTokens.surfaceOf(context),
+          foregroundColor: DefensysTokens.textPrimaryOf(context),
           elevation: 0,
-          title: const Text(
+          title: Text(
             'Minutes of defense',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: DefensysTokens.maroon,
+              color: DefensysTokens.isDark(context)
+                  ? DefensysTokens.textPrimaryOf(context)
+                  : DefensysTokens.maroon,
               fontWeight: FontWeight.bold,
             ),
           ),
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: DefensysTokens.maroon),
+            icon: Icon(
+              Icons.arrow_back,
+              color: DefensysTokens.isDark(context)
+                  ? DefensysTokens.textPrimaryOf(context)
+                  : DefensysTokens.maroon,
+            ),
             onPressed: _isSavingDraft || _isSubmitting || _isReviewing
                 ? null
                 : _leaveForm,
@@ -855,7 +863,9 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
                           : Icons.radio_button_unchecked,
                       size: 18,
                       color: index <= activeStep
-                          ? DefensysTokens.maroonOf(context)
+                          ? DefensysTokens.isDark(context)
+                                ? DefensysTokens.textPrimaryOf(context)
+                                : DefensysTokens.maroon
                           : DefensysTokens.textSecondaryOf(context),
                     ),
                     const SizedBox(width: 6),
@@ -914,7 +924,11 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen>
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Text(
-              '${panelist['name']} · ${panelist['is_chair'] == true ? 'Presiding panel chair' : 'Panel member'}',
+              '${panelist['name']} · ${panelist['is_chair'] == true
+                  ? 'Presiding panel chair'
+                  : panelist['is_external'] == true
+                  ? 'External panelist'
+                  : 'Panel member'}',
               style: const TextStyle(fontSize: 13),
             ),
           ),

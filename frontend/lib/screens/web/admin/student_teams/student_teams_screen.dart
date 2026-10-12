@@ -16,6 +16,7 @@ import 'package:defensys/services/dashboard_provider.dart';
 import 'package:defensys/services/student_teams_provider.dart';
 import 'package:defensys/services/unsaved_changes_provider.dart';
 import 'package:defensys/services/user_management_provider.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/utils/export/team_roster_excel_generator.dart';
 import 'package:defensys/utils/team_bulk_import_csv.dart';
@@ -1071,8 +1072,9 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
           ],
           const SizedBox(height: 22),
           Container(
+            key: const ValueKey('student-teams-list-card'),
             padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
-            decoration: DefensysUi.cardDecoration(),
+            decoration: DefensysUi.cardDecoration(context),
             clipBehavior: Clip.none,
             child: Column(
               children: [
@@ -1147,14 +1149,14 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                         onOpenTeamDetail: _openTeamDetailRoute,
                       ),
                 const SizedBox(height: 18),
-                Container(height: 1, color: const Color(0xFFE5E7EB)),
+                Container(height: 1, color: DefensysTokens.borderOf(context)),
                 const SizedBox(height: 14),
                 Row(
                   children: [
                     Text(
                       'Showing ${displayState.teams.length} of ${_count(displayState, 'filtered')} teams',
-                      style: const TextStyle(
-                        color: Color(0xFF98A2B3),
+                      style: TextStyle(
+                        color: DefensysTokens.textSecondaryOf(context),
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),

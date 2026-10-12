@@ -153,8 +153,23 @@ def latest_schedule_changes(queryset):
     from authentication_access_control.models import SystemAuditLog
     from django.db.models import OuterRef, Subquery
     from django.db.models.functions import Cast
-    latest = SystemAuditLog.objects.filter(target_type='DefenseSchedule', target_id=OuterRef('_audit_key'), action='schedule.operational_change').order_by('-created_at', '-pk').values('pk')[:1]
-    ids = queryset.annotate(_audit_key=Cast('pk', CharField()), _latest_audit=Subquery(latest)).values_list('_latest_audit', flat=True)
+    from django.conf import settings
+    queryset = queryset.annotate(_audit_key=Cast('pk', CharField()))
+    latest = SystemAuditLog.objects.filter(target_type='DefenseSchedule', target_id=OuterRef('_audit_key'), action='schedule.operational_change').order_by('-created_at', '-pk')
+    if settings.DEBUG:
+        from datetime import datetime, timezone
+        from django.db.models import DateTimeField, Value
+        from django.db.models.functions import Coalesce
+        from defense.scheduler.services import DEMO_PANELIST_SETUP_ACTION
+        # Demo setup establishes a presentation baseline. Preserve full history
+        # and keep showing any real operational changes made after that baseline.
+        baseline = SystemAuditLog.objects.filter(target_type='DefenseSchedule',
+            target_id=OuterRef('_audit_key'), action=DEMO_PANELIST_SETUP_ACTION,
+        ).order_by('-created_at', '-pk').values('created_at')[:1]
+        queryset = queryset.annotate(_demo_baseline=Coalesce(Subquery(baseline),
+            Value(datetime(1970, 1, 1, tzinfo=timezone.utc)), output_field=DateTimeField()))
+        latest = latest.filter(created_at__gt=OuterRef('_demo_baseline'))
+    ids = queryset.annotate(_latest_audit=Subquery(latest.values('pk')[:1])).values_list('_latest_audit', flat=True)
     return {log.target_id: schedule_change_payload(log) for log in SystemAuditLog.objects.filter(pk__in=ids).select_related('actor')}
 
 
@@ -164,6 +179,7 @@ def board_payload(request, queryset=None):
     from grading.grades.models import TeamGrade
     # Assessment fields reuse the same fully loaded grade rows for this request.
     current = current.select_related('documenter', 'minutes').prefetch_related(
+        'guest_invitations', 'guest_panelist_codes',
         Prefetch('grade_records', queryset=TeamGrade.objects.with_relations()),
     )
     semester = active_semester()

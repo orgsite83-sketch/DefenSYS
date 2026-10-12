@@ -2095,58 +2095,20 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
         : reportFile;
     if (fileRef == null || fileRef.isEmpty) return;
 
-    showDialog(
+    await viewFileInDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (context) =>
-          const Center(child: CircularProgressIndicator(color: _maroon)),
+      fileUrl: fileRef,
+      fileName: (reportFile ?? fileRef).split('/').last,
     );
-
-    try {
-      final bytes = await ref
-          .read(authenticatedHttpClientProvider)
-          .fetchAuthenticatedFile(fileRef);
-      if (mounted) Navigator.pop(context);
-
-      if (mounted) {
-        await viewPdfInDialog(
-          context: context,
-          pdfBytes: bytes,
-          fileName: (reportFile ?? fileRef).split('/').last,
-        );
-      }
-    } catch (e) {
-      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
-      if (mounted) {
-        showErrorToast(context, 'Error opening file: $e');
-      }
-    }
   }
 
   Future<void> _openMediaUrl(String fileUrl) async {
-    if (!mounted) return;
-    try {
-      final bytes = await ref
-          .read(authenticatedHttpClientProvider)
-          .fetchAuthenticatedFile(fileUrl);
-      if (!mounted) return;
-      final name = fileUrl.split('/').last.toLowerCase();
-      if (name.endsWith('.pdf')) {
-        await viewPdfInDialog(
-          context: context,
-          pdfBytes: bytes,
-          fileName: fileUrl.split('/').last,
-        );
-      } else {
-        showValidationToast(
-          context,
-          'File preview is only available for PDFs.',
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      showErrorToast(context, 'Error opening file: $e');
-    }
+    if (!mounted || fileUrl.isEmpty) return;
+    await viewFileInDialog(
+      context: context,
+      fileUrl: fileUrl,
+      fileName: fileUrl.split('/').last,
+    );
   }
 
   Future<void> _downloadTeamDocument(int docId) async {

@@ -318,6 +318,11 @@ class SchedulePanelist(models.Model):
                 raise ValidationError({'panelist': 'Schedule panelists must be assigned faculty or admin users.'})
             if self.schedule_id and self.panelist_id == self.schedule.documenter_id:
                 raise ValidationError({'panelist': 'A panelist cannot be assigned as the documenter for this schedule.'})
+            if self.schedule_id:
+                from .services import adviser_panel_conflict
+                reason = adviser_panel_conflict(self.schedule.team, [self.panelist_id])
+                if reason:
+                    raise ValidationError({'panelist': reason})
 
         if self.is_chair and self.schedule_id:
             qs = SchedulePanelist.objects.filter(schedule=self.schedule, is_chair=True)

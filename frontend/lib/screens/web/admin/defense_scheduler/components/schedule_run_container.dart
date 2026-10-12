@@ -119,6 +119,7 @@ class ScheduleRunContainer extends ConsumerStatefulWidget {
 class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   bool _isGenerating = false;
   bool _isConfirming = false;
+  String? _adviserPanelWarning;
   String? _lastGeneratedConfigSignature;
   int? _selectedChairId;
   Set<int> _externalIds = {};
@@ -576,6 +577,25 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         );
         return null;
       }
+      final panelIds = session.customStaff
+          ? session.panelists
+          : widget.selectedPanelistIds;
+      for (final team in widget.state.teams.where(
+        (team) => session.teamIds.contains(asInt(team['id'])),
+      )) {
+        final adviserId = asInt(team['adviser_id']) ?? asInt(team['adviser']);
+        if (adviserId != null && panelIds.contains(adviserId)) {
+          final message = 'Session ${i + 1}: ${team['name']} — the team adviser cannot be a panelist or panel chair for their own advisees. Choose a different panelist.';
+          if (_adviserPanelWarning != message) {
+            setState(() => _adviserPanelWarning = message);
+          }
+          showValidationToast(
+            context,
+            'The adviser and panel must be different.',
+          );
+          return null;
+        }
+      }
     }
 
     if (_sessions.every((session) => session.teamIds.isEmpty)) {
@@ -641,18 +661,19 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       return;
     }
 
-    final currentSig = _generateConfigSignature();
+    if (_adviserPanelWarning != null) {
+      setState(() => _adviserPanelWarning = null);
+    }
+    final payload = _basePayload();
+    if (payload == null) return;
+    final currentSig = jsonEncode(payload);
     if (widget.planSlots.isNotEmpty &&
-        currentSig != null &&
         _lastGeneratedConfigSignature != null &&
         currentSig == _lastGeneratedConfigSignature) {
       // Configuration unchanged: advance directly to Step 2 with 0 delay and keep arrangements
       widget.onStepChanged?.call(2);
       return;
     }
-
-    final payload = _basePayload();
-    if (payload == null) return;
 
     setState(() => _isGenerating = true);
     try {
@@ -668,7 +689,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           .toList();
 
       _recalculatePlanSlots(generated);
-      _lastGeneratedConfigSignature = currentSig ?? _generateConfigSignature();
+      _lastGeneratedConfigSignature = currentSig;
       widget.onPlanSlotsChanged(generated);
       widget.onShowFinalPreviewChanged(false);
       widget.onStepChanged?.call(2);
@@ -1618,6 +1639,17 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             padding: const EdgeInsets.symmetric(vertical: 24),
             child: Divider(height: 1, color: DefensysTokens.borderOf(context)),
           ),
+          if (_adviserPanelWarning != null) ...[
+            Semantics(
+              liveRegion: true,
+              child: _buildWarningBanner(
+                icon: Icons.warning_amber_rounded,
+                isError: true,
+                message: _adviserPanelWarning!,
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
           LayoutBuilder(
             builder: (context, constraints) {
               final summary = Column(

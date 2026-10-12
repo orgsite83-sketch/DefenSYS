@@ -3,11 +3,13 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 
+import '../../services/network/authenticated_client.dart';
 import '../../theme/defensys_tokens.dart';
-import '../../toasts/feedback_toast.dart';
+import '../../widgets/export/defensys_pdf_viewer.dart';
+import '../../widgets/file_viewer_dialog_layout.dart';
 import 'universal_file_viewer_models.dart';
 import 'universal_file_viewer_widgets.dart';
 
@@ -58,7 +60,8 @@ Future<void> downloadBytesFile({
 
 Future<void> viewFileInDialog({
   required BuildContext context,
-  required List<int> fileBytes,
+  List<int>? fileBytes,
+  String? fileUrl,
   required String fileName,
   DeliverablePropertiesInfo? propertiesInfo,
 }) async {
@@ -68,6 +71,7 @@ Future<void> viewFileInDialog({
     barrierColor: Colors.black.withValues(alpha: 0.75),
     builder: (dialogContext) => UniversalMobileFileViewerDialog(
       fileBytes: fileBytes,
+      fileUrl: fileUrl,
       fileName: fileName,
       propertiesInfo: propertiesInfo,
     ),
@@ -76,37 +80,43 @@ Future<void> viewFileInDialog({
 
 Future<void> viewPdfInDialog({
   required BuildContext context,
-  required List<int> pdfBytes,
+  List<int>? pdfBytes,
+  String? fileUrl,
   required String fileName,
   DeliverablePropertiesInfo? propertiesInfo,
-}) =>
-    viewFileInDialog(
-      context: context,
-      fileBytes: pdfBytes,
-      fileName: fileName,
-      propertiesInfo: propertiesInfo,
-    );
+}) => viewFileInDialog(
+  context: context,
+  fileBytes: pdfBytes,
+  fileUrl: fileUrl,
+  fileName: fileName,
+  propertiesInfo: propertiesInfo,
+);
 
-class UniversalMobileFileViewerDialog extends StatefulWidget {
-  final List<int> fileBytes;
+class UniversalMobileFileViewerDialog extends ConsumerStatefulWidget {
+  final List<int>? fileBytes;
+  final String? fileUrl;
   final String fileName;
   final DeliverablePropertiesInfo? propertiesInfo;
 
   const UniversalMobileFileViewerDialog({
     super.key,
-    required this.fileBytes,
+    this.fileBytes,
+    this.fileUrl,
     required this.fileName,
     this.propertiesInfo,
   });
 
   @override
-  State<UniversalMobileFileViewerDialog> createState() =>
+  ConsumerState<UniversalMobileFileViewerDialog> createState() =>
       _UniversalMobileFileViewerDialogState();
 }
 
 class _UniversalMobileFileViewerDialogState
-    extends State<UniversalMobileFileViewerDialog> {
+    extends ConsumerState<UniversalMobileFileViewerDialog> {
   late final FileCategory _category;
+  Uint8List? _pdfBytes;
+  bool _isLoading = false;
+  String? _loadError;
   final TransformationController _imageTransformCtrl =
       TransformationController();
   double _imageRotation = 0.0;
@@ -115,6 +125,35 @@ class _UniversalMobileFileViewerDialogState
   void initState() {
     super.initState();
     _category = FileViewerMetadata.detectCategory(widget.fileName);
+    if (widget.fileBytes != null && widget.fileBytes!.isNotEmpty) {
+      _pdfBytes = Uint8List.fromList(widget.fileBytes!);
+    } else if (widget.fileUrl != null && widget.fileUrl!.isNotEmpty) {
+      _loadFile();
+    } else {
+      _loadError = 'No file content or URL provided.';
+    }
+  }
+
+  Future<void> _loadFile() async {
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+    try {
+      final client = ref.read(authenticatedHttpClientProvider);
+      final bytes = await client.fetchAuthenticatedFile(widget.fileUrl!);
+      if (!mounted) return;
+      setState(() {
+        _pdfBytes = Uint8List.fromList(bytes);
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _loadError = e.toString();
+      });
+    }
   }
 
   @override
@@ -131,30 +170,40 @@ class _UniversalMobileFileViewerDialogState
 
   @override
   Widget build(BuildContext context) {
-    final screenSize = MediaQuery.of(context).size;
-    final dialogWidth = (screenSize.width * 0.96).clamp(320.0, 900.0);
-    final dialogHeight = (screenSize.height * 0.88).clamp(400.0, 900.0);
+    final layout = FileViewerDialogLayout.of(context);
+    final isPdf = _category == FileCategory.pdf;
+    final toolbarForeground = isPdf
+        ? DefensysTokens.textPrimaryOf(context)
+        : Colors.white;
 
     final catColor = FileViewerMetadata.getCategoryColor(_category);
     final catIcon = FileViewerMetadata.getCategoryIcon(_category);
-    final catLabel =
-        FileViewerMetadata.getCategoryLabel(_category, widget.fileName);
-    final formattedSize =
-        FileViewerMetadata.formatBytes(widget.fileBytes.length);
+    final catLabel = FileViewerMetadata.getCategoryLabel(
+      _category,
+      widget.fileName,
+    );
+    final formattedSize = _pdfBytes != null
+        ? FileViewerMetadata.formatBytes(_pdfBytes!.length)
+        : (_isLoading ? 'Loading...' : '');
 
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 16),
+      insetPadding: layout.insetPadding,
       child: Container(
-        width: dialogWidth,
-        height: dialogHeight,
+        width: layout.size.width,
+        height: layout.size.height,
         decoration: BoxDecoration(
-          color: const Color(0xFF0B0F19),
+          color: DefensysTokens.surfaceOf(context),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFF273142), width: 1.5),
+          border: Border.all(
+            color: DefensysTokens.borderOf(context),
+            width: 1.5,
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.65),
+              color: Colors.black.withValues(
+                alpha: DefensysTokens.isDark(context) ? .65 : .15,
+              ),
               blurRadius: 28,
               offset: const Offset(0, 10),
             ),
@@ -166,9 +215,11 @@ class _UniversalMobileFileViewerDialogState
             Container(
               height: 52,
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: const BoxDecoration(
-                color: DefensysTokens.maroon,
-                borderRadius: BorderRadius.only(
+              decoration: BoxDecoration(
+                color: isPdf
+                    ? DefensysTokens.surfaceOf(context)
+                    : DefensysTokens.maroon,
+                borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(12),
                   topRight: Radius.circular(12),
                 ),
@@ -176,13 +227,18 @@ class _UniversalMobileFileViewerDialogState
               child: Row(
                 children: [
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.25),
+                      color: isPdf
+                          ? DefensysTokens.surfaceHigherOf(context)
+                          : Colors.black.withValues(alpha: 0.25),
                       borderRadius: BorderRadius.circular(6),
-                      border:
-                          Border.all(color: catColor.withValues(alpha: 0.7)),
+                      border: Border.all(
+                        color: catColor.withValues(alpha: 0.7),
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -191,8 +247,8 @@ class _UniversalMobileFileViewerDialogState
                         const SizedBox(width: 4),
                         Text(
                           catLabel,
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: toolbarForeground,
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
                           ),
@@ -204,8 +260,8 @@ class _UniversalMobileFileViewerDialogState
                   Expanded(
                     child: Text(
                       widget.fileName,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: toolbarForeground,
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
                       ),
@@ -215,16 +271,22 @@ class _UniversalMobileFileViewerDialogState
                   ),
                   const SizedBox(width: 6),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
+                      color: isPdf
+                          ? DefensysTokens.surfaceHigherOf(context)
+                          : Colors.white.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
                       formattedSize,
-                      style: const TextStyle(
-                        color: Colors.white70,
+                      style: TextStyle(
+                        color: isPdf
+                            ? DefensysTokens.textSecondaryOf(context)
+                            : Colors.white70,
                         fontSize: 10.5,
                         fontFamily: 'monospace',
                       ),
@@ -232,17 +294,62 @@ class _UniversalMobileFileViewerDialogState
                   ),
                   if (_category == FileCategory.image) ...[
                     IconButton(
-                      icon: const Icon(Icons.rotate_right,
-                          color: Colors.white, size: 18),
+                      icon: const Icon(
+                        Icons.rotate_right,
+                        color: Colors.white,
+                        size: 18,
+                      ),
                       tooltip: 'Rotate',
                       onPressed: _rotateImage,
                       visualDensity: VisualDensity.compact,
                     ),
                   ],
+                  if (!_isLoading && _pdfBytes != null) ...[
+                    Tooltip(
+                      message: 'Download File',
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          downloadBytesFile(
+                            bytes: _pdfBytes!,
+                            fileName: widget.fileName,
+                          );
+                        },
+                        icon: Icon(
+                          Icons.download,
+                          color: toolbarForeground,
+                          size: 15,
+                        ),
+                        label: Text(
+                          isPdf ? 'Download PDF' : 'Download',
+                          style: TextStyle(
+                            color: toolbarForeground,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(
+                            color: isPdf
+                                ? DefensysTokens.borderOf(context)
+                                : Colors.white38,
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
                   const SizedBox(width: 4),
                   IconButton(
-                    icon: const Icon(Icons.close,
-                        color: Colors.white, size: 20),
+                    icon: Icon(Icons.close, color: toolbarForeground, size: 20),
                     tooltip: 'Close',
                     onPressed: () => Navigator.of(context).pop(),
                     visualDensity: VisualDensity.compact,
@@ -288,25 +395,27 @@ class _UniversalMobileFileViewerDialogState
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-      decoration: const BoxDecoration(
-        color: Color(0xFF0F172A),
-        borderRadius: BorderRadius.only(
+      decoration: BoxDecoration(
+        color: DefensysTokens.surfaceOf(context),
+        borderRadius: const BorderRadius.only(
           bottomLeft: Radius.circular(12),
           bottomRight: Radius.circular(12),
         ),
-        border: Border(top: BorderSide(color: Color(0xFF1E293B))),
+        border: Border(
+          top: BorderSide(color: DefensysTokens.borderOf(context)),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
+          Text(
             'FILE PROPERTIES & INFO',
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w800,
               letterSpacing: 0.8,
-              color: Color(0xFF94A3B8),
+              color: DefensysTokens.textSecondaryOf(context),
             ),
           ),
           const SizedBox(height: 8),
@@ -325,7 +434,9 @@ class _UniversalMobileFileViewerDialogState
               Expanded(child: _buildPropertyTile('Timestamp', timestamp)),
             ],
           ),
-          if (info.feedback != null && info.feedback!.isNotEmpty && info.isRejected) ...[
+          if (info.feedback != null &&
+              info.feedback!.isNotEmpty &&
+              info.isRejected) ...[
             const SizedBox(height: 8),
             Container(
               width: double.infinity,
@@ -333,16 +444,25 @@ class _UniversalMobileFileViewerDialogState
               decoration: BoxDecoration(
                 color: const Color(0xFF7F1D1D).withValues(alpha: 0.35),
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFEF4444).withValues(alpha: 0.5)),
+                border: Border.all(
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.5),
+                ),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.warning_amber_rounded, size: 14, color: Color(0xFFF87171)),
+                  const Icon(
+                    Icons.warning_amber_rounded,
+                    size: 14,
+                    color: Color(0xFFF87171),
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       'Remarks: ${info.feedback}',
-                      style: const TextStyle(fontSize: 11, color: Color(0xFFFECACA)),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFFFECACA),
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -360,9 +480,9 @@ class _UniversalMobileFileViewerDialogState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
+        color: DefensysTokens.surfaceHigherOf(context),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF334155)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -370,19 +490,19 @@ class _UniversalMobileFileViewerDialogState
         children: [
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 9.5,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF94A3B8),
+              color: DefensysTokens.textSecondaryOf(context),
             ),
           ),
           const SizedBox(height: 2),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11.5,
               fontWeight: FontWeight.bold,
-              color: Colors.white,
+              color: DefensysTokens.textPrimaryOf(context),
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -393,26 +513,90 @@ class _UniversalMobileFileViewerDialogState
   }
 
   Widget _buildViewerContent() {
+    if (_isLoading) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(color: DefensysTokens.maroon),
+            const SizedBox(height: 16),
+            Text(
+              'Loading ${widget.fileName}...',
+              style: TextStyle(
+                color: DefensysTokens.textSecondaryOf(context),
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_loadError != null || _pdfBytes == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.error_outline_rounded,
+                size: 44,
+                color: Color(0xFFEF4444),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Unable to open ${widget.fileName}',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: DefensysTokens.textPrimaryOf(context),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _loadError ?? 'File data is not available.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: DefensysTokens.maroon,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: _loadFile,
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     switch (_category) {
       case FileCategory.pdf:
-        return SfPdfViewer.memory(
-          Uint8List.fromList(widget.fileBytes),
-        );
+        return DefensysPdfViewer(pdfBytes: _pdfBytes!, title: widget.fileName);
       case FileCategory.image:
         return UniversalImageViewer(
-          bytes: Uint8List.fromList(widget.fileBytes),
+          bytes: _pdfBytes!,
           fileName: widget.fileName,
           controller: _imageTransformCtrl,
           rotationAngle: _imageRotation,
         );
       case FileCategory.spreadsheet:
         return UniversalSpreadsheetViewer(
-          bytes: Uint8List.fromList(widget.fileBytes),
+          bytes: _pdfBytes!,
           fileName: widget.fileName,
         );
       case FileCategory.codeOrText:
         return UniversalCodeTextViewer(
-          bytes: Uint8List.fromList(widget.fileBytes),
+          bytes: _pdfBytes!,
           fileName: widget.fileName,
         );
       case FileCategory.officeDoc:
@@ -423,10 +607,10 @@ class _UniversalMobileFileViewerDialogState
       case FileCategory.other:
         return UniversalOfficeInspectorCard(
           fileName: widget.fileName,
-          fileSizeBytes: widget.fileBytes.length,
+          fileSizeBytes: _pdfBytes!.length,
           category: _category,
           onDownload: () {
-            showInfoToast(context, 'File is stored in device app cache.');
+            downloadBytesFile(bytes: _pdfBytes!, fileName: widget.fileName);
           },
           onOpenInNewTab: () {},
         );

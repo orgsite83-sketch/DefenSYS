@@ -67,6 +67,21 @@ class AuditFormatUtils {
       return 'Project archive restored';
 
     if (action.startsWith('repository.')) {
+      if (action == 'repository.stage_access_updated') {
+        return 'Stage file access changed';
+      }
+      if (action == 'repository.file_replacement_unlock') {
+        return 'Student file replacement unlocked';
+      }
+      if (action == 'repository.file_replacement_cancel') {
+        return 'Student file replacement unlock canceled';
+      }
+      if (action == 'repository.student_file_replace') {
+        return 'Student replaced approved file';
+      }
+      if (action == 'repository.request_resubmission') {
+        return 'File revision requested';
+      }
       if (action == 'repository.archive_upload')
         return 'Archive evidence uploaded';
       if (action.contains('upload')) return 'Deliverable uploaded';

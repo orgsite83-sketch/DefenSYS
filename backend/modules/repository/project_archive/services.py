@@ -13,7 +13,7 @@ from django.db import transaction
 from django.db.models import Q, F
 
 from academic_period_management.models import Semester, SchoolYear
-from authentication_access_control.audit import log_high_impact_action
+from authentication_access_control.audit import audit_scope_metadata, log_high_impact_action
 from authentication_access_control.models import SystemAuditLog
 from defense.scheduler.models import PitEventGradingConfig
 from defense.stages.models import StageGradingConfig
@@ -1526,7 +1526,7 @@ def upload_capstone_files(user, file_names=None, uploaded_files=None, academic_y
 
 
 @transaction.atomic
-def request_archive_resubmission(user, entry_id, status=ArchiveEntry.STATUS_NEEDS_REVISION, feedback=''):
+def request_archive_resubmission(user, entry_id, status=ArchiveEntry.STATUS_NEEDS_REVISION, feedback='', request=None):
     target_type, instance, scope = resolve_archive_target(user, entry_id)
     if not scope['can_override']:
         raise PermissionDenied('You do not have permission to request repository resubmissions.')
@@ -1534,7 +1534,23 @@ def request_archive_resubmission(user, entry_id, status=ArchiveEntry.STATUS_NEED
     if target_type == 'submission_file' and hasattr(instance, 'submission'):
         instance = instance.submission
 
+    if isinstance(instance, DeliverableSubmission):
+        instance.team = StudentTeam.objects.select_for_update().get(pk=instance.team_id)
+    # Serialize a request with uploads so an in-flight replacement cannot consume a new unlock.
+    instance = instance.__class__.objects.select_for_update().get(pk=instance.pk)
+    if not isinstance(feedback, str):
+        raise ValidationError({'feedback': 'A reason must be text.'})
+    reason = feedback.strip()
+
     previous = getattr(instance, 'status', 'Approved')
+    previous_feedback = getattr(instance, 'feedback', '') or (getattr(instance, 'metadata', {}) or {}).get('feedback', '')
+    previous_replacement = getattr(instance, 'file_replacement_unlocked', False)
+    previous_replacement_reason = getattr(instance, 'file_replacement_reason', '')
+    previous_revision_review = getattr(instance, 'revision_review_unlocked', False)
+    keep_approved = isinstance(instance, DeliverableSubmission) and status in {'Approved', 'accepted'}
+    needs_revision = status in {'Needs Revision', 'rejected'}
+    if isinstance(instance, DeliverableSubmission) and needs_revision and not reason:
+        raise ValidationError({'feedback': 'Give a reason for requesting a file revision.'})
     if isinstance(instance, DeliverableSubmission) and instance.deliverable_type == DeliverableSubmission.TYPE_POST:
         if status in {'Approved', 'accepted'}:
             raise ValidationError('Post-defense files must be approved through deliverable review.')
@@ -1546,9 +1562,19 @@ def request_archive_resubmission(user, entry_id, status=ArchiveEntry.STATUS_NEED
             if not (feedback or '').strip():
                 raise ValidationError('Give a reason before reopening an archived file.')
 
+    if keep_approved:
+        if not isinstance(instance, DeliverableSubmission) or instance.deliverable_type != DeliverableSubmission.TYPE_PRE:
+            raise ValidationError('Student file replacement is available only for pre-defense deliverable submissions.')
+        if previous != DeliverableSubmission.STATUS_ACCEPTED:
+            raise ValidationError('Only an already approved file can be unlocked while keeping its approval.')
+        if not reason:
+            raise ValidationError({'feedback': 'Give a reason for unlocking file replacement.'})
+
     # Format feedback with explicit author attribution to avoid misleading students/teams
     user_role = getattr(user, 'role', '') or 'admin'
     user_role_label = 'Admin' if user_role == 'admin' else ('Adviser' if user_role == 'faculty' else user_role.title())
+    if user_role == 'faculty' and getattr(user, 'is_pit_lead', False) and getattr(getattr(instance, 'team', None), 'is_pit', False):
+        user_role_label = 'PIT Lead'
     user_name = user.get_full_name() or user.username
     author_tag = f"{user_name} ({user_role_label})"
 
@@ -1566,18 +1592,21 @@ def request_archive_resubmission(user, entry_id, status=ArchiveEntry.STATUS_NEED
         else:
             instance.status = DeliverableSubmission.STATUS_REJECTED
             
-        if formatted_feedback:
+        instance.file_replacement_unlocked = keep_approved
+        instance.file_replacement_reason = reason if keep_approved else ''
+        instance.revision_review_unlocked = needs_revision and instance.deliverable_type == DeliverableSubmission.TYPE_PRE
+        if formatted_feedback and not keep_approved:
             instance.feedback = formatted_feedback
 
-        if hasattr(instance, 'reviewed_by'):
+        if not keep_approved and hasattr(instance, 'reviewed_by'):
             instance.reviewed_by = user
             from django.utils import timezone
             instance.reviewed_at = timezone.now()
         
-        update_fields = ['status']
-        if hasattr(instance, 'feedback') and formatted_feedback:
+        update_fields = ['status', 'file_replacement_unlocked', 'file_replacement_reason', 'revision_review_unlocked']
+        if hasattr(instance, 'feedback') and formatted_feedback and not keep_approved:
             update_fields.append('feedback')
-        if hasattr(instance, 'reviewed_by') and instance.reviewed_by:
+        if not keep_approved and hasattr(instance, 'reviewed_by') and instance.reviewed_by:
             update_fields.extend(['reviewed_by', 'reviewed_at'])
         instance.save(update_fields=update_fields)
     else:
@@ -1595,7 +1624,18 @@ def request_archive_resubmission(user, entry_id, status=ArchiveEntry.STATUS_NEED
             instance.save(update_fields=['status', 'metadata'])
 
     file_name_val = getattr(instance, 'file_name', '') or getattr(instance, 'label', '')
-    entry_type_val = getattr(instance, 'entry_type', ArchiveEntry.TYPE_CAPSTONE)
+    team = getattr(instance, 'team', None)
+    entry_type_val = ('pit' if team.is_pit else 'capstone') if isinstance(instance, DeliverableSubmission) else instance.entry_type
+    context = {
+        **audit_scope_metadata(scope=entry_type_val, team=team, year_level=getattr(instance, 'year_level', '')),
+        'file_name': file_name_val,
+        'stage_label': getattr(instance, 'stage_label', '') or getattr(getattr(instance, 'defense_stage', None), 'label', ''),
+    }
+    event_message = (
+        f'File replacement unlocked by {author_tag}; approval retained. Reason: {reason}'
+        if keep_approved else
+        f'Resubmission requested by {author_tag} (status: {status}). Feedback: {formatted_feedback}'
+    )
 
     log_action(
         entry_type_val,
@@ -1605,18 +1645,77 @@ def request_archive_resubmission(user, entry_id, status=ArchiveEntry.STATUS_NEED
         user,
         previous_status=previous,
         new_status=status,
-        message=f'Resubmission requested by {author_tag} (status: {status}). Feedback: {formatted_feedback}' if formatted_feedback else f'Resubmission requested by {author_tag} (status: {status}).',
+        message=event_message,
     )
     log_high_impact_action(
         category=SystemAuditLog.CATEGORY_REPOSITORY,
-        action='repository.request_resubmission',
+        action='repository.file_replacement_unlock' if keep_approved else 'repository.request_resubmission',
         target=instance,
         target_type=instance.__class__.__name__,
         target_id=instance.pk,
         actor=user,
-        old_values={'status': previous},
-        new_values={'status': status, 'feedback': formatted_feedback},
-        reason=f'File resubmission requested by {author_tag}.',
+        old_values={
+            **context, 'status': previous, 'feedback': previous_feedback,
+            'file_replacement_unlocked': previous_replacement,
+            'file_replacement_reason': previous_replacement_reason,
+            'revision_review_unlocked': previous_revision_review,
+        },
+        new_values={
+            **context, 'status': instance.status,
+            'feedback': getattr(instance, 'feedback', '') or (getattr(instance, 'metadata', {}) or {}).get('feedback', ''),
+            'file_replacement_unlocked': getattr(instance, 'file_replacement_unlocked', False),
+            'file_replacement_reason': getattr(instance, 'file_replacement_reason', ''),
+            'revision_review_unlocked': getattr(instance, 'revision_review_unlocked', False),
+        },
+        reason=reason,
+        request=request,
+        strict=True,
+    )
+    return instance
+
+
+@transaction.atomic
+def cancel_archive_file_replacement(user, entry_id, reason='', request=None):
+    target_type, instance, scope = resolve_archive_target(user, entry_id)
+    if target_type == 'submission_file':
+        instance = instance.submission
+    if not isinstance(instance, DeliverableSubmission):
+        raise ValidationError('Only a student deliverable replacement unlock can be canceled.')
+    # Use the same lock order as replacement uploads and access changes.
+    team = StudentTeam.objects.select_for_update().get(pk=instance.team_id)
+    instance = DeliverableSubmission.objects.select_for_update().get(pk=instance.pk)
+    if scope['scope'] == 'pit_lead':
+        from student_teams.team_levels import normalize_year_level
+        assigned_year = normalize_year_level(scope.get('pit_year_level') or '')
+        if not assigned_year or not team.is_pit or normalize_year_level(team.year_level) != assigned_year:
+            raise PermissionDenied('PIT Leads can manage replacement unlocks only in their assigned year.')
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValidationError({'reason': 'Give a reason for canceling the replacement unlock.'})
+    if instance.deliverable_type != DeliverableSubmission.TYPE_PRE or instance.status != DeliverableSubmission.STATUS_ACCEPTED:
+        raise ValidationError('Only an approved pre-defense file can have its replacement unlock canceled.')
+    if not instance.file_replacement_unlocked:
+        raise ValidationError('There is no active replacement unlock. The file may already have been replaced or locked.')
+    reason = reason.strip()
+    previous_reason = instance.file_replacement_reason
+    instance.file_replacement_unlocked = False
+    instance.file_replacement_reason = ''
+    instance.save(update_fields=['file_replacement_unlocked', 'file_replacement_reason'])
+    track = 'pit' if team.is_pit else 'capstone'
+    context = {
+        **audit_scope_metadata(scope=track, team=team),
+        'stage_label': instance.stage_label, 'deliverable_id': instance.deliverable_id,
+        'file_name': instance.file_name, 'status': instance.status,
+    }
+    log_action(
+        track, instance.pk, instance.file_name, RepositoryAuditLog.ACTION_OVERRIDE, user,
+        previous_status='Approved', new_status='Approved',
+        message=f'File replacement unlock canceled by {user.get_full_name() or user.username}; approval retained. Reason: {reason}',
+    )
+    log_high_impact_action(
+        category=SystemAuditLog.CATEGORY_REPOSITORY, action='repository.file_replacement_cancel',
+        target=instance, actor=user, request=request, reason=reason, strict=True,
+        old_values={**context, 'file_replacement_unlocked': True, 'file_replacement_reason': previous_reason},
+        new_values={**context, 'file_replacement_unlocked': False, 'file_replacement_reason': ''},
     )
     return instance
 

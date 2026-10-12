@@ -109,13 +109,17 @@ class CapstoneDeliverablesState {
 class StudentTaskBadgeHelper {
   /// Checks if a deliverable item is pending required action (missing or needs revision).
   static bool isDeliverablePending(Map<String, dynamic> item) {
-    if (item['required'] != true) return false;
     if (item['is_waived'] == true) return false;
     final uploaded = item['uploaded'] == true;
     final submission = item['submission'] as Map<String, dynamic>? ??
         (item['submission'] is Map ? Map<String, dynamic>.from(item['submission'] as Map) : null);
     final status = submission?['status']?.toString();
     final isRejected = status == 'rejected' || status == 'Needs Revision';
+    if (item['type'] == 'pre' && status == 'accepted' &&
+        submission?['file_replacement_unlocked'] == true) {
+      return true;
+    }
+    if (item['required'] != true) return false;
 
     if (!uploaded || submission == null || submission.isEmpty || isRejected) {
       return true;
@@ -366,18 +370,42 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     String? programScope,
     String? yearLevel,
     bool? targetState,
+    String reason = '',
+    String? deliverableId,
   }) async {
     final Map<String, dynamic> payload = {
       'stage_label': stageLabel,
       'unlock_type': unlockType,
       'scope': scope,
+      'reason': reason,
     };
     if (teamId != null) payload['team_id'] = teamId;
     if (programScope != null) payload['program_scope'] = programScope;
     if (yearLevel != null) payload['year_level'] = yearLevel;
     if (targetState != null) payload['target_state'] = targetState;
+    if (deliverableId != null) payload['deliverable_id'] = deliverableId;
 
     return _postAction('unlock', payload, successMessage: 'Deliverable submission unlock status updated.');
+  }
+
+  Future<Map<String, dynamic>?> fetchStageAccess({
+    String scope = 'global', String programScope = 'capstone', int? teamId, String? yearLevel,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl/stage-access/').replace(queryParameters: {
+        'scope': scope, 'program_scope': programScope,
+        if (teamId != null) 'team_id': '$teamId',
+        if (yearLevel != null && yearLevel.isNotEmpty) 'year_level': yearLevel,
+      });
+      final response = await _client.get(uri);
+      if (response.statusCode == 200) {
+        return Map<String, dynamic>.from(jsonDecode(response.body));
+      }
+      state = state.copyWith(error: _errorFromResponse(response));
+    } catch (e) {
+      state = state.copyWith(error: 'Could not load stage access: $e');
+    }
+    return null;
   }
 
   Future<bool> _postAction(

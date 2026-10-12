@@ -29,11 +29,10 @@ class ArchiveResubmissionDialog {
     final isPublishedPost = isPostDeliverable && status == 'Approved';
 
     final isNeedsRevision = status == 'Needs Revision' || status == 'Rejected' || status == 'Needs Re-upload';
-    final isReplacementUnlocked = !isPostDeliverable && !isNeedsRevision &&
-        ((entry['archive_unlocked'] == true) ||
-            (entry['unlocked'] == true) ||
-            existingFeedback.toLowerCase().contains('unlocked for file replacement') ||
-            existingFeedback.toLowerCase().contains('unlocked'));
+    final canKeepApproved = !isPostDeliverable && status == 'Approved' &&
+        (entryId.startsWith('capstone-') && !entryId.startsWith('capstone-vault-') ||
+            entryId.startsWith('pit-deliverable-'));
+    final isReplacementUnlocked = canKeepApproved && entry['file_replacement_unlocked'] == true;
 
     final displayStatus = isNeedsRevision
         ? 'Needs Revision (Pending Student Re-upload)'
@@ -41,9 +40,11 @@ class ArchiveResubmissionDialog {
 
     PlatformFile? selectedFile;
     final feedbackController = TextEditingController();
+    final replacementReasonController = TextEditingController();
 
-    final actionChoice = await showDialog<String>(
+    final dialogRoute = DialogRoute<String>(
       context: context,
+      themes: InheritedTheme.capture(from: context, to: Navigator.of(context, rootNavigator: true).context),
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setDialogState) => Dialog(
           backgroundColor: Colors.transparent,
@@ -59,12 +60,12 @@ class ArchiveResubmissionDialog {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
+                    Expanded(child: Text(
                       isPostDeliverable
                           ? (isPublishedPost ? 'Reopen Archive File' : 'Manage Revision Request')
                           : 'Request File Resubmission or Replacement',
                       style: DefensysTokens.dialogTitle.copyWith(color: DefensysTokens.maroon),
-                    ),
+                    )),
                     IconButton(
                       icon: const Icon(Icons.close_rounded, size: 20, color: DefensysTokens.steelGrey),
                       onPressed: () => Navigator.pop(dialogContext, null),
@@ -227,7 +228,7 @@ class ArchiveResubmissionDialog {
                             children: [
                               const Icon(Icons.published_with_changes_rounded, color: Color(0xFF2563EB), size: 20),
                               const SizedBox(width: 8),
-                              Text(
+                              Expanded(child: Text(
                                 isPostDeliverable
                                     ? 'Reopen for Student Revision'
                                     : 'Option 1: Request Student Re-upload (Student Portal)',
@@ -236,7 +237,7 @@ class ArchiveResubmissionDialog {
                                   fontSize: 13.5,
                                   color: Color(0xFF1E40AF),
                                 ),
-                              ),
+                              )),
                             ],
                           ),
                           const SizedBox(height: 6),
@@ -289,10 +290,10 @@ class ArchiveResubmissionDialog {
                                   children: [
                                     const Icon(Icons.edit_note_rounded, color: Colors.orange, size: 18),
                                     const SizedBox(width: 6),
-                                    Text(
+                                    Expanded(child: Text(
                                       isPostDeliverable ? 'Request a corrected final file' : 'Choice A: Document Content Revision',
                                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Color(0xFF1E293B)),
-                                    ),
+                                    )),
                                   ],
                                 ),
                                 const SizedBox(height: 4),
@@ -330,7 +331,7 @@ class ArchiveResubmissionDialog {
                                       foregroundColor: Colors.white,
                                       padding: const EdgeInsets.symmetric(vertical: 8),
                                     ),
-                                    onPressed: isPublishedPost && feedbackController.text.trim().isEmpty
+                                    onPressed: feedbackController.text.trim().isEmpty
                                         ? null
                                         : () => Navigator.pop(dialogContext, 'unlock_needs_revision'),
                                     icon: const Icon(Icons.send_rounded, size: 15),
@@ -347,7 +348,7 @@ class ArchiveResubmissionDialog {
                           ),
                           const SizedBox(height: 10),
                           // Sub-Option 1B: Allow Replacement (Keep Approved)
-                          if (!isPostDeliverable) Container(
+                          if (canKeepApproved) Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color: Colors.white,
@@ -361,16 +362,36 @@ class ArchiveResubmissionDialog {
                                   children: [
                                     Icon(Icons.swap_horiz_rounded, color: Colors.teal, size: 18),
                                     SizedBox(width: 6),
-                                    Text(
+                                    Expanded(child: Text(
                                       'Choice B: Wrong File Replacement',
                                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5, color: Color(0xFF1E293B)),
-                                    ),
+                                    )),
                                   ],
                                 ),
                                 const SizedBox(height: 4),
                                 const Text(
-                                  'Keeps status as "Approved" but enables "Replace File" in student portal for wrong file upload fixes.',
+                                  'Allows one "Replace File" upload in the student portal. The file keeps its "Approved" status, including after replacement.',
                                   style: TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
+                                ),
+                                const SizedBox(height: 8),
+                                TextField(
+                                  key: const ValueKey('fileReplacementReason'),
+                                  controller: replacementReasonController,
+                                  onChanged: (_) => setDialogState(() {}),
+                                  maxLines: 2,
+                                  decoration: InputDecoration(
+                                    labelText: isReplacementUnlocked
+                                        ? 'Reason for replacement or cancellation (required)'
+                                        : 'Reason for file replacement (required)',
+                                    hintText: 'e.g. The team uploaded the wrong acceptance form.',
+                                    helperText: isReplacementUnlocked
+                                        ? 'Recorded in Audit Trail. Use this reason to renew or cancel the unlock.'
+                                        : 'Recorded in the audit trail and shown to the team.',
+                                    helperMaxLines: 2,
+                                    border: OutlineInputBorder(),
+                                    contentPadding: EdgeInsets.all(10),
+                                  ),
+                                  style: const TextStyle(fontSize: 12),
                                 ),
                                 if (isReplacementUnlocked) ...[
                                   const SizedBox(height: 8),
@@ -408,7 +429,9 @@ class ArchiveResubmissionDialog {
                                       foregroundColor: Colors.white,
                                       padding: const EdgeInsets.symmetric(vertical: 8),
                                     ),
-                                    onPressed: () => Navigator.pop(dialogContext, 'unlock_keep_approved'),
+                                    onPressed: replacementReasonController.text.trim().isEmpty
+                                        ? null
+                                        : () => Navigator.pop(dialogContext, 'unlock_keep_approved'),
                                     icon: const Icon(Icons.lock_open_rounded, size: 15),
                                     label: Text(
                                       isReplacementUnlocked
@@ -418,6 +441,26 @@ class ArchiveResubmissionDialog {
                                     ),
                                   ),
                                 ),
+                                if (isReplacementUnlocked) ...[
+                                  const SizedBox(height: 8),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton.icon(
+                                      key: const ValueKey('cancelFileReplacement'),
+                                      style: OutlinedButton.styleFrom(foregroundColor: AppColors.maroon),
+                                      onPressed: replacementReasonController.text.trim().isEmpty
+                                          ? null
+                                          : () => Navigator.pop(dialogContext, 'cancel_replacement'),
+                                      icon: const Icon(Icons.lock_outline_rounded, size: 15),
+                                      label: const Text('Cancel Replacement Unlock', style: TextStyle(fontSize: 12)),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  const Text(
+                                    'Revokes the unused replacement permission. The file stays Approved.',
+                                    style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
@@ -443,14 +486,14 @@ class ArchiveResubmissionDialog {
                             children: [
                               Icon(Icons.upload_file_rounded, color: AppColors.maroon, size: 20),
                               SizedBox(width: 8),
-                              Text(
+                              Expanded(child: Text(
                                 'Option 2: Upload Corrected File Directly as Admin',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 13.5,
                                   color: AppColors.textPrimary,
                                 ),
-                              ),
+                              )),
                             ],
                           ),
                           const SizedBox(height: 6),
@@ -538,6 +581,12 @@ class ArchiveResubmissionDialog {
 ),
 );
 
+    final actionChoice = await Navigator.of(context, rootNavigator: true).push(dialogRoute);
+    await dialogRoute.completed;
+    final revisionReason = feedbackController.text.trim();
+    final replacementReason = replacementReasonController.text.trim();
+    feedbackController.dispose();
+    replacementReasonController.dispose();
     if (!context.mounted || actionChoice == null) {
       return;
     }
@@ -546,7 +595,7 @@ class ArchiveResubmissionDialog {
       final success = await ref.read(repositoryAuditProvider.notifier).requestResubmission(
             entryId,
             status: 'Needs Revision',
-            feedback: feedbackController.text.trim(),
+            feedback: revisionReason,
           );
       if (context.mounted) {
         if (success) {
@@ -564,13 +613,24 @@ class ArchiveResubmissionDialog {
       final success = await ref.read(repositoryAuditProvider.notifier).requestResubmission(
             entryId,
             status: 'Approved',
-            feedback: 'Unlocked for file replacement by Admin',
+            feedback: replacementReason,
           );
       if (context.mounted) {
         if (success) {
           showSuccessToast(context, 'Unlocked file replacement for student team ($teamName)');
         } else {
           showErrorToast(context, 'Failed to unlock file replacement');
+        }
+      }
+    } else if (actionChoice == 'cancel_replacement') {
+      final success = await ref.read(repositoryAuditProvider.notifier).cancelFileReplacement(
+        entryId, reason: replacementReason,
+      );
+      if (context.mounted) {
+        if (success) {
+          showSuccessToast(context, 'Replacement unlock canceled. The file stays Approved.');
+        } else {
+          showErrorToast(context, ref.read(repositoryAuditProvider).error ?? 'Failed to cancel the replacement unlock');
         }
       }
     } else if (actionChoice == 'admin_upload' && selectedFile != null && selectedFile!.bytes != null) {
@@ -606,31 +666,11 @@ class ArchiveResubmissionDialog {
       return;
     }
 
-    showDialog(
+    await viewFileInDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: AppColors.maroon),
-      ),
+      fileUrl: fileUrl,
+      fileName: fileName,
     );
-
-    try {
-      final bytes = await ref
-          .read(authenticatedHttpClientProvider)
-          .fetchAuthenticatedFile(fileUrl);
-      if (context.mounted) Navigator.pop(context);
-      if (!context.mounted) return;
-      await viewFileInDialog(
-        context: context,
-        fileBytes: bytes,
-        fileName: fileName,
-      );
-    } catch (e) {
-      if (context.mounted && Navigator.canPop(context)) Navigator.pop(context);
-      if (context.mounted) {
-        showErrorToast(context, 'Error opening file: $e');
-      }
-    }
   }
 
   static Future<void> downloadFile({

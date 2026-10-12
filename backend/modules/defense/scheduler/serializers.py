@@ -17,7 +17,7 @@ from student_teams.models import StudentTeam, TeamStageProgress
 from student_teams.services import get_ready_teams, is_stage_ready, mark_stage_scheduled
 from .models import DefenseSchedule, SchedulePanelist, PitEventDeliverable
 from .pit_config import get_pit_event_config, pit_event_config_payload, upsert_pit_event_config
-from .services import VALID_TRANSITIONS, transition_schedule_status
+from .services import VALID_TRANSITIONS, transition_schedule_status, adviser_panel_conflict
 from user_management.external_evaluators import create_invitations, resolve_evaluators, evaluator_payload
 from user_management.models import ExternalEvaluator
 
@@ -521,8 +521,19 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
         return [assignment.panelist_id for assignment in obj.panel_assignments.all()]
 
     def get_external_evaluators(self, obj):
-        return [{'id': i.evaluator_id, 'name': i.guest_name, 'is_active': i.is_active}
-                for i in obj.guest_invitations.all()]
+        # Invitations remain participants after access expiry/revocation, and
+        # older single-defense assignments are part of the same record.
+        invitations = [*obj.guest_invitations.all(), *obj.guest_panelist_codes.all()]
+        seen = set()
+        participants = []
+        for invitation in invitations:
+            identity = ('evaluator', invitation.evaluator_id) if invitation.evaluator_id else ('invitation', invitation.pk)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            participants.append({'id': invitation.evaluator_id, 'name': invitation.guest_name,
+                                 'is_active': invitation.is_active})
+        return participants
 
     def get_pit_event_config_id(self, obj):
         if obj.scope != DefenseSchedule.SCOPE_PIT:
@@ -910,6 +921,11 @@ class ScheduleBaseSerializer(serializers.Serializer):
                         'slots': 'Schedule plan contains overlapping slots.',
                     })
 
+    def _validate_adviser_panel(self, team, panelists, error_field='panelist_ids'):
+        reason = adviser_panel_conflict(team, (person.pk for person in panelists))
+        if reason:
+            raise serializers.ValidationError({error_field: reason})
+
 
 class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
     team_id = serializers.IntegerField()
@@ -922,6 +938,7 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
     def validate(self, attrs):
         attrs = super().validate(attrs)
         attrs['team'] = self._resolve_team(attrs)
+        self._validate_adviser_panel(attrs['team'], attrs['panelists'])
 
         doc = attrs.get('documenter')
         if attrs.get('defense_stage') and attrs['defense_stage'].minutes_required and not doc:
@@ -940,6 +957,11 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        # Adviser assignment may have changed since the request was validated.
+        validated_data['team'] = StudentTeam.objects.select_for_update().get(
+            pk=validated_data['team'].pk,
+        )
+        self._validate_adviser_panel(validated_data['team'], validated_data['panelists'])
         externals = validated_data.get('external_evaluators', [])
         guest_expiry = validated_data.get('guest_access_expires_at')
         chair_panelist_id = validated_data.pop('chair_panelist_id', None)
@@ -1219,6 +1241,7 @@ class GenerateSchedulePlanSerializer(SchedulePlanSerializer):
                 person_data['is_chair'] = person.pk == chair_id
                 panelists_data.append(person_data)
             if entry:
+                self._validate_adviser_panel(team, entry['panelists'], 'slots')
                 if entry.get('documenter') and team.adviser_id == entry['documenter'].pk:
                     raise serializers.ValidationError({'slots': f'Documenter cannot be the adviser of team {team.name}.'})
                 entries.append(entry)
@@ -1356,6 +1379,7 @@ class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
             if 'team_ids' in attrs['plan_sessions'][key] and team.pk not in attrs['plan_sessions'][key]['team_ids']:
                 raise serializers.ValidationError({'slots': f'{team.name} is not selected for this session.'})
             entry = self._plan_entry(attrs['plan_sessions'][key], counts.get(key, 0))
+            self._validate_adviser_panel(team, entry['panelists'], 'slots')
             counts[key] = counts.get(key, 0) + 1
             for field in ('scheduled_date', 'start_time', 'slot_duration', 'room'):
                 if field in slot and slot[field] != entry[field]:

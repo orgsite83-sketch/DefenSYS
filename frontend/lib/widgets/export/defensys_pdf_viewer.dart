@@ -2,19 +2,22 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:syncfusion_flutter_core/theme.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
+import '../../theme/defensys_tokens.dart';
 
 /// Clean, institutional PDF Document Viewer rendered via Flutter Canvas.
-/// Eliminates dark-mode browser header toolbars and provides seamless light-theme styling.
+/// Keeps the preview controls and canvas aligned with the app's active theme.
 class DefensysPdfViewer extends StatefulWidget {
   final Uint8List pdfBytes;
   final String title;
   final String documentType;
+  final ValueChanged<bool>? onReadyChanged;
 
   const DefensysPdfViewer({
     super.key,
     required this.pdfBytes,
     this.title = 'Document Preview',
     this.documentType = 'PDF',
+    this.onReadyChanged,
   });
 
   @override
@@ -58,10 +61,11 @@ class _DefensysPdfViewerState extends State<DefensysPdfViewer> {
     final renderPixelRatio = kIsWeb && mediaQuery.devicePixelRatio < 2
         ? 2.0
         : mediaQuery.devicePixelRatio;
+    final canvasColor = DefensysTokens.isDark(context)
+        ? DefensysTokens.backgroundOf(context)
+        : DefensysTokens.border;
     return Container(
-      color: const Color(
-        0xFFE2E8F0,
-      ), // Clean light neutral background matching DefenSYS
+      color: canvasColor,
       child: Column(
         children: [
           LayoutBuilder(
@@ -71,7 +75,7 @@ class _DefensysPdfViewerState extends State<DefensysPdfViewer> {
               return Container(
                 height: 38,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
-                color: Colors.white,
+                color: DefensysTokens.surfaceOf(context),
                 child: Row(
                   children: [
                     Expanded(
@@ -83,9 +87,9 @@ class _DefensysPdfViewerState extends State<DefensysPdfViewer> {
                             : '$_pageCount ${_pageCount == 1 ? 'page' : 'pages'}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
-                          color: Color(0xFF64748B),
+                          color: DefensysTokens.textSecondaryOf(context),
                         ),
                       ),
                     ),
@@ -103,6 +107,9 @@ class _DefensysPdfViewerState extends State<DefensysPdfViewer> {
                       padding: EdgeInsets.zero,
                     ),
                     TextButton(
+                      style: TextButton.styleFrom(
+                        foregroundColor: DefensysTokens.maroonTextOf(context),
+                      ),
                       onPressed: _pageCount > 0
                           ? () => _pdfController.zoomLevel = 1
                           : null,
@@ -134,6 +141,9 @@ class _DefensysPdfViewerState extends State<DefensysPdfViewer> {
                       )
                     else
                       TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: DefensysTokens.maroonTextOf(context),
+                        ),
                         onPressed: _pageCount > 0 ? fitWidth : null,
                         icon: const Icon(Icons.fit_screen_rounded, size: 16),
                         label: const Text(
@@ -154,7 +164,9 @@ class _DefensysPdfViewerState extends State<DefensysPdfViewer> {
                       child: Text(
                         'Unable to preview this ${widget.documentType}. Try refreshing or downloading the file.',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: Color(0xFF475569)),
+                        style: TextStyle(
+                          color: DefensysTokens.textSecondaryOf(context),
+                        ),
                       ),
                     ),
                   )
@@ -163,9 +175,7 @@ class _DefensysPdfViewerState extends State<DefensysPdfViewer> {
                       devicePixelRatio: renderPixelRatio,
                     ),
                     child: SfPdfViewerTheme(
-                      data: const SfPdfViewerThemeData(
-                        backgroundColor: Color(0xFFE2E8F0),
-                      ),
+                      data: SfPdfViewerThemeData(backgroundColor: canvasColor),
                       child: SfPdfViewer.memory(
                         widget.pdfBytes,
                         controller: _pdfController,
@@ -181,10 +191,12 @@ class _DefensysPdfViewerState extends State<DefensysPdfViewer> {
                             _loadFailed = false;
                             _zoomLevel = _pdfController.zoomLevel;
                           });
+                          widget.onReadyChanged?.call(true);
                         },
                         onDocumentLoadFailed: (_) {
                           if (!mounted) return;
                           setState(() => _loadFailed = true);
+                          widget.onReadyChanged?.call(false);
                         },
                         onZoomLevelChanged: (details) {
                           if (!mounted) return;

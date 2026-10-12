@@ -97,6 +97,13 @@ class StudentTeam(models.Model):
             raise ValidationError({'leader': 'Team leader must be a student.'})
         if self.adviser_id and getattr(self.adviser, 'role', None) not in ['faculty', 'admin']:
             raise ValidationError({'adviser': 'Adviser must be a faculty or admin user.'})
+        if self.pk and self.adviser_id is not None:
+            previous = StudentTeam.objects.filter(pk=self.pk).values_list('adviser_id', flat=True).first()
+            if previous != self.adviser_id:
+                from .adviser_assignments import adviser_assignment_conflict
+                reason = adviser_assignment_conflict(self, self.adviser_id)
+                if reason:
+                    raise ValidationError({'adviser': reason})
 
     def save(self, *args, **kwargs):
         if not self.project_title:

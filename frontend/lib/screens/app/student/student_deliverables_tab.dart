@@ -499,9 +499,8 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                           _sectionTitle('Post-Defense Submissions', showRedDot: hasPendingPost),
                           const SizedBox(height: 8),
                           if (selectedStage['vault_unlocked'] != true && selectedStage['archive_unlocked'] != true)
-                            _lockedVaultNotice(state.selectedStage, stageGrade)
-                          else
-                            ...vault.map((item) => _deliverableRow(team, state.selectedStage, item, endorsed, stageGrade)),
+                            _lockedVaultNotice(state.selectedStage, stageGrade),
+                          ...vault.map((item) => _deliverableRow(team, state.selectedStage, item, endorsed, stageGrade)),
                         ],
                       ],
                     );
@@ -594,7 +593,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              const Expanded(child: Text(
                 'CLEARANCE PROGRESS',
                 style: TextStyle(
                   fontSize: 10,
@@ -602,7 +601,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   color: Color(0xFF64748B),
                   letterSpacing: 0.8,
                 ),
-              ),
+              )),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
                 decoration: BoxDecoration(
@@ -927,12 +926,14 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final isAccepted = status == 'accepted';
     final isRejected = status == 'rejected' || status == 'Needs Revision';
 
-    final replacementUnlockedByAdmin = rawFeedback.contains('Unlocked for file replacement');
+    final replacementUnlockedByAdmin = item['type'] == 'pre' && isAccepted &&
+        submission['file_replacement_unlocked'] == true;
     final isDefenseMaterialAttempt2 = isForRedefense && item['type'] == 'pre' && item['is_defense_material'] == true;
-    final fileLocked = isAccepted || (!isDefenseMaterialAttempt2 && !isRejected &&
-        ((item['type'] == 'pre' && endorsed) || item['locked'] == true));
+    final fileLocked = item['can_upload'] is bool ? item['can_upload'] != true :
+        !replacementUnlockedByAdmin && (isAccepted || (!isDefenseMaterialAttempt2 && !isRejected &&
+        ((item['type'] == 'pre' && endorsed) || item['locked'] == true)));
     final isWPR = item['id'] == 'WPR';
-    final feedback = replacementUnlockedByAdmin ? '' : rawFeedback;
+    final feedback = rawFeedback;
     final rawFormat = item['file_format'] ?? item['fileFormat'];
     final formatInfo = DeliverableFormatInfo.fromFormat(rawFormat?.toString());
     final fileName = (submission['file_name'] ?? item['label'] ?? 'Document').toString();
@@ -1192,7 +1193,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                       Icon(Icons.lock_outline_rounded, size: 14, color: Color(0xFF94A3B8)),
                       SizedBox(width: 6),
                       Text(
-                        'Upload locked until oral defense is scheduled',
+                        'Uploads are currently locked for this deliverable',
                         style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Color(0xFF94A3B8)),
                       ),
                     ],
@@ -1293,6 +1294,19 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 ),
             ],
 
+            if (replacementUnlockedByAdmin) ...[
+              const SizedBox(height: 8),
+              _replacementNotice(submission),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: fileLocked ? null : () => _promptUploadOrReplace(team, stageLabel, item),
+                  icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+                  label: const Text('Replace File'),
+                ),
+              ),
+            ],
+
             // 4. Panel Remarks / Rejection Feedback Banner
             if (uploaded && isRejected && feedback.isNotEmpty) ...[
               const SizedBox(height: 8),
@@ -1351,6 +1365,24 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _replacementNotice(Map<String, dynamic> submission) {
+    final reason = submission['file_replacement_reason']?.toString().trim() ?? '';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDFA),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF99F6E4)),
+      ),
+      child: Text(
+        'File replacement requested — upload the correct file. Approval is retained.'
+        '${reason.isEmpty ? '' : '\nReason: $reason'}',
+        style: const TextStyle(fontSize: 12, color: Color(0xFF115E59)),
       ),
     );
   }
@@ -1487,8 +1519,11 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final stageVerdict = stageGrade?['verdict']?.toString();
     final isForRedefense = stageVerdict == 'for_redefense';
     final isDefenseMaterialAttempt2 = isForRedefense && item['type'] == 'pre' && item['is_defense_material'] == true;
-    final fileLocked = isAccepted || (!isDefenseMaterialAttempt2 && !isRejected &&
-        ((item['type'] == 'pre' && endorsed) || item['locked'] == true));
+    final replacementUnlocked = item['type'] == 'pre' && isAccepted &&
+        submission['file_replacement_unlocked'] == true;
+    final fileLocked = item['can_upload'] is bool ? item['can_upload'] != true :
+        !replacementUnlocked && (isAccepted || (!isDefenseMaterialAttempt2 && !isRejected &&
+        ((item['type'] == 'pre' && endorsed) || item['locked'] == true)));
 
     final formattedDate = _formatDateString(uploadedAt);
     final suggestedName = (item['suggested_file_name'] ?? '').toString().trim();
@@ -1503,7 +1538,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        child: Column(
+        child: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1827,6 +1862,11 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               const SizedBox(height: 16),
             ],
 
+            if (replacementUnlocked) ...[
+              _replacementNotice(submission),
+              const SizedBox(height: 16),
+            ],
+
             // Action Buttons Row inside modal
             Row(
               children: [
@@ -1858,7 +1898,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   ),
                   const SizedBox(width: 8),
                 ],
-                if (uploaded && !fileLocked && !isWPR) ...[
+                if (uploaded && !isAccepted && !fileLocked && !isWPR) ...[
                   IconButton(
                     onPressed: () {
                       Navigator.pop(modalCtx);
@@ -1891,7 +1931,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               ],
             ),
           ],
-        ),
+        )),
       ),
     );
   }

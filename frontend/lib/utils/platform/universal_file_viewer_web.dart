@@ -5,10 +5,13 @@ import 'dart:ui_web' as ui_web;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../services/network/authenticated_client.dart';
 import '../../theme/defensys_tokens.dart';
 import '../../toasts/feedback_toast.dart';
 import '../../widgets/export/defensys_pdf_viewer.dart';
+import '../../widgets/file_viewer_dialog_layout.dart';
 import 'universal_file_viewer_models.dart';
 import 'universal_file_viewer_widgets.dart';
 
@@ -38,7 +41,8 @@ Future<void> downloadBytesFile({
 /// Spreadsheets (Excel/CSV), Code/Text files, and Office Document Inspection.
 Future<void> viewFileInDialog({
   required BuildContext context,
-  required List<int> fileBytes,
+  List<int>? fileBytes,
+  String? fileUrl,
   required String fileName,
   DeliverablePropertiesInfo? propertiesInfo,
 }) async {
@@ -48,6 +52,7 @@ Future<void> viewFileInDialog({
     barrierColor: Colors.black.withValues(alpha: 0.75),
     builder: (dialogContext) => UniversalFileViewerDialog(
       fileBytes: fileBytes,
+      fileUrl: fileUrl,
       fileName: fileName,
       propertiesInfo: propertiesInfo,
     ),
@@ -57,40 +62,47 @@ Future<void> viewFileInDialog({
 /// Legacy alias for backward compatibility.
 Future<void> viewPdfInDialog({
   required BuildContext context,
-  required List<int> pdfBytes,
+  List<int>? pdfBytes,
+  String? fileUrl,
   required String fileName,
   DeliverablePropertiesInfo? propertiesInfo,
 }) => viewFileInDialog(
   context: context,
   fileBytes: pdfBytes,
+  fileUrl: fileUrl,
   fileName: fileName,
   propertiesInfo: propertiesInfo,
 );
 
 /// Stateful Universal File Viewer Dialog
-class UniversalFileViewerDialog extends StatefulWidget {
-  final List<int> fileBytes;
+class UniversalFileViewerDialog extends ConsumerStatefulWidget {
+  final List<int>? fileBytes;
+  final String? fileUrl;
   final String fileName;
   final DeliverablePropertiesInfo? propertiesInfo;
 
   const UniversalFileViewerDialog({
     super.key,
-    required this.fileBytes,
+    this.fileBytes,
+    this.fileUrl,
     required this.fileName,
     this.propertiesInfo,
   });
 
   @override
-  State<UniversalFileViewerDialog> createState() =>
+  ConsumerState<UniversalFileViewerDialog> createState() =>
       _UniversalFileViewerDialogState();
 }
 
-class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
+class _UniversalFileViewerDialogState
+    extends ConsumerState<UniversalFileViewerDialog> {
   late final FileCategory _category;
   late final String _mimeType;
-  late final String _blobUrl;
+  String? _blobUrl;
   late final String _viewType;
-  late final Uint8List _fileBytes;
+  Uint8List? _fileBytes;
+  bool _isLoading = false;
+  String? _loadError;
 
   // Image manipulation controller
   final TransformationController _imageTransformCtrl =
@@ -103,22 +115,31 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
     super.initState();
     _category = FileViewerMetadata.detectCategory(widget.fileName);
     _mimeType = FileViewerMetadata.getMimeType(widget.fileName);
-    _fileBytes = Uint8List.fromList(widget.fileBytes);
-
-    // Keep a browser blob URL for media playback, downloads and new-tab opening.
-    final blob = html.Blob([_fileBytes], _mimeType);
-    _blobUrl = html.Url.createObjectUrlFromBlob(blob);
 
     // Create unique viewType for web platform views
     _viewType =
         'univ-viewer-${DateTime.now().millisecondsSinceEpoch}-${widget.fileName.hashCode}';
+
+    if (widget.fileBytes != null && widget.fileBytes!.isNotEmpty) {
+      _initBytes(Uint8List.fromList(widget.fileBytes!));
+    } else if (widget.fileUrl != null && widget.fileUrl!.isNotEmpty) {
+      _loadFile();
+    } else {
+      _loadError = 'No file content or URL provided.';
+    }
+  }
+
+  void _initBytes(Uint8List bytes) {
+    _fileBytes = bytes;
+    final blob = html.Blob([_fileBytes!], _mimeType);
+    _blobUrl = html.Url.createObjectUrlFromBlob(blob);
 
     // Register platform view factories if needed
     if (_category == FileCategory.video) {
       ui_web.platformViewRegistry.registerViewFactory(
         _viewType,
         (int viewId) => html.VideoElement()
-          ..src = _blobUrl
+          ..src = _blobUrl!
           ..controls = true
           ..autoplay = true
           ..style.border = 'none'
@@ -130,7 +151,7 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
       ui_web.platformViewRegistry.registerViewFactory(
         _viewType,
         (int viewId) => html.AudioElement()
-          ..src = _blobUrl
+          ..src = _blobUrl!
           ..controls = true
           ..autoplay = true
           ..style.width = '100%'
@@ -139,16 +160,45 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
     }
   }
 
+  Future<void> _loadFile() async {
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+    try {
+      final client = ref.read(authenticatedHttpClientProvider);
+      final bytes = await client.fetchAuthenticatedFile(widget.fileUrl!);
+      if (!mounted) return;
+      _initBytes(Uint8List.fromList(bytes));
+      setState(() {
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _loadError = e.toString();
+      });
+    }
+  }
+
   @override
   void dispose() {
     _focusNode.dispose();
     _imageTransformCtrl.dispose();
-    html.Url.revokeObjectUrl(_blobUrl);
+    if (_blobUrl != null) {
+      html.Url.revokeObjectUrl(_blobUrl!);
+    }
     super.dispose();
   }
 
   void _downloadFile() {
-    final anchor = html.AnchorElement(href: _blobUrl)
+    if (_fileBytes == null) return;
+    if (_blobUrl == null) {
+      final blob = html.Blob([_fileBytes!], _mimeType);
+      _blobUrl = html.Url.createObjectUrlFromBlob(blob);
+    }
+    final anchor = html.AnchorElement(href: _blobUrl!)
       ..setAttribute('download', widget.fileName)
       ..style.display = 'none';
     html.document.body?.append(anchor);
@@ -163,7 +213,9 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
   }
 
   void _openInNewTab() {
-    html.window.open(_blobUrl, '_blank');
+    if (_blobUrl != null) {
+      html.window.open(_blobUrl!, '_blank');
+    }
   }
 
   void _zoomImage(double factor) {
@@ -215,9 +267,18 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
-    final dialogWidth = (screenSize.width * 0.94).clamp(0.0, 1500.0);
-    final dialogHeight = (screenSize.height * 0.92).clamp(0.0, 1000.0);
+    final layout = FileViewerDialogLayout.of(context);
     final compact = screenSize.width < 600;
+    final isPdf = _category == FileCategory.pdf;
+    final toolbarColor = isPdf
+        ? DefensysTokens.surfaceOf(context)
+        : DefensysTokens.maroon;
+    final toolbarForeground = isPdf
+        ? DefensysTokens.textPrimaryOf(context)
+        : Colors.white;
+    final toolbarSecondary = isPdf
+        ? DefensysTokens.textSecondaryOf(context)
+        : Colors.white70;
 
     final catColor = FileViewerMetadata.getCategoryColor(_category);
     final catIcon = FileViewerMetadata.getCategoryIcon(_category);
@@ -225,9 +286,9 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
       _category,
       widget.fileName,
     );
-    final formattedSize = FileViewerMetadata.formatBytes(
-      widget.fileBytes.length,
-    );
+    final formattedSize = _fileBytes != null
+        ? FileViewerMetadata.formatBytes(_fileBytes!.length)
+        : (_isLoading ? 'Loading...' : '');
 
     return Focus(
       focusNode: _focusNode,
@@ -235,17 +296,22 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
       onKeyEvent: _handleKeyEvent,
       child: Dialog(
         backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        insetPadding: layout.insetPadding,
         child: Container(
-          width: dialogWidth,
-          height: dialogHeight,
+          width: layout.size.width,
+          height: layout.size.height,
           decoration: BoxDecoration(
-            color: const Color(0xFF0B0F19),
+            color: DefensysTokens.surfaceOf(context),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFF273142), width: 1.5),
+            border: Border.all(
+              color: DefensysTokens.borderOf(context),
+              width: 1.5,
+            ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.65),
+                color: Colors.black.withValues(
+                  alpha: DefensysTokens.isDark(context) ? .65 : .15,
+                ),
                 blurRadius: 36,
                 spreadRadius: 4,
                 offset: const Offset(0, 12),
@@ -260,9 +326,9 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
               Container(
                 height: 56,
                 padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 16),
-                decoration: const BoxDecoration(
-                  color: DefensysTokens.maroon,
-                  borderRadius: BorderRadius.only(
+                decoration: BoxDecoration(
+                  color: toolbarColor,
+                  borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(10),
                     topRight: Radius.circular(10),
                   ),
@@ -276,7 +342,9 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.3),
+                        color: isPdf
+                            ? DefensysTokens.surfaceHigherOf(context)
+                            : Colors.black.withValues(alpha: 0.3),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
                           color: catColor.withValues(alpha: 0.7),
@@ -290,8 +358,8 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
                           if (!compact)
                             Text(
                               catLabel,
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: toolbarForeground,
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 0.5,
@@ -310,8 +378,8 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
                               message: widget.fileName,
                               child: Text(
                                 widget.fileName,
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: toolbarForeground,
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -329,13 +397,15 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.15),
+                                color: isPdf
+                                    ? DefensysTokens.surfaceHigherOf(context)
+                                    : Colors.white.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
                                 formattedSize,
-                                style: const TextStyle(
-                                  color: Colors.white70,
+                                style: TextStyle(
+                                  color: toolbarSecondary,
                                   fontSize: 11,
                                   fontFamily: 'monospace',
                                 ),
@@ -395,42 +465,85 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
                       ),
                     ],
 
-                    // Open in New Tab
-                    IconButton(
-                      icon: const Icon(
-                        Icons.open_in_new,
-                        color: Colors.white,
-                        size: 18,
+                    if (!_isLoading && _fileBytes != null) ...[
+                      // Open in New Tab
+                      IconButton(
+                        icon: Icon(
+                          Icons.open_in_new,
+                          color: toolbarForeground,
+                          size: 18,
+                        ),
+                        tooltip: 'Open in New Tab',
+                        onPressed: _openInNewTab,
+                        visualDensity: VisualDensity.compact,
                       ),
-                      tooltip: 'Open in New Tab',
-                      onPressed: _openInNewTab,
-                      visualDensity: VisualDensity.compact,
-                    ),
 
-                    // Download button
-                    IconButton(
-                      icon: const Icon(
-                        Icons.download,
-                        color: Colors.white,
-                        size: 18,
+                      // Download button
+                      if (!compact) ...[
+                        Tooltip(
+                          message: 'Download File',
+                          child: OutlinedButton.icon(
+                            onPressed: _downloadFile,
+                            icon: Icon(
+                              Icons.download,
+                              color: toolbarForeground,
+                              size: 15,
+                            ),
+                            label: Text(
+                              isPdf ? 'Download PDF' : 'Download',
+                              style: TextStyle(
+                                color: toolbarForeground,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(
+                                color: isPdf
+                                    ? DefensysTokens.borderOf(context)
+                                    : Colors.white38,
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ] else ...[
+                        IconButton(
+                          icon: Icon(
+                            Icons.download,
+                            color: toolbarForeground,
+                            size: 18,
+                          ),
+                          tooltip: 'Download File',
+                          onPressed: _downloadFile,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ],
+
+                      Container(
+                        height: 20,
+                        width: 1,
+                        color: isPdf
+                            ? DefensysTokens.borderOf(context)
+                            : Colors.white24,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
                       ),
-                      tooltip: 'Download File',
-                      onPressed: _downloadFile,
-                      visualDensity: VisualDensity.compact,
-                    ),
-
-                    Container(
-                      height: 20,
-                      width: 1,
-                      color: Colors.white24,
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                    ),
+                    ],
 
                     // Close button
                     IconButton(
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.close,
-                        color: Colors.white,
+                        color: toolbarForeground,
                         size: 20,
                       ),
                       tooltip: 'Close (Esc)',
@@ -482,25 +595,27 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-      decoration: const BoxDecoration(
-        color: Color(0xFF0F172A),
-        borderRadius: BorderRadius.only(
+      decoration: BoxDecoration(
+        color: DefensysTokens.surfaceOf(context),
+        borderRadius: const BorderRadius.only(
           bottomLeft: Radius.circular(10),
           bottomRight: Radius.circular(10),
         ),
-        border: Border(top: BorderSide(color: Color(0xFF1E293B))),
+        border: Border(
+          top: BorderSide(color: DefensysTokens.borderOf(context)),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
+          Text(
             'FILE PROPERTIES & INFO',
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w800,
               letterSpacing: 0.8,
-              color: Color(0xFF94A3B8),
+              color: DefensysTokens.textSecondaryOf(context),
             ),
           ),
           const SizedBox(height: 8),
@@ -565,9 +680,9 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
+        color: DefensysTokens.surfaceHigherOf(context),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF334155)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -575,19 +690,19 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
         children: [
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 9.5,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF94A3B8),
+              color: DefensysTokens.textSecondaryOf(context),
             ),
           ),
           const SizedBox(height: 2),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11.5,
               fontWeight: FontWeight.bold,
-              color: Colors.white,
+              color: DefensysTokens.textPrimaryOf(context),
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -598,11 +713,75 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
   }
 
   Widget _buildViewerContent() {
+    if (_isLoading) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(color: DefensysTokens.maroon),
+            const SizedBox(height: 16),
+            Text(
+              'Loading ${widget.fileName}...',
+              style: TextStyle(
+                color: DefensysTokens.textSecondaryOf(context),
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_loadError != null || _fileBytes == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.error_outline_rounded,
+                size: 44,
+                color: Color(0xFFEF4444),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                'Unable to open ${widget.fileName}',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: DefensysTokens.textPrimaryOf(context),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _loadError ?? 'File data is not available.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: DefensysTokens.maroon,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: _loadFile,
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     switch (_category) {
       case FileCategory.pdf:
-        // Render the authenticated bytes in the app. Mobile browsers may show
-        // only an "Open" placeholder when a PDF blob is embedded in an iframe.
-        return DefensysPdfViewer(pdfBytes: _fileBytes, title: widget.fileName);
+        return DefensysPdfViewer(pdfBytes: _fileBytes!, title: widget.fileName);
 
       case FileCategory.video:
         return HtmlElementView(viewType: _viewType);
@@ -610,13 +789,13 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
       case FileCategory.audio:
         return UniversalAudioPlayerCard(
           fileName: widget.fileName,
-          fileSizeBytes: widget.fileBytes.length,
+          fileSizeBytes: _fileBytes!.length,
           audioPlayerWidget: HtmlElementView(viewType: _viewType),
         );
 
       case FileCategory.image:
         return UniversalImageViewer(
-          bytes: Uint8List.fromList(widget.fileBytes),
+          bytes: _fileBytes!,
           fileName: widget.fileName,
           controller: _imageTransformCtrl,
           rotationAngle: _imageRotation,
@@ -624,13 +803,13 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
 
       case FileCategory.spreadsheet:
         return UniversalSpreadsheetViewer(
-          bytes: Uint8List.fromList(widget.fileBytes),
+          bytes: _fileBytes!,
           fileName: widget.fileName,
         );
 
       case FileCategory.codeOrText:
         return UniversalCodeTextViewer(
-          bytes: Uint8List.fromList(widget.fileBytes),
+          bytes: _fileBytes!,
           fileName: widget.fileName,
         );
 
@@ -640,7 +819,7 @@ class _UniversalFileViewerDialogState extends State<UniversalFileViewerDialog> {
       case FileCategory.other:
         return UniversalOfficeInspectorCard(
           fileName: widget.fileName,
-          fileSizeBytes: widget.fileBytes.length,
+          fileSizeBytes: _fileBytes!.length,
           category: _category,
           onDownload: _downloadFile,
           onOpenInNewTab: _openInNewTab,

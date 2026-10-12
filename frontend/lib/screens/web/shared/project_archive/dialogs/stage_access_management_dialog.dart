@@ -12,320 +12,460 @@ class StageAccessManagementDialog {
     required WidgetRef ref,
     int? teamId,
     String? teamName,
-    required String scope, // 'team' or 'global'
-    String programScope = 'capstone', // 'capstone' or 'pit'
+    required String scope,
+    String programScope = 'capstone',
     String? yearLevel,
     ProjectArchiveState? state,
     List<String> availableStages = const [],
-  }) async {
-    List<String> stages = availableStages.isNotEmpty ? List.from(availableStages) : [];
-
-    if (stages.isEmpty && state != null) {
-      final scopeKey = state.scope['scope']?.toString() ?? 'admin';
-      final isPitLead = scopeKey == 'pit_lead';
-
-      // For PIT Leads, derive stages ONLY from entries (already scoped to
-      // their assigned year level by the backend). state.options['stage_options']
-      // includes Capstone defense stages and must NOT be used here.
-      if (isPitLead || programScope == 'pit') {
-        // 1. Extract unique stage names from the entries visible to this user
-        if (state.entries.isNotEmpty) {
-          stages = state.entries
-              .map((e) => e['stage']?.toString() ?? e['event_name']?.toString() ?? '')
-              .where((s) => s.isNotEmpty)
-              .toSet()
-              .toList();
-        }
-
-        // 2. Fallback: groupedByStage (also already scoped)
-        if (stages.isEmpty && state.groupedByStage.isNotEmpty) {
-          stages = state.groupedByStage
-              .map((g) => g['stage']?.toString() ?? '')
-              .where((s) => s.isNotEmpty)
-              .toSet()
-              .toList();
-        }
-      } else {
-        // Admin / Capstone scope — stage_options are safe to use directly
-        final stageOpts = state.options['stage_options'];
-        if (stageOpts is List && stageOpts.isNotEmpty) {
-          stages = stageOpts.map((e) => e.toString()).where((s) => s.isNotEmpty).toList();
-        }
-      }
-    }
-
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => Consumer(
-        builder: (context, ref, child) {
-          final isTeam = scope == 'team';
-          final title = isTeam
-              ? 'Manage Stage File Access for ${teamName ?? 'Team'}'
-              : 'Program Stage Access (${programScope.toUpperCase()}${yearLevel != null && yearLevel.isNotEmpty ? ' - $yearLevel' : ''})';
-
-          return Dialog(
-            backgroundColor: Colors.transparent,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            child: Container(
-              width: 580,
-              decoration: DefensysTokens.dialogDecoration(),
-              padding: const EdgeInsets.all(24),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: const TextStyle(
-                              fontSize: 16.5,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.maroon,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          onPressed: () => Navigator.of(dialogContext).pop(),
-                          icon: const Icon(Icons.close_rounded, size: 20),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    
-                    // Helper Banner
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFBFDBFE)),
-                      ),
-                      child: const Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.info_outline_rounded, color: Color(0xFF2563EB), size: 18),
-                          SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Helper: Manually grant or revoke student file upload permissions by stage and file type. '
-                              'Defense stage grades and team approval status will remain intact.',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF1E3A8A),
-                                height: 1.35,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-
-                    // List of Stages
-                    ...stages.map((stage) => _StageItemCard(
-                          stageLabel: stage,
-                          teamId: teamId,
-                          scope: scope,
-                          programScope: programScope,
-                          yearLevel: yearLevel,
-                          ref: ref,
-                        )),
-
-                    const SizedBox(height: 16),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.of(dialogContext).pop(),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF475569),
-                          side: const BorderSide(color: Color(0xFFCBD5E1)),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        ),
-                        child: const Text('Done'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
+  }) => showDialog<void>(
+    context: context,
+    builder: (_) => _StageAccessDialog(
+      teamId: teamId,
+      teamName: teamName,
+      scope: scope,
+      programScope: programScope,
+      yearLevel: yearLevel,
+      availableStages: availableStages,
+    ),
+  );
 }
 
-class _StageItemCard extends StatefulWidget {
-  final String stageLabel;
-  final int? teamId;
-  final String scope;
-  final String programScope;
-  final String? yearLevel;
-  final WidgetRef ref;
-
-  const _StageItemCard({
-    required this.stageLabel,
+class _StageAccessDialog extends ConsumerStatefulWidget {
+  const _StageAccessDialog({
     this.teamId,
+    this.teamName,
     required this.scope,
     required this.programScope,
     this.yearLevel,
-    required this.ref,
+    required this.availableStages,
   });
+  final int? teamId;
+  final String? teamName;
+  final String scope;
+  final String programScope;
+  final String? yearLevel;
+  final List<String> availableStages;
 
   @override
-  State<_StageItemCard> createState() => _StageItemCardState();
+  ConsumerState<_StageAccessDialog> createState() => _StageAccessDialogState();
 }
 
-class _StageItemCardState extends State<_StageItemCard> {
-  bool _preUnlocked = false;
-  bool _postUnlocked = false;
-  bool _isLoading = false;
+class _StageAccessDialogState extends ConsumerState<_StageAccessDialog> {
+  final _reason = TextEditingController();
+  Map<String, dynamic>? _access;
+  String? _error;
+  bool _loading = true;
+  bool _saving = false;
+  late String _program;
+  late String _year;
 
-  Future<void> _toggle(String unlockType, bool targetState) async {
-    setState(() => _isLoading = true);
-    final notifier = widget.ref.read(capstoneDeliverablesProvider.notifier);
-    final success = await notifier.unlockDeliverables(
-      teamId: widget.teamId,
-      stageLabel: widget.stageLabel,
-      unlockType: unlockType,
-      scope: widget.scope,
-      programScope: widget.programScope,
-      yearLevel: widget.yearLevel,
-      targetState: targetState,
-    );
+  @override
+  void initState() {
+    super.initState();
+    _program = widget.programScope;
+    _year = widget.yearLevel ?? '';
+    Future.microtask(_load);
+  }
 
-    if (mounted) {
-      setState(() {
-        _isLoading = false;
-        if (success) {
-          if (unlockType == 'pre') _preUnlocked = targetState;
-          if (unlockType == 'post') _postUnlocked = targetState;
-          if (unlockType == 'all') {
-            _preUnlocked = targetState;
-            _postUnlocked = targetState;
-          }
-        }
-      });
-      if (success) {
-        showSuccessToast(
-          context,
-          'Updated ${widget.stageLabel} file permissions.',
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final access = await ref
+        .read(capstoneDeliverablesProvider.notifier)
+        .fetchStageAccess(
+          scope: widget.scope,
+          teamId: widget.teamId,
+          programScope: _program,
+          yearLevel: _year,
         );
-        widget.ref.read(projectArchiveProvider.notifier).fetchEntries();
-      }
+    if (!mounted) return;
+    setState(() {
+      _access = access;
+      _loading = false;
+      _error = access == null
+          ? ref.read(capstoneDeliverablesProvider).error ??
+                'Could not load file access.'
+          : null;
+    });
+  }
+
+  Future<void> _change(
+    Map<String, dynamic> stage,
+    String type,
+    bool allow, {
+    String? deliverableId,
+  }) async {
+    final reason = _reason.text.trim();
+    if (reason.isEmpty || _saving) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    final saved = await ref
+        .read(capstoneDeliverablesProvider.notifier)
+        .unlockDeliverables(
+          scope: widget.scope,
+          teamId: widget.teamId,
+          programScope:
+              _access?['program_scope']?.toString() ?? widget.programScope,
+          yearLevel: _access?['year_level']?.toString() ?? widget.yearLevel,
+          stageLabel: stage['stage_label'].toString(),
+          unlockType: type,
+          deliverableId: deliverableId,
+          targetState: allow,
+          reason: reason,
+        );
+    if (!mounted) return;
+    if (saved) {
+      await _load();
+      if (!mounted) return;
+      ref.read(projectArchiveProvider.notifier).fetchEntries();
+      showSuccessToast(
+        context,
+        'File access updated and recorded in Audit Trail.',
+      );
+    } else {
+      setState(
+        () => _error =
+            ref.read(capstoneDeliverablesProvider).error ??
+            'Could not update file access.',
+      );
     }
+    if (mounted) setState(() => _saving = false);
+  }
+
+  bool get _canChange =>
+      !_saving && !_loading && _reason.text.trim().isNotEmpty;
+
+  Widget _accessRow(
+    Map<String, dynamic> stage,
+    Map<String, dynamic> settings,
+    String label,
+    String type, {
+    String? id,
+  }) {
+    final count = (settings['team_count'] as num?)?.toInt() ?? 0;
+    final allowed = (settings['allowed_count'] as num?)?.toInt() ?? 0;
+    final archived = (settings['archived_count'] as num?)?.toInt() ?? 0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Icon(
+            type == 'pre' ? Icons.description_outlined : Icons.archive_outlined,
+            size: 17,
+            color: const Color(0xFF475569),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  '${settings['mixed'] == true ? 'Mixed · ' : ''}$allowed of $count teams can upload'
+                  '${archived > 0 ? ' · $archived archived' : ''}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+                if (archived > 0)
+                  const Text(
+                    'Archived files require an Admin revision request.',
+                    style: TextStyle(fontSize: 11, color: Color(0xFF92400E)),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Switch.adaptive(
+            key: ValueKey('stageAccess:${stage['stage_label']}:${id ?? type}'),
+            value: settings['unlocked'] == true,
+            activeTrackColor: AppColors.maroon.withValues(alpha: 0.5),
+            activeThumbColor: AppColors.maroon,
+            onChanged: _canChange && count > 0 && archived != count
+                ? (value) => _change(stage, type, value, deliverableId: id)
+                : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stageCard(Map<String, dynamic> stage) {
+    final pre = Map<String, dynamic>.from(stage['pre'] as Map? ?? {});
+    final post = Map<String, dynamic>.from(stage['post'] as Map? ?? {});
+    final deliverables = (stage['deliverables'] as List? ?? [])
+        .whereType<Map>();
+    final count = (pre['team_count'] as num?)?.toInt() ?? 0;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            stage['stage_label'].toString(),
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          ),
+          const Divider(height: 18),
+          _accessRow(stage, pre, 'Pre-Defense Files', 'pre'),
+          _accessRow(stage, post, 'Post-Defense Files', 'post'),
+          Wrap(
+            spacing: 12,
+            children: [
+              TextButton(
+                onPressed: _canChange && count > 0
+                    ? () => _change(stage, 'all', true)
+                    : null,
+                child: const Text('Unlock All Files'),
+              ),
+              TextButton(
+                onPressed: _canChange && count > 0
+                    ? () => _change(stage, 'all', false)
+                    : null,
+                child: const Text('Lock All Files'),
+              ),
+            ],
+          ),
+          if (deliverables.isNotEmpty) ...[
+            const Divider(height: 20),
+            const Text(
+              'Individual deliverables',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+            ...deliverables.map((raw) {
+              final item = Map<String, dynamic>.from(raw);
+              return _accessRow(
+                stage,
+                item,
+                item['label'].toString(),
+                item['type'].toString(),
+                id: item['id'].toString(),
+              );
+            }),
+          ],
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: const BorderSide(color: Color(0xFFE2E8F0)),
-      ),
-      color: const Color(0xFFF8FAFC),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  widget.stageLabel,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    color: Color(0xFF0F172A),
-                  ),
-                ),
-                if (_isLoading)
-                  const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-              ],
-            ),
-            const Divider(height: 18, color: Color(0xFFE2E8F0)),
-            
-            // Pre-Defense Files Row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.description_outlined, size: 16, color: Color(0xFF475569)),
-                    SizedBox(width: 8),
-                    Text(
-                      'Pre-Defense Files',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+    final program =
+        _access?['program_scope']?.toString() ?? widget.programScope;
+    final year = _access?['year_level']?.toString() ?? widget.yearLevel ?? '';
+    final stages = (_access?['stages'] as List? ?? [])
+        .whereType<Map>()
+        .map((stage) => Map<String, dynamic>.from(stage))
+        .where(
+          (stage) =>
+              widget.availableStages.isEmpty ||
+              widget.availableStages.contains(stage['stage_label']),
+        );
+    final title = widget.scope == 'team'
+        ? 'Manage File Access · ${widget.teamName ?? 'Team'}'
+        : 'Program Stage Access (${program.toUpperCase()}${year.isEmpty ? '' : ' · $year'})';
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: Container(
+        width: 620,
+        padding: const EdgeInsets.all(24),
+        decoration: DefensysTokens.dialogDecoration(),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16.5,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.maroon,
+                      ),
                     ),
-                  ],
-                ),
-                Switch.adaptive(
-                  value: _preUnlocked,
-                  activeTrackColor: AppColors.maroon.withValues(alpha: 0.5),
-                  activeThumbColor: AppColors.maroon,
-                  onChanged: _isLoading ? null : (val) => _toggle('pre', val),
-                ),
-              ],
-            ),
-            
-            // Post-Defense Files Row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.archive_outlined, size: 16, color: Color(0xFF475569)),
-                    SizedBox(width: 8),
-                    Text(
-                      'Post-Defense Files',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                  ),
+                ],
+              ),
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else ...[
+                if (_error != null) ...[
+                  Text(
+                    _error!,
+                    style: const TextStyle(color: AppColors.danger),
+                  ),
+                  TextButton(
+                    onPressed: _saving ? null : _load,
+                    child: const Text('Retry'),
+                  ),
+                ],
+                if (_access != null) ...[
+                  if (widget.scope == 'global' &&
+                      _access!['can_choose_program'] == true) ...[
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final selectorWidth = constraints.maxWidth < 420
+                            ? constraints.maxWidth
+                            : (constraints.maxWidth - 12) / 2;
+                        return Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: [
+                            SizedBox(
+                              width: selectorWidth,
+                              child: DropdownButtonFormField<String>(
+                                key: ValueKey('accessProgram:$_program'),
+                                isExpanded: true,
+                                initialValue: _program,
+                                decoration: const InputDecoration(
+                                  labelText: 'Program',
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'capstone',
+                                    child: Text('Capstone'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'pit',
+                                    child: Text('PIT'),
+                                  ),
+                                ],
+                                onChanged: _saving
+                                    ? null
+                                    : (value) {
+                                        if (value == null) return;
+                                        setState(() {
+                                          _program = value;
+                                          _year = '';
+                                          _loading = true;
+                                        });
+                                        _load();
+                                      },
+                              ),
+                            ),
+                            SizedBox(
+                              width: selectorWidth,
+                              child: DropdownButtonFormField<String>(
+                                key: ValueKey('accessYear:$_year'),
+                                isExpanded: true,
+                                initialValue: _year,
+                                decoration: const InputDecoration(
+                                  labelText: 'Year level',
+                                ),
+                                items:
+                                    [
+                                          '',
+                                          '1st Year',
+                                          '2nd Year',
+                                          '3rd Year',
+                                          '4th Year',
+                                        ]
+                                        .map(
+                                          (year) => DropdownMenuItem(
+                                            value: year,
+                                            child: Text(
+                                              year.isEmpty ? 'All years' : year,
+                                            ),
+                                          ),
+                                        )
+                                        .toList(),
+                                onChanged: _saving
+                                    ? null
+                                    : (value) {
+                                        if (value == null) return;
+                                        setState(() {
+                                          _year = value;
+                                          _loading = true;
+                                        });
+                                        _load();
+                                      },
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
+                    const SizedBox(height: 14),
                   ],
-                ),
-                Switch.adaptive(
-                  value: _postUnlocked,
-                  activeTrackColor: AppColors.maroon.withValues(alpha: 0.5),
-                  activeThumbColor: AppColors.maroon,
-                  onChanged: _isLoading ? null : (val) => _toggle('post', val),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            
-            // Preset Buttons
-            Row(
-              children: [
-                InkWell(
-                  onTap: _isLoading ? null : () => _toggle('all', true),
-                  child: const Text(
-                    'Unlock All Files',
-                    style: TextStyle(fontSize: 11.5, color: AppColors.maroon, fontWeight: FontWeight.w600),
+                  Text(
+                    '${_access!['semester_label']} · ${_access!['team_count']} teams',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF64748B),
+                    ),
                   ),
-                ),
-                const Text('  •  ', style: TextStyle(fontSize: 11.5, color: Colors.grey)),
-                InkWell(
-                  onTap: _isLoading ? null : () => _toggle('all', false),
-                  child: const Text(
-                    'Lock All Files',
-                    style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Manage uploads by file group or by individual deliverable. Grades and team approval are preserved. '
+                    'Individual unlocks allow one replacement of approved pre-defense files, keeping approval.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF475569),
+                      height: 1.4,
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    key: const ValueKey('stageAccessReason'),
+                    controller: _reason,
+                    onChanged: (_) => setState(() {}),
+                    enabled: !_saving,
+                    maxLines: 2,
+                    decoration: const InputDecoration(
+                      labelText: 'Reason for access change (required)',
+                      helperText:
+                          'The actor, reason and affected teams/files are recorded in Audit Trail.',
+                      helperMaxLines: 2,
+                      border: OutlineInputBorder(),
+                    ),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  const SizedBox(height: 18),
+                  if (_saving) const LinearProgressIndicator(),
+                  ...stages.map(_stageCard),
+                  if (stages.isEmpty)
+                    const Text('No configured stages or events in this scope.'),
+                ],
               ],
-            ),
-          ],
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Done'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

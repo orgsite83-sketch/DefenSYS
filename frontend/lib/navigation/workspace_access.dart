@@ -71,6 +71,8 @@ abstract final class WorkspaceAccess {
       return null;
     }
     if (location == AppRoutes.guestDefenses) return AppRoutes.guestEntry;
+    final canManageDefenses =
+        user['is_pit_lead'] == true || user['is_superuser'] == true;
     final allowed = switch (location) {
       AppRoutes.student => user['role'] == 'student',
       AppRoutes.panelist => canEvaluate(user),
@@ -81,6 +83,15 @@ abstract final class WorkspaceAccess {
       AppRoutes.webWorkspaceOnly => destination == AppRoutes.webWorkspaceOnly,
       _ when location == '/admin' || location.startsWith('/admin/') =>
         isWeb && user['role'] == 'admin',
+      FacultyRoutes.documenterRecords => isWeb && canDocument(user),
+      _ when location == FacultyRoutes.defenseScheduleBulkImport ||
+          location == FacultyRoutes.defenseScheduler ||
+          location.startsWith('${FacultyRoutes.defenseScheduler}/') =>
+        isWeb && user['role'] == 'faculty' && canManageDefenses,
+      _ when location == FacultyRoutes.defenseBoard ||
+          location.startsWith('${FacultyRoutes.defenseBoard}/') =>
+        isWeb && user['role'] == 'faculty' &&
+            (canManageDefenses || user['is_adviser'] == true),
       _ when location == '/faculty' || location.startsWith('/faculty/') =>
         isWeb && user['role'] == 'faculty',
       _ => false,

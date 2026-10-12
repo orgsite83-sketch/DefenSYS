@@ -7,7 +7,7 @@ from academic_period_management.models import Semester
 from academic_period_management.serializers import SemesterSerializer
 from user_management.academic_records.models import StudentAcademicRecord
 from user_management.academic_records.serializers import StudentOptionSerializer
-from .adviser_assignments import record_team_adviser_change
+from .adviser_assignments import record_team_adviser_change, adviser_assignment_conflict
 from .team_levels import (
     infer_year_level_from_members,
     infer_section_from_members,
@@ -336,6 +336,10 @@ class StudentTeamWriteSerializer(serializers.Serializer):
                 attrs['adviser'] = User.objects.get(pk=adviser_id, role__in=['faculty', 'admin'])
             except User.DoesNotExist as exc:
                 raise serializers.ValidationError({'adviser_id': 'Adviser must be a valid faculty or admin user.'}) from exc
+        if self.instance and self.instance.adviser_id != adviser_id:
+            reason = adviser_assignment_conflict(self.instance, adviser_id)
+            if reason:
+                raise serializers.ValidationError({'adviser_id': reason})
 
         semester = self._resolve_semester(attrs)
         attrs['semester'] = semester
@@ -483,6 +487,12 @@ class StudentTeamWriteSerializer(serializers.Serializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        instance = StudentTeam.objects.select_for_update().get(pk=instance.pk)
+        adviser_id = getattr(validated_data.get('adviser'), 'pk', None)
+        if instance.adviser_id != adviser_id:
+            reason = adviser_assignment_conflict(instance, adviser_id)
+            if reason:
+                raise serializers.ValidationError({'adviser_id': reason})
         member_ids = validated_data.pop('member_ids')
         self._lock_members(member_ids)
         reason = validated_data.pop('adviser_change_reason', '')

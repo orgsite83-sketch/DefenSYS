@@ -9,9 +9,19 @@ from django.utils import timezone
 
 from grading.grades.models import TeamGrade
 from .models import DefenseSchedule, PanelistEvaluationDraft
+from .services import adviser_panel_conflict
+
+
+def roster_unavailable_reason(schedule):
+    return adviser_panel_conflict(
+        schedule.team, (assignment.panelist_id for assignment in schedule.panel_assignments.all()),
+    )
 
 
 def grading_unavailable_reason(schedule, grade=None):
+    conflict = roster_unavailable_reason(schedule)
+    if conflict:
+        return f'{conflict} Ask an administrator to correct the panel before grading.'
     if schedule.project_version != schedule.team.project_version:
         return 'This defense belongs to a previous project and is read-only.'
     if schedule.status != DefenseSchedule.STATUS_SCHEDULED:
@@ -35,6 +45,9 @@ def grading_unavailable_reason(schedule, grade=None):
 
 def verdict_unavailable_reason(schedule, grade=None):
     """Shared verdict readiness for assignment display and the submit endpoint."""
+    conflict = roster_unavailable_reason(schedule)
+    if conflict:
+        return f'{conflict} Ask an administrator to correct the panel before issuing a verdict.'
     if grade and grade.schedule_id != schedule.pk:
         return 'This is a previous defense attempt and is read-only.'
     reason = grading_unavailable_reason(schedule)

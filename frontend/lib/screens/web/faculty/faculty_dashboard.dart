@@ -5,6 +5,7 @@ import '../../../navigation/admin_route_paths.dart';
 import '../../../navigation/web_section_navigation.dart';
 import '../../../navigation/workspace_access.dart';
 import '../../../services/dashboard_provider.dart';
+import '../../../services/documenter_provider.dart';
 import '../../../services/app/data_refresh_provider.dart';
 import '../../../services/academic/student_teams_provider.dart';
 import '../../../services/academic/student_academic_records_provider.dart';
@@ -91,6 +92,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   String _activeSection = 'dashboard';
   WorkspaceOption? _activeWorkspaceOption;
   int? _selectedMinutesScheduleId;
+  String? _selectedMinutesSection;
   int _navigationEpoch = 0;
   int _minutesRevision = 0;
   final Set<String> _workspaceSections = {};
@@ -332,6 +334,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   }
 
   bool _isSectionSupportedByWorkspace(String section, FacultyWorkspace workspace) {
+    if (section == 'profile') return true;
     switch (workspace) {
       case FacultyWorkspace.faculty:
         return const {
@@ -378,7 +381,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       case FacultyWorkspace.documenter:
         return const {
           'dashboard',
-          'defense_board',
+          'documenter_records',
           'uploader',
         }.contains(section);
     }
@@ -451,6 +454,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       _navigationEpoch++;
       _workspaceSections.clear();
       _selectedMinutesScheduleId = null;
+      _selectedMinutesSection = null;
     });
     context.go(
       workspaceOption.type == FacultyWorkspace.faculty
@@ -459,7 +463,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     );
   }
 
-  void _goToSection(String section, {Map<String, String>? queryParameters}) async {
+  void _goToSection(String section, {
+    Map<String, String>? queryParameters,
+    WorkspaceOption? workspace,
+  }) async {
     final hasUnsaved = ref.read(unsavedChangesProvider);
     if (hasUnsaved) {
       final saveDraftCallback = ref.read(unsavedChangesSaveDraftProvider);
@@ -480,6 +487,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       if (!mounted) return;
     }
     FocusManager.instance.primaryFocus?.unfocus();
+    if (workspace != null) {
+      setState(() => _activeWorkspaceOption = workspace);
+    }
     final path = FacultyRoutes.pathForSection(section);
     if (queryParameters != null && queryParameters.isNotEmpty) {
       final uri = Uri(path: path, queryParameters: queryParameters);
@@ -1379,31 +1389,28 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       case FacultyWorkspace.documenter:
         groups = [
           _FacultyNavGroup(
-            title: 'Dashboard',
+            title: 'Documentation',
             entries: [
               _FacultyNavEntry(
                 section: 'dashboard',
-                icon: Icons.show_chart_rounded,
-                label: 'Dashboard',
+                icon: Icons.assignment_rounded,
+                label: 'Assignments',
                 isActive: _activeSection == 'dashboard',
                 onTap: () => _afterSidebarAction(
                   isWide,
-                  () => _goToSection('dashboard'),
+                  () => _goToSection('dashboard',
+                    workspace: const WorkspaceOption(type: FacultyWorkspace.documenter)),
                 ),
               ),
-            ],
-          ),
-          _FacultyNavGroup(
-            title: 'Operations',
-            entries: [
               _FacultyNavEntry(
-                section: 'defense_board',
-                icon: Icons.view_agenda_rounded,
-                label: 'Defense Operations',
-                isActive: _activeSection == 'defense_board',
+                section: 'documenter_records',
+                icon: Icons.folder_rounded,
+                label: 'Records',
+                isActive: _activeSection == 'documenter_records',
                 onTap: () => _afterSidebarAction(
                   isWide,
-                  () => _goToSection('defense_board'),
+                  () => _goToSection('documenter_records',
+                    workspace: const WorkspaceOption(type: FacultyWorkspace.documenter)),
                 ),
               ),
             ],
@@ -1449,15 +1456,18 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           ? Center(child: Text(dashState.error!))
           : const Center(child: CircularProgressIndicator());
     }
-    if (activeSection == 'dashboard' && _selectedMinutesScheduleId != null) {
+    if (activeSection == _selectedMinutesSection &&
+        _selectedMinutesScheduleId != null) {
       return MinutesFormScreen(
         scheduleId: _selectedMinutesScheduleId!,
         onBack: () {
           setState(() {
             _selectedMinutesScheduleId = null;
+            _selectedMinutesSection = null;
             _minutesRevision++;
           });
           ref.read(dashboardProvider('faculty').notifier).fetchDashboardData();
+          ref.read(documenterProvider.notifier).fetchAssignments();
         },
       );
     }
@@ -1478,6 +1488,16 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     }
 
     switch (activeSection) {
+      case 'documenter_records':
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: DocumenterDashboardContent(
+            data: dashState.data,
+            facultyName: facultyName,
+            recordsOnly: true,
+            onOpenMinutes: (id) => _openDocumenterMinutes(id, activeSection),
+          ),
+        );
       case 'deliverables':
         final ws = _resolvedWorkspace(roles);
         final initialScope = (ws.type == FacultyWorkspace.pitLead || ws.type == FacultyWorkspace.pitInstructor) ? 'pit' : 'capstone';
@@ -1707,14 +1727,17 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         return DocumenterDashboardContent(
           data: dashState.data,
           facultyName: facultyName,
-          onOpenMinutes: (scheduleId) {
-            setState(() {
-              _selectedMinutesScheduleId = scheduleId;
-              _minutesRevision++;
-            });
-          },
+          onOpenMinutes: (id) => _openDocumenterMinutes(id, 'dashboard'),
         );
     }
+  }
+
+  void _openDocumenterMinutes(int scheduleId, String section) {
+    setState(() {
+      _selectedMinutesScheduleId = scheduleId;
+      _selectedMinutesSection = section;
+      _minutesRevision++;
+    });
   }
 }
 

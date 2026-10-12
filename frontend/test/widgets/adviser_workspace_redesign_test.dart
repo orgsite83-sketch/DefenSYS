@@ -48,6 +48,7 @@ class _PublishedGradeNotifier extends AdviserGradingNotifier {
     grades: [
       {
         'id': 42,
+        'schedule_id': 18,
         'team_id': 7,
         'stage_label': 'Concept Proposal',
         'status': 'published',
@@ -242,7 +243,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Room 301'), findsOneWidget);
     expect(find.text('Awaiting adviser signature'), findsOneWidget);
-    expect(find.text('Official outcome: Passed'), findsOneWidget);
+    expect(find.text('Published result: Passed'), findsOneWidget);
     expect(find.text('Room 302'), findsNothing);
   });
 
@@ -447,7 +448,7 @@ void main() {
       tester,
       const AdviserDefenseTab(teamId: 7, selectedStage: 'Concept Proposal'),
     );
-    expect(find.text('No defense scheduled for this team yet'), findsOneWidget);
+    expect(find.text('No defense scheduled yet'), findsOneWidget);
   });
 
   testWidgets('mobile team link opens its Defense detail directly', (

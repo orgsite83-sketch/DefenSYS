@@ -1309,6 +1309,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
         unlock_res = self.client.post('/api/repository/deliverables/unlock/', {
             'team_id': self.team.id,
             'stage_label': 'Concept Proposal',
+            'reason': 'Allow the assigned adviser to review the requested correction.',
         })
         self.assertEqual(unlock_res.status_code, 200)
         self.assertTrue(unlock_res.data['unlocked'])

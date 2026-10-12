@@ -65,7 +65,9 @@ def invitation_payload(item):
     status = 'Active' if invitation_is_available(item) else 'Expired' if item.is_active and item.expires_at and item.expires_at <= timezone.now() else 'Revoked'
     return {
         'id': item.pk, 'code': item.code, 'evaluator_id': item.evaluator_id,
-        'guest_name': item.guest_name, 'email': item.email, 'status': status,
+        # Directory edits change the display label, not the saved grading identity.
+        'guest_name': item.evaluator.name if item.evaluator_id else item.guest_name,
+        'email': item.email, 'status': status,
         'is_active': item.is_active, 'expires_at': item.expires_at.isoformat() if item.expires_at else None,
         'last_access_at': item.last_access_at.isoformat() if item.last_access_at else None,
         'used_at': item.used_at.isoformat() if item.used_at else None,

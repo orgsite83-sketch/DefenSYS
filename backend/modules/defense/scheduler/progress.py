@@ -17,9 +17,16 @@ def schedule_progress(schedule):
         grade = TeamGrade.all_objects.filter(schedule=schedule).select_related('team', 'semester', 'schedule').first()
     history = None if grade else GradeAttemptHistory.objects.filter(schedule=schedule).order_by('-id').first()
     verdict = grade.verdict if grade else history.verdict if history else ''
+    evidence = grade or history
     result = {'verdict': verdict, 'attempt_count': grade.attempt_count if grade else history.attempt_number if history else 1,
               'panel_evaluators_submitted': 0, 'panel_evaluators_required': 0,
-              'revisions_cleared_at': str(grade.revisions_cleared_at) if grade and grade.revisions_cleared_at else None}
+              'revisions_cleared_at': str(evidence.revisions_cleared_at) if evidence and evidence.revisions_cleared_at else None,
+              'revision_deadline': str(evidence.revision_deadline) if evidence and evidence.revision_deadline else None,
+              'verdict_remarks': evidence.verdict_remarks if evidence else '',
+              # These fields belong to this schedule, unlike the board's legacy
+              # grade_status lookup which can fall back to another stage attempt.
+              'grade_status': grade.status if grade else None,
+              'published_result': grade.result if grade and grade.status == TeamGrade.STATUS_PUBLISHED else None}
     if schedule.status in ('cancelled', 'archived'):
         display = schedule.status
     elif history or schedule.project_version != schedule.team.project_version:

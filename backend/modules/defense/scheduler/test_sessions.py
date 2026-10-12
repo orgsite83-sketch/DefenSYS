@@ -10,6 +10,7 @@ from . import tests as fixtures
 
 
 class SessionSchedulingTests(APITestCase):
+    _complete_prior_stages = fixtures.DefenseSchedulerApiTests._complete_prior_stages
     setUp = fixtures.DefenseSchedulerApiTests.setUp
     schedule_payload = fixtures.DefenseSchedulerApiTests.schedule_payload
     create_ready_team = fixtures.DefenseSchedulerApiTests.create_ready_team

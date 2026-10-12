@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:defensys/models/documenter_assignment.dart';
 import 'package:defensys/notifications/notifications_provider.dart';
 import 'package:defensys/navigation/app_router.dart';
+import 'package:defensys/navigation/admin_route_paths.dart';
 import 'package:defensys/navigation/workspace_preference.dart';
 import 'package:defensys/l10n/app_localizations.dart';
 import 'package:defensys/services/connectivity_provider.dart';
@@ -12,6 +13,8 @@ import 'package:defensys/screens/web/admin/defense_scheduler/dialogs/documenter_
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/services/documenter_provider.dart';
+import 'package:defensys/services/dashboard_provider.dart';
+import 'package:defensys/screens/web/faculty/faculty_dashboard.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/widgets/minutes/documenter_assignments_view.dart';
 import 'package:defensys/widgets/minutes/minutes_pdf_dialog.dart';
@@ -22,6 +25,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -35,7 +39,10 @@ class _Notifications extends NotificationsNotifier {
   @override
   NotificationsState build() => const NotificationsState();
   @override
-  Future<void> fetchNotifications({bool? unreadOnly, bool loadMore = false}) async {}
+  Future<void> fetchNotifications({
+    bool? unreadOnly,
+    bool loadMore = false,
+  }) async {}
 }
 
 class _Doc extends AuthNotifier {
@@ -45,6 +52,24 @@ class _Doc extends AuthNotifier {
     token: 'fixture-token',
     user: {'id': 7, 'role': 'faculty', 'is_documenter': true},
   );
+}
+
+class _WebDocDashboard extends DashboardNotifier {
+  _WebDocDashboard([this.pitLead = false]) : super('faculty');
+  final bool pitLead;
+  @override
+  DashboardState build() => DashboardState(
+    data: {
+      'faculty': {'name': 'Cecilia Magbanua'},
+      'roles': {
+        'documenter': true,
+        'pit_lead': pitLead,
+        'pit_lead_year': '1st Year',
+      },
+    },
+  );
+  @override
+  Future<void> fetchDashboardData({bool silent = false}) async {}
 }
 
 class _DualRoleDoc extends AuthNotifier {
@@ -152,12 +177,40 @@ class _Online extends ConnectivityNotifier {
   bool build() => true;
 }
 
+class _ExternalMinutes extends _Minutes {
+  @override
+  DocumenterState build() {
+    final base = super.build();
+    return base.copyWith(
+      activeMinutes: {
+        ...base.activeMinutes!,
+        'schedule': {
+          ...base.activeMinutes!['schedule'] as Map<String, dynamic>,
+          'panelists': [
+            {'name': 'Dr. Rivera', 'is_chair': false, 'is_external': true},
+          ],
+        },
+        'panelist_comments': [
+          ...base.activeMinutes!['panelist_comments'] as List,
+          {
+            'id': 2,
+            'guest_invitation': 12,
+            'panelist_role_snapshot': 'External Panelist',
+            'panelist_name_snapshot': 'Dr. Rivera',
+            'comments': 'Validate the soil measurements.',
+          },
+        ],
+      },
+    );
+  }
+}
+
 class _AppDocumenter extends _Assignments {
   @override
   Future<void> fetchMinutesDetail(int id) async {
     state = state.copyWith(
       activeMinutes: {
-        'status': 'draft',
+        'status': id == 21 ? 'submitted' : 'draft',
         'team_name': 'Team AgriSense',
         'schedule': {
           'id': id,
@@ -197,6 +250,113 @@ void _ignoreMinutes(int _) {}
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   setUpAll(() => registerFallbackValue(Uri.parse('https://example.test')));
+  for (final (width, pitLead) in [
+    (1400.0, false),
+    (700.0, false),
+    (1400.0, true),
+  ]) {
+    testWidgets(
+      'web documenter navigates assignments and records at $width, PIT lead=$pitLead',
+      (tester) async {
+        tester.view.physicalSize = Size(width, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.runAsync(() async => loadPreviewFonts());
+        final router = GoRouter(
+          initialLocation: pitLead
+              ? FacultyRoutes.documenterRecords
+              : FacultyRoutes.dashboard,
+          routes: [
+            StatefulShellRoute.indexedStack(
+              builder: (_, __, shell) =>
+                  FacultyDashboard(navigationShell: shell),
+              branches: [
+                for (final section in ['dashboard', 'documenter_records'])
+                  StatefulShellBranch(
+                    routes: [
+                      GoRoute(
+                        path: FacultyRoutes.pathForSection(section),
+                        builder: (_, __) =>
+                            FacultySectionContent(section: section),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ],
+        );
+        addTearDown(router.dispose);
+        final key = GlobalKey();
+        await tester.pumpWidget(
+          RepaintBoundary(
+            key: key,
+            child: ProviderScope(
+              overrides: [
+                authProvider.overrideWith(_Doc.new),
+                dashboardProvider(
+                  'faculty',
+                ).overrideWith(() => _WebDocDashboard(pitLead)),
+                notificationsProvider.overrideWith2(_Notifications.new),
+                documenterProvider.overrideWith(_AppDocumenter.new),
+                connectivityProvider.overrideWith(_Online.new),
+              ],
+              child: MaterialApp.router(
+                debugShowCheckedModeBanner: false,
+                theme: AppTheme.theme,
+                routerConfig: router,
+                localizationsDelegates: AppLocalizations.localizationsDelegates,
+                supportedLocales: AppLocalizations.supportedLocales,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        if (pitLead) {
+          // A records deep link must keep the documenter role when returning to
+          // the shared dashboard URL, even if PIT lead is the default workspace.
+          expect(find.text('Team BioPulse'), findsOneWidget);
+          await tester.tap(find.text('Assignments'));
+          await tester.pumpAndSettle();
+        }
+        expect(find.text('Team AgriSense'), findsOneWidget);
+        await capture(tester, key, 'web-assignments-${width.toInt()}');
+        if (width < 1180) {
+          await tester.tap(find.byTooltip('Open menu'));
+          await tester.pumpAndSettle();
+        }
+        expect(find.text('Assignments'), findsOneWidget);
+        expect(find.text('Records'), findsOneWidget);
+        expect(find.text('Defense Operations'), findsNothing);
+        expect(find.text('Dashboard'), findsNothing);
+        await tester.tap(find.text('Records'));
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, FacultyRoutes.documenterRecords);
+        expect(find.text('Team BioPulse'), findsOneWidget);
+        expect(find.text('Team AgriSense'), findsNothing);
+        expect(find.text('View minutes'), findsOneWidget);
+        expect(find.byType(ShadTabs<DocumenterFilter>), findsNothing);
+        await capture(tester, key, 'web-records-${width.toInt()}');
+        await tester.tap(find.text('View minutes'));
+        await tester.pumpAndSettle();
+        expect(find.byType(MinutesFormScreen), findsOneWidget);
+        await tester.tap(find.byIcon(Icons.arrow_back).first);
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, FacultyRoutes.documenterRecords);
+        expect(find.text('Team BioPulse'), findsOneWidget);
+        expect(find.text('Team AgriSense'), findsNothing);
+        if (width < 1180) {
+          await tester.tap(find.byTooltip('Open menu'));
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(find.text('Assignments'));
+        await tester.pumpAndSettle();
+        expect(router.state.uri.path, FacultyRoutes.dashboard);
+        expect(find.text('Team AgriSense'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
   testWidgets(
     'documenter login route opens assignments and the assigned minutes editor',
     (tester) async {
@@ -439,6 +599,28 @@ void main() {
     expect(find.text('E-signature required'), findsOneWidget);
     await tester.ensureVisible(find.byKey(const ValueKey('minutes-comment-1')));
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('external panelists have roster entries and comment fields', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await pumpDefensysWidget(
+      tester,
+      MinutesFormScreen(scheduleId: 20, onBack: () {}),
+      overrides: [
+        authProvider.overrideWith(_Doc.new),
+        documenterProvider.overrideWith(_ExternalMinutes.new),
+      ],
+    );
+    expect(find.text('Dr. Rivera · External panelist'), findsOneWidget);
+    expect(find.text('External Panelist: Dr. Rivera'), findsOneWidget);
+    expect(find.byKey(const ValueKey('minutes-comment-2')), findsOneWidget);
+    expect(find.text('Validate the soil measurements.'), findsOneWidget);
+    expect(find.text('2 of 2 panelist sections recorded'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
   testWidgets('failed saves keep notes and block leaving the editor', (

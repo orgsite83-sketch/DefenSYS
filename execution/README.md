@@ -10,4 +10,5 @@ See [docs/AGENTS.md](../docs/AGENTS.md). Prefer extending existing scripts befor
 - `auto_peer_eval.py`: Automated testing tool to simulate student peer evaluations across teams and defense stages via REST API.
 - `auto_panelist_eval.py`: Automated testing tool to simulate panelist evaluations for scheduled defenses via REST API.
 - `auto_adviser_eval.py`: Automated testing tool to simulate capstone adviser grading for advised teams via REST API.
+- `auto_documenter_minutes.py`: Automated testing tool to record realistic draft panelist comments for defense schedules requiring minutes via REST API.
 

@@ -8,6 +8,7 @@ import 'package:defensys/screens/web/admin/defense_scheduler/components/schedule
 import 'package:defensys/services/admin/external_evaluator_provider.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -82,9 +83,10 @@ class _Fixture {
   _Fixture({
     bool largePool = false,
     bool admin = true,
+    bool conflictingAdvisers = false,
     DefenseSchedulerState? initialState,
   }) {
-    state =
+    final original =
         initialState ??
         DefenseSchedulerState(
           canApprovePanelists: admin,
@@ -170,6 +172,15 @@ class _Fixture {
             },
           ],
         );
+    state = initialState != null || conflictingAdvisers
+        ? original
+        : original.copyWith(teams: [
+            for (final team in original.teams)
+              {...team,
+                'adviser': team['adviser'] == 101 ? 201 : 202,
+                'adviser_name': team['adviser'] == 101 ? 'Marina Alonzo' : 'Eduardo Reyes',
+              },
+          ]);
     scheduler = _Scheduler(state);
   }
   late final DefenseSchedulerState state;
@@ -339,8 +350,9 @@ ScheduleSessionDraft _draft(WidgetTester tester, [int index = 0]) => tester
     .draft;
 
 void main() {
+  setUp(dismissFeedbackToasts);
+  tearDown(dismissFeedbackToasts);
   setUpAll(() async {
-    if (Platform.environment['DEFENSYS_CAPTURE_PREVIEW'] == '1') {
       final regular = FontLoader('Inter')
         ..addFont(rootBundle.load('assets/fonts/Inter-Regular.ttf'));
       await regular.load();
@@ -352,14 +364,13 @@ void main() {
           rootBundle.load('packages/lucide_icons_flutter/assets/lucide.ttf'),
         );
       await lucide.load();
-    }
   });
 
   for (final width in [390.0, 1280.0]) {
     testWidgets('admin chooses individual and adviser teams at $width', (
       tester,
     ) async {
-      final fixture = _Fixture()..panelists = {101};
+      final fixture = _Fixture(conflictingAdvisers: true)..panelists = {103};
       await _pump(tester, fixture, width: width, dark: width == 390);
       expect(_draft(tester).capacity, 8);
       expect(_draft(tester).teamIds, isEmpty);
@@ -462,6 +473,20 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('generation warns and blocks an adviser as chair or panel member', (tester) async {
+    final fixture = _Fixture(conflictingAdvisers: true)..panelists = {101, 102};
+    await _pump(tester, fixture);
+    _draft(tester).teamIds = {1};
+    await tester.ensureVisible(find.text('Generate plan'));
+    await tester.tap(find.text('Generate plan'));
+    await tester.pumpAndSettle();
+    expect(fixture.scheduler.payload, isNull);
+    expect(find.textContaining('Team SkyLedger — the team adviser cannot'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'PIT team selection excludes scheduled and completed events without prerequisites',
     (tester) async {
@@ -485,7 +510,7 @@ void main() {
               'level': 'PIT',
               'ready_for_stage': '',
             },
-            {'id': 2, 'name': 'PIT Done', 'level': 'PIT'},
+            {'id': 2, 'name': 'PIT Done', 'level': 'PIT', 'completed_stages': ['Design Expo']},
             {'id': 3, 'name': 'PIT Scheduled', 'level': 'PIT'},
             {'id': 4, 'name': 'Capstone Team', 'level': 'Capstone'},
           ],
@@ -750,7 +775,10 @@ void main() {
   testWidgets('adding a documenter as a panelist clears the documenter role', (
     tester,
   ) async {
-    final fixture = _Fixture();
+    final base = _Fixture().state;
+    final fixture = _Fixture(initialState: base.copyWith(defenseStages: [
+      {...base.defenseStages.single, 'minutes_required': true},
+    ]));
     await _pump(tester, fixture);
     await _open(tester, _picker('documenter-picker'));
     await _choose(tester, 'Cecilia Magbanua');

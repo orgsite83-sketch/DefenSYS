@@ -5,6 +5,16 @@ from authentication_access_control.models import SystemAuditLog
 from .models import DefenseSchedule
 from django.db import transaction
 
+
+DEMO_PANELIST_SETUP_ACTION = 'schedule.demo_panelist_setup'
+
+
+def adviser_panel_conflict(team, panelist_ids):
+    """A reusable roster rule; role eligibility never overrides this conflict."""
+    if team.adviser_id is not None and team.adviser_id in panelist_ids:
+        return f'{team.name}: the team adviser cannot be a panelist or panel chair for their own advisees.'
+    return ''
+
 class ScheduleDeletionBlocked(APIException):
     status_code = status.HTTP_409_CONFLICT
     default_detail = 'This schedule has panelist grades already submitted. Deleting it will permanently remove those individual scores. Consider cancelling the schedule instead.'

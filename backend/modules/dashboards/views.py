@@ -228,6 +228,8 @@ def _team_payload(team):
         'id': team.id,
         'name': team.name,
         'projectTitle': team.project_title,
+        'project_version': team.project_version,
+        'semester_id': team.semester_id,
         'level': team.level,
         'yearLevel': team.year_level,
         'section': team.section,

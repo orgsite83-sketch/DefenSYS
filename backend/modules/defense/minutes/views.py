@@ -15,6 +15,7 @@ from notifications.models import Notification, NotificationCategory
 from .models import DefenseMinutes, MinutesPanelistComment
 from .serializers import DocumenterAssignmentSerializer, DefenseMinutesSerializer
 from .pdf_generator import generate_minutes_pdf
+from .services import minutes_panel_roster, sync_panelist_comments
 
 User = get_user_model()
 
@@ -79,6 +80,7 @@ class MinutesDetailView(APIView):
                     {"detail": "You do not have permission to view the minutes for this defense schedule."},
                     status=status.HTTP_403_FORBIDDEN
                 )
+            sync_panelist_comments(minutes)
             serializer = DefenseMinutesSerializer(minutes)
             return Response(serializer.data)
 
@@ -132,29 +134,7 @@ class MinutesDetailView(APIView):
                     status=DefenseMinutes.STATUS_DRAFT,
                 )
 
-                # Create comments for panelists
-                panelists = list(schedule.panel_assignments.select_related('panelist').all())
-                panelists.sort(key=lambda p: (not p.is_chair, p.order if p.order is not None else 0, p.panelist.username if p.panelist else ''))
-
-                comments_to_create = []
-                member_count = 1
-                for idx, sp in enumerate(panelists):
-                    if sp.is_chair:
-                        role_label = 'Chair'
-                    else:
-                        role_label = f'Panel Member {member_count}'
-                        member_count += 1
-
-                    comments_to_create.append(MinutesPanelistComment(
-                        minutes=minutes,
-                        panelist=sp.panelist,
-                        panelist_name_snapshot=sp.panelist.get_full_name(),
-                        panelist_role_snapshot=role_label,
-                        comments='',
-                        display_order=idx
-                    ))
-
-                MinutesPanelistComment.objects.bulk_create(comments_to_create)
+            sync_panelist_comments(minutes)
 
         # Refresh and serialize newly created minutes
         minutes = (
@@ -209,6 +189,10 @@ class MinutesDetailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
             
+        active_comment_ids = {comment.pk for comment in minutes.current_panelist_comments}
+        if any(c_data.get('id') is not None and c_data.get('id') not in active_comment_ids for c_data in comments_data):
+            return Response({'detail': 'The panel assignment changed. Refresh the minutes before saving.'},
+                status=status.HTTP_400_BAD_REQUEST)
         with transaction.atomic():
             for c_data in comments_data:
                 comment_id = c_data.get('id')
@@ -267,7 +251,15 @@ class MinutesSubmitView(APIView):
             )
             
         # Check all comments are non-empty
-        comments = minutes.panelist_comments.all()
+        sync_panelist_comments(minutes)
+        comments = minutes.current_panelist_comments
+        assigned_ids = set(schedule.panel_assignments.values_list('panelist_id', flat=True))
+        guest_ids = {member['guest_invitation_id'] for member in minutes_panel_roster(schedule)
+                     if member['guest_invitation_id'] is not None}
+        if (assigned_ids - {comment.panelist_id for comment in comments}
+                or guest_ids - {comment.guest_invitation_id for comment in comments}):
+            return Response({'detail': 'Record comments for every currently assigned panelist before submitting.'},
+                status=status.HTTP_400_BAD_REQUEST)
         for comment in comments:
             if not comment.comments or not comment.comments.strip():
                 return Response(

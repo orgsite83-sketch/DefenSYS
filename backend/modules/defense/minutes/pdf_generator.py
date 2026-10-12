@@ -2,6 +2,8 @@ from xml.sax.saxutils import escape
 from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph
 from reports.pdf_builder import DefensysPdfReportBuilder
+from .models import DefenseMinutes
+from .services import missing_panelist_comments
 
 
 def generate_minutes_pdf(minutes, signatories=None, include_signatures=True, draft=False):
@@ -43,7 +45,10 @@ def generate_minutes_pdf(minutes, signatories=None, include_signatures=True, dra
             return d
         return d.strftime('%B %d, %Y')
 
-    comments = list(minutes.panelist_comments.all().order_by('display_order'))
+    comments = list(minutes.current_panelist_comments)
+    if draft and minutes.status == DefenseMinutes.STATUS_DRAFT and not minutes.documenter_signed_at and not minutes.pdf_file:
+        comments.extend(missing_panelist_comments(minutes, comments))
+    comments.sort(key=lambda comment: (comment.display_order, comment.pk or 0))
     panelists_str = ', '.join(
         [f"{c.panelist_name_snapshot} ({c.panelist_role_snapshot})" for c in comments]
     ) or 'N/A'
@@ -60,7 +65,7 @@ def generate_minutes_pdf(minutes, signatories=None, include_signatures=True, dra
         ("Defense Room / Venue", minutes.room or 'N/A'),
         ("Proponents of Study", '<br/>'.join(escape(name) for name in proponents) or 'Not recorded'),
         ("Capstone Adviser", minutes.adviser_name or 'N/A'),
-        ("Panel Members", panelists_str),
+        ("Panel Members", escape(panelists_str)),
     ]
     builder.add_metadata_grid(metadata_rows)
 

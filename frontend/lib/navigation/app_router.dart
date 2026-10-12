@@ -480,6 +480,7 @@ List<RouteBase> _facultyRoutes() {
 List<GoRoute> _facultySectionRoutes() {
   return [
     GoRoute(path: 'dashboard', pageBuilder: _facultySectionPage),
+    GoRoute(path: 'documenter-records', pageBuilder: _facultySectionPage),
     GoRoute(
       path: 'profile',
       pageBuilder: (_, __) => const NoTransitionPage(

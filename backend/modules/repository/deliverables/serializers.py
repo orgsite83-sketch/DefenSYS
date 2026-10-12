@@ -5,6 +5,27 @@ from student_teams.models import StudentTeam
 from .services import STAGE_OPTIONS, definition_for
 
 
+class StageAccessScopeSerializer(serializers.Serializer):
+    scope = serializers.ChoiceField(choices=['team', 'global'], default='global')
+    program_scope = serializers.ChoiceField(choices=['capstone', 'pit'], default='capstone')
+    team_id = serializers.IntegerField(required=False, min_value=1)
+    year_level = serializers.CharField(required=False, allow_blank=True, default='')
+
+    def validate(self, attrs):
+        if attrs['scope'] == 'team' and not attrs.get('team_id'):
+            raise serializers.ValidationError({'team_id': 'A team is required for team access.'})
+        return attrs
+
+
+class StageAccessChangeSerializer(StageAccessScopeSerializer):
+    scope = serializers.ChoiceField(choices=['team', 'global'], default='team')
+    stage_label = serializers.CharField(max_length=120)
+    unlock_type = serializers.ChoiceField(choices=['pre', 'post', 'all'], default='all')
+    deliverable_id = serializers.CharField(required=False, max_length=20)
+    target_state = serializers.BooleanField(required=False, default=None, allow_null=True)
+    reason = serializers.CharField(allow_blank=False)
+
+
 class DeliverableUploadSerializer(serializers.Serializer):
     team_id = serializers.IntegerField()
     stage_label = serializers.CharField(max_length=120)

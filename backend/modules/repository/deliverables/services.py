@@ -396,17 +396,15 @@ def filter_teams(request, queryset):
 
 
 def archive_unlocked(team, stage_label, deliverable_type='post'):
+    from .stage_access import manually_locked
+    if manually_locked(team, stage_label, deliverable_type):
+        return False
     if deliverable_type == 'pre':
         if is_stage_unlocked_by_admin(team, stage_label, deliverable_type='pre'):
             return True
-        if team.is_capstone:
-            stage_obj = defense_stage_for_label(stage_label)
-            if stage_obj and was_stage_endorsed(team, stage_obj):
-                return True
-        else:
-            if team.ready_for_stage == stage_label:
-                return True
-        return is_stage_unlocked_by_admin(team, stage_label, deliverable_type='all') or is_stage_unlocked_by_admin(team, stage_label)
+        stage_obj = defense_stage_for_label(stage_label) if team.is_capstone else None
+        endorsed = was_stage_endorsed(team, stage_obj) if stage_obj else team.ready_for_stage == stage_label
+        return not (endorsed or is_stage_defense_done(team, stage_label))
 
     if is_stage_unlocked_by_admin(team, stage_label, deliverable_type='post') or is_stage_unlocked_by_admin(team, stage_label, deliverable_type='all') or is_stage_unlocked_by_admin(team, stage_label):
         return True
@@ -726,6 +724,9 @@ def is_stage_defense_done(team, stage_label):
 
 
 def is_stage_unlocked_by_admin(team, stage_label, deliverable_type=None):
+    from .stage_access import manually_locked
+    if deliverable_type and manually_locked(team, stage_label, deliverable_type):
+        return False
     unlocked_stages = getattr(team, 'unlocked_stages', []) or []
     if stage_label in unlocked_stages:
         return True
@@ -736,8 +737,12 @@ def is_stage_unlocked_by_admin(team, stage_label, deliverable_type=None):
     return False
 
 
-def ensure_submission_editable(team, stage_label, deliverable_type, submission=None):
+def ensure_submission_editable(team, stage_label, deliverable_type, submission=None, *, allow_replacement=False, deliverable_id=None):
     """Keep upload and removal rules aligned with the review state."""
+    from .stage_access import manually_locked, deliverable_override
+    specific = deliverable_override(team, stage_label, submission.deliverable_id if submission else deliverable_id)
+    if specific is False or (specific is None and manually_locked(team, stage_label, deliverable_type)):
+        raise PermissionError('File uploads for this deliverable are locked by an Admin or PIT Lead.')
     from grading.grades.models import TeamGrade
     stage_grade = TeamGrade.objects.filter(
         Q(defense_stage__label=stage_label) | Q(stage_label=stage_label),
@@ -746,11 +751,21 @@ def ensure_submission_editable(team, stage_label, deliverable_type, submission=N
     ).order_by('-updated_at', '-id').first()
     is_redefense = bool(stage_grade and getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE)
 
+    if submission and deliverable_type == DeliverableSubmission.TYPE_PRE:
+        if allow_replacement and submission.file_replacement_unlocked and submission.status == DeliverableSubmission.STATUS_ACCEPTED:
+            return
+        if submission.status == DeliverableSubmission.STATUS_REJECTED:
+            # An explicit revision request reopens only this submission, including past stages.
+            return
+
     if submission and submission.status == DeliverableSubmission.STATUS_ACCEPTED:
         if not (is_redefense and deliverable_type == DeliverableSubmission.TYPE_PRE):
             raise PermissionError(
                 'Accepted deliverables are locked. Reopen the submission for revision before changing its file.'
             )
+
+    if specific is True:
+        return
 
     if deliverable_type == DeliverableSubmission.TYPE_POST:
         if not archive_unlocked(team, stage_label):
@@ -765,116 +780,22 @@ def ensure_submission_editable(team, stage_label, deliverable_type, submission=N
         raise PermissionError('Pre-defense submissions are locked after endorsement or defense completion.')
 
 
-@transaction.atomic
-def toggle_stage_deliverables_unlock(team, stage_label, user, unlock_type='all', target_state=None):
-    is_admin = getattr(user, 'role', None) == 'admin' or getattr(user, 'is_superuser', False)
-    is_pit_lead = getattr(user, 'is_pit_lead', False) and getattr(team, 'is_pit', False)
-    
-    if not (is_admin or is_pit_lead):
-        raise PermissionError('Only Admin, Capstone Coordinator, or PIT Lead can unlock deliverables for defense stages.')
-
-    if is_pit_lead and not is_admin:
-        from student_teams.team_levels import normalize_year_level
-        pit_year = (getattr(user, 'pit_lead_year', None) or '').strip()
-        if pit_year and normalize_year_level(team.year_level) != normalize_year_level(pit_year):
-            raise PermissionError('PIT Leads can only unlock deliverables for teams in their assigned year level.')
-
-    unlocked_stages = set(getattr(team, 'unlocked_stages', []) or [])
-    
-    all_key = f"{stage_label}:all"
-    pre_key = f"{stage_label}:pre"
-    post_key = f"{stage_label}:post"
-    legacy_key = stage_label
-
-    if unlock_type == 'pre':
-        currently_unlocked = (legacy_key in unlocked_stages or all_key in unlocked_stages or pre_key in unlocked_stages)
-    elif unlock_type == 'post':
-        currently_unlocked = (legacy_key in unlocked_stages or all_key in unlocked_stages or post_key in unlocked_stages)
-    else:
-        currently_unlocked = (legacy_key in unlocked_stages or all_key in unlocked_stages or (pre_key in unlocked_stages and post_key in unlocked_stages))
-
-    new_state = (not currently_unlocked) if target_state is None else bool(target_state)
-
-    if new_state:
-        if unlock_type == 'all':
-            unlocked_stages.add(all_key)
-            unlocked_stages.add(pre_key)
-            unlocked_stages.add(post_key)
-            unlocked_stages.add(legacy_key)
-        elif unlock_type == 'pre':
-            unlocked_stages.add(pre_key)
-        elif unlock_type == 'post':
-            unlocked_stages.add(post_key)
-    else:
-        if unlock_type == 'all':
-            unlocked_stages.discard(all_key)
-            unlocked_stages.discard(pre_key)
-            unlocked_stages.discard(post_key)
-            unlocked_stages.discard(legacy_key)
-        elif unlock_type == 'pre':
-            unlocked_stages.discard(pre_key)
-            unlocked_stages.discard(all_key)
-            unlocked_stages.discard(legacy_key)
-        elif unlock_type == 'post':
-            unlocked_stages.discard(post_key)
-            unlocked_stages.discard(all_key)
-            unlocked_stages.discard(legacy_key)
-
-    team.unlocked_stages = list(unlocked_stages)
-    team.save(update_fields=['unlocked_stages', 'updated_at'])
-    return new_state
+def toggle_stage_deliverables_unlock(team, stage_label, user, unlock_type='all', target_state=None, *, reason='', request=None, deliverable_id=None):
+    from .stage_access import set_access
+    return set_access(
+        user, scope='team', team=team, stage_label=stage_label,
+        unlock_type=unlock_type, target_state=target_state, reason=reason, request=request,
+        deliverable_id=deliverable_id,
+    )
 
 
-@transaction.atomic
-def toggle_global_stage_deliverables_unlock(stage_label, user, scope='capstone', year_level=None, unlock_type='all', target_state=None):
-    is_admin = getattr(user, 'role', None) == 'admin' or getattr(user, 'is_superuser', False)
-    is_pit_lead = getattr(user, 'is_pit_lead', False)
-    
-    if not (is_admin or (is_pit_lead and scope == 'pit')):
-        raise PermissionError('Permission denied to perform global stage unlock.')
-
-    if scope == 'capstone' and not is_admin:
-        raise PermissionError('Only Admin or Capstone Coordinator can manage global Capstone stage unlocks.')
-
-    from student_teams.models import StudentTeam
-    from student_teams.team_levels import normalize_year_level
-
-    teams_qs = StudentTeam.objects.all()
-    if scope == 'capstone':
-        teams = [t for t in teams_qs if t.is_capstone]
-    else:
-        if is_pit_lead and not is_admin:
-            user_pit_year = (getattr(user, 'pit_lead_year', None) or '').strip()
-            if not user_pit_year:
-                raise PermissionError('PIT Leads must have an assigned year level to manage stage access.')
-            year_level = user_pit_year
-
-            # Validate that stage_label is actually a PIT event for this year level
-            from repository.project_archive.services import pit_event_matches_year_level
-            from defense.scheduler.models import PitEventGradingConfig
-            from academic_period_management.models import Semester
-            active_sem = Semester.objects.filter(is_active=True).first()
-            valid_event_names = list(
-                PitEventGradingConfig.objects.filter(semester=active_sem)
-                .values_list('event_name', flat=True)
-            ) if active_sem else []
-            stage_is_valid_pit_event = (
-                stage_label in valid_event_names
-                and pit_event_matches_year_level(stage_label, user_pit_year)
-            )
-            if not stage_is_valid_pit_event:
-                raise PermissionError(
-                    f'Stage "{stage_label}" is not a configured PIT event for {user_pit_year}.'
-                )
-
-        teams = [t for t in teams_qs if t.is_pit]
-        if year_level:
-            teams = [t for t in teams if normalize_year_level(t.year_level) == normalize_year_level(year_level)]
-
-    for t in teams:
-        toggle_stage_deliverables_unlock(t, stage_label, user, unlock_type=unlock_type, target_state=target_state)
-
-    return True
+def toggle_global_stage_deliverables_unlock(stage_label, user, scope='capstone', year_level=None, unlock_type='all', target_state=None, *, reason='', request=None, deliverable_id=None):
+    from .stage_access import set_access
+    return set_access(
+        user, scope='global', program_scope=scope, year_level=year_level,
+        stage_label=stage_label, unlock_type=unlock_type, target_state=target_state,
+        reason=reason, request=request, deliverable_id=deliverable_id,
+    )
 
 
 
@@ -1013,7 +934,7 @@ def stage_payload(team, stage_label, evaluator=None):
                 submission is None or submission.status != DeliverableSubmission.STATUS_ACCEPTED
             )
         else:
-            can_review_item = can_faculty_review_pre
+            can_review_item = can_faculty_review_pre or bool(submission and submission.revision_review_unlocked)
         
         suggested = ''
         if is_vault:
@@ -1033,6 +954,13 @@ def stage_payload(team, stage_label, evaluator=None):
                     suggested = f"{base}_{item['id']}{ext or '.pdf'}"
             used_vault_names.add(suggested)
 
+        try:
+            ensure_submission_editable(team, stage_label, item['type'], submission,
+                                       allow_replacement=True, deliverable_id=item['id'])
+            can_upload = True
+        except PermissionError:
+            can_upload = False
+
         rows.append({
             'id': item['id'],
             'label': item['label'],
@@ -1042,7 +970,8 @@ def stage_payload(team, stage_label, evaluator=None):
             'file_format': item.get('file_format', 'any'),
             'suggested_file_name': suggested,
             'uploaded': submission is not None,
-            'locked': is_vault and not unlocked,
+            'locked': not can_upload,
+            'can_upload': can_upload,
             'is_defense_material': is_defense_material,
             'verdict_condition': verdict_cond,
             'is_waived': is_waived,
@@ -1137,8 +1066,8 @@ def stage_payload(team, stage_label, evaluator=None):
         'has_active_schedule': has_active_schedule,
         'has_done_schedule': has_done_schedule,
         'can_cancel_endorsement': can_cancel_endorsement,
-        'archive_unlocked': unlocked,
-        'vault_unlocked': unlocked,
+        'archive_unlocked': unlocked or any(item.get('can_upload') for item in archive_items),
+        'vault_unlocked': unlocked or any(item.get('can_upload') for item in archive_items),
         'pre_unlocked': archive_unlocked(team, stage_label, deliverable_type='pre'),
         'post_unlocked': archive_unlocked(team, stage_label, deliverable_type='post'),
         'required_complete': configured and required_complete(team, stage_label),
@@ -1163,7 +1092,7 @@ def stage_payload(team, stage_label, evaluator=None):
             and item['submission']['status'] == DeliverableSubmission.STATUS_ACCEPTED
         ),
         'archive_required_total': len(archive_required_items),
-        'archive_complete': unlocked and archive_required_complete,
+        'archive_complete': archive_required_complete,
         'pre': pre_items,
         'post': archive_items,
         'system': system_items,
@@ -1211,6 +1140,9 @@ def submission_payload(submission):
         'uploaded_at': submission.uploaded_at,
         'status': submission.status,
         'feedback': submission.feedback,
+        'file_replacement_unlocked': submission.file_replacement_unlocked,
+        'file_replacement_reason': submission.file_replacement_reason,
+        'revision_review_unlocked': submission.revision_review_unlocked,
         'reviewed_by_name': display_name(submission.reviewed_by),
         'reviewed_at': submission.reviewed_at,
     }
@@ -1319,6 +1251,8 @@ def team_payload(team, selected_stage=None, evaluator=None):
         'id': team.id,
         'name': team.name,
         'project_title': team.project_title,
+        'project_version': team.project_version,
+        'semester_id': team.semester_id,
         'level': team.level,
         'year_level': team.year_level,
         'section': team.section,
@@ -1379,6 +1313,7 @@ def counts_payload(teams, selected_stage=None):
 
 @transaction.atomic
 def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, user, file=None, file_id=None):
+    team = StudentTeam.objects.select_for_update().get(pk=team.pk)
     deliverable_id = (deliverable_id or '').strip()
     if not team.is_capstone and not team.is_pit:
         raise PermissionError('Only Capstone or PIT teams can submit deliverables.')
@@ -1390,7 +1325,16 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
     existing = DeliverableSubmission.objects.select_for_update().filter(
         team=team, stage_label=stage_label, deliverable_id=deliverable_id,
     ).first()
-    ensure_submission_editable(team, stage_label, definition['type'], existing)
+    ensure_submission_editable(team, stage_label, definition['type'], existing, allow_replacement=True, deliverable_id=deliverable_id)
+    is_approved_replacement = bool(
+        existing and existing.deliverable_type == DeliverableSubmission.TYPE_PRE
+        and existing.status == DeliverableSubmission.STATUS_ACCEPTED
+        and existing.file_replacement_unlocked
+    )
+    if is_approved_replacement and file is None:
+        raise ValueError('Choose a replacement file before submitting.')
+    previous_file_name = existing.file_name if existing else ''
+    replacement_reason = existing.file_replacement_reason if is_approved_replacement else ''
     if definition['type'] == DeliverableSubmission.TYPE_POST:
         
         # Resolve suggested archive name for metadata reference
@@ -1421,10 +1365,16 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
     )
 
     if not created:
-        submission.status = DeliverableSubmission.STATUS_PENDING
-        submission.feedback = ''
+        if not is_approved_replacement:
+            submission.status = DeliverableSubmission.STATUS_PENDING
+            submission.feedback = ''
+        submission.file_replacement_unlocked = False
+        submission.file_replacement_reason = ''
         submission.uploaded_by = user
-        submission.save(update_fields=['status', 'feedback', 'uploaded_by', 'uploaded_at'])
+        submission.save(update_fields=[
+            'status', 'feedback', 'file_replacement_unlocked', 'file_replacement_reason',
+            'uploaded_by', 'uploaded_at',
+        ])
 
     # Create/update file in DeliverableSubmissionFile
     from django.core.files.base import ContentFile
@@ -1486,11 +1436,33 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
             'topics', 'summary', 'category', 'category_confidence', 'uploaded_at'
         ])
 
+    if is_approved_replacement:
+        from authentication_access_control.audit import audit_scope_metadata, log_high_impact_action
+        from authentication_access_control.models import SystemAuditLog
+        from repository.archive.models import ArchiveEntry
+        from repository.project_archive.models import ProjectArchiveLog
+        from repository.project_archive.trail import log_action
+        track = 'pit' if team.is_pit else 'capstone'
+        context = {**audit_scope_metadata(scope=track, team=team), 'stage_label': stage_label}
+        log_action(
+            ArchiveEntry.TYPE_PIT if team.is_pit else ArchiveEntry.TYPE_CAPSTONE,
+            submission.pk, submission.file_name, ProjectArchiveLog.ACTION_OVERRIDE, user,
+            previous_status='Approved', new_status='Approved',
+            message=f'Student replaced the approved file ({previous_file_name}); approval retained. Reason: {replacement_reason}',
+        )
+        log_high_impact_action(
+            category=SystemAuditLog.CATEGORY_REPOSITORY,
+            action='repository.student_file_replace', target=submission, actor=user,
+            old_values={**context, 'file_name': previous_file_name, 'status': 'accepted', 'file_replacement_unlocked': True},
+            new_values={**context, 'file_name': submission.file_name, 'status': submission.status, 'file_replacement_unlocked': False},
+            reason=replacement_reason, strict=True,
+        )
     return submission
 
 
 @transaction.atomic
 def remove_submission(team, stage_label, deliverable_id, file_id=None):
+    team = StudentTeam.objects.select_for_update().get(pk=team.pk)
     definition = definition_for(team, stage_label, deliverable_id)
     if definition and definition.get('source') == 'defense_minutes':
         raise PermissionError('Signed minutes can only be changed through the minutes amendment workflow.')
@@ -1642,10 +1614,10 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
     if not is_post:
         stage = defense_stage_for_label(stage_label) if team.is_capstone else None
         endorsed = was_stage_endorsed(team, stage) if stage else team.ready_for_stage == stage_label
-        if endorsed and not admin_unlocked:
+        if endorsed and not (admin_unlocked or submission.revision_review_unlocked):
             raise PermissionError('Cancel endorsement or ask an Admin to unlock pre-defense review first.')
 
-    if not is_post and is_defense_done and not is_admin and not admin_unlocked:
+    if not is_post and is_defense_done and not is_admin and not (admin_unlocked or submission.revision_review_unlocked):
         raise PermissionError('Pre-defense deliverables for completed defenses are view-only for faculty. Resubmission requests must be unlocked by an Admin.')
 
     if status_val not in (DeliverableSubmission.STATUS_ACCEPTED, DeliverableSubmission.STATUS_REJECTED):
@@ -1657,6 +1629,9 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
     submission.feedback = (feedback_val or '').strip()
     submission.reviewed_by = reviewer_user
     submission.reviewed_at = timezone.now()
+    submission.revision_review_unlocked = not is_post and status_val == DeliverableSubmission.STATUS_REJECTED
+    submission.file_replacement_unlocked = False
+    submission.file_replacement_reason = ''
     submission.save()
 
     if is_post and status_val == DeliverableSubmission.STATUS_ACCEPTED:
@@ -1676,7 +1651,7 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
             maybe_auto_finalize_passed_grade(stage_grade, user=reviewer_user)
 
     # Re-evaluate team readiness if we are rejecting a required pre-defense deliverable
-    if status_val == DeliverableSubmission.STATUS_REJECTED:
+    if status_val == DeliverableSubmission.STATUS_REJECTED and not is_defense_done:
         if team.ready_for_stage == stage_label and not required_complete(team, stage_label):
             if team.is_capstone:
                 stage = defense_stage_for_label(stage_label)

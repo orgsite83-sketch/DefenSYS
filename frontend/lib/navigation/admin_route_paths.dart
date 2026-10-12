@@ -121,6 +121,7 @@ abstract final class AdminRoutes {
 /// Faculty web URL paths (go_router).
 abstract final class FacultyRoutes {
   static const dashboard = '/faculty/dashboard';
+  static const documenterRecords = '/faculty/documenter-records';
   static const profile = '/faculty/profile';
   static const cohort = '/faculty/cohort';
   static const pitStudentImport = '/faculty/pit-student-import';
@@ -166,6 +167,7 @@ abstract final class FacultyRoutes {
 
   static String? sectionForLocation(String location) {
     if (location.startsWith('/faculty/dashboard')) return 'dashboard';
+    if (location.startsWith(documenterRecords)) return 'documenter_records';
     if (location == profile) return 'profile';
     if (location.startsWith('/faculty/cohort')) return 'cohort';
     if (location.startsWith('/faculty/pit-student-import')) {
@@ -204,6 +206,7 @@ abstract final class FacultyRoutes {
     return switch (section) {
       'profile' => profile,
       'dashboard' => dashboard,
+      'documenter_records' => documenterRecords,
       'cohort' => cohort,
       'pit_student_import' => pitStudentImport,
       'student_teams' => studentTeams,

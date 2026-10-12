@@ -8,6 +8,7 @@ import 'dart:js' as js;
 
 import 'package:defensys/utils/platform/universal_file_viewer_web.dart';
 import 'package:defensys/widgets/export/defensys_pdf_viewer.dart';
+import 'package:defensys/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -83,73 +84,80 @@ void main() {
     SyncfusionFlutterPdfViewerPlugin.registerWith(webPluginRegistrar);
   });
 
-  for (final size in [
-    const Size(320, 640),
-    const Size(390, 844),
-    const Size(1280, 900),
+  for (final (themeName, theme) in [
+    ('light', AppTheme.lightTheme),
+    ('dark', AppTheme.mistDarkTheme),
   ]) {
-    testWidgets('PDF pages and controls work at ${size.width.toInt()}px', (
-      tester,
-    ) async {
-      tester.view.physicalSize = size;
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      final bytes = _pdfBytes();
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: Builder(
-              builder: (context) => TextButton(
-                onPressed: () => viewFileInDialog(
-                  context: context,
-                  fileBytes: bytes,
-                  fileName: 'Campus Event Hub.pdf',
+    for (final size in [
+      const Size(320, 640),
+      const Size(390, 844),
+      const Size(1280, 900),
+    ]) {
+      testWidgets(
+        'PDF pages and controls work in $themeName mode at ${size.width.toInt()}px',
+        (tester) async {
+          tester.view.physicalSize = size;
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          final bytes = _pdfBytes();
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: theme,
+              home: Scaffold(
+                body: Builder(
+                  builder: (context) => TextButton(
+                    onPressed: () => viewFileInDialog(
+                      context: context,
+                      fileBytes: bytes,
+                      fileName: 'Campus Event Hub.pdf',
+                    ),
+                    child: const Text('View material'),
+                  ),
                 ),
-                child: const Text('View material'),
               ),
             ),
-          ),
-        ),
+          );
+          await tester.tap(find.text('View material'));
+          await _waitForPages(tester);
+          expect(find.text('2 pages'), findsOneWidget);
+          expect(
+            tester
+                .widgetList<RawImage>(find.byType(RawImage))
+                .where((page) => page.image != null),
+            isNotEmpty,
+            reason: 'At least one PDF page must actually be rasterized.',
+          );
+          expect(find.byType(DefensysPdfViewer), findsOneWidget);
+          expect(
+            find.byType(HtmlElementView),
+            findsNothing,
+            reason: 'PDF previews must not depend on the browser PDF plugin.',
+          );
+          final viewer = tester.widget<SfPdfViewer>(find.byType(SfPdfViewer));
+          expect(viewer.controller!.pageCount, 2);
+          expect(find.byTooltip('Download File'), findsOneWidget);
+          expect(find.byTooltip('Open in New Tab'), findsOneWidget);
+          await tester.tap(find.byTooltip('Zoom in'));
+          await tester.pump(const Duration(milliseconds: 500));
+          expect(find.text('125%'), findsOneWidget);
+          if (size.width < 600) {
+            await tester.tap(find.byTooltip('Fit width'));
+          } else {
+            await tester.tap(find.text('Fit width'));
+          }
+          await tester.pump(const Duration(milliseconds: 500));
+          expect(find.text('100%'), findsOneWidget);
+          viewer.controller!.jumpToPage(2);
+          await tester.pump(const Duration(milliseconds: 500));
+          expect(viewer.controller!.pageNumber, 2);
+          expect(tester.takeException(), isNull);
+          await tester.tap(find.byTooltip('Close (Esc)'));
+          await tester.pumpAndSettle();
+          expect(find.byType(DefensysPdfViewer), findsNothing);
+        },
       );
-      await tester.tap(find.text('View material'));
-      await _waitForPages(tester);
-      expect(find.text('2 pages'), findsOneWidget);
-      expect(
-        tester
-            .widgetList<RawImage>(find.byType(RawImage))
-            .where((page) => page.image != null),
-        isNotEmpty,
-        reason: 'At least one PDF page must actually be rasterized.',
-      );
-      expect(find.byType(DefensysPdfViewer), findsOneWidget);
-      expect(
-        find.byType(HtmlElementView),
-        findsNothing,
-        reason: 'PDF previews must not depend on the browser PDF plugin.',
-      );
-      final viewer = tester.widget<SfPdfViewer>(find.byType(SfPdfViewer));
-      expect(viewer.controller!.pageCount, 2);
-      expect(find.byTooltip('Download File'), findsOneWidget);
-      expect(find.byTooltip('Open in New Tab'), findsOneWidget);
-      await tester.tap(find.byTooltip('Zoom in'));
-      await tester.pump(const Duration(milliseconds: 500));
-      expect(find.text('125%'), findsOneWidget);
-      if (size.width < 600) {
-        await tester.tap(find.byTooltip('Fit width'));
-      } else {
-        await tester.tap(find.text('Fit width'));
-      }
-      await tester.pump(const Duration(milliseconds: 500));
-      expect(find.text('100%'), findsOneWidget);
-      viewer.controller!.jumpToPage(2);
-      await tester.pump(const Duration(milliseconds: 500));
-      expect(viewer.controller!.pageNumber, 2);
-      expect(tester.takeException(), isNull);
-      await tester.tap(find.byTooltip('Close (Esc)'));
-      await tester.pumpAndSettle();
-      expect(find.byType(DefensysPdfViewer), findsNothing);
-    });
+    }
   }
 
   testWidgets('invalid PDFs show an error and retain download access', (
@@ -176,7 +184,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     expect(
       find.text(
-        'Unable to preview this PDF. Try opening or downloading the file.',
+        'Unable to preview this PDF. Try refreshing or downloading the file.',
       ),
       findsOneWidget,
     );

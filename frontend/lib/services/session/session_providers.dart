@@ -10,6 +10,7 @@ import '../app/data_refresh_provider.dart';
 import '../defense/defense_board_provider.dart';
 import '../defense/defense_scheduler_provider.dart';
 import '../defense/defense_stages_provider.dart';
+import '../defense/team_defense_provider.dart';
 import '../admin/repository_provider.dart';
 import '../grading/grade_center_provider.dart';
 import '../pit/pit_lead_cohort_provider.dart';
@@ -33,6 +34,7 @@ void invalidateSessionProviders(Ref ref) {
   ref.invalidate(defenseStagesProvider);
   ref.invalidate(defenseBoardProvider);
   ref.invalidate(defenseSchedulerProvider);
+  ref.invalidate(teamDefenseProvider);
   ref.invalidate(projectArchiveProvider);
   ref.invalidate(curriculumAnalyticsProvider);
   ref.invalidate(rubricsProvider);

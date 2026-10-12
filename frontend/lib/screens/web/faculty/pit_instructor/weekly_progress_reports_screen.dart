@@ -6,7 +6,6 @@ import '../../../../widgets/empty_state.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/defensys_tokens.dart';
 import 'package:intl/intl.dart';
-import '../../../../services/authenticated_client.dart';
 import '../../../../utils/universal_file_viewer.dart';
 import '../../../../toasts/feedback_toast.dart';
 
@@ -1253,36 +1252,11 @@ class _WeeklyProgressReportsScreenState
       return;
     }
 
-    showDialog(
+    await viewFileInDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: DefensysTokens.maroon),
-      ),
+      fileUrl: fileRef,
+      fileName: fileName,
     );
-
-    try {
-      final pdfBytes = await ref
-          .read(authenticatedHttpClientProvider)
-          .fetchAuthenticatedFile(fileRef);
-
-      if (mounted) Navigator.pop(context);
-
-      if (mounted) {
-        await viewPdfInDialog(
-          context: context,
-          pdfBytes: pdfBytes,
-          fileName: fileName,
-        );
-      }
-    } catch (e) {
-      if (mounted && Navigator.canPop(context)) {
-        Navigator.pop(context);
-      }
-      if (mounted) {
-        showErrorToast(context, 'Error opening file: $e');
-      }
-    }
   }
 
   Future<void> _compileAllReports(

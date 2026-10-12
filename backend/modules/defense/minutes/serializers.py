@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from defense.scheduler.serializers import DefenseScheduleSerializer, display_name
 from .models import DefenseMinutes, MinutesPanelistComment
+from .services import minutes_panel_roster
 
 User = get_user_model()
 
@@ -13,7 +14,7 @@ class DocumenterAssignmentSerializer(DefenseScheduleSerializer):
 
     def get_minutes_has_comments(self, obj):
         try:
-            return any(comment.comments.strip() for comment in obj.minutes.panelist_comments.all())
+            return any(comment.comments.strip() for comment in obj.minutes.current_panelist_comments)
         except DefenseMinutes.DoesNotExist:
             return False
 
@@ -24,18 +25,19 @@ class MinutesPanelistCommentSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'panelist',
+            'guest_invitation',
             'panelist_name_snapshot',
             'panelist_role_snapshot',
             'comments',
             'display_order',
         ]
-        read_only_fields = ['id', 'panelist', 'panelist_name_snapshot', 'panelist_role_snapshot', 'display_order']
+        read_only_fields = ['id', 'panelist', 'guest_invitation', 'panelist_name_snapshot', 'panelist_role_snapshot', 'display_order']
 
 
 class DefenseMinutesSerializer(serializers.ModelSerializer):
     revisions = serializers.SerializerMethodField()
     schedule = serializers.SerializerMethodField()
-    panelist_comments = MinutesPanelistCommentSerializer(many=True, read_only=True)
+    panelist_comments = serializers.SerializerMethodField()
     documenter_signed_by_name = serializers.SerializerMethodField()
     adviser_signed_by_name = serializers.SerializerMethodField()
     chairman_signed_by_name = serializers.SerializerMethodField()
@@ -80,6 +82,9 @@ class DefenseMinutesSerializer(serializers.ModelSerializer):
     def get_documenter_signed_by_name(self, obj):
         return display_name(obj.documenter_signed_by)
 
+    def get_panelist_comments(self, obj):
+        return MinutesPanelistCommentSerializer(obj.current_panelist_comments, many=True).data
+
     def get_revisions(self, obj):
         return [{'id': item.pk, 'reason': item.reason, 'created_at': item.created_at.isoformat(),
                  'snapshot': item.snapshot, 'pdf_url': item.pdf_file.url if item.pdf_file else None}
@@ -94,12 +99,14 @@ class DefenseMinutesSerializer(serializers.ModelSerializer):
     def get_schedule(self, obj):
         schedule = obj.schedule
         panelists = []
-        for pa in schedule.panel_assignments.all():
+        for order, member in enumerate(minutes_panel_roster(schedule)):
             panelists.append({
-                'id': pa.panelist_id,
-                'name': display_name(pa.panelist),
-                'is_chair': pa.is_chair,
-                'order': pa.order,
+                'id': member['panelist_id'],
+                'guest_invitation_id': member['guest_invitation_id'],
+                'name': member['name'],
+                'is_chair': member['is_chair'],
+                'is_external': member['is_external'],
+                'order': order,
             })
         panelists.sort(key=lambda p: (not p['is_chair'], p.get('order') or 0))
         return {

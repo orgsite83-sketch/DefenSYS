@@ -11,6 +11,8 @@ from .serializers import (
     DeliverableActionSerializer,
     DeliverableUploadSerializer,
     DeliverableReviewSerializer,
+    StageAccessScopeSerializer,
+    StageAccessChangeSerializer,
 )
 from .services import (
     STAGE_OPTIONS,
@@ -400,48 +402,37 @@ class CapstoneDeliverableUnlockView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        user = request.user
-        stage_label = request.data.get('stage_label')
-        unlock_type = request.data.get('unlock_type', 'all')
-        scope = request.data.get('scope', 'team')
-        team_id = request.data.get('team_id')
-        year_level = request.data.get('year_level')
-        target_state = request.data.get('target_state')
-
-        if not stage_label:
-            return Response({'detail': 'stage_label is required.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        from .services import toggle_stage_deliverables_unlock, toggle_global_stage_deliverables_unlock
+        serializer = StageAccessChangeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        attrs = dict(serializer.validated_data)
+        team = get_allowed_team(request, attrs.pop('team_id')) if attrs['scope'] == 'team' else None
+        attrs.pop('team_id', None)
+        from .stage_access import set_access, access_payload
         try:
-            if scope == 'global':
-                target_program_scope = request.data.get('program_scope', 'capstone')
-                unlocked = toggle_global_stage_deliverables_unlock(
-                    stage_label=stage_label,
-                    user=user,
-                    scope=target_program_scope,
-                    year_level=year_level,
-                    unlock_type=unlock_type,
-                    target_state=target_state,
-                )
-                payload_scope = target_program_scope
-            else:
-                if not team_id:
-                    return Response({'detail': 'team_id is required for team scope unlock.'}, status=status.HTTP_400_BAD_REQUEST)
-                team = get_allowed_team(request, team_id)
-                unlocked = toggle_stage_deliverables_unlock(
-                    team=team,
-                    stage_label=stage_label,
-                    user=user,
-                    unlock_type=unlock_type,
-                    target_state=target_state,
-                )
-                payload_scope = 'pit' if team.is_pit else 'capstone'
-
+            unlocked = set_access(request.user, team=team, request=request, **attrs)
+            access = access_payload(request.user, team=team, scope=attrs['scope'],
+                                    program_scope=attrs['program_scope'], year_level=attrs.get('year_level'))
         except PermissionError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValidationError as exc:
+            return deliverable_error_response(exc)
+        return Response({'unlocked': unlocked, 'stage_access': access})
 
-        return Response({
-            'unlocked': unlocked,
-            **deliverables_payload(request, scope=payload_scope),
-        }, status=status.HTTP_200_OK)
+
+class StageFileAccessView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        serializer = StageAccessScopeSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        attrs = dict(serializer.validated_data)
+        team = get_allowed_team(request, attrs.pop('team_id')) if attrs['scope'] == 'team' else None
+        attrs.pop('team_id', None)
+        from .stage_access import access_payload
+        try:
+            return Response(access_payload(request.user, team=team, **attrs))
+        except PermissionError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except ValidationError as exc:
+            return deliverable_error_response(exc)
 

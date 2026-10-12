@@ -69,6 +69,18 @@ class DefenseMinutes(models.Model):
     def __str__(self):
         return f"Minutes for {self.team_name} - {self.defense_stage_label}"
 
+    @property
+    def current_panelist_comments(self):
+        """Keep former comments as evidence without listing them on the current panel."""
+        from .services import minutes_panel_roster
+
+        panelist_ids = {assignment.panelist_id for assignment in self.schedule.panel_assignments.all()}
+        guest_ids = {member['guest_invitation_id'] for member in minutes_panel_roster(self.schedule)
+                     if member['guest_invitation_id'] is not None}
+        return [comment for comment in self.panelist_comments.all()
+                if (comment.guest_invitation_id in guest_ids if comment.guest_invitation_id is not None
+                    else not panelist_ids or comment.panelist_id is None or comment.panelist_id in panelist_ids)]
+
 
 class MinutesPanelistComment(models.Model):
     minutes = models.ForeignKey(
@@ -82,6 +94,12 @@ class MinutesPanelistComment(models.Model):
         null=True, blank=True,
         on_delete=models.SET_NULL,
     )
+    guest_invitation = models.ForeignKey(
+        'user_management.GuestPanelistCode',
+        related_name='minutes_comments_about',
+        null=True, blank=True,
+        on_delete=models.PROTECT,
+    )
     panelist_name_snapshot = models.CharField(max_length=160)
     panelist_role_snapshot = models.CharField(max_length=40, blank=True)  # 'Chair', 'Panel Member 1', etc.
     comments = models.TextField(blank=True)
@@ -93,6 +111,12 @@ class MinutesPanelistComment(models.Model):
         app_label = 'defense'
         db_table = 'defense_minutes_minutespanelistcomment'
         ordering = ['display_order', 'id']
+        constraints = [
+            models.UniqueConstraint(fields=['minutes', 'guest_invitation'],
+                                    name='unique_minutes_guest_comment'),
+            models.CheckConstraint(condition=models.Q(panelist__isnull=True) | models.Q(guest_invitation__isnull=True),
+                                   name='minutes_comment_one_panelist_kind'),
+        ]
 
     def __str__(self):
         return f"Comment by {self.panelist_name_snapshot} ({self.panelist_role_snapshot}) on {self.minutes}"

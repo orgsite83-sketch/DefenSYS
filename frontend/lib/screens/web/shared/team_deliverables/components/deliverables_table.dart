@@ -5,7 +5,6 @@ import 'package:defensys/models/defense_workflow_labels.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/services/adviser_grading_provider.dart';
 import 'package:defensys/services/reports_provider.dart';
-import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/utils/universal_file_viewer.dart';
@@ -19,6 +18,7 @@ import 'package:defensys/screens/web/shared/team_deliverables/dialogs/wpr_manage
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/screens/web/admin/grade_center/defense_workflow_panel.dart';
 import '../deliverables_view_types.dart';
+import '../../project_archive/dialogs/stage_access_management_dialog.dart';
 
 int parseAsInt(dynamic value) {
   if (value == null) return 0;
@@ -322,31 +322,11 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       return;
     }
 
-    showDialog(
+    await viewFileInDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: AppColors.maroon),
-      ),
+      fileUrl: fileUrl,
+      fileName: fileName,
     );
-
-    try {
-      final bytes = await ref
-          .read(authenticatedHttpClientProvider)
-          .fetchAuthenticatedFile(fileUrl);
-      if (mounted) Navigator.pop(context);
-      if (!mounted) return;
-      await viewFileInDialog(
-        context: context,
-        fileBytes: bytes,
-        fileName: fileName,
-      );
-    } catch (e) {
-      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
-      if (mounted) {
-        showErrorToast(context, 'Error opening file: $e');
-      }
-    }
   }
 
   Future<void> _promptUploadOrReplace(
@@ -1910,7 +1890,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             teamSelectedRubrics: _teamSelectedRubrics,
           ),
         ] else if (activeTab == 3 && widget.isAdviser) ...[
-          AdviserDefenseTab(teamId: teamId, selectedStage: selectedStage),
+          AdviserDefenseTab(
+            teamId: teamId,
+            selectedStage: selectedStage,
+            projectVersion: int.tryParse('${team['project_version'] ?? ''}'),
+            semesterId: int.tryParse('${team['semester_id'] ?? ''}'),
+            adviserName: team['adviser_name']?.toString(),
+          ),
         ] else ...[
           SizedBox(
             height: 650,
@@ -2669,20 +2655,10 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     onPressed: widget.state.isSaving
                         ? null
                         : () async {
-                            final success = await ref
-                                .read(capstoneDeliverablesProvider.notifier)
-                                .unlockDeliverables(
-                                  teamId: teamId,
-                                  stageLabel: selectedStage,
-                                );
-                            if (success && context.mounted) {
-                              showInfoToast(
-                                context,
-                                stagePayload['admin_unlocked'] == true
-                                    ? 'Deliverables relocked.'
-                                    : 'Deliverables unlocked for resubmission.',
-                              );
-                            }
+                            await StageAccessManagementDialog.show(
+                              context: context, ref: ref, scope: 'team', teamId: teamId,
+                              teamName: team['name']?.toString(), availableStages: [selectedStage],
+                            );
                           },
                     icon: Icon(
                       stagePayload['admin_unlocked'] == true

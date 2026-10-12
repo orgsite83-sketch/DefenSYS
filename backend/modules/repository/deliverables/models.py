@@ -51,6 +51,15 @@ class DeliverableSubmission(models.Model):
         default='',
         help_text='Rejection feedback or remarks'
     )
+    file_replacement_unlocked = models.BooleanField(
+        default=False,
+        help_text='Allow one replacement of an approved pre-defense file without changing its approval.'
+    )
+    file_replacement_reason = models.TextField(blank=True, default='')
+    revision_review_unlocked = models.BooleanField(
+        default=False,
+        help_text='Allow the requested pre-defense revision to be reviewed despite the stage lock.'
+    )
     reviewed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         related_name='reviewed_deliverables',

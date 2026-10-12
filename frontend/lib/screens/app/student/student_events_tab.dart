@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/capstone_deliverables_provider.dart';
 import '../../../services/dashboard_provider.dart';
+import '../../../services/defense/team_defense_provider.dart';
+import '../../../models/team_defense_record.dart';
+import '../../../widgets/defense/team_defense_records.dart';
 import '../../../theme/defensys_tokens.dart';
 import 'peer_eval_tab.dart';
 import 'student_deliverables_tab.dart';
@@ -62,6 +65,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     _startCountdown();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (widget.isCapstone) {
+        ref.read(teamDefenseProvider.notifier).fetch();
+      }
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
             scope: widget.isCapstone ? 'capstone' : 'pit',
             selectedStage: widget.initialStage,
@@ -171,6 +178,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
 
   Future<void> _refreshAll() async {
     await Future.wait([
+      if (widget.isCapstone) ref.read(teamDefenseProvider.notifier).fetch(),
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
             scope: widget.isCapstone ? 'capstone' : 'pit',
             yearLevel: widget.isCapstone ? null : _studentYearLevel,
@@ -208,7 +216,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
         )
         .toList();
 
-    final teamData = delivState.teams.firstOrNull;
+    final teamData = team?['id'] == null
+        ? delivState.teams.firstOrNull
+        : delivState.teams.where((t) =>
+            defenseRecordId(t['id']) == defenseRecordId(team?['id'])).firstOrNull;
     final stagesList = (teamData?['stages'] as List? ?? widget.studentData?['stages'] as List? ?? [])
         .cast<Map<String, dynamic>>();
 
@@ -512,7 +523,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                       padding: const EdgeInsets.all(3),
                       dividerColor: Colors.transparent,
                       tabs: [
-                        const Tab(
+                        Tab(
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Row(
@@ -521,7 +532,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                               children: [
                                 Icon(Icons.calendar_today_rounded, size: 13),
                                 SizedBox(width: 4),
-                                Text('Schedule'),
+                                Text(isCapstone ? 'Defense' : 'Schedule'),
                               ],
                             ),
                           ),
@@ -592,6 +603,21 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   if (stageOptions.isEmpty) return const SizedBox.shrink();
                   switch (_activeSubIndex) {
                     case 0:
+                      if (isCapstone) {
+                        final stageGrades = stagesList
+                            .map((s) => s['grade'])
+                            .whereType<Map>()
+                            .map((g) => Map<String, dynamic>.from(g))
+                            .toList();
+                        return TeamDefenseRecordsView(
+                          teamId: defenseRecordId(teamData?['id'] ?? team?['id']) ?? -1,
+                          selectedStage: selectedStage,
+                          projectVersion: defenseRecordId(teamData?['project_version'] ?? team?['project_version']),
+                          semesterId: defenseRecordId(teamData?['semester_id'] ?? team?['semester_id']),
+                          adviserName: adviserName,
+                          grades: stageGrades,
+                        );
+                      }
                       return _buildScheduleTab(
                         selectedStageName: selectedStage,
                         activeStageName: activeStageName,

@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    ProjectArchiveCancelReplacementView,
     ProjectArchiveExportView,
     ProjectArchiveListView,
     ProjectArchiveOverrideStatusView,
@@ -21,6 +22,7 @@ urlpatterns = [
         name='project_archive_upload_capstone',
     ),
     path('request-resubmission/', ProjectArchiveRequestResubmissionView.as_view(), name='project_archive_request_resubmission'),
+    path('cancel-file-replacement/', ProjectArchiveCancelReplacementView.as_view(), name='project_archive_cancel_replacement'),
     path('override-status/', ProjectArchiveOverrideStatusView.as_view(), name='project_archive_override_status'),
     path('replace-file/', ProjectArchiveReplaceFileView.as_view(), name='project_archive_replace_file'),
     path('trail/', ProjectArchiveTrailView.as_view(), name='project_archive_trail'),

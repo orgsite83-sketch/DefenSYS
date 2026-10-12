@@ -379,6 +379,13 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
     return requestResubmission(entryId, status: status);
   }
 
+  Future<bool> cancelFileReplacement(String entryId, {required String reason}) {
+    return _postAction('cancel-file-replacement', {
+      'entry_id': entryId,
+      'reason': reason,
+    }, successMessage: 'Canceled student file replacement unlock. Approval retained.');
+  }
+
   Future<bool> replaceFile(String entryId, List<int> bytes, String fileName) async {
     state = state.copyWith(
       isSaving: true,

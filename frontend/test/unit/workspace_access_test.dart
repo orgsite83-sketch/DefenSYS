@@ -3,6 +3,60 @@ import 'package:defensys/navigation/workspace_access.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('documenter web routes exclude defense management', () {
+    const doc = {'role': 'faculty', 'is_documenter': true};
+    for (final route in [
+      FacultyRoutes.dashboard,
+      FacultyRoutes.documenterRecords,
+      FacultyRoutes.profile,
+    ]) {
+      expect(WorkspaceAccess.redirect(doc, route, isWeb: true), isNull);
+    }
+    for (final route in [
+      FacultyRoutes.defenseBoard,
+      FacultyRoutes.defenseScheduleBulkImport,
+      FacultyRoutes.defenseScheduler,
+      '${FacultyRoutes.defenseBoard}/requests/external/12',
+    ]) {
+      expect(
+        WorkspaceAccess.redirect(doc, route, isWeb: true),
+        FacultyRoutes.dashboard,
+      );
+      expect(
+        WorkspaceAccess.redirect(
+          {...doc, 'is_pit_lead': true}, route, isWeb: true,
+        ),
+        isNull,
+      );
+    }
+    expect(
+      WorkspaceAccess.redirect(
+        {'role': 'faculty'}, FacultyRoutes.documenterRecords, isWeb: true,
+      ),
+      FacultyRoutes.dashboard,
+    );
+    expect(
+      WorkspaceAccess.redirect(
+        {...doc, 'is_documenter': false, 'is_pit_lead': true},
+        FacultyRoutes.documenterRecords, isWeb: true,
+      ),
+      FacultyRoutes.dashboard,
+    );
+    expect(
+      WorkspaceAccess.redirect(
+        {...doc, 'is_adviser': true}, FacultyRoutes.defenseBoard, isWeb: true,
+      ),
+      isNull,
+    );
+    expect(
+      FacultyRoutes.sectionForLocation(FacultyRoutes.documenterRecords),
+      'documenter_records',
+    );
+    expect(
+      FacultyRoutes.pathForSection('documenter_records'),
+      FacultyRoutes.documenterRecords,
+    );
+  });
   test(
     'browser restores an eligible role workspace and rejects a revoked role',
     () {

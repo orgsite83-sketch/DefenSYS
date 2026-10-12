@@ -11,7 +11,7 @@ from authentication_access_control.audit import log_high_impact_action
 from authentication_access_control.models import SystemAuditLog
 from authentication_access_control.scopes import visible_schedules_for
 from .models import DefenseSchedule, SchedulePanelist
-from .services import deletion_blockers, delete_schedule, schedule_audit_values
+from .services import deletion_blockers, delete_schedule, schedule_audit_values, adviser_panel_conflict
 
 
 class StaleOperation(APIException):
@@ -279,6 +279,13 @@ def execute_operation(actor, data, request=None):
             if schedule.pk in eligible:
                 delete_schedule(schedule, actor=actor, request=request, reason=data['reason'])
         return {'deleted': len(eligible), 'protected': preview['protected']}
+    # Serialize roster edits with adviser changes and validate the fresh adviser.
+    from student_teams.models import StudentTeam
+    teams = {team.pk: team for team in StudentTeam.objects.select_for_update().filter(
+        pk__in={schedule.team_id for schedule in items},
+    ).order_by('pk')}
+    for schedule in items:
+        schedule.team = teams[schedule.team_id]
     changes = data.get('changes') or {}
     allowed = {'panelist_ids', 'chair_panelist_id', 'panel_change', 'external_change', 'documenter_id', 'external_evaluator_ids', 'scheduled_date', 'start_time', 'shift_minutes', 'slot_duration', 'room', 'operation_state', 'status', 'acknowledge_minutes_amendment'}
     if not (set(changes) - {'acknowledge_minutes_amendment'}) or set(changes) - allowed:
@@ -341,8 +348,9 @@ def execute_operation(actor, data, request=None):
             doc = get_user_model().objects.filter(pk=doc_id, is_active=True, role__in=['faculty', 'admin']).first()
             if not doc or schedule.scope == 'pit' or doc_id == schedule.team.adviser_id or doc_id in pids:
                 raise ValidationError('Choose an eligible documenter distinct from the adviser and panelists.')
-        if schedule.team.adviser_id in pids:
-            raise ValidationError('A team adviser cannot serve on its defense panel.')
+        adviser_conflict = adviser_panel_conflict(schedule.team, pids)
+        if adviser_conflict:
+            raise ValidationError(adviser_conflict)
         legacy_remaining = 'external_evaluator_ids' not in changes and schedule.guest_invitations.filter(is_active=True, evaluator_id__isnull=True).exists()
         if (panels is not None or external is not None) and not pids and not eids and not legacy_remaining:
             raise ValidationError('At least one evaluator must remain assigned.')
@@ -423,7 +431,7 @@ def execute_operation(actor, data, request=None):
             signed_snapshot = {name: str(getattr(minutes, name)) if getattr(minutes, name) is not None else None
                 for name in ('status', 'team_name', 'project_title', 'adviser_name', 'defense_stage_label', 'defense_date', 'defense_time', 'room', 'documenter_name',
                              'documenter_signed_at', 'documenter_signed_by_id', 'adviser_signed_at', 'adviser_signed_by_id', 'chairman_signed_at', 'chairman_signed_by_id')}
-            signed_snapshot['comments'] = list(minutes.panelist_comments.values('panelist_id', 'panelist_name_snapshot', 'panelist_role_snapshot', 'comments'))
+            signed_snapshot['comments'] = list(minutes.panelist_comments.values('panelist_id', 'guest_invitation_id', 'panelist_name_snapshot', 'panelist_role_snapshot', 'comments'))
             signed_snapshot['panelist_ids'] = old_values[schedule.pk]['panelist_ids']
             signed_snapshot['external_evaluator_ids'] = old_values[schedule.pk]['external_evaluator_ids']
             revision = DefenseMinutesRevision.objects.create(minutes=minutes, snapshot=signed_snapshot,
@@ -476,6 +484,10 @@ def execute_operation(actor, data, request=None):
             if missing:
                 create_invitations([evaluator], missing, actor)
     for schedule in changed_items:
+        from defense.minutes.services import sync_panelist_comments
+        minutes = DefenseMinutes.objects.filter(schedule=schedule, status='draft').first()
+        if minutes:
+            sync_panelist_comments(minutes)
         from notifications.models import Notification, NotificationCategory
         # The same person can receive this event in several independent role inboxes.
         targets = {

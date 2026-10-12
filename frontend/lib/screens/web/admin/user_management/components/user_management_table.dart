@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/user_management_provider.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/feedback/empty_state.dart';
 import 'package:defensys/widgets/table/table.dart';
 
@@ -49,10 +50,7 @@ class UserManagementTable extends StatelessWidget {
       isSearchEnabled: !state.isSaving,
       onSearchSubmitted: onSearchSubmitted,
       onSearchCleared: onClearFilters,
-      filterControls: [
-        _roleFilter(),
-        _clearButton(),
-      ],
+      filterControls: [_roleFilter(context), _clearButton(context)],
       pagination: DefensysTablePagination(
         currentPage: currentPage,
         totalItems: state.users.length,
@@ -73,8 +71,8 @@ class UserManagementTable extends StatelessWidget {
             minWidth: 120,
             cellBuilder: (context, user, _) => Text(
               user['username']?.toString() ?? '',
-              style: const TextStyle(
-                color: DefensysUi.textDark,
+              style: TextStyle(
+                color: DefensysTokens.textPrimaryOf(context),
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
               ),
@@ -85,24 +83,28 @@ class UserManagementTable extends StatelessWidget {
             flex: 2.45,
             minWidth: 180,
             cellBuilder: (context, user, _) {
-              final name = (user['name']?.toString() ??
-                      '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}')
-                  .trim();
-              final displayName = name.isEmpty ? (user['username']?.toString() ?? '') : name;
-              return _bodyText(displayName);
+              final name =
+                  (user['name']?.toString() ??
+                          '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}')
+                      .trim();
+              final displayName = name.isEmpty
+                  ? (user['username']?.toString() ?? '')
+                  : name;
+              return _bodyText(context, displayName);
             },
           ),
           DefensysTableColumn(
             title: 'Email Address',
             flex: 2.35,
             minWidth: 180,
-            cellBuilder: (context, user, _) => _bodyText(user['email']?.toString() ?? ''),
+            cellBuilder: (context, user, _) =>
+                _bodyText(context, user['email']?.toString() ?? ''),
           ),
           DefensysTableColumn(
             title: 'System Role',
             flex: 2.35,
             minWidth: 180,
-            cellBuilder: (context, user, _) => _roleBadge(user),
+            cellBuilder: (context, user, _) => _roleBadge(context, user),
           ),
           DefensysTableColumn(
             title: 'Status',
@@ -127,8 +129,7 @@ class UserManagementTable extends StatelessWidget {
     );
   }
 
-
-  Widget _clearButton() {
+  Widget _clearButton(BuildContext context) {
     final hasSearch = searchController.text.trim().isNotEmpty;
     final hasRole = state.role.isNotEmpty;
 
@@ -139,30 +140,32 @@ class UserManagementTable extends StatelessWidget {
       icon: const Icon(Icons.clear_rounded, size: 16),
       label: const Text('Clear'),
       style: OutlinedButton.styleFrom(
-        foregroundColor: DefensysUi.steelGrey,
-        side: const BorderSide(color: Color(0xFFE5E7EB)),
+        foregroundColor: DefensysTokens.textSecondaryOf(context),
+        side: BorderSide(color: DefensysTokens.borderOf(context)),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
 
-  Widget _roleFilter() {
+  Widget _roleFilter(BuildContext context) {
     final activeRole = state.role;
     return Container(
       height: 42,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: DefensysTokens.surfaceHigherOf(context),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: activeRole,
-          style: const TextStyle(
+          dropdownColor: DefensysTokens.surfaceOf(context),
+          iconEnabledColor: DefensysTokens.textSecondaryOf(context),
+          style: TextStyle(
             fontSize: 13,
-            color: DefensysUi.textDark,
+            color: DefensysTokens.textPrimaryOf(context),
             fontFamily: DefensysUi.fontFamily,
           ),
           items: const [
@@ -182,8 +185,6 @@ class UserManagementTable extends StatelessWidget {
     );
   }
 
-
-
   List<Map<String, String>> _getIndividualRoles(Map<String, dynamic> user) {
     final role = user['role']?.toString() ?? 'student';
     final List<Map<String, String>> individualRoles = [];
@@ -195,8 +196,8 @@ class UserManagementTable extends StatelessWidget {
       final label = displayRole is Map && displayRole['label'] != null
           ? displayRole['label'].toString()
           : (user['year_level']?.toString().isNotEmpty == true
-              ? user['year_level'].toString()
-              : 'Student');
+                ? user['year_level'].toString()
+                : 'Student');
       individualRoles.add({'tone': 'student', 'label': label});
     } else {
       // Faculty/General
@@ -240,7 +241,7 @@ class UserManagementTable extends StatelessWidget {
     return individualRoles;
   }
 
-  Widget _buildSingleBadge(String label, String tone) {
+  Widget _buildSingleBadge(BuildContext context, String label, String tone) {
     final background = switch (tone) {
       'admin' => const Color(0xFFFDE8E8),
       'adviser' => const Color(0xFFECFDF5),
@@ -261,6 +262,10 @@ class UserManagementTable extends StatelessWidget {
       'pit_instructor' => const Color(0xFF15803D),
       _ => const Color(0xFF1E40AF),
     };
+    final dark = DefensysTokens.isDark(context);
+    final foreground = dark
+        ? Color.lerp(textColor, Colors.white, .65)!
+        : textColor;
     final icon = switch (tone) {
       'admin' => Icons.admin_panel_settings_rounded,
       'adviser' => Icons.school_outlined,
@@ -275,13 +280,13 @@ class UserManagementTable extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: background,
+        color: dark ? textColor.withValues(alpha: .18) : background,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: textColor, size: 13),
+          Icon(icon, color: foreground, size: 13),
           const SizedBox(width: 5),
           Flexible(
             child: Text(
@@ -289,7 +294,7 @@ class UserManagementTable extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               maxLines: 1,
               style: TextStyle(
-                color: textColor,
+                color: foreground,
                 fontSize: 11,
                 fontWeight: FontWeight.w800,
               ),
@@ -300,18 +305,18 @@ class UserManagementTable extends StatelessWidget {
     );
   }
 
-  Widget _buildCountBadge(int count) {
+  Widget _buildCountBadge(BuildContext context, int count) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
+        color: DefensysTokens.surfaceHigherOf(context),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: Text(
         '+$count',
-        style: const TextStyle(
-          color: Color(0xFF4B5563),
+        style: TextStyle(
+          color: DefensysTokens.textSecondaryOf(context),
           fontSize: 11,
           fontWeight: FontWeight.w800,
         ),
@@ -319,33 +324,38 @@ class UserManagementTable extends StatelessWidget {
     );
   }
 
-  Widget _roleBadge(Map<String, dynamic> user) {
+  Widget _roleBadge(BuildContext context, Map<String, dynamic> user) {
     final individualRoles = _getIndividualRoles(user);
     if (individualRoles.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    final tooltipMessage =
-        individualRoles.map((r) => '• ${r['label']}').join('\n');
+    final tooltipMessage = individualRoles
+        .map((r) => '• ${r['label']}')
+        .join('\n');
     final primaryRole = individualRoles[0];
     final hasMore = individualRoles.length > 1;
 
     Widget badgeContent;
     if (!hasMore) {
-      badgeContent =
-          _buildSingleBadge(primaryRole['label']!, primaryRole['tone']!);
+      badgeContent = _buildSingleBadge(
+        context,
+        primaryRole['label']!,
+        primaryRole['tone']!,
+      );
     } else {
       badgeContent = Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Flexible(
             child: _buildSingleBadge(
+              context,
               primaryRole['label']!,
               primaryRole['tone']!,
             ),
           ),
           const SizedBox(width: 6),
-          _buildCountBadge(individualRoles.length - 1),
+          _buildCountBadge(context, individualRoles.length - 1),
         ],
       );
     }
@@ -381,7 +391,11 @@ class UserManagementTable extends StatelessWidget {
             borderRadius: BorderRadius.circular(6),
             child: const Padding(
               padding: EdgeInsets.all(4),
-              child: Icon(Icons.edit_square, color: DefensysUi.techBlue, size: 18),
+              child: Icon(
+                Icons.edit_square,
+                color: DefensysUi.techBlue,
+                size: 18,
+              ),
             ),
           ),
         ),
@@ -395,7 +409,11 @@ class UserManagementTable extends StatelessWidget {
               borderRadius: BorderRadius.circular(6),
               child: const Padding(
                 padding: EdgeInsets.all(4),
-                child: Icon(Icons.shield_rounded, color: DefensysUi.techBlue, size: 18),
+                child: Icon(
+                  Icons.shield_rounded,
+                  color: DefensysUi.techBlue,
+                  size: 18,
+                ),
               ),
             ),
           ),
@@ -418,16 +436,15 @@ class UserManagementTable extends StatelessWidget {
     );
   }
 
-  Widget _bodyText(String value) {
+  Widget _bodyText(BuildContext context, String value) {
     return Text(
       value,
       overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
-        color: DefensysUi.textDark,
+      style: TextStyle(
+        color: DefensysTokens.textPrimaryOf(context),
         fontSize: 13,
         fontWeight: FontWeight.w500,
       ),
     );
   }
 }
-

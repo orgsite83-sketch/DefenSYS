@@ -111,6 +111,89 @@ class DefenseBoardApiTests(APITestCase):
         for row in response.data['schedules']:
             self.assertEqual(row['can_delete'], not row['deletion_blockers'])
 
+    def test_students_and_advisers_see_upcoming_defenses_without_creating_minutes(self):
+        from defense.minutes.models import DefenseMinutes
+        adviser = User.objects.create_user(username='record-adviser', role='faculty')
+        documenter = User.objects.create_user(username='record-documenter', role='faculty', is_documenter=True)
+        self.capstone_team.adviser = adviser
+        self.capstone_team.save(update_fields=['adviser'])
+        self.capstone_schedule.documenter = documenter
+        self.capstone_schedule.save(update_fields=['documenter'])
+        SchedulePanelist.objects.filter(schedule=self.capstone_schedule).update(is_chair=True)
+        for actor in (self.student, adviser):
+            self.client.force_authenticate(actor)
+            response = self.client.get('/api/defense/board/', {'scope': 'capstone'})
+            self.assertEqual(response.status_code, 200, response.data)
+            self.assertEqual(len(response.data['schedules']), 1)
+            record = response.data['schedules'][0]
+            self.assertEqual(record['id'], self.capstone_schedule.pk)
+            self.assertIsNone(record['minutes_status'])
+            self.assertEqual(record['display_status'], 'scheduled')
+            self.assertTrue(record['panelists'][0]['is_chair'])
+            self.assertEqual(record['documenter'], documenter.pk)
+        self.assertFalse(DefenseMinutes.objects.exists())
+        self.client.force_authenticate(self.student)
+        team = self.client.get('/api/dashboards/student/').data['team']
+        self.assertEqual(team['project_version'], self.capstone_team.project_version)
+        self.assertEqual(team['semester_id'], self.capstone_team.semester_id)
+        from repository.deliverables.services import team_payload
+        dossier = team_payload(self.capstone_team)
+        self.assertEqual(dossier['project_version'], self.capstone_team.project_version)
+        self.assertEqual(dossier['semester_id'], self.capstone_team.semester_id)
+
+    def test_record_keeps_legacy_and_inactive_external_participants_without_duplicates(self):
+        from user_management.models import ExternalEvaluator, GuestPanelistCode
+        evaluator = ExternalEvaluator.objects.create(name='Dr. Lina Santos', status='approved')
+        invitation = GuestPanelistCode.objects.create(evaluator=evaluator, guest_name=evaluator.name,
+            defense_schedule=self.capstone_schedule, is_active=False)
+        invitation.schedules.add(self.capstone_schedule)
+        GuestPanelistCode.objects.create(guest_name='Prof. Rivera', defense_schedule=self.capstone_schedule,
+            is_active=False)
+        self.client.force_authenticate(self.student)
+        response = self.client.get('/api/defense/board/', {'scope': 'capstone'})
+        self.assertEqual(response.status_code, 200)
+        panel = response.data['schedules'][0]['external_evaluators']
+        self.assertEqual([person['name'] for person in panel], ['Dr. Lina Santos', 'Prof. Rivera'])
+        self.assertTrue(all(not person['is_active'] for person in panel))
+
+    def test_recorded_verdict_and_revision_requirements_do_not_wait_for_publication_or_minutes(self):
+        from datetime import date
+        from grading.grades.models import TeamGrade
+        from grading.grades.services import GradeContextService
+        grade, _, _ = GradeContextService.get_or_create_for_schedule(self.capstone_schedule)
+        TeamGrade.objects.filter(pk=grade.pk).update(verdict='approved_with_revisions',
+            verdict_remarks='Calibrate the soil sensors.', revision_deadline=date(2099, 5, 22))
+        DefenseSchedule.objects.filter(pk=self.capstone_schedule.pk).update(status='done')
+        self.client.force_authenticate(self.student)
+        response = self.client.get('/api/defense/board/', {'scope': 'capstone'})
+        record = response.data['schedules'][0]
+        self.assertEqual(record['display_status'], 'revisions_pending')
+        self.assertIsNone(record['minutes_status'])
+        self.assertEqual(record['assessment']['verdict'], 'approved_with_revisions')
+        self.assertEqual(record['assessment']['revision_deadline'], '2099-05-22')
+        self.assertEqual(record['assessment']['verdict_remarks'], 'Calibrate the soil sensors.')
+        self.assertIsNone(record['assessment']['published_result'])
+        self.assertFalse(record['assessment']['is_completed'])
+
+    def test_record_uses_the_earlier_attempt_snapshot_instead_of_current_stage_grade(self):
+        from datetime import date
+        from grading.grades.models import GradeAttemptHistory, TeamGrade
+        from grading.grades.services import GradeContextService
+        grade, _, _ = GradeContextService.get_or_create_for_schedule(self.capstone_schedule)
+        GradeAttemptHistory.objects.create(team_grade=grade, schedule=self.capstone_schedule,
+            attempt_number=1, verdict='for_redefense', verdict_remarks='Repeat the field evaluation.',
+            revision_deadline=date(2099, 5, 22))
+        TeamGrade.objects.filter(pk=grade.pk).update(schedule=None, verdict='approved', status='published', final_grade=80)
+        DefenseSchedule.objects.filter(pk=self.capstone_schedule.pk).update(status='archived')
+        self.client.force_authenticate(self.student)
+        response = self.client.get('/api/defense/board/', {'scope': 'capstone'})
+        record = response.data['schedules'][0]
+        self.assertEqual(record['display_status'], 'archived')
+        self.assertEqual(record['assessment']['verdict'], 'for_redefense')
+        self.assertEqual(record['assessment']['revision_deadline'], '2099-05-22')
+        self.assertIsNone(record['assessment']['grade_status'])
+        self.assertIsNone(record['assessment']['published_result'])
+
     def test_board_lists_schedules_with_counts_and_stage_options(self):
         response = self.client.get('/api/defense/board/')
 

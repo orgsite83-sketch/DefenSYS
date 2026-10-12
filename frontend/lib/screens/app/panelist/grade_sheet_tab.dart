@@ -1378,32 +1378,11 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       return;
     }
 
-    showDialog(
+    await viewFileInDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: DefensysTokens.maroon),
-      ),
+      fileUrl: fileUrl,
+      fileName: fileName,
     );
-
-    var loadingOpen = true;
-    try {
-      final bytes = await ref
-          .read(authenticatedHttpClientProvider)
-          .fetchAuthenticatedFile(fileUrl);
-      if (!mounted) return;
-      Navigator.pop(context);
-      loadingOpen = false;
-      await viewFileInDialog(
-        context: context,
-        fileBytes: bytes,
-        fileName: fileName,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      if (loadingOpen && Navigator.canPop(context)) Navigator.pop(context);
-      showErrorToast(context, 'Error opening file: $e');
-    }
   }
 
   Widget _buildStudentSelector(TeamData team) => Column(

@@ -66,6 +66,22 @@ class DocumenterWorkspaceTests(APITestCase):
             self.assertEqual(self.client.patch('/api/defense/minutes/documenter-pool/',
                 {'changes': [{'id': self.faculty.pk, 'is_documenter': True}]}, format='json').status_code, 403)
 
+    def test_documenter_cannot_manage_assigned_defense(self):
+        self.client.force_authenticate(self.doc)
+        self.assertEqual(self.client.get('/api/defense/board/operations/').status_code, 403)
+        self.assertEqual(self.client.post('/api/defense/board/operations/', {
+            'action': 'update', 'anchor_id': self.schedule.pk,
+            'expected_revisions': {str(self.schedule.pk): self.schedule.revision},
+            'reason': 'Room change', 'changes': {'room': '402'},
+        }, format='json').status_code, 403)
+        self.assertEqual(self.client.patch(f'/api/defense/board/{self.schedule.pk}/',
+            {'status': 'cancelled'}, format='json').status_code, 403)
+        self.assertEqual(self.client.delete(f'/api/defense/board/{self.schedule.pk}/').status_code, 403)
+        self.assertEqual(self.client.post('/api/defense/schedules/', {}, format='json').status_code, 403)
+        self.schedule.refresh_from_db()
+        self.assertEqual(self.schedule.room, '301')
+        self.assertEqual(self.schedule.status, DefenseSchedule.STATUS_SCHEDULED)
+
     def test_pool_changes_only_documenter_flag_and_records_actor(self):
         self.client.force_authenticate(self.admin)
         response = self.client.patch('/api/defense/minutes/documenter-pool/',

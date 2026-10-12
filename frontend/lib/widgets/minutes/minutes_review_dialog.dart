@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../export/defensys_pdf_viewer.dart';
+import '../file_viewer_dialog_layout.dart';
 
 class MinutesReviewDialog extends StatelessWidget {
   const MinutesReviewDialog({
@@ -19,6 +20,7 @@ class MinutesReviewDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final layout = FileViewerDialogLayout.of(context);
     final checklist = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -37,10 +39,10 @@ class MinutesReviewDialog extends StatelessWidget {
       ],
     );
     return Dialog(
-      insetPadding: const EdgeInsets.all(12),
+      insetPadding: layout.insetPadding,
       child: SizedBox(
-        width: 1100,
-        height: MediaQuery.sizeOf(context).height * .9,
+        width: layout.size.width,
+        height: layout.size.height,
         child: Column(
           children: [
             Padding(

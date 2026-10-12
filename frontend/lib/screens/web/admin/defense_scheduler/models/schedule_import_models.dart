@@ -738,6 +738,9 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     // from an outdated spreadsheet. Validate that person's availability.
     final storedAdviser = matchedTeam?['adviser_name']?.toString().trim() ?? '';
     final adviserName = storedAdviser.isEmpty ? source.adviser : storedAdviser;
+    final adviserId = asInt(matchedTeam?['adviser_id']) ??
+        asInt(matchedTeam?['adviser']) ??
+        (adviserName.trim().isEmpty ? null : matchPanelist(adviserName, state).id);
     final panelistMatches = <ImportNameMatch>[];
 
     final chairMatch = matchPanelist(source.chair, state);
@@ -980,6 +983,11 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     if (panelistIds.isEmpty) {
       slotIssues.add('At least one chair or panel member is required.');
     }
+    if (adviserId != null && panelistIds.contains(adviserId)) {
+      slotIssues.add(
+        '${matchedTeam?['name'] ?? source.teamName}: the team adviser cannot be a panelist or panel chair for their own advisees. Choose a different panelist.',
+      );
+    }
     for (final id in panelistIds) {
       if (state.isEligiblePanelist(id)) continue;
       final person = state.faculty
@@ -1017,10 +1025,7 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
       duration: duration,
       scheduledStartTime: startTime,
       adviserName: adviserName,
-      adviserId: adviserName.trim().isEmpty
-          ? null
-          : asInt(matchedTeam?['adviser_id']) ??
-                matchPanelist(adviserName, state).id,
+      adviserId: adviserId,
       stageIssues: stageIssues,
       teamIssues: teamIssues,
       slotIssues: slotIssues,

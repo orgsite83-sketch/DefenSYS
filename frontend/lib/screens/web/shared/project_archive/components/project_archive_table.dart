@@ -1094,15 +1094,12 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     final fileUrl = entry['file_url']?.toString() ?? '';
     final fileName = entry['file_name']?.toString() ?? '';
     final status = entry['status']?.toString() ?? '';
-    final feedback = (entry['feedback']?.toString() ?? entry['remarks']?.toString() ?? '').toLowerCase();
 
     final isPendingResubmission =
         status == 'Needs Revision' || status == 'Rejected' || status == 'Needs Re-upload';
-    final isReplacementUnlocked = !isPendingResubmission &&
-        ((entry['archive_unlocked'] == true) ||
-            (entry['unlocked'] == true) ||
-            feedback.contains('unlocked for file replacement') ||
-            (status == 'Approved' && feedback.contains('unlocked')));
+    final isReplacementUnlocked = status == 'Approved' &&
+        entry['deliverable_type'] == 'pre' &&
+        entry['file_replacement_unlocked'] == true;
 
     final actionIconData = isPendingResubmission
         ? Icons.hourglass_top_rounded

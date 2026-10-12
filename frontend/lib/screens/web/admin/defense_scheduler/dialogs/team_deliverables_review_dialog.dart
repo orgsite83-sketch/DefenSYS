@@ -235,41 +235,10 @@ class TeamDeliverablesReviewDialog {
       return;
     }
 
-    showDialog(
+    await viewFileInDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: AppColors.maroon),
-      ),
+      fileUrl: fileUrl,
+      fileName: fileName,
     );
-
-    try {
-      final bytes = await ref
-          .read(authenticatedHttpClientProvider)
-          .fetchAuthenticatedFile(fileUrl);
-      if (!context.mounted) return;
-      Navigator.pop(context);
-
-      final lowerName = fileName.toLowerCase();
-      if (lowerName.endsWith('.pdf')) {
-        if (!context.mounted) return;
-        await viewPdfInDialog(
-          context: context,
-          pdfBytes: bytes,
-          fileName: fileName,
-        );
-      } else {
-        await downloadBytesFile(
-          bytes: bytes,
-          fileName: fileName,
-        );
-        if (!context.mounted) return;
-        showSuccessToast(context, 'Document downloaded: $fileName');
-      }
-    } catch (e) {
-      if (!context.mounted) return;
-      if (Navigator.canPop(context)) Navigator.pop(context);
-      showErrorToast(context, 'Error opening file: $e');
-    }
   }
 }

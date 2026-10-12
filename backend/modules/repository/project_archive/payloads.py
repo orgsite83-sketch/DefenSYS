@@ -207,6 +207,8 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
             'uploaded_at': submission.uploaded_at,
             'can_override': True,
             'feedback': submission.feedback or '',
+            'file_replacement_unlocked': submission.file_replacement_unlocked,
+            'file_replacement_reason': submission.file_replacement_reason,
             'audit_trail': [],
             'archive_note': '',
         }
@@ -272,6 +274,8 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
             'uploaded_at': f.uploaded_at,
             'can_override': True,
             'feedback': submission.feedback or '',
+            'file_replacement_unlocked': submission.file_replacement_unlocked,
+            'file_replacement_reason': submission.file_replacement_reason,
             'audit_trail': [],
             'archive_note': '',
         }

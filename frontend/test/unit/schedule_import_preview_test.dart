@@ -65,6 +65,61 @@ void main() {
       ],
     );
 
+    ScheduleImportPreviewRow adviserPreview({
+      Map<String, dynamic> teamFields = const {},
+      String sheetAdviser = 'Ricardo Fontanilla',
+      String chair = 'Jonathan Beltran',
+      List<String> panelMembers = const [],
+    }) => buildScheduleImportPreviewRows(
+      ParsedScheduleImport(rows: [ParsedScheduleImportRow(
+        sheetRow: 2, time: '09:00 - 09:30', startTime: '09:00', endTime: '09:30',
+        teamName: 'Team Alpha', projectTitle: 'Project Alpha',
+        adviser: sheetAdviser, members: const [], chair: chair,
+        panelMembers: panelMembers, documenter: 'Cecilia Magbanua',
+        room: 'Room 301', date: '2026-06-18', stage: stageLabel, slotDuration: 30,
+      )]),
+      testState.copyWith(teams: [{...testState.teams.first, ...teamFields}]),
+      scope: 'capstone', stageId: stageId, eventName: '', date: '2026-06-18',
+      room: 'Room 301', fallbackDuration: 30,
+      panelRubricId: 1, adviserRubricId: 2, peerRubricId: 3,
+      panelWeight: 50, peerWeight: 20,
+    ).single;
+
+    test('import blocks assigned adviser as chair despite an outdated spreadsheet name', () {
+      final row = adviserPreview(teamFields: {'adviser': 101, 'adviser_name': 'Jonathan Beltran'});
+      expect(row.adviserId, 101);
+      expect(row.ready, isFalse);
+      expect(row.slotIssues.join(' '), contains('team adviser cannot be a panelist or panel chair'));
+      expect(row.issues.join(' '), contains('Team Alpha'));
+    });
+
+    test('import blocks adviser as ordinary panel member', () {
+      final row = adviserPreview(teamFields: {'adviser_id': 103, 'adviser_name': 'Ricardo Fontanilla'},
+        panelMembers: ['Ricardo Fontanilla']);
+      expect(row.ready, isFalse);
+      expect(row.slotIssues.join(' '), contains('team adviser cannot'));
+    });
+
+    test('import checks stored adviser ID even when all adviser names are blank', () {
+      final row = adviserPreview(teamFields: {'adviser': 101}, sheetAdviser: '');
+      expect(row.adviserId, 101);
+      expect(row.ready, isFalse);
+      expect(row.slotIssues.join(' '), contains('team adviser cannot'));
+    });
+
+    test('older payload with no adviser ID still blocks a resolved adviser name', () {
+      final row = adviserPreview(sheetAdviser: 'Jonathan Beltran');
+      expect(row.ready, isFalse);
+      expect(row.slotIssues.join(' '), contains('team adviser cannot'));
+    });
+
+    test('import allows a panelist who advises other teams', () {
+      final row = adviserPreview(teamFields: {'adviser': 103, 'adviser_name': 'Ricardo Fontanilla'},
+        sheetAdviser: 'Jonathan Beltran');
+      expect(row.adviserId, 103);
+      expect(row.ready, isTrue);
+    });
+
     test('classifies rows into correct lifecycle status: initial, redefense, passed, and unendorsed', () {
       final parsed = ParsedScheduleImport(
         stage: stageLabel,
