@@ -1,8 +1,13 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:defensys/services/api_http.dart';
 import 'package:defensys/services/student_teams_provider.dart';
+import 'package:defensys/services/app/data_refresh_provider.dart';
 
 import '../helpers/auth_test_overrides.dart';
 import '../helpers/mock_http_setup.dart';
@@ -38,4 +43,126 @@ void main() {
 
     expect(next.error, isNull);
   });
+
+  test('section choices ignore directory search without changing its filters', () async {
+    final requests = <http.Request>[];
+    setApiHttpClientForTesting(MockClient((request) async {
+      requests.add(request);
+      return http.Response(jsonEncode({
+        'teams': [{'id': 5, 'section': 'BSIT-2A', 'is_editable': true}],
+      }), 200);
+    }));
+    final container = ProviderContainer(overrides: authTestOverrides());
+    addTearDown(container.dispose);
+    final notifier = container.read(studentTeamsProvider.notifier);
+    await notifier.fetchTeams(search: 'Team One', level: 'PIT', status: 'Pending', eventName: 'Demo');
+    final directory = container.read(studentTeamsProvider);
+    final choices = await notifier.fetchSectionTeams(
+      level: 'PIT', scope: 'active', yearLevel: '2nd Year', section: 'BSIT-2A',
+    );
+    expect(choices.single['section'], 'BSIT-2A');
+    expect(requests.last.url.queryParameters, {
+      'level': 'PIT', 'scope': 'active', 'year_level': '2nd Year', 'section': 'BSIT-2A',
+    });
+    expect(container.read(studentTeamsProvider), same(directory));
+  });
+
+  test(
+    'section save refreshes renamed filter and notifies related screens',
+    () async {
+      final requests = <http.Request>[];
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          requests.add(request);
+          if (request.method == 'PATCH') {
+            return http.Response(jsonEncode({'section': 'BSIT-4B'}), 200);
+          }
+          return http.Response(
+            jsonEncode({
+              'teams': [],
+              'active_semester': {'id': 1},
+            }),
+            200,
+          );
+        }),
+      );
+      final container = ProviderContainer(overrides: authTestOverrides());
+      addTearDown(container.dispose);
+      final notifier = container.read(studentTeamsProvider.notifier);
+      await notifier.fetchTeams(
+        section: 'BSIT-4b',
+        search: 'Team One',
+        level: 'PIT',
+        eventName: 'Demo',
+      );
+      final success = await notifier.updateSectionDetails(5, {
+        'expected_section': 'BSIT-4b',
+        'section': 'BSIT-4B',
+        'system_name': 'New system',
+        'project_manager_id': null,
+      }, scope: 'active');
+      expect(success, isTrue);
+      final patch = requests.firstWhere((request) => request.method == 'PATCH');
+      expect(patch.url.path, endsWith('/teams/5/section/'));
+      expect(jsonDecode(patch.body)['project_manager_id'], isNull);
+      expect(
+        requests.last.url.queryParameters,
+        containsPair('section', 'BSIT-4B'),
+      );
+      expect(
+        requests.last.url.queryParameters,
+        containsPair('search', 'Team One'),
+      );
+      expect(
+        requests.last.url.queryParameters,
+        containsPair('event_name', 'Demo'),
+      );
+      expect(
+        requests.last.url.queryParameters,
+        containsPair('scope', 'active'),
+      );
+      expect(
+        container.read(studentTeamsProvider).message,
+        'Section details updated.',
+      );
+      expect(
+        container.read(dataRefreshProvider),
+        containsPair(DataArea.academicRecords, 1),
+      );
+    },
+  );
+
+  test(
+    'failed section save reports validation error without refreshing list',
+    () async {
+      final requests = <http.Request>[];
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          requests.add(request);
+          return http.Response(
+            jsonEncode({
+              'section': ['This section already exists.'],
+            }),
+            400,
+          );
+        }),
+      );
+      final container = ProviderContainer(overrides: authTestOverrides());
+      addTearDown(container.dispose);
+      final success = await container
+          .read(studentTeamsProvider.notifier)
+          .updateSectionDetails(5, {
+            'expected_section': 'BSIT-4b',
+            'section': 'BSIT-4B',
+          });
+      expect(success, isFalse);
+      expect(requests, hasLength(1));
+      expect(container.read(studentTeamsProvider).isSaving, isFalse);
+      expect(
+        container.read(studentTeamsProvider).error,
+        'This section already exists.',
+      );
+      expect(container.read(dataRefreshProvider), isEmpty);
+    },
+  );
 }

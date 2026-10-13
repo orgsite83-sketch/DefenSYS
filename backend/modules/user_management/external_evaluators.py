@@ -6,7 +6,7 @@ from django.db.models import Q, F
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
-from authentication_access_control.scopes import is_admin_user, visible_schedules_for
+from authentication_access_control.scopes import is_admin_user, manageable_schedules_for, visible_schedules_for
 from defense.scheduler.models import DefenseSchedule
 from .models import ExternalEvaluator, GuestPanelistCode
 
@@ -197,7 +197,7 @@ def create_invitations(evaluators, schedules, actor, expires_at=None):
         return []
     schedules = list({s.pk: s for s in schedules}.values())
     ids = {s.pk for s in schedules}
-    if not ids or not ids.issubset(set(visible_schedules_for(actor).values_list('pk', flat=True))):
+    if not ids or not ids.issubset(set(manageable_schedules_for(actor).values_list('pk', flat=True))):
         raise PermissionDenied('Invitations must be limited to defenses you manage.')
     if any(s.status != DefenseSchedule.STATUS_SCHEDULED for s in schedules):
         raise ValidationError({'schedule_ids': 'Select confirmed, scheduled defenses.'})
@@ -224,7 +224,7 @@ def _create_session_invitations(evaluators, schedules, actor, expires_at=None):
     if not evaluators:
         return []
     ids = {s.pk for s in schedules}
-    if not ids or not ids.issubset(set(visible_schedules_for(actor).values_list('pk', flat=True))):
+    if not ids or not ids.issubset(set(manageable_schedules_for(actor).values_list('pk', flat=True))):
         raise PermissionDenied('Invitations must be limited to defenses you manage.')
     if any(s.status != DefenseSchedule.STATUS_SCHEDULED for s in schedules):
         raise ValidationError({'schedule_ids': 'Select confirmed, scheduled defenses.'})
@@ -272,7 +272,7 @@ def _create_session_invitations(evaluators, schedules, actor, expires_at=None):
 def update_invitation(actor, item, data):
     item = GuestPanelistCode.objects.select_for_update().get(pk=item.pk)
     ids = set(invitation_schedule_ids(item))
-    if not is_admin_user(actor) and (not ids or not ids.issubset(set(visible_schedules_for(actor).values_list('pk', flat=True)))):
+    if not is_admin_user(actor) and (not ids or not ids.issubset(set(manageable_schedules_for(actor).values_list('pk', flat=True)))):
         raise PermissionDenied('You cannot manage this invitation.')
     if data.get('is_active') is True:
         expiry = data.get('expires_at')

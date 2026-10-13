@@ -3,6 +3,7 @@ import uuid
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from defense.deliverable_timing import TIMING_CHOICES, TIMING_SCHEDULING
 
 
 class PanelistEvaluationDraft(models.Model):
@@ -71,6 +72,9 @@ class DefenseSchedule(models.Model):
         ('postponed', 'Postponed'), ('no_show', 'No-show'),
     ])
     operation_reason = models.TextField(blank=True)
+    materials_deadline_override = models.DateTimeField(null=True, blank=True)
+    materials_deadline_reason = models.TextField(blank=True)
+    materials_notice_key = models.CharField(max_length=64, blank=True)
     scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, default=SCOPE_CAPSTONE)
     semester = models.ForeignKey(
         'academic_period_management.Semester',
@@ -211,9 +215,10 @@ class DefenseSchedule(models.Model):
                 self.minutes_deliverable_id = self.defense_stage.minutes_deliverable_id
                 self.minutes_deliverable_label = self.defense_stage.minutes_deliverable_label or f'Signed Minutes - {self.defense_stage.label}'
         old_status = None
+        previous = None
         if not is_new:
             try:
-                previous = DefenseSchedule.objects.filter(pk=self.pk).values('status', 'defense_stage_id').first()
+                previous = DefenseSchedule.objects.filter(pk=self.pk).values('status', 'defense_stage_id', 'scheduled_date', 'start_time').first()
                 old_status = previous['status'] if previous else None
                 if previous and previous['defense_stage_id'] != self.defense_stage_id and self.scope == self.SCOPE_CAPSTONE and self.defense_stage_id:
                     self.minutes_required = self.defense_stage.minutes_required
@@ -227,6 +232,15 @@ class DefenseSchedule(models.Model):
         else:
             self.event_name = ''
         self.full_clean()
+        if not is_new and previous and (previous['scheduled_date'] != self.scheduled_date or previous['start_time'] != self.start_time):
+            # A grace deadline belongs to one defense time. Rescheduling derives
+            # fresh deadlines from the new slot instead of retaining an old one.
+            self.materials_deadline_override = None
+            self.materials_deadline_reason = ''
+            self.materials_notice_key = ''
+            if kwargs.get('update_fields') is not None:
+                kwargs['update_fields'] = set(kwargs['update_fields']) | {
+                    'materials_deadline_override', 'materials_deadline_reason', 'materials_notice_key'}
         super().save(*args, **kwargs)
 
         # Sync TeamStageProgress status for Capstone schedules
@@ -488,6 +502,8 @@ class PitEventDeliverable(models.Model):
         default=TYPE_PRE,
     )
     required = models.BooleanField(default=True)
+    requirement_timing = models.CharField(max_length=20, choices=TIMING_CHOICES, default=TIMING_SCHEDULING)
+    deadline_hours_before = models.PositiveSmallIntegerField(default=24)
     display_order = models.PositiveSmallIntegerField(default=1)
     archive_note = models.TextField(blank=True)
     archive_file_template = models.CharField(

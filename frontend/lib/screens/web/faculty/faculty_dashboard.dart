@@ -1506,14 +1506,16 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         final tabParam = queryParams['tab'];
         final initialTeamId = teamIdParam != null ? int.tryParse(teamIdParam) : null;
         final initialTab = tabParam != null ? int.tryParse(tabParam) : null;
+        final initialStage = queryParams['stage'];
         return TeamDeliverablesScreen(
-          key: ValueKey('deliverables_${initialTeamId ?? 'all'}_${initialTab ?? 'default'}'),
+          key: ValueKey('deliverables_${initialTeamId ?? 'all'}_${initialTab ?? 'default'}_${initialStage ?? 'default'}'),
           initialScope: initialScope,
           isAdviser: ws.type == FacultyWorkspace.adviser,
           pitYearLevel: (ws.type == FacultyWorkspace.pitLead || ws.type == FacultyWorkspace.pitInstructor) ? ws.yearLevel : null,
           pitSection: ws.type == FacultyWorkspace.pitInstructor ? ws.section : null,
           initialTeamId: initialTeamId,
           initialTab: initialTab,
+          initialStage: initialStage,
         );
       case 'weekly_reports':
         if (workspaceOption.type == FacultyWorkspace.adviser) {
@@ -1705,13 +1707,17 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         return AdviserDashboardContent(
           data: dashState.data,
           facultyName: facultyName,
+          onOpenGrades: (teamId, stageLabel) => _goToSection('deliverables', queryParameters: {
+            'teamId': teamId.toString(), 'tab': '1', 'stage': stageLabel,
+          }),
           onOpenDeliverables: (teamId) => _goToSection('deliverables', queryParameters: {
             if (teamId != null) 'teamId': teamId.toString(),
             'tab': '0',
           }),
-          onOpenDefense: (teamId) => _goToSection('deliverables', queryParameters: {
+          onOpenDefense: (teamId, stageLabel) => _goToSection('deliverables', queryParameters: {
             if (teamId != null) 'teamId': teamId.toString(),
             'tab': '3',
+            if (stageLabel.isNotEmpty) 'stage': stageLabel,
           }),
         );
       case FacultyWorkspace.pitInstructor:

@@ -271,6 +271,75 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     }
   }
 
+  /// Load section choices without changing the directory's search or filters.
+  Future<List<Map<String, dynamic>>> fetchSectionTeams({
+    required String level,
+    String scope = 'active',
+    String? yearLevel,
+    String? section,
+  }) async {
+    final uri = Uri.parse(baseUrl).replace(queryParameters: {
+      if (level.isNotEmpty) 'level': level,
+      'scope': scope,
+      if (yearLevel?.isNotEmpty == true) 'year_level': yearLevel!,
+      if (section?.isNotEmpty == true) 'section': section!,
+    });
+    final response = await _client.get(uri);
+    if (response.statusCode != 200) {
+      throw Exception(_errorFromResponse(response));
+    }
+    final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+    return (payload['teams'] as List? ?? [])
+        .whereType<Map>()
+        .map((team) => Map<String, dynamic>.from(team))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> fetchSectionDetails(int teamId) async {
+    final response = await _client.get(Uri.parse('$baseUrl/$teamId/section/'));
+    if (response.statusCode != 200) {
+      throw Exception(_errorFromResponse(response));
+    }
+    return Map<String, dynamic>.from(jsonDecode(response.body));
+  }
+
+  Future<bool> updateSectionDetails(
+    int teamId,
+    Map<String, dynamic> payload, {
+    String? scope,
+  }) async {
+    state = state.copyWith(isSaving: true, clearError: true, clearMessage: true);
+    try {
+      final response = await _client.patch(
+        Uri.parse('$baseUrl/$teamId/section/'),
+        body: jsonEncode(payload),
+      );
+      if (response.statusCode == 200) {
+        final details = Map<String, dynamic>.from(jsonDecode(response.body));
+        final nextSection = state.section == payload['expected_section']
+            ? details['section']?.toString()
+            : state.section;
+        await fetchTeams(
+          section: nextSection,
+          scope: scope,
+          successMessage: 'Section details updated.',
+        );
+        _markDependentDataChanged();
+        ref.read(dataRefreshProvider.notifier).markChanged(const [
+          DataArea.teams,
+          DataArea.academicRecords,
+          DataArea.users,
+          DataArea.repository,
+        ]);
+        return true;
+      }
+      state = state.copyWith(isSaving: false, error: _errorFromResponse(response));
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+    }
+    return false;
+  }
+
   Future<bool> deleteTeam(int teamId, {bool force = false}) async {
     state = state.copyWith(
       isSaving: true,

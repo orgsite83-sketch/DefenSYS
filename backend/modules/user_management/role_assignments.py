@@ -110,11 +110,15 @@ def ensure_active_role_history(user, changed_by=None):
         )
 
 
-def compute_display_role(user):
+_UNSET_SEMESTER = object()
+
+
+def compute_display_role(user, *, semester=_UNSET_SEMESTER, instructor_assignments=None):
     if user.role == 'admin':
         return {'key': 'admin', 'label': 'Administrator', 'tone': 'admin'}
     if user.role == 'student':
-        semester = _active_semester()
+        if semester is _UNSET_SEMESTER:
+            semester = _active_semester()
         label = 'Student'
         record = None
         prefetched = getattr(user, '_prefetched_objects_cache', {}).get('academic_records')
@@ -143,11 +147,14 @@ def compute_display_role(user):
 
     # Check active PIT instructor assignments
     from user_management.models import SectionInstructorAssignment
-    active_sem = _active_semester()
-    assignments_qs = SectionInstructorAssignment.objects.filter(faculty=user, is_active=True)
-    if active_sem:
-        assignments_qs = assignments_qs.filter(semester=active_sem)
-    assigned_years = sorted(list(set(assignments_qs.values_list('year_level', flat=True))))
+    if instructor_assignments is None:
+        active_sem = _active_semester() if semester is _UNSET_SEMESTER else semester
+        assignments_qs = SectionInstructorAssignment.objects.filter(faculty=user, is_active=True)
+        if active_sem:
+            assignments_qs = assignments_qs.filter(semester=active_sem)
+        assigned_years = sorted(set(assignments_qs.values_list('year_level', flat=True)))
+    else:
+        assigned_years = sorted({assignment.year_level for assignment in instructor_assignments})
     is_instructor = len(assigned_years) > 0
 
     if user.is_pit_lead:

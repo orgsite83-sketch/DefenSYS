@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/screens/web/admin/widgets/team_bulk_import_review_table.dart';
@@ -148,7 +150,6 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
   static const Color _line = Color(0xFFE2E8F0);
   static const Color _maroon = DefensysUi.primaryMaroon;
   static const Color _muted = DefensysUi.steelGrey;
-  static const Color _green = Color(0xFF15803D);
 
   final TextEditingController _searchCtrl = TextEditingController();
   String _selectedSectionFilter = 'all';
@@ -161,6 +162,11 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
     _searchCtrl.dispose();
     super.dispose();
   }
+
+  String _facultyValue(Map<String, dynamic> row) =>
+      (widget.isCapstoneAdmin ? row['adviser_name'] ?? row['adviser_id'] ?? '' : row['instructor_name'] ?? '')
+          .toString()
+          .trim();
 
   String _getActiveSemLabel() {
     final sem = widget.activeSemester;
@@ -175,7 +181,9 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => DefensysShadcnScope(child: Builder(builder: _buildImport));
+
+  Widget _buildImport(BuildContext context) {
     final activeSemLabel = _getActiveSemLabel();
 
     return PopScope(
@@ -269,20 +277,15 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
   }
 
   Widget _headerPill(String text) {
-    return Container(
+    return ShadBadge.outline(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         text,
         style: const TextStyle(
           fontSize: 11.5,
-          fontWeight: FontWeight.w600,
-          color: Color(0xFF5D6678),
-        ),
+          fontWeight: FontWeight.w500),
       ),
     );
   }
@@ -395,27 +398,15 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
     required List<DropdownMenuItem<String>> items,
     required ValueChanged<String?> onChanged,
   }) {
-    return Container(
-      height: 40,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
-        borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: const Color(0xFFD1D5DB)),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: items.any((it) => it.value == value) ? value : items.first.value,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: _muted),
-          style: const TextStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w600,
-            color: DefensysUi.textDark,
-          ),
-          items: items,
-          onChanged: widget.state.isSaving ? null : onChanged,
-        ),
-      ),
+    return ShadSelect<String>(
+      key: ValueKey('import_filter_${icon.codePoint}_$value'),
+      initialValue: items.any((it) => it.value == value) ? value : items.first.value,
+      enabled: !widget.state.isSaving,
+      minWidth: 150,
+      maxWidth: 260,
+      options: items.map((item) => ShadOption(value: item.value!, child: item.child)),
+      selectedOptionBuilder: (context, selected) => items.firstWhere((item) => item.value == selected).child,
+      onChanged: onChanged,
     );
   }
 
@@ -669,7 +660,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                     hasRows
                         ? Icons.task_alt_rounded
                         : Icons.cloud_upload_outlined,
-                    color: hasRows ? _green : _maroon,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                     size: 20,
                   ),
                 ),
@@ -768,7 +759,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
                 decoration: BoxDecoration(
-                  color: hasRows ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
                     color: hasRows ? const Color(0xFF16A34A) : const Color(0xFFCBD5E1),
@@ -783,18 +774,18 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                           ? Icons.inventory_2_outlined
                           : Icons.cloud_upload_outlined,
                       size: 28,
-                      color: hasRows ? _green : _maroon,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                     const SizedBox(height: 8),
                     Text(
                       hasRows
-                          ? '${widget.parsedBulkRows.length} Team Record(s) Staged (Click to Replace / Stage New)'
+                          ? '${widget.parsedBulkRows.length} teams staged · Click to replace file'
                           : 'Click to choose team CSV / spreadsheet (.csv / .xlsx)',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: hasRows ? const Color(0xFF15803D) : _ink,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -805,8 +796,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 11.5,
-                        color: hasRows ? const Color(0xFF166534) : _muted,
-                      ),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                     if (!hasRows) ...[
                       const SizedBox(height: 10),
@@ -870,7 +860,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
 
     final uniqueAdvisers = <String>{};
     for (final r in widget.parsedBulkRows) {
-      final a = (r['adviser_name'] ?? r['adviser_id'] ?? '').toString().trim();
+      final a = _facultyValue(r);
       if (a.isNotEmpty) uniqueAdvisers.add(a);
     }
     final sortedAdvisers = uniqueAdvisers.toList()..sort();
@@ -1000,15 +990,17 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                         _buildTeamStatItem(
                           sortedSections.length == 1 ? 'Section' : 'Sections',
                           sortedSections.length,
-                          const Color(0xFF0284C7),
+                          _muted,
                         ),
                       ],
-                      if (widget.isCapstoneAdmin && sortedAdvisers.isNotEmpty) ...[
+                      if (sortedAdvisers.isNotEmpty) ...[
                         _buildTeamStatDivider(),
                         _buildTeamStatItem(
-                          sortedAdvisers.length == 1 ? 'Adviser' : 'Advisers',
+                          widget.isCapstoneAdmin
+                              ? (sortedAdvisers.length == 1 ? 'Adviser' : 'Advisers')
+                              : (sortedAdvisers.length == 1 ? 'Instructor' : 'Instructors'),
                           sortedAdvisers.length,
-                          const Color(0xFF7C3AED),
+                          _muted,
                         ),
                       ],
                       _buildTeamStatDivider(),
@@ -1046,7 +1038,8 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                                 },
                               )
                             : null,
-                        hintText: 'Search by team, project, section, adviser...',
+                        hintText:
+                            'Search by team, project, section, ${widget.isCapstoneAdmin ? 'adviser' : 'instructor'}...',
                         hintStyle: const TextStyle(fontSize: 12, color: _muted),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                         filled: true,
@@ -1096,22 +1089,22 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                     icon: Icons.supervisor_account_outlined,
                     value: _selectedAdviserFilter,
                     items: [
-                      const DropdownMenuItem(value: 'all', child: Text('All Advisers')),
+                      DropdownMenuItem(value: 'all', child: Text('All ${widget.isCapstoneAdmin ? 'Advisers' : 'Instructors'}')),
                       DropdownMenuItem(
                         value: 'with_adviser',
                         child: Text(
-                          'With Adviser (${widget.parsedBulkRows.where((r) => (r['adviser_name'] ?? r['adviser_id'] ?? '').toString().trim().isNotEmpty).length})',
+                          'With ${widget.isCapstoneAdmin ? 'Adviser' : 'Instructor'} (${widget.parsedBulkRows.where((r) => _facultyValue(r).isNotEmpty).length})',
                         ),
                       ),
                       DropdownMenuItem(
                         value: 'without_adviser',
                         child: Text(
-                          'Without Adviser (${widget.parsedBulkRows.where((r) => (r['adviser_name'] ?? r['adviser_id'] ?? '').toString().trim().isEmpty).length})',
+                          'Without ${widget.isCapstoneAdmin ? 'Adviser' : 'Instructor'} (${widget.parsedBulkRows.where((r) => _facultyValue(r).isEmpty).length})',
                         ),
                       ),
                       ...sortedAdvisers.map((adv) {
                         final count = widget.parsedBulkRows
-                            .where((r) => (r['adviser_name'] ?? r['adviser_id'] ?? '').toString().trim() == adv)
+                            .where((r) => _facultyValue(r) == adv)
                             .length;
                         return DropdownMenuItem(
                           value: adv,
@@ -1126,10 +1119,10 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                 _buildToolbarDropdown(
                   icon: Icons.view_agenda_outlined,
                   value: _groupBy,
-                  items: const [
-                    DropdownMenuItem(value: 'none', child: Text('View: Flat List')),
+                  items: [
+                    const DropdownMenuItem(value: 'none', child: Text('View: Flat List')),
                     DropdownMenuItem(value: 'section', child: Text('Group: By Section')),
-                    DropdownMenuItem(value: 'adviser', child: Text('Group: By Adviser')),
+                    DropdownMenuItem(value: 'adviser', child: Text('Group: By ${widget.isCapstoneAdmin ? 'Adviser' : 'Instructor'}')),
                   ],
                   onChanged: (v) {
                     if (v != null) setState(() => _groupBy = v);

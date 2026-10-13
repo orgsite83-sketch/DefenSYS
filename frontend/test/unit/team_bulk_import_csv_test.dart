@@ -514,8 +514,9 @@ Group 2,David Aquino,Automated Library Portal
       final result = parseTeamBulkCsv(csv);
       expect(result.rows, hasLength(2));
       expect(result.section, 'BSIT-2A');
-      expect(result.rows[0]['adviser_name'], 'Prof. Alex Santos');
-      expect(result.rows[1]['adviser_name'], 'Prof. Alex Santos');
+      expect(result.rows[0]['instructor_name'], 'Prof. Alex Santos');
+      expect(result.rows[1]['instructor_name'], 'Prof. Alex Santos');
+      expect(result.rows[0].containsKey('adviser_name'), isFalse);
       expect(result.rows[0]['member_ids'], hasLength(4));
       expect(result.rows[1]['member_ids'], hasLength(4));
     });
@@ -678,13 +679,13 @@ V.O.I.D.,Xian Salac,Security,Redcrew,Earl John Parami,Billing,TECH4CE,Baguingco,
       expect(result.rows[0]['team_name'], 'Group 1');
       expect(result.rows[0]['project_title'], 'Smart Campus Navigation System');
       expect(result.rows[0]['section'], 'BSIT-2A');
-      expect(result.rows[0]['adviser_name'], 'Prof. Alex Santos');
+      expect(result.rows[0]['instructor_name'], 'Prof. Alex Santos');
 
       // Check Group 1 in 2B
       expect(result.rows[8]['team_name'], 'Group 1');
       expect(result.rows[8]['project_title'], 'Site Module');
       expect(result.rows[8]['section'], 'BSIT-2B');
-      expect(result.rows[8]['adviser_name'], 'Prof. Alex Santos');
+      expect(result.rows[8]['instructor_name'], 'Prof. Alex Santos');
     });
   });
 

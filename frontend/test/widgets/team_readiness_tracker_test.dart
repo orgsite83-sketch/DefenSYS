@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/screens/web/admin/defense_scheduler/components/team_readiness_tracker.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
+import '../helpers/auth_test_overrides.dart';
 
 void main() {
   for (final scenario in [
@@ -53,31 +55,34 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: SingleChildScrollView(
-              child: TeamReadinessTracker(
-                state: DefenseSchedulerState(
-                  teams: [
-                    {
-                      'id': 1,
-                      'name': 'Team CodeLearners',
-                      'level': '4th Year Capstone',
-                      'section': 'BSIT-4A',
-                      'ready_for_stage': 'Project Proposal',
-                      'stage_progress': {'Project Proposal': scenario.$1},
-                      'stage_verdicts': {'Project Proposal': scenario.$4},
-                      'eligible_stages': scenario.$2
-                          ? ['Project Proposal']
-                          : <String>[],
-                    },
-                  ],
+        ProviderScope(
+          overrides: authTestOverrides(),
+          child: MaterialApp(
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: TeamReadinessTracker(
+                  state: DefenseSchedulerState(
+                    teams: [
+                      {
+                        'id': 1,
+                        'name': 'Team CodeLearners',
+                        'level': '4th Year Capstone',
+                        'section': 'BSIT-4A',
+                        'ready_for_stage': 'Project Proposal',
+                        'stage_progress': {'Project Proposal': scenario.$1},
+                        'stage_verdicts': {'Project Proposal': scenario.$4},
+                        'eligible_stages': scenario.$2
+                            ? ['Project Proposal']
+                            : <String>[],
+                      },
+                    ],
+                  ),
+                  scope: 'capstone',
+                  activeStageOrEventName: 'Project Proposal',
+                  onReviewTeamDeliverables: (_, _) {},
+                  onSendReminder: (_, _) {},
+                  isSendingReminder: false,
                 ),
-                scope: 'capstone',
-                activeStageOrEventName: 'Project Proposal',
-                onReviewTeamDeliverables: (_, _) {},
-                onSendReminder: (_, _) {},
-                isSendingReminder: false,
               ),
             ),
           ),

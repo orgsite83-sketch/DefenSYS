@@ -1,7 +1,63 @@
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
+import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
+
+class StudentTeamsListToolbar extends StatelessWidget {
+  const StudentTeamsListToolbar({
+    super.key,
+    required this.search,
+    required this.controls,
+  });
+
+  final Widget search;
+  final List<Widget> controls;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      if (constraints.maxWidth < 1050) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            search,
+            const SizedBox(height: 12),
+            Wrap(spacing: 12, runSpacing: 10, children: controls),
+          ],
+        );
+      }
+      return Row(
+        children: [
+          Expanded(child: search),
+          for (final control in controls) ...[
+            const SizedBox(width: 12),
+            control,
+          ],
+        ],
+      );
+    },
+  );
+}
+
+class ManageSectionsButton extends StatelessWidget {
+  const ManageSectionsButton({super.key, this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => DefensysShadcnScope(
+    child: ShadButton.outline(
+      key: const Key('manage-sections'),
+      height: 43,
+      enabled: onPressed != null,
+      onPressed: onPressed,
+      leading: const Icon(LucideIcons.slidersHorizontal, size: 16),
+      child: const Text('Manage sections', style: TextStyle(fontSize: 13)),
+    ),
+  );
+}
 
 Widget buildSecondaryButton({
   required IconData icon,
@@ -178,49 +234,31 @@ class StudentTeamsLevelFilter extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    final levelItems = <DropdownMenuItem<String>>[
-      const DropdownMenuItem(
-        value: 'Capstone',
-        child: Text('Capstone Teams'),
-      ),
-      const DropdownMenuItem(
-        value: 'PIT',
-        child: Text('PIT Teams'),
-      ),
-    ];
-    final values = levelItems.map((item) => item.value).toSet();
-    final safeValue = values.contains(currentLevel)
+    const levels = {'Capstone': 'Capstone Teams', 'PIT': 'PIT Teams'};
+    final safeValue = levels.containsKey(currentLevel)
         ? currentLevel
         : 'Capstone';
-
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final fillBg = isDark ? DefensysTokens.mistInputFill : Colors.white;
-    final borderColor = isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB);
-    final textPrimary = isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark;
-
-    return Container(
-      width: 220,
-      height: 43,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: fillBg,
-        borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: borderColor),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: safeValue,
-          dropdownColor: isDark ? DefensysTokens.mistSurface : Colors.white,
-          isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-          style: TextStyle(
-            color: textPrimary,
-            fontFamily: DefensysUi.fontFamily,
-            fontSize: 12.5,
-            fontWeight: FontWeight.w500,
+    return DefensysShadcnScope(
+      child: SizedBox(
+        width: 200,
+        height: 43,
+        child: ShadSelect<String>(
+          key: ValueKey('team-level-$safeValue'),
+          initialValue: safeValue,
+          enabled: !isSaving,
+          minWidth: 200,
+          maxWidth: 200,
+          options: levels.entries.map(
+            (entry) => ShadOption(
+              value: entry.key,
+              child: Text(entry.value, style: const TextStyle(fontSize: 12.5)),
+            ),
           ),
-          items: levelItems,
-          onChanged: isSaving ? null : onLevelChanged,
+          selectedOptionBuilder: (_, value) => Text(
+            levels[value]!,
+            style: const TextStyle(fontSize: 12.5),
+          ),
+          onChanged: onLevelChanged,
         ),
       ),
     );

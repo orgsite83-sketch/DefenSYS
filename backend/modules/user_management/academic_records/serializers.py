@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db.models.manager import BaseManager
 from rest_framework import serializers
 
 from academic_period_management.models import Semester
@@ -26,6 +27,32 @@ class StudentOptionSerializer(serializers.ModelSerializer):
         return student_display_name(obj)
 
 
+class StudentAcademicRecordListSerializer(serializers.ListSerializer):
+    def to_representation(self, data):
+        from user_management.models import SectionInstructorAssignment
+        from student_teams.team_levels import is_capstone_scope
+
+        records = list(data.all() if isinstance(data, BaseManager) else data)
+        scopes = {
+            (record.semester_id, record.year_level, record.section)
+            for record in records if record.section and record.year_level
+            and not is_capstone_scope(record.year_level, record.semester)
+        }
+        assignments_by_scope = {}
+        if scopes:
+            assignments = SectionInstructorAssignment.objects.filter(
+                semester_id__in={scope[0] for scope in scopes},
+                year_level__in={scope[1] for scope in scopes},
+                section__in={scope[2] for scope in scopes},
+                is_active=True,
+            ).select_related('faculty')
+            for assignment in assignments:
+                scope = (assignment.semester_id, assignment.year_level, assignment.section)
+                assignments_by_scope.setdefault(scope, assignment)
+        self.child._instructor_assignments_by_scope = assignments_by_scope
+        return super().to_representation(records)
+
+
 class StudentAcademicRecordSerializer(serializers.ModelSerializer):
     student_id = serializers.IntegerField(source='student.id', read_only=True)
     student_username = serializers.CharField(source='student.username', read_only=True)
@@ -43,6 +70,7 @@ class StudentAcademicRecordSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StudentAcademicRecord
+        list_serializer_class = StudentAcademicRecordListSerializer
         fields = [
             'id',
             'student_id',
@@ -70,36 +98,33 @@ class StudentAcademicRecordSerializer(serializers.ModelSerializer):
         return f'{obj.rolled_from.school_year.label} - {obj.rolled_from.semester.label}'
 
     def get_instructor_name(self, obj):
-        if not obj.section or not obj.year_level or not obj.semester_id:
-            return None
-        from student_teams.team_levels import is_capstone_scope
-        if is_capstone_scope(obj.year_level, obj.semester):
-            return None
-        from user_management.models import SectionInstructorAssignment
-        assignment = SectionInstructorAssignment.objects.filter(
-            semester_id=obj.semester_id,
-            year_level=obj.year_level,
-            section=obj.section,
-            is_active=True,
-        ).select_related('faculty').first()
+        assignment = self._instructor_assignment(obj)
         if assignment and assignment.faculty:
             return assignment.faculty.get_full_name() or assignment.faculty.username
         return None
 
     def get_instructor_id(self, obj):
+        assignment = self._instructor_assignment(obj)
+        return assignment.faculty_id if assignment else None
+
+    def _instructor_assignment(self, obj):
         if not obj.section or not obj.year_level or not obj.semester_id:
             return None
         from student_teams.team_levels import is_capstone_scope
         if is_capstone_scope(obj.year_level, obj.semester):
             return None
+        scope = (obj.semester_id, obj.year_level, obj.section)
+        if hasattr(self, '_instructor_assignments_by_scope'):
+            return self._instructor_assignments_by_scope.get(scope)
+        if not hasattr(self, '_instructor_assignment_cache'):
+            self._instructor_assignment_cache = {}
         from user_management.models import SectionInstructorAssignment
-        assignment = SectionInstructorAssignment.objects.filter(
-            semester_id=obj.semester_id,
-            year_level=obj.year_level,
-            section=obj.section,
-            is_active=True,
-        ).first()
-        return assignment.faculty_id if assignment else None
+        if scope not in self._instructor_assignment_cache:
+            self._instructor_assignment_cache[scope] = SectionInstructorAssignment.objects.filter(
+                semester_id=obj.semester_id, year_level=obj.year_level,
+                section=obj.section, is_active=True,
+            ).select_related('faculty').first()
+        return self._instructor_assignment_cache[scope]
 
 
 class StudentAcademicRecordWriteSerializer(serializers.Serializer):

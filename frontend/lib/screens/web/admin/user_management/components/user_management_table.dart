@@ -11,6 +11,7 @@ class UserManagementTable extends StatelessWidget {
     super.key,
     required this.state,
     required this.visibleUsers,
+    required this.totalItems,
     required this.searchController,
     required this.currentPage,
     required this.rowsPerPage,
@@ -28,6 +29,7 @@ class UserManagementTable extends StatelessWidget {
 
   final UserManagementState state;
   final List<Map<String, dynamic>> visibleUsers;
+  final int totalItems;
   final TextEditingController searchController;
   final int currentPage;
   final int rowsPerPage;
@@ -53,7 +55,7 @@ class UserManagementTable extends StatelessWidget {
       filterControls: [_roleFilter(context), _clearButton(context)],
       pagination: DefensysTablePagination(
         currentPage: currentPage,
-        totalItems: state.users.length,
+        totalItems: totalItems,
         rowsPerPage: rowsPerPage,
         rowsPerPageOptions: rowsPerPageOptions,
         itemLabel: 'users',

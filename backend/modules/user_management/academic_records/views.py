@@ -28,7 +28,9 @@ User = get_user_model()
 
 
 def records_queryset():
-    return StudentAcademicRecord.objects.select_related('student', 'semester', 'semester__school_year')
+    return StudentAcademicRecord.objects.select_related(
+        'student', 'semester', 'semester__school_year', 'rolled_from__semester__school_year',
+    )
 
 
 def options_payload():

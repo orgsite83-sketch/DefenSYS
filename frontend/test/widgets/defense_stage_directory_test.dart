@@ -246,6 +246,18 @@ void main() {
   ) async {
     await pumpDirectory(tester, state: const DefenseStagesState());
     expect(find.text('Build your defense sequence'), findsOneWidget);
+    final emptyState = find.byKey(const ValueKey('stage-directory-empty'));
+    final emptyCenter = tester.getCenter(emptyState).dx;
+    expect(
+      tester
+          .getCenter(find.descendant(of: emptyState, matching: find.byType(Icon)))
+          .dx,
+      closeTo(emptyCenter, 1),
+    );
+    expect(
+      tester.getCenter(find.text('Build your defense sequence')).dx,
+      closeTo(emptyCenter, 1),
+    );
     await pumpDirectory(
       tester,
       state: const DefenseStagesState(isLoading: true),

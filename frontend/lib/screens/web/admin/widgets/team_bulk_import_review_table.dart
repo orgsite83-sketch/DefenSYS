@@ -1,5 +1,8 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 
 import '../widgets/defensys_admin_shell.dart';
 
@@ -73,13 +76,13 @@ class TeamBulkImportReviewTable extends StatefulWidget {
 }
 
 class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
-  static const _ink = DefensysUi.textDark;
-  static const _muted = DefensysUi.steelGrey;
+  Color get _ink => DefensysTokens.isDark(context) ? const Color(0xFFFAFAFA) : const Color(0xFF18181B);
+  Color get _surface => DefensysTokens.surfaceOf(context);
+  Color get _panel => DefensysTokens.isDark(context) ? const Color(0xFF27272A) : const Color(0xFFFAFAFA);
+  Color get _muted => DefensysTokens.isDark(context) ? const Color(0xFFA1A1AA) : const Color(0xFF71717A);
   static const _maroon = DefensysUi.primaryMaroon;
-  static const _line = Color(0xFFE2E8F0);
+  Color get _line => DefensysTokens.isDark(context) ? const Color(0xFF3F3F46) : const Color(0xFFE4E4E7);
   static const _green = Color(0xFF15803D);
-  static const _greenBg = Color(0xFFECFDF5);
-  static const _greenBorder = Color(0xFFA7F3D0);
   static const _red = Color(0xFFB91C1C);
   static const _redBg = Color(0xFFFEF2F2);
   static const _redBorder = Color(0xFFFECACA);
@@ -92,7 +95,40 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
   final Set<String> _customSections = {};
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => DefensysShadcnScope(child: Builder(builder: _buildReview));
+
+  String _facultyValue(Map<String, dynamic> row, [Map<String, dynamic>? preview]) {
+    final pit =
+        !widget.isCapstoneAdmin || (row['level'] ?? preview?['level'] ?? '').toString().toUpperCase().contains('PIT');
+    if (pit) {
+      return (row['instructor_name'] ?? preview?['instructor_name'] ?? '').toString().trim();
+    }
+    return (row['adviser_name'] ?? row['adviser_id'] ?? preview?['adviser_name'] ?? '').toString().trim();
+  }
+
+  Widget _contextBadge(String label, {IconData? icon}) => ShadBadge.outline(
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(6),
+      side: BorderSide(color: _line),
+    ),
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (icon != null) ...[Icon(icon, size: 12, color: _muted), const SizedBox(width: 5)],
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: _ink),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _buildReview(BuildContext context) {
     final indexed = <MapEntry<int, Map<String, dynamic>>>[];
     for (var i = 0; i < widget.rows.length; i++) {
       indexed.add(MapEntry(i, widget.rows[i]));
@@ -119,13 +155,15 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
 
       // Adviser filter
       if (widget.adviserFilter != null && widget.adviserFilter!.isNotEmpty && widget.adviserFilter != 'all') {
-        final adv = (row['adviser_name'] ?? row['adviser_id'] ?? preview?['adviser_name'] ?? '').toString().trim();
+        final adv = _facultyValue(row, preview);
         if (widget.adviserFilter == 'with_adviser') {
           if (adv.isEmpty) return false;
         } else if (widget.adviserFilter == 'without_adviser') {
           if (adv.isNotEmpty) return false;
         } else {
-          if (adv.toLowerCase() != widget.adviserFilter!.toLowerCase()) return false;
+          if (adv.toLowerCase() != widget.adviserFilter!.toLowerCase()) {
+            return false;
+          }
         }
       }
 
@@ -133,8 +171,7 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         final teamName = (row['team_name'] ?? '').toString().toLowerCase();
         final project = (row['project_title'] ?? '').toString().toLowerCase();
         final section = (row['section'] ?? preview?['section'] ?? '').toString().toLowerCase();
-        final adviser =
-            (row['adviser_name'] ?? row['adviser_id'] ?? preview?['adviser_name'] ?? '').toString().toLowerCase();
+        final adviser = _facultyValue(row, preview).toLowerCase();
         final members = (row['member_ids'] is List)
             ? (row['member_ids'] as List).join(' ').toLowerCase()
             : (row['member_ids'] ?? '').toString().toLowerCase();
@@ -169,28 +206,28 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
           padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
+            color: _panel,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: _line),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.search_off_rounded, size: 32, color: _muted),
+              Icon(Icons.search_off_rounded, size: 32, color: _muted),
               const SizedBox(height: 10),
               Text(
                 widget.showIssuesOnly
                     ? 'No teams currently have validation issues.'
                     : 'No staged teams match the current filter.',
-                style: const TextStyle(
+                style: TextStyle(
                   color: _ink,
                   fontSize: 13.5,
                   fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(height: 4),
-              const Text(
-                'Try clearing the search box or choosing "All Sections" / "All Advisers".',
+              Text(
+                'Try clearing search or choosing All Sections / All ${widget.isCapstoneAdmin ? 'Advisers' : 'Instructors'}.',
                 style: TextStyle(color: _muted, fontSize: 12),
               ),
             ],
@@ -217,7 +254,7 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             title: grp.key,
             count: grp.value.length,
             readyCount: readyInGroup,
-            color: const Color(0xFF0284C7),
+            color: _muted,
           ),
         );
         bodyContent.addAll(grp.value.map((entry) => _rowCard(context, entry.key, entry.value)));
@@ -228,10 +265,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
           : visible;
       final groups = <String, List<MapEntry<int, Map<String, dynamic>>>>{};
       for (final item in pagedVisible) {
-        final adv = (item.value['adviser_name'] ?? item.value['adviser_id'] ?? _previewForRow(item.key + 1)?['adviser_name'] ?? '')
-            .toString()
-            .trim();
-        final groupKey = adv.isNotEmpty ? 'Adviser: $adv' : 'No Adviser Assigned';
+        final adv = _facultyValue(item.value, _previewForRow(item.key + 1));
+        final role = widget.isCapstoneAdmin ? 'Adviser' : 'Instructor';
+        final groupKey = adv.isNotEmpty ? '$role: $adv' : 'No $role Assigned';
         groups.putIfAbsent(groupKey, () => []).add(item);
       }
       for (final grp in groups.entries) {
@@ -242,7 +278,7 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             title: grp.key,
             count: grp.value.length,
             readyCount: readyInGroup,
-            color: const Color(0xFF7C3AED),
+            color: _muted,
           ),
         );
         bodyContent.addAll(grp.value.map((entry) => _rowCard(context, entry.key, entry.value)));
@@ -298,9 +334,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       margin: const EdgeInsets.only(top: 8, bottom: 12),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: _panel,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: _line),
       ),
       child: Row(
         children: [
@@ -308,11 +344,10 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
           const SizedBox(width: 8),
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w800,
-              color: DefensysUi.textDark,
-            ),
+              color: _ink),
           ),
           const SizedBox(width: 10),
           Container(
@@ -320,15 +355,14 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(5),
-              border: Border.all(color: const Color(0xFFCBD5E1)),
+              border: Border.all(color: _line),
             ),
             child: Text(
               '$count team${count == 1 ? '' : 's'}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF475569),
-              ),
+                color: _muted),
             ),
           ),
           const Spacer(),
@@ -395,7 +429,8 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     final teamTitle = row['team_name']?.toString().trim() ?? '';
     final projectTitle = row['project_title']?.toString().trim() ?? '';
     final sectionValue = (row['section'] ?? preview?['section'] ?? '').toString().trim();
-    final adviserValue = (row['adviser_name'] ?? row['adviser_id'] ?? preview?['adviser_name'] ?? '').toString().trim();
+    final rowIsPit = !widget.isCapstoneAdmin || currentProgram.toUpperCase().contains('PIT');
+    final adviserValue = _facultyValue(row, preview);
     final rowHash = '${teamTitle}_${projectTitle}_${sectionValue}_${adviserValue}_${leaderId}_${membersList.join(',')}';
 
     final borderColor = ready
@@ -406,174 +441,62 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       key: ValueKey('bulk_import_row_${index}_$rowHash'),
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        color: _surface,
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: borderColor,
           width: ready || issues.isNotEmpty ? 1.4 : 1.0,
         ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x08000000),
-            blurRadius: 6,
-            offset: Offset(0, 2),
-          ),
-        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 1. Header Bar: Row, Context Badges, Title, Status, and Delete
           Container(
-            padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
             decoration: BoxDecoration(
-              color: ready
-                  ? const Color(0xFFF0FDF4)
-                  : (issues.isNotEmpty
-                      ? const Color(0xFFFEF2F2)
-                      : const Color(0xFFF8FAFC)),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
+              color: _surface,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(9)),
               border: Border(
                 bottom: BorderSide(
-                  color: ready
-                      ? _greenBorder
-                      : (issues.isNotEmpty ? _redBorder : _line),
-                ),
+                  color: _line),
               ),
             ),
             child: Row(
-              children: [
-                // Team Index Badge
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                  decoration: BoxDecoration(
-                    color: ready
-                        ? _green.withValues(alpha: 0.12)
-                        : (issues.isNotEmpty
-                            ? _red.withValues(alpha: 0.12)
-                            : _maroon.withValues(alpha: 0.08)),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    'Row $rowNumber',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      color: ready ? _green : (issues.isNotEmpty ? _red : _maroon),
-                    ),
-                  ),
-                ),
-                // Section Badge
-                if (sectionValue.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFBFDBFE)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.meeting_room_outlined, size: 12, color: Color(0xFF1D4ED8)),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Sec: $sectionValue',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF1D4ED8),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                // Adviser Badge
-                if (adviserValue.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF5F3FF),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFDDD6FE)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.supervisor_account_outlined, size: 12, color: Color(0xFF6D28D9)),
-                        const SizedBox(width: 4),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 160),
-                          child: Text(
-                            adviserValue,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF5B21B6),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                // Program / Term Badge (promoted to header to keep inputs uncluttered)
-                if (currentProgram.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFCBD5E1)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.school_outlined, size: 12, color: Color(0xFF475569)),
-                        const SizedBox(width: 4),
-                        Text(
-                          currentProgram,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF334155),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                const SizedBox(width: 10),
                 Expanded(
-                  child: Row(
-                    children: [
-                      Flexible(
-                        child: Text(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                      Text(
                           teamTitle.isNotEmpty ? teamTitle : 'Untitled Team',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                        style: TextStyle(
                             color: _ink,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
                             letterSpacing: -0.2,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '• Sheet row ${rowNumber + 1}',
-                        style: const TextStyle(
+                      const SizedBox(height: 9),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          _contextBadge('Row $rowNumber'),
+                          if (sectionValue.isNotEmpty)
+                            _contextBadge('Sec: $sectionValue', icon: Icons.meeting_room_outlined),
+                          if (adviserValue.isNotEmpty)
+                            _contextBadge(
+                              '${rowIsPit ? 'Instructor' : 'Adviser'}: $adviserValue',
+                              icon: Icons.person_outline,
+                            ),
+                          if (currentProgram.isNotEmpty) _contextBadge(currentProgram, icon: Icons.school_outlined),
+                      Text('Sheet row ${rowNumber + 1}',
+                        style: TextStyle(
                           color: _muted,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w500,
-                        ),
+                          fontSize: 11)),
+                        ],
                       ),
                     ],
                   ),
@@ -584,10 +507,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                 IconButton(
                   tooltip: 'Delete team row',
                   onPressed: () => widget.onDeleteRow(index),
-                  icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFDC2626)),
-                  splashRadius: 18,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  icon: Icon(Icons.delete_outline, size: 17, color: _muted),
+                  constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                  padding: const EdgeInsets.all(6),
                 ),
               ],
             ),
@@ -738,7 +660,7 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                               sectionValue: sectionValue,
                             ),
                           ),
-                          if (widget.isCapstoneAdmin) ...[
+                          ...[
                             const SizedBox(width: 12),
                             Expanded(
                               flex: 3,
@@ -747,6 +669,7 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                                 index: index,
                                 rowNumber: rowNumber,
                                 adviserValue: adviserValue,
+                                isInstructor: rowIsPit,
                               ),
                             ),
                           ],
@@ -787,13 +710,14 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                             row: row,
                             sectionValue: sectionValue,
                           ),
-                          if (widget.isCapstoneAdmin) ...[
+                          ...[
                             const SizedBox(height: 12),
                             _buildAdviserField(
                               context: context,
                               index: index,
                               rowNumber: rowNumber,
                               adviserValue: adviserValue,
+                              isInstructor: rowIsPit,
                             ),
                           ],
                         ],
@@ -843,24 +767,27 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: _panel,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: _line),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Studio Bar Header
-          Row(
+          Wrap(
+            spacing: 7,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              const Icon(Icons.people_alt_outlined, size: 15, color: DefensysUi.textDark),
+              Icon(Icons.people_alt_outlined, size: 15, color: _ink),
               const SizedBox(width: 7),
-              const Text(
+              Text(
                 'Team Members',
                 style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w800,
-                  color: DefensysUi.textDark,
+                  color: _ink,
                   letterSpacing: -0.1,
                 ),
               ),
@@ -869,19 +796,17 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1.5),
                 decoration: BoxDecoration(
-                  color: isMaxCapacity ? const Color(0xFFEFF6FF) : Colors.white,
+                  color: _surface,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: isMaxCapacity ? const Color(0xFFBFDBFE) : const Color(0xFFCBD5E1),
-                  ),
+                    color: _line),
                 ),
                 child: Text(
                   isMaxCapacity ? '4/4 (Max)' : '${membersList.length}/4',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
-                    color: isMaxCapacity ? const Color(0xFF1D4ED8) : const Color(0xFF475569),
-                  ),
+                    color: _muted),
                 ),
               ),
               const SizedBox(width: 10),
@@ -890,21 +815,24 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFEF2F2),
+                    color: _surface,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFFECACA)),
+                    border: Border.all(color: _line),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.stars_rounded, size: 13, color: _maroon),
+                      Icon(Icons.stars_rounded, size: 13, color: _ink),
                       const SizedBox(width: 4),
-                      Text(
+                      Flexible(
+                        child: Text(
                         'Leader: $leaderId',
-                        style: const TextStyle(
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
-                          color: _maroon,
+                          color: _ink),
                         ),
                       ),
                     ],
@@ -975,22 +903,21 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: _surface,
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFCBD5E1), style: BorderStyle.solid),
+                      border: Border.all(color: _line, style: BorderStyle.solid),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.person_add_alt_rounded, size: 14, color: _maroon),
+                        Icon(Icons.person_add_alt_rounded, size: 14, color: _ink),
                         SizedBox(width: 5),
                         Text(
                           'Add Member',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
-                            color: _maroon,
-                          ),
+                            color: _ink),
                         ),
                       ],
                     ),
@@ -1014,10 +941,10 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     return Container(
       padding: const EdgeInsets.fromLTRB(8, 5, 6, 5),
       decoration: BoxDecoration(
-        color: isLeader ? const Color(0xFFFEF2F2) : Colors.white,
+        color: _surface,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: isLeader ? const Color(0xFFF87171) : const Color(0xFFCBD5E1),
+          color: isLeader ? _ink : _line,
           width: isLeader ? 1.4 : 1.0,
         ),
         boxShadow: const [
@@ -1041,18 +968,21 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                 child: Icon(
                   isLeader ? Icons.stars_rounded : Icons.star_border_rounded,
                   size: 16,
-                  color: isLeader ? _maroon : const Color(0xFF94A3B8),
+                  color: isLeader ? _ink : _muted,
                 ),
               ),
             ),
           ),
           const SizedBox(width: 5),
-          Text(
+          Flexible(
+            child: Text(
             member,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: 12.5,
               fontWeight: isLeader ? FontWeight.w800 : FontWeight.w600,
-              color: isLeader ? const Color(0xFF7F1D1D) : DefensysUi.textDark,
+              color: _ink),
             ),
           ),
           if (isLeader) ...[
@@ -1060,15 +990,15 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
               decoration: BoxDecoration(
-                color: _maroon,
+                color: _ink,
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: const Text(
+              child: Text(
                 'LEADER',
                 style: TextStyle(
                   fontSize: 8.5,
                   fontWeight: FontWeight.w900,
-                  color: Colors.white,
+                  color: _surface,
                   letterSpacing: 0.4,
                 ),
               ),
@@ -1108,14 +1038,14 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       builder: (dialogCtx) => AlertDialog(
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        title: const Row(
+        title: Row(
           children: [
             Icon(Icons.person_remove_outlined, color: Color(0xFFDC2626), size: 20),
             SizedBox(width: 8),
             Expanded(
               child: Text(
                 'Remove Team Member',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: DefensysUi.textDark),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _ink),
               ),
             ),
           ],
@@ -1123,11 +1053,11 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         content: Text.rich(
           TextSpan(
             text: 'Are you sure you want to remove ',
-            style: const TextStyle(fontSize: 13, color: Color(0xFF475569), height: 1.4),
+            style: TextStyle(fontSize: 13, color: _muted, height: 1.4),
             children: [
               TextSpan(
                 text: member,
-                style: const TextStyle(fontWeight: FontWeight.w800, color: DefensysUi.textDark),
+                style: TextStyle(fontWeight: FontWeight.w800, color: _ink),
               ),
               TextSpan(
                 text: ' from ${teamName.isNotEmpty ? teamName : 'this team'}?',
@@ -1247,11 +1177,11 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                           Expanded(
                             child: Text(
                               'Add Member (${currentMembers.length}/4)',
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _ink),
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _ink),
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.close_rounded, size: 18, color: _muted),
+                            icon: Icon(Icons.close_rounded, size: 18, color: _muted),
                             onPressed: () => Navigator.of(dialogCtx).pop(),
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -1263,13 +1193,13 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                         autofocus: true,
                         decoration: InputDecoration(
                           hintText: 'Search imported students by name...',
-                          prefixIcon: const Icon(Icons.search_rounded, size: 18, color: _muted),
+                          prefixIcon: Icon(Icons.search_rounded, size: 18, color: _muted),
                           isDense: true,
                           filled: true,
                           fillColor: const Color(0xFFF8FAFC),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _line)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _line)),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: _line)),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: _line)),
                           focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _maroon, width: 1.5)),
                         ),
                         onChanged: (val) => setModalState(() => filter = val),
@@ -1290,14 +1220,14 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                                   'Add "$filter"',
                                   style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: _maroon),
                                 ),
-                                subtitle: const Text('Add as new member name', style: TextStyle(fontSize: 11, color: _muted)),
+                                subtitle: Text('Add as new member name', style: TextStyle(fontSize: 11, color: _muted)),
                                 onTap: () {
                                   _addStudentToTeam(index, currentMembers, filter.trim());
                                   Navigator.of(dialogCtx).pop();
                                 },
                               ),
                             if (filtered.isEmpty && (q.isEmpty || hasExactMatch))
-                              const Padding(
+                              Padding(
                                 padding: EdgeInsets.symmetric(vertical: 32),
                                 child: Center(
                                   child: Text('No available students found.', style: TextStyle(fontSize: 12.5, color: _muted)),
@@ -1311,12 +1241,12 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                                   backgroundColor: const Color(0xFFF1F5F9),
                                   child: Text(
                                     st.name.isNotEmpty ? st.name[0].toUpperCase() : '?',
-                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _muted),
                                   ),
                                 ),
-                                title: Text(st.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _ink)),
+                                title: Text(st.name, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _ink)),
                                 subtitle: st.subtitle.isNotEmpty
-                                    ? Text(st.subtitle, style: const TextStyle(fontSize: 11, color: _muted))
+                                    ? Text(st.subtitle, style: TextStyle(fontSize: 11, color: _muted))
                                     : null,
                                 trailing: const Icon(Icons.add_circle_outline_rounded, size: 18, color: _maroon),
                                 onTap: () {
@@ -1364,20 +1294,22 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     required int index,
     required int rowNumber,
     required String adviserValue,
+    bool isInstructor = false,
   }) {
     final hasAdviser = adviserValue.isNotEmpty;
+    final role = isInstructor ? 'Instructor' : 'Adviser';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Row(
+        Row(
           children: [
             Icon(Icons.supervisor_account_outlined, size: 13, color: Color(0xFF64748B)),
             SizedBox(width: 5),
             Text(
-              'Adviser (Optional)',
+              '$role (Optional)',
               style: TextStyle(
-                color: Color(0xFF334155),
+                color: _ink,
                 fontSize: 11.5,
                 fontWeight: FontWeight.w700,
               ),
@@ -1386,14 +1318,14 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         ),
         const SizedBox(height: 6),
         InkWell(
-          key: ValueKey('adviser_selector_$rowNumber'),
-          onTap: () => _showAdviserSearchDialog(context, index, adviserValue),
+          key: ValueKey('${isInstructor ? 'instructor' : 'adviser'}_selector_$rowNumber'),
+          onTap: () => _showAdviserSearchDialog(context, index, adviserValue, isInstructor: isInstructor),
           borderRadius: BorderRadius.circular(8),
           child: Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9.5),
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: _panel,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: _line),
             ),
@@ -1401,7 +1333,7 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
               children: [
                 Expanded(
                   child: Text(
-                    hasAdviser ? adviserValue : 'Select Faculty Adviser...',
+                    hasAdviser ? adviserValue : 'Select Faculty $role...',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -1424,8 +1356,11 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
   Future<void> _showAdviserSearchDialog(
     BuildContext context,
     int index,
-    String currentAdviser,
-  ) async {
+    String currentAdviser, {
+    bool isInstructor = false,
+  }) async {
+    final role = isInstructor ? 'Instructor' : 'Adviser';
+    final field = isInstructor ? 'instructor_name' : 'adviser_name';
     final Map<String, _AdviserCandidate> candidatesMap = {};
 
     if (widget.adviserOptions != null) {
@@ -1450,7 +1385,7 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     }
 
     for (final r in widget.rows) {
-      final a = (r['adviser_name'] ?? r['adviser_id'] ?? '').toString().trim();
+      final a = (r[field] ?? '').toString().trim();
       if (a.isNotEmpty && !candidatesMap.containsKey(a.toLowerCase())) {
         candidatesMap[a.toLowerCase()] = _AdviserCandidate(
           name: a,
@@ -1490,14 +1425,14 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                         children: [
                           const Icon(Icons.supervisor_account_outlined, color: _maroon, size: 20),
                           const SizedBox(width: 8),
-                          const Expanded(
+                          Expanded(
                             child: Text(
-                              'Assign Faculty Adviser',
+                              'Assign Faculty $role',
                               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _ink),
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.close_rounded, size: 18, color: _muted),
+                            icon: Icon(Icons.close_rounded, size: 18, color: _muted),
                             onPressed: () => Navigator.of(dialogCtx).pop(),
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -1508,14 +1443,14 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                       TextField(
                         autofocus: true,
                         decoration: InputDecoration(
-                          hintText: 'Search faculty adviser name...',
-                          prefixIcon: const Icon(Icons.search_rounded, size: 18, color: _muted),
+                          hintText: 'Search faculty ${role.toLowerCase()} name...',
+                          prefixIcon: Icon(Icons.search_rounded, size: 18, color: _muted),
                           isDense: true,
                           filled: true,
                           fillColor: const Color(0xFFF8FAFC),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _line)),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _line)),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: _line)),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: _line)),
                           focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: _maroon, width: 1.5)),
                         ),
                         onChanged: (val) => setModalState(() => filter = val),
@@ -1524,17 +1459,18 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                       // Clear / Unassigned Option
                       ListTile(
                         dense: true,
-                        leading: const CircleAvatar(
+                        leading: CircleAvatar(
                           radius: 14,
                           backgroundColor: Color(0xFFF1F5F9),
                           child: Icon(Icons.person_off_outlined, size: 15, color: _muted),
                         ),
-                        title: const Text('Unassigned / No Adviser', style: TextStyle(fontSize: 13, color: _muted, fontWeight: FontWeight.w600)),
+                        title: Text(
+                          'Unassigned / No $role', style: TextStyle(fontSize: 13, color: _muted, fontWeight: FontWeight.w600)),
                         trailing: currentAdviser.isEmpty ? const Icon(Icons.check_rounded, color: _green, size: 18) : null,
                         onTap: () {
                           setState(() {
-                            widget.rows[index]['adviser_name'] = '';
-                            widget.rows[index]['adviser_id'] = '';
+                            widget.rows[index][field] = '';
+                            if (!isInstructor) widget.rows[index]['adviser_id'] = '';
                           });
                           widget.onRowChanged(index);
                           Navigator.of(dialogCtx).pop();
@@ -1544,7 +1480,7 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                       const SizedBox(height: 4),
                       Expanded(
                         child: filtered.isEmpty
-                            ? const Padding(
+                            ? Padding(
                                 padding: EdgeInsets.symmetric(vertical: 32),
                                 child: Center(
                                   child: Text('No faculty advisers match the search.', style: TextStyle(fontSize: 12.5, color: _muted)),
@@ -1572,13 +1508,15 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                                       ),
                                     ),
                                     subtitle: adv.subtitle.isNotEmpty
-                                        ? Text(adv.subtitle, style: const TextStyle(fontSize: 11, color: _muted))
+                                        ? Text(adv.subtitle, style: TextStyle(fontSize: 11, color: _muted))
                                         : null,
                                     trailing: isSelected ? const Icon(Icons.check_circle_rounded, color: _maroon, size: 18) : null,
                                     onTap: () {
                                       setState(() {
-                                        widget.rows[index]['adviser_name'] = adv.name;
-                                        widget.rows[index]['adviser_id'] = adv.id ?? adv.name;
+                                        widget.rows[index][field] = adv.name;
+                                        if (!isInstructor) {
+                                          widget.rows[index]['adviser_id'] = adv.id ?? adv.name;
+                                        }
                                       });
                                       widget.onRowChanged(index);
                                       Navigator.of(dialogCtx).pop();
@@ -1609,7 +1547,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     if (widget.sectionOptions != null) {
       for (final s in widget.sectionOptions!) {
         final t = s.trim();
-        if (t.isNotEmpty && t != 'all' && t != '_none_') distinctSections.add(t);
+        if (t.isNotEmpty && t != 'all' && t != '_none_') {
+          distinctSections.add(t);
+        }
       }
     }
     for (final r in widget.rows) {
@@ -1622,7 +1562,7 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
     final sortedSections = distinctSections.toList()..sort();
 
     final items = <DropdownMenuItem<String>>[
-      const DropdownMenuItem(
+      DropdownMenuItem(
         value: '',
         child: Text('Unassigned', style: TextStyle(color: _muted, fontWeight: FontWeight.normal)),
       ),
@@ -1708,7 +1648,7 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
           return AlertDialog(
             surfaceTintColor: Colors.transparent,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            title: const Row(
+            title: Row(
               children: [
                 Icon(Icons.add_business_outlined, color: _maroon, size: 20),
                 SizedBox(width: 8),
@@ -1724,7 +1664,7 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Enter the section name to assign to this team and make available for all other teams.',
                   style: TextStyle(fontSize: 12.5, color: _muted, height: 1.35),
                 ),
@@ -1743,7 +1683,7 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                     fillColor: const Color(0xFFF8FAFC),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: _line),
+                      borderSide: BorderSide(color: _line),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -1799,98 +1739,45 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
   }
 
   Widget _statusBadge(bool ready, int issueCount, int warningCount) {
-    if (ready) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: _greenBg,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: _greenBorder),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.check_circle_rounded, size: 13, color: _green),
-            SizedBox(width: 5),
-            Text(
-              'Ready',
-              style: TextStyle(
-                color: _green,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (issueCount > 0) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: _redBg,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: _redBorder),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.error_outline_rounded, size: 13, color: _red),
-            SizedBox(width: 5),
-            Text(
-              '$issueCount issue${issueCount == 1 ? '' : 's'}',
-              style: const TextStyle(
-                color: _red,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (warningCount > 0) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: _amberBg,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: _amberBorder),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.warning_amber_rounded, size: 13, color: _amber),
-            SizedBox(width: 5),
-            Text(
-              '$warningCount warning${warningCount == 1 ? '' : 's'}',
-              style: const TextStyle(
-                color: _amber,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFCBD5E1)),
+    final label = ready
+        ? 'Ready'
+        : issueCount > 0
+        ? '$issueCount issue${issueCount == 1 ? '' : 's'}'
+        : warningCount > 0
+        ? '$warningCount warning${warningCount == 1 ? '' : 's'}'
+        : 'Pending Review';
+    final color = ready
+        ? (DefensysTokens.isDark(context) ? const Color(0xFF86EFAC) : _green)
+        : issueCount > 0
+        ? _red
+        : warningCount > 0
+        ? _amber
+        : _muted;
+    return ShadBadge.outline(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(6),
+        side: BorderSide(color: _line),
       ),
-      child: const Text(
-        'Pending Review',
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+          Icon(
+            ready
+                ? Icons.check_circle_outline
+                : issueCount > 0
+                ? Icons.error_outline
+                : Icons.info_outline, size: 13, color: color,
+          ),
+          const SizedBox(width: 5),
+            Text(
+            label,
         style: TextStyle(
-          color: _muted,
-          fontSize: 11.5,
-          fontWeight: FontWeight.w700,
-        ),
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w600),
+          ),
+        ],
       ),
     );
   }
@@ -1915,8 +1802,8 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             const SizedBox(width: 5),
             Text(
               label,
-              style: const TextStyle(
-                color: Color(0xFF334155),
+              style: TextStyle(
+                color: _ink,
                 fontSize: 11.5,
                 fontWeight: FontWeight.w700,
               ),
@@ -1937,12 +1824,13 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         const SizedBox(height: 6),
         DropdownButtonFormField<T>(
           key: key,
-          value: value,
+          initialValue: value,
+          dropdownColor: _surface,
           items: items,
           onChanged: onChanged,
           isExpanded: true,
-          style: const TextStyle(
-            color: _ink,
+          style: TextStyle(
+            color: _ink, fontFamily: 'Inter',
             fontSize: 13,
             fontWeight: FontWeight.w600,
           ),
@@ -1952,14 +1840,14 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
             contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             filled: true,
-            fillColor: const Color(0xFFF8FAFC),
+            fillColor: _surface,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: _line),
+              borderSide: BorderSide(color: _line),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: _line),
+              borderSide: BorderSide(color: _line),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
@@ -1989,8 +1877,8 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             const SizedBox(width: 5),
             Text(
               label,
-              style: const TextStyle(
-                color: Color(0xFF334155),
+              style: TextStyle(
+                color: _ink,
                 fontSize: 11.5,
                 fontWeight: FontWeight.w700,
               ),
@@ -2005,34 +1893,15 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
           ],
         ),
         const SizedBox(height: 6),
-        TextFormField(
+        ShadInput(
           key: key,
           initialValue: value,
-          style: const TextStyle(
+          style: TextStyle(
             color: _ink,
             fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-          decoration: InputDecoration(
-            isDense: true,
-            hintText: hintText,
-            hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            filled: true,
-            fillColor: const Color(0xFFF8FAFC),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: _line),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: _line),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: _maroon, width: 1.5),
-            ),
-          ),
+            fontWeight: FontWeight.w500),
+          placeholder: Text(hintText, style: TextStyle(fontSize: 12, color: _muted)),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           onChanged: onChanged,
         ),
       ],
@@ -2050,9 +1919,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
       margin: EdgeInsets.only(top: isTop ? 0 : 12, bottom: isTop ? 14 : 6),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: _panel,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: _line),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -2062,17 +1931,16 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
             totalItems == 1
                 ? 'Showing 1 team'
                 : 'Showing ${startIndex + 1}–$endIndex of $totalItems staged teams',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF334155),
-            ),
+              color: _ink),
           );
 
           final controlsWidget = Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
+              Text(
                 'Per page: ',
                 style: TextStyle(fontSize: 11.5, color: _muted, fontWeight: FontWeight.w600),
               ),
@@ -2081,16 +1949,17 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                 height: 28,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: _surface,
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                  border: Border.all(color: _line),
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<int>(
+                    dropdownColor: _surface,
                     key: ValueKey(isTop ? 'page_size_top' : 'page_size_bottom'),
                     value: _pageSize,
                     isDense: true,
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _ink),
+                    style: TextStyle(fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w800, color: _ink),
                     items: const [
                       DropdownMenuItem(value: 5, child: Text('5')),
                       DropdownMenuItem(value: 10, child: Text('10')),
@@ -2133,13 +2002,13 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: _surface,
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    border: Border.all(color: _line),
                   ),
                   child: Text(
                     '${_currentPage + 1} / $totalPages',
-                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: _ink),
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: _ink),
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -2204,9 +2073,9 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
+          color: _panel,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFFCBD5E1), style: BorderStyle.solid),
+          border: Border.all(color: _line, style: BorderStyle.solid),
         ),
         child: const Row(
           mainAxisAlignment: MainAxisAlignment.center,

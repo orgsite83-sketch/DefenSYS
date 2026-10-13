@@ -149,7 +149,7 @@ class TeamDeliverablesReviewDialog {
                                   children: [
                                     const SizedBox(height: 4),
                                     Text(
-                                      'Type: ${type == 'pre' ? 'Pre-Defense' : 'Post-Defense'}',
+                                      'Needed by: ${type == 'post' ? 'After defense' : d['requirement_timing'] == 'defense' ? 'Before defense' : 'Before endorsement / scheduling'}',
                                       style: TextStyle(
                                         fontSize: 12,
                                         color: isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,

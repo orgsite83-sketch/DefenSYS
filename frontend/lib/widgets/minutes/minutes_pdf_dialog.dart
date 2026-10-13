@@ -13,37 +13,40 @@ import '../export/defensys_pdf_viewer.dart';
 import '../file_viewer_dialog_layout.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
 
-/// Previews protected PDFs without creating a draft; adviser review can sign.
+/// Previews protected PDFs without creating a draft; authorized reviewers can sign.
 class MinutesPdfDialog extends ConsumerStatefulWidget {
   const MinutesPdfDialog({
     super.key,
     required this.scheduleId,
     required this.finalized,
     this.teamName = 'Defense',
-    this.onReviewAndSign,
     this.allowAdviserSigning = false,
-  }) : assert(!finalized || !allowAdviserSigning);
+    this.allowChairmanSigning = false,
+  }) : assert(!finalized || !(allowAdviserSigning || allowChairmanSigning)),
+       assert(!(allowAdviserSigning && allowChairmanSigning));
   final int scheduleId;
   final bool finalized;
   final String teamName;
-  final VoidCallback? onReviewAndSign;
   final bool allowAdviserSigning;
+  final bool allowChairmanSigning;
+
+  bool get allowsSigning => allowAdviserSigning || allowChairmanSigning;
 
   static Future<bool?> show(
     BuildContext context, {
     required int scheduleId,
     required bool finalized,
     String teamName = 'Defense',
-    VoidCallback? onReviewAndSign,
     bool allowAdviserSigning = false,
+    bool allowChairmanSigning = false,
   }) => showDialog<bool>(
     context: context,
     builder: (_) => MinutesPdfDialog(
       scheduleId: scheduleId,
       finalized: finalized,
       teamName: teamName,
-      onReviewAndSign: onReviewAndSign,
       allowAdviserSigning: allowAdviserSigning,
+      allowChairmanSigning: allowChairmanSigning,
     ),
   );
 
@@ -72,18 +75,23 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
     builder: (_) => const ESignatureUploadDialog(),
   );
 
-  Future<void> _signAsAdviser() async {
-    if (_isSigning || !_pdfReady || !_hasSignature) return;
+  Future<void> _signMinutes() async {
+    if (!widget.allowsSigning || _isSigning || !_pdfReady || !_hasSignature) {
+      return;
+    }
     setState(() {
       _isSigning = true;
       _signError = null;
     });
     try {
+      final endpoint = widget.allowChairmanSigning
+          ? 'sign-chairman'
+          : 'sign-adviser';
       final response = await ref
           .read(authenticatedHttpClientProvider)
           .post(
             Uri.parse(
-              '${ApiConfig.defenseMinutesUrl}/${widget.scheduleId}/sign-adviser/',
+              '${ApiConfig.defenseMinutesUrl}/${widget.scheduleId}/$endpoint/',
             ),
             headers: {'Content-Type': 'application/json'},
           )
@@ -214,13 +222,17 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
     ),
   );
 
-  Widget _adviserFooter(bool hasSignature) => Padding(
+  Widget _signingFooter(bool hasSignature) => Padding(
     padding: const EdgeInsets.all(16),
     child: LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 620;
         final sign = ShadButton(
-          key: const ValueKey('minutes-adviser-sign'),
+          key: ValueKey(
+            widget.allowChairmanSigning
+                ? 'minutes-chairman-sign'
+                : 'minutes-adviser-sign',
+          ),
           enabled:
               !_loading &&
               !_missing &&
@@ -228,7 +240,7 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
               _pdfReady &&
               hasSignature &&
               !_isSigning,
-          onPressed: _signAsAdviser,
+          onPressed: _signMinutes,
           width: compact ? double.infinity : null,
           backgroundColor: DefensysTokens.maroonOf(context),
           hoverBackgroundColor: DefensysTokens.isDark(context)
@@ -243,7 +255,13 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(LucideIcons.signature, size: 16),
-          child: Text(_isSigning ? 'Signing…' : 'Sign as project adviser'),
+          child: Text(
+            _isSigning
+                ? 'Signing…'
+                : widget.allowChairmanSigning
+                ? 'Sign as chairman'
+                : 'Sign as project adviser',
+          ),
         );
         final close = ShadButton.outline(
           enabled: !_isSigning,
@@ -252,7 +270,9 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
           child: const Text('Close'),
         );
         final note = Text(
-          'After you sign, the chairman adds the final signature.',
+          widget.allowChairmanSigning
+              ? 'Your signature finalizes the minutes and generates the official signed PDF.'
+              : 'After you sign, the chairman adds the final signature.',
           style: TextStyle(
             fontSize: 12,
             height: 1.5,
@@ -346,7 +366,7 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  widget.allowAdviserSigning
+                                  widget.allowsSigning
                                       ? 'Review minutes'
                                       : widget.teamName,
                                   maxLines: 1,
@@ -358,8 +378,8 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  widget.allowAdviserSigning
-                                      ? '${widget.teamName} · Adviser review'
+                                  widget.allowsSigning
+                                      ? '${widget.teamName} · ${widget.allowChairmanSigning ? 'Chairman' : 'Adviser'} review'
                                       : widget.finalized
                                       ? 'Official signed minutes'
                                       : 'Draft preview · Saved minutes',
@@ -415,7 +435,7 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
                       ),
                     ),
                     const Divider(height: 1),
-                    if (widget.allowAdviserSigning && !hasSignature)
+                    if (widget.allowsSigning && !hasSignature)
                       _signaturePrompt(),
                     Expanded(
                       child: _loading
@@ -451,7 +471,7 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
                             )
                           : DefensysPdfViewer(
                               pdfBytes: _bytes!,
-                              onReadyChanged: widget.allowAdviserSigning
+                              onReadyChanged: widget.allowsSigning
                                   ? (ready) {
                                       if (mounted) {
                                         setState(() => _pdfReady = ready);
@@ -460,36 +480,9 @@ class _MinutesPdfDialogState extends ConsumerState<MinutesPdfDialog> {
                                   : null,
                             ),
                     ),
-                    if (widget.allowAdviserSigning) ...[
+                    if (widget.allowsSigning) ...[
                       const Divider(height: 1),
-                      _adviserFooter(hasSignature),
-                    ],
-                    if (_bytes != null &&
-                        !_loading &&
-                        _error == null &&
-                        !_missing &&
-                        widget.onReviewAndSign != null) ...[
-                      const Divider(height: 1),
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Wrap(
-                          spacing: 12,
-                          runSpacing: 8,
-                          children: [
-                            ShadButton.outline(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                widget.onReviewAndSign!();
-                              },
-                              leading: const Icon(
-                                LucideIcons.signature,
-                                size: 16,
-                              ),
-                              child: const Text('Review and sign'),
-                            ),
-                          ],
-                        ),
-                      ),
+                      _signingFooter(hasSignature),
                     ],
                   ],
                 ),

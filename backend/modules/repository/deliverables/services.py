@@ -10,6 +10,7 @@ from defense.stages.models import DefenseStage
 from student_teams.models import StudentTeam
 from student_teams.services import is_stage_ready, mark_stage_locked, mark_stage_ready, was_stage_endorsed
 from .models import DeliverableSubmission
+from .timing import due_before_defense, scheduling_requirement
 
 
 class DynamicStageOptionsList(list):
@@ -62,6 +63,8 @@ def get_deliverable_definitions(stage_label):
                 'id': (d.deliverable_id or '').strip(),
                 'label': d.label,
                 'required': d.required,
+                'requirement_timing': d.requirement_timing,
+                'deadline_hours_before': d.deadline_hours_before,
                 'type': d.deliverable_type,
                 'archive_note': d.archive_note,
                 'archive_file_template': d.archive_file_template,
@@ -86,13 +89,18 @@ def get_deliverable_definitions_for_team(team, stage_label):
     """Load deliverable definitions configured for a Capstone stage or PIT event."""
     if not team or not stage_label:
         return []
-    if team.is_capstone:
+    return get_deliverable_definitions_for_scope('capstone' if team.is_capstone else 'pit', team.semester_id, stage_label)
+
+
+def get_deliverable_definitions_for_scope(scope, semester_id, stage_label):
+    """Use the record's term/scope when reading historical defenses."""
+    if scope == 'capstone':
         return get_deliverable_definitions(stage_label)
     
     # It's a PIT team! stage_label here is the event name.
     from defense.scheduler.models import PitEventGradingConfig
     config = PitEventGradingConfig.objects.filter(
-        semester=team.semester,
+        semester_id=semester_id,
         event_name__iexact=stage_label.strip()
     ).prefetch_related('deliverables').first()
     if not config:
@@ -102,6 +110,8 @@ def get_deliverable_definitions_for_team(team, stage_label):
             'id': (d.deliverable_id or '').strip(),
             'label': d.label,
             'required': d.required,
+            'requirement_timing': d.requirement_timing,
+            'deadline_hours_before': d.deadline_hours_before,
             'type': d.deliverable_type,
             'archive_note': d.archive_note,
             'archive_file_template': d.archive_file_template,
@@ -485,7 +495,7 @@ def required_complete(team, stage_label):
     definitions = get_deliverable_definitions_for_team(team, stage_label)
     required_items = [
         item for item in definitions
-        if item['type'] == DeliverableSubmission.TYPE_PRE and item['required']
+        if scheduling_requirement(item)
     ]
     if not required_items:
         return True
@@ -544,7 +554,7 @@ def team_stage_status(team, stage_label):
     # Check submissions
     submitted = submissions_for(team, stage_label)
     definitions = get_deliverable_definitions_for_team(team, stage_label)
-    required_items = [item for item in definitions if item['type'] == DeliverableSubmission.TYPE_PRE and item['required']]
+    required_items = [item for item in definitions if scheduling_requirement(item)]
     if not required_items:
         return 'complete'
         
@@ -743,6 +753,11 @@ def ensure_submission_editable(team, stage_label, deliverable_type, submission=N
     specific = deliverable_override(team, stage_label, submission.deliverable_id if submission else deliverable_id)
     if specific is False or (specific is None and manually_locked(team, stage_label, deliverable_type)):
         raise PermissionError('File uploads for this deliverable are locked by an Admin or PIT Lead.')
+    definition = definition_for(team, stage_label, submission.deliverable_id if submission else deliverable_id)
+    if definition and due_before_defense(definition):
+        from .timing import ensure_material_editable
+        ensure_material_editable(team, stage_label, definition, lock=transaction.get_connection().in_atomic_block)
+        return
     from grading.grades.models import TeamGrade
     stage_grade = TeamGrade.objects.filter(
         Q(defense_stage__label=stage_label) | Q(stage_label=stage_label),
@@ -835,6 +850,9 @@ def stage_payload(team, stage_label, evaluator=None):
     is_defense_today = active_schedules.filter(scheduled_date=today).exists()
     has_active_schedule = active_schedules.filter(status=DefenseSchedule.STATUS_SCHEDULED).exists()
     has_done_schedule = active_schedules.filter(status=DefenseSchedule.STATUS_DONE).exists()
+
+    from .timing import stage_schedule, material_row_state, materials_readiness
+    material_schedule = stage_schedule(team, stage_label)
 
     is_stage_officially_complete = False
     if is_capstone and stage_obj:
@@ -961,6 +979,9 @@ def stage_payload(team, stage_label, evaluator=None):
         except PermissionError:
             can_upload = False
 
+        if due_before_defense(item):
+            can_review_item = can_upload and not is_defense_done
+
         rows.append({
             'id': item['id'],
             'label': item['label'],
@@ -977,6 +998,9 @@ def stage_payload(team, stage_label, evaluator=None):
             'is_waived': is_waived,
             'can_faculty_review': can_review_item,
             'submission': submission_payload(submission) if submission else None,
+            **(material_row_state(item, submission, material_schedule) if due_before_defense(item) else {
+                'requirement_timing': 'scheduling', 'due_at': None,
+            }),
         })
 
     from defense.minutes.requirements import stage_minutes_requirement
@@ -985,7 +1009,7 @@ def stage_payload(team, stage_label, evaluator=None):
     rows.extend(system_items)
     pre_items = [item for item in rows if item['type'] == DeliverableSubmission.TYPE_PRE]
     archive_items = [item for item in rows if item['type'] == DeliverableSubmission.TYPE_POST]
-    required_items = [item for item in pre_items if item['required']]
+    required_items = [item for item in pre_items if scheduling_requirement(item)]
     archive_required_items = [item for item in archive_items if item['required'] and not item.get('is_waived')]
 
     is_pres = is_presentation_stage(team, stage_label)
@@ -1083,6 +1107,7 @@ def stage_payload(team, stage_label, evaluator=None):
         'pre_total': len(pre_items),
         'required_uploaded': sum(1 for item in required_items if item['uploaded']),
         'required_total': len(required_items),
+        'materials_readiness': materials_readiness(material_schedule, definitions=definitions, submitted=submitted),
         'archive_uploaded': sum(1 for item in archive_items if item['uploaded']),
         'archive_total': len(archive_items),
         'archive_required_uploaded': sum(1 for item in archive_required_items if item['uploaded']),
@@ -1099,7 +1124,7 @@ def stage_payload(team, stage_label, evaluator=None):
         'minutes_required': bool(generated_minutes and generated_minutes.get('required')),
         'documentation_complete': not generated_minutes or not generated_minutes.get('required') or generated_minutes['completed'],
         'deliverables_total': len(rows),
-        'deliverables_completed': sum(1 for item in rows if item.get('completed') or (
+        'deliverables_completed': sum(1 for item in rows if item.get('completed') or item.get('materials_submitted') or (
             item.get('submission') and item['submission']['status'] == DeliverableSubmission.STATUS_ACCEPTED
         )),
         'deliverables': rows,
@@ -1322,6 +1347,9 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
         raise ValueError('Deliverable does not exist for this stage.')
     if definition.get('source') == 'defense_minutes':
         raise PermissionError('Signed minutes are generated by the documenter signing workflow and cannot be uploaded.')
+    if due_before_defense(definition):
+        from .timing import validate_material_file
+        validate_material_file(definition, file_name, file)
     existing = DeliverableSubmission.objects.select_for_update().filter(
         team=team, stage_label=stage_label, deliverable_id=deliverable_id,
     ).first()
@@ -1532,7 +1560,7 @@ def endorse_team(team, stage_label):
             'No deliverables configured for this stage. Add them in Defense Stages or PIT configs before endorsement.'
         )
     if not required_complete(team, stage_label):
-        raise ValueError('All required pre-defense deliverables must be uploaded before endorsement.')
+        raise ValueError('All required scheduling deliverables must be cleared before endorsement.')
     if team.is_capstone:
         stage = defense_stage_for_label(stage_label)
         if stage is None:
@@ -1614,7 +1642,7 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
     if not is_post:
         stage = defense_stage_for_label(stage_label) if team.is_capstone else None
         endorsed = was_stage_endorsed(team, stage) if stage else team.ready_for_stage == stage_label
-        if endorsed and not (admin_unlocked or submission.revision_review_unlocked):
+        if endorsed and not (admin_unlocked or submission.revision_review_unlocked or (definition and due_before_defense(definition))):
             raise PermissionError('Cancel endorsement or ask an Admin to unlock pre-defense review first.')
 
     if not is_post and is_defense_done and not is_admin and not (admin_unlocked or submission.revision_review_unlocked):

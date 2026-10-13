@@ -30,6 +30,7 @@ import 'components/student_teams_stage_summary.dart';
 import 'components/student_teams_toolbar.dart';
 import 'dialogs/advisor_assignment_modal.dart';
 import 'dialogs/create_team_modal.dart';
+import 'dialogs/manage_sections_dialog.dart';
 
 enum TeamListMode {
   capstoneAdmin,
@@ -597,7 +598,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       'leader_id', 'adviser_id', 'adviser_name', 'team name', 'capstone project',
       'pit project', 'project', 'project title', 'adviser', 'team members', 'members',
       'section', 'class section', 'class_section', 'names', 'modules', 'module',
-      'system name', 'system_name', 'project manager', 'project_manager', 'pm', 'instructor',
+      'system name', 'system_name', 'project manager', 'project_manager', 'pm', 'instructor', 'instructor_name',
     };
 
     final cleanCols = result.csvColumns
@@ -1078,20 +1079,17 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
             clipBehavior: Clip.none,
             child: Column(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: StudentTeamsSearchField(
-                        controller: _searchController,
-                        isSaving: displayState.isSaving,
-                        isPitContext: _isPitContext(displayState),
-                        onSubmitted: (value) {
-                          ref.read(studentTeamsProvider.notifier).fetchTeams(search: value);
-                        },
-                      ),
-                    ),
+                StudentTeamsListToolbar(
+                  search: StudentTeamsSearchField(
+                    controller: _searchController,
+                    isSaving: displayState.isSaving,
+                    isPitContext: _isPitContext(displayState),
+                    onSubmitted: (value) {
+                      ref.read(studentTeamsProvider.notifier).fetchTeams(search: value);
+                    },
+                  ),
+                  controls: [
                     if (_isPitContext(displayState) && !_isPitLeadManager) ...[
-                      const SizedBox(width: 12),
                       PitYearLevelDropdownFilter(
                         currentYearLevel: displayState.yearLevel,
                         isSaving: displayState.isSaving,
@@ -1104,7 +1102,6 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                       ),
                     ],
                     if (_isPitContext(displayState)) ...[
-                      const SizedBox(width: 12),
                       PitEventDropdownFilter(
                         currentEventName: displayState.eventName,
                         pitEvents: displayState.pitEvents,
@@ -1119,7 +1116,6 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                       ),
                     ],
                     if (!_isPitLeadManager && !_isPitInstructor) ...[
-                      const SizedBox(width: 12),
                       StudentTeamsLevelFilter(
                         isPitLeadManager: _isPitLeadManager,
                         isPitInstructor: _isPitInstructor,
@@ -1134,6 +1130,19 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                         },
                       ),
                     ],
+                    ManageSectionsButton(
+                      onPressed: displayState.isLoading || displayState.isSaving ||
+                              _pitTermIsAudit ||
+                              _teamListScope != 'active'
+                          ? null
+                          : () => showManageSectionsDialog(
+                              context: context,
+                              level: _isPitContext(displayState) ? 'PIT' : 'Capstone',
+                              scope: _teamListScope,
+                              yearLevel: _pitLeadYear ?? displayState.yearLevel,
+                              section: displayState.section,
+                            ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),

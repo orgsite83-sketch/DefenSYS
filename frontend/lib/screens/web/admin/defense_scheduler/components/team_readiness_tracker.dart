@@ -290,7 +290,7 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
           const SizedBox(height: 10),
           Text(
             widget.subtitle ??
-                'Monitor team deliverable completeness. Teams must have all required pre-defense deliverables accepted by their instructor before they are ready for scheduling.',
+                'Scheduling requirements must be cleared before endorsement. Presentation materials follow their own deadlines after scheduling.',
             style: TextStyle(
               color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
               fontSize: 13.5,

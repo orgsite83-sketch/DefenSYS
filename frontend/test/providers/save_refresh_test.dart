@@ -8,6 +8,7 @@ import 'package:http/testing.dart';
 import 'package:defensys/navigation/web_section_navigation.dart';
 import 'package:defensys/services/api_http.dart';
 import 'package:defensys/services/app/data_refresh_provider.dart';
+import 'package:defensys/services/admin/user_management_provider.dart';
 import 'package:defensys/services/defense/defense_scheduler_provider.dart';
 import 'package:defensys/services/defense/defense_stages_provider.dart';
 import 'package:defensys/services/grading/rubric_engine_provider.dart';
@@ -17,6 +18,76 @@ import '../helpers/auth_test_overrides.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   tearDown(resetApiHttpClientForTesting);
+
+  for (final refreshStatus in [200, 503]) {
+    test(
+      'student import completes independently of a $refreshStatus directory reload',
+      () async {
+        final refresh = Completer<http.Response>();
+        final requests = <http.Request>[];
+        setApiHttpClientForTesting(
+          MockClient((request) async {
+            requests.add(request);
+            if (request.method == 'POST') {
+              return http.Response(
+                jsonEncode({
+                  'created_count': 256,
+                  'records_created_count': 256,
+                  'skipped_count': 0,
+                  'error_count': 0,
+                  'counts': {'students': 256},
+                }),
+                201,
+              );
+            }
+            return refresh.future;
+          }),
+        );
+        final container = ProviderContainer(overrides: authTestOverrides());
+        addTearDown(container.dispose);
+        final notifier = container.read(userManagementProvider.notifier);
+        final imported = await notifier
+            .bulkImport(
+              [
+                {
+                  'id_number': 'S001',
+                  'role': 'student',
+                  'year_level': '1st Year',
+                },
+              ],
+              studentContext: {'semester_id': 1},
+            )
+            .timeout(const Duration(seconds: 2));
+        expect(imported, isTrue);
+        await Future<void>.delayed(Duration.zero);
+        expect(refresh.isCompleted, isFalse);
+        expect(container.read(userManagementProvider).isSaving, isFalse);
+        expect(
+          container.read(userManagementProvider).message,
+          contains('256 users imported.'),
+        );
+        expect(
+          container.read(dataRefreshProvider)[DataArea.academicRecords],
+          1,
+        );
+        refresh.complete(
+          http.Response(
+            refreshStatus == 200
+                ? '{"users":[],"counts":{"students":256}}'
+                : '{"detail":"Directory temporarily unavailable"}',
+            refreshStatus,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(container.read(userManagementProvider).isSaving, isFalse);
+        expect(
+          container.read(userManagementProvider).message,
+          contains('256 users imported.'),
+        );
+        expect(requests.map((request) => request.method), ['POST', 'GET']);
+      },
+    );
+  }
 
   test(
     'published rubric appears on scheduler return without loading hidden pages',

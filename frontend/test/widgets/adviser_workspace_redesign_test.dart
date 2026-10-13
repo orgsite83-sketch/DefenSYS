@@ -119,6 +119,7 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     int? openedDefense;
+    String? openedStage;
 
     await pumpDefensysWidget(
       tester,
@@ -144,8 +145,12 @@ void main() {
             ],
           },
           facultyName: 'Ricardo Fontanilla',
+          onOpenGrades: (_, _) {},
           onOpenDeliverables: (_) {},
-          onOpenDefense: (teamId) => openedDefense = teamId,
+          onOpenDefense: (teamId, stageLabel) {
+            openedDefense = teamId;
+            openedStage = stageLabel;
+          },
         ),
       ),
       overrides: [
@@ -153,6 +158,7 @@ void main() {
           _DashboardDeliverablesNotifier.new,
         ),
         adviserDefenseProvider.overrideWith(_UpcomingDefenseNotifier.new),
+        adviserGradingProvider.overrideWith(_PublishedGradeNotifier.new),
       ],
     );
 
@@ -162,12 +168,17 @@ void main() {
     expect(find.textContaining('Room 302'), findsNothing);
     expect(find.text('Team Old'), findsNothing);
     expect(
-      find.text('Minutes are ready for your review and signature'),
+      find.text('Concept Proposal · Minutes ready to sign'),
       findsOneWidget,
     );
 
     await tester.tap(find.textContaining('Room 301'));
     expect(openedDefense, 7);
+    expect(openedStage, 'Concept Proposal');
+
+    await tester.tap(find.text('Concept Proposal · Minutes ready to sign'));
+    expect(openedDefense, 7);
+    expect(openedStage, 'Concept Proposal');
   });
 
   testWidgets('adviser dossier shows roster and the team Defense tab', (

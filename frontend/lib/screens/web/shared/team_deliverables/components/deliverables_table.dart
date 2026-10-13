@@ -17,6 +17,11 @@ import 'package:defensys/screens/web/shared/team_deliverables/dialogs/grade_deli
 import 'package:defensys/screens/web/shared/team_deliverables/dialogs/wpr_management_dialogs.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/screens/web/admin/grade_center/defense_workflow_panel.dart';
+import 'package:defensys/models/adviser_workflow.dart';
+import 'package:defensys/services/defense/team_defense_provider.dart';
+import 'package:defensys/widgets/adviser/workflow_reminder.dart';
+import 'package:defensys/widgets/repository/defense_material_readiness.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import '../deliverables_view_types.dart';
 import '../../project_archive/dialogs/stage_access_management_dialog.dart';
 
@@ -756,7 +761,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final currentStageObj = _stagePayload(stages, stageLabel);
     final endorsed = currentStageObj['endorsed'] == true;
     final subStatus = submission?['status']?.toString();
-    final locked = item['locked'] == true || subStatus == 'accepted';
+    final locked = item['can_upload'] is bool ? item['can_upload'] != true :
+        item['locked'] == true || subStatus == 'accepted';
     final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
     final canFacultyReview = item['can_faculty_review'] is bool
         ? item['can_faculty_review'] == true
@@ -1084,6 +1090,11 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             ],
           ),
           if (uploaded && submission != null) ...[
+            if (item['requirement_timing'] == 'defense') ...[
+              const SizedBox(height: 6),
+              Text('Due before defense: ${materialDeadlineLabel(item['due_at'])}',
+                  style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+            ],
             const SizedBox(height: 8),
             ..._buildFileList(
               team,
@@ -1189,7 +1200,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           alignment: WrapAlignment.spaceBetween,
           children: [
             const Text(
-              'Required Pre-Defense Check',
+              'Scheduling Clearance',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
@@ -1400,7 +1411,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               ? 'Endorse ${team['name']} for $selectedStage? '
                 'This confirms the team is verbally prepared and ready for presentation / demo scheduling.'
               : 'Endorse ${team['name']} for $selectedStage? '
-                'This confirms all required deliverables are complete '
+                'This confirms the scheduling requirements are cleared '
                 'and the team is ready for defense scheduling.',
         ),
         actions: [
@@ -1524,6 +1535,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final selectedStage = _effectiveSelectedStage(team);
 
     final stage = _stagePayload(stages, selectedStage);
+    final gradingState = ref.watch(adviserGradingProvider);
+    final gradingStatus = AdviserGradingStatus.fromGrade(
+      adviserGradeForTeam(team, selectedStage, gradingState.grades),
+      enabled: gradingState.adviserGradingEnabled, loading: gradingState.isLoading,
+      error: gradingState.error, officiallyComplete: stage['is_officially_complete'] == true);
+    final minutesToSign = adviserMinutesToSign(team, selectedStage,
+      ref.watch(teamDefenseProvider).schedules);
     var pre = _deliverables(stage, 'pre');
     var vault = _deliverables(stage, 'post');
     if (pre.isEmpty) {
@@ -1583,10 +1601,14 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 const SizedBox(width: 24),
                 _expandedTabButton(teamId, 2, 'Weekly Reports'),
                 const SizedBox(width: 24),
-                _expandedTabButton(teamId, 3, 'Defense'),
+                _expandedTabButton(teamId, 3, 'Defense',
+                  badgeText: minutesToSign.isEmpty ? null : 'Sign minutes${minutesToSign.length > 1 ? ' (${minutesToSign.length})' : ''}',
+                  badgeColor: AdviserWorkflowReminder.colorOf(context, AdviserWorkflowTone.success, onLightSurface: true)),
               ],
               const SizedBox(width: 24),
-              _expandedTabButton(teamId, 1, 'Grades & Rubric'),
+              _expandedTabButton(teamId, 1, 'Grades & Rubric',
+                badgeText: widget.isAdviser ? gradingStatus.badge : null,
+                badgeColor: AdviserWorkflowReminder.colorOf(context, gradingStatus.tone, onLightSurface: true)),
               if (!widget.isAdviser && widget.state.scope == 'capstone') ...[
                 const SizedBox(width: 24),
                 _expandedTabButton(teamId, 2, 'Weekly Reports'),
@@ -1624,17 +1646,19 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     ),
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    widget.state.scope == 'pit'
-                        ? 'Configure PIT events and deliverables in PIT Events Setup.'
-                        : 'Configure stages and deliverables in Defense Stages Setup.',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
+                  if (!widget.isAdviser) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      widget.state.scope == 'pit'
+                          ? 'Configure PIT events and deliverables in PIT Events Setup.'
+                          : 'Configure stages and deliverables in Defense Stages Setup.',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                      textAlign: TextAlign.center,
                     ),
-                    textAlign: TextAlign.center,
-                  ),
+                  ],
                 ],
               ),
             )
@@ -1661,6 +1685,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     total: requiredTotal,
                     accepted: (stage['pre'] as List? ?? []).whereType<Map>().where(
                       (item) => item['required'] == true &&
+                          item['requirement_timing'] != 'defense' &&
                           item['submission'] is Map && item['submission']['status'] == 'accepted',
                     ).length,
                     isPresentationOnly: isPresentationOnly,
@@ -1708,6 +1733,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               child: Divider(color: Color(0xFFE2E8F0), height: 1),
             ),
 
+            DefenseMaterialReadiness(readiness: Map<String, dynamic>.from(stage['materials_readiness'] as Map? ?? const {})),
             _sectionTitle('Pre-Defense Requirements'),
             const SizedBox(height: 8),
             if (isPresentationOnly)
@@ -1918,6 +1944,20 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
+  Widget _adviserTeamAction(int teamId, int tab, String label, IconData icon) => TextButton.icon(
+    key: ValueKey('adviser-team-action-$teamId-$tab'),
+    onPressed: () => setState(() {
+      _selectedTeamId = teamId;
+      _cardActiveTabs[teamId] = tab;
+      _showMobileDetail = true;
+    }),
+    style: TextButton.styleFrom(
+      foregroundColor: AdviserWorkflowReminder.colorOf(context, AdviserWorkflowTone.success, onLightSurface: true),
+      padding: const EdgeInsets.symmetric(horizontal: 6), minimumSize: const Size(0, 40),
+      textStyle: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 11, fontWeight: FontWeight.w600)),
+    icon: Icon(icon, size: 14), label: Text(label),
+  );
+
   Widget _buildCompactTeamCard(
     Map<String, dynamic> team,
     bool isSelected,
@@ -1933,18 +1973,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final badgeIcon = badge['icon'] as IconData;
 
     final gradingState = ref.watch(adviserGradingProvider);
-    final gradeRecord = gradingState.grades.firstWhere(
-      (g) => parseAsInt(g['team_id']) == teamId && g['stage_label']?.toString() == cardSelectedStageLabel,
-      orElse: () {
-        if (team['grade'] is Map && team['grade']['stage_label']?.toString() == cardSelectedStageLabel) {
-          return Map<String, dynamic>.from(team['grade'] as Map);
-        }
-        if (selectedStage['grade'] is Map && selectedStage['grade']['stage_label']?.toString() == cardSelectedStageLabel) {
-          return Map<String, dynamic>.from(selectedStage['grade'] as Map);
-        }
-        return <String, dynamic>{};
-      },
-    );
+    final gradeRecord = adviserGradeForTeam(team, cardSelectedStageLabel,
+      gradingState.grades) ?? <String, dynamic>{};
+    final gradingStatus = AdviserGradingStatus.fromGrade(gradeRecord,
+      enabled: gradingState.adviserGradingEnabled, loading: gradingState.isLoading,
+      error: gradingState.error, officiallyComplete: selectedStage['is_officially_complete'] == true);
+    final minutesToSign = adviserMinutesToSign(team, cardSelectedStageLabel,
+      ref.watch(teamDefenseProvider).schedules);
     final adviserScore = gradeRecord['adviser_score'];
     final showTeamMeta = !widget.isAdviser || adviserScore != null;
 
@@ -2055,6 +2090,15 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       ],
                     ),
                   ),
+                ],
+                if (widget.isAdviser && (gradingStatus.needsGrade || minutesToSign.isNotEmpty)) ...[
+                  const SizedBox(height: 6),
+                  Wrap(spacing: 6, runSpacing: 4, children: [
+                    if (gradingStatus.needsGrade)
+                      _adviserTeamAction(teamId, 1, 'Grade now', Icons.rate_review_outlined),
+                    if (minutesToSign.isNotEmpty)
+                      _adviserTeamAction(teamId, 3, 'Sign minutes', Icons.draw_outlined),
+                  ]),
                 ],
                 if (showTeamMeta) const SizedBox(height: 10),
                 if (showTeamMeta) Row(

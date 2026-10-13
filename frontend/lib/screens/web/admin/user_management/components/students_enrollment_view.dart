@@ -1,13 +1,16 @@
 import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import 'package:defensys/navigation/admin_route_paths.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/academic/student_academic_records_provider.dart';
 import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/defensys_skeleton.dart';
 import 'package:defensys/widgets/feedback/empty_state.dart';
+import 'package:defensys/widgets/feedback/action_banner.dart';
 
 import '../dialogs/student_profile_details_dialog.dart';
 
@@ -40,14 +43,6 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
 
   String _yearLevelFilter = 'ALL';
   String _sectionFilter = 'ALL';
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
-    });
-  }
 
   @override
   void dispose() {
@@ -168,29 +163,12 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
 
         if (activeSem == null && state.students.isNotEmpty) ...[
           const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFEF3C7),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFFDE68A)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.info_outline_rounded, color: Color(0xFF92400E), size: 20),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    '${state.students.length} student account(s) have been imported into the system, but no academic semester is active. Go to Academic Periods in the sidebar to create and activate a school year and semester.',
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF92400E),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          DefensysActionBanner(
+            title: 'Active Academic Semester Required',
+            description:
+                '${state.students.length} student account(s) have been imported, but no academic semester is active. Create and activate a school year and semester in Academic Periods to enroll them.',
+            actionLabel: 'Open Academic Periods',
+            onAction: () => context.go(AdminRoutes.academicPeriods),
           ),
         ],
 
@@ -288,6 +266,20 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
                           ? '${state.students.length} student account(s) exist in the system but have not been enrolled in an academic term yet. Use "Batch Enrollment" or "Add Single Student" to enroll them.'
                           : 'No student records match your active search criteria or filter parameters.',
                   size: DefensysEmptyStateSize.standard,
+                  primaryAction: activeSem == null && state.students.isNotEmpty
+                      ? DefensysEmptyAction(
+                          label: 'Open Academic Periods',
+                          icon: Icons.arrow_forward_rounded,
+                          onPressed: () => context.go(AdminRoutes.academicPeriods),
+                        )
+                      : state.students.isNotEmpty && state.records.isEmpty &&
+                            widget.onOpenBulkImport != null
+                      ? DefensysEmptyAction(
+                          label: 'Open Batch Enrollment',
+                          icon: Icons.arrow_forward_rounded,
+                          onPressed: widget.onOpenBulkImport!,
+                        )
+                      : null,
                 )
               else
                 _buildTable(visibleRows),

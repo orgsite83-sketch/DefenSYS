@@ -351,6 +351,7 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
     display_status = serializers.SerializerMethodField()
     grade_id = serializers.SerializerMethodField()
     grade_status = serializers.SerializerMethodField()
+    materials_readiness = serializers.SerializerMethodField()
 
     class Meta:
         model = DefenseSchedule
@@ -394,6 +395,7 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
             'display_status',
             'grade_id',
             'grade_status',
+            'materials_readiness',
             'panelists',
             'panelist_ids',
             'external_evaluators',
@@ -409,6 +411,32 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
 
     def get_latest_change(self, obj):
         return self.context.get('latest_changes', {}).get(str(obj.pk))
+
+    def get_materials_readiness(self, obj):
+        from repository.deliverables.services import get_deliverable_definitions_for_scope
+        from repository.deliverables.timing import due_before_defense, materials_readiness
+        from repository.deliverables.models import DeliverableSubmission
+
+        if not hasattr(self, '_material_definitions'):
+            self._material_definitions = {}
+        key = (obj.scope, obj.semester_id if obj.scope == 'pit' else None, obj.stage_label)
+        if key not in self._material_definitions:
+            self._material_definitions[key] = get_deliverable_definitions_for_scope(obj.scope, obj.semester_id, obj.stage_label)
+        definitions = self._material_definitions[key]
+        if not any(item.get('required') and due_before_defense(item) for item in definitions):
+            return materials_readiness(obj, definitions=definitions, submitted={})
+        if not hasattr(self, '_material_submissions'):
+            self._material_submissions = {}
+            records = self.parent.instance if self.parent and self.parent.instance is not None else [obj]
+            records = list(records)
+            team_ids = {item.team_id for item in records}
+            versions = {item.project_version for item in records}
+            for submission in DeliverableSubmission.all_objects.filter(team_id__in=team_ids,
+                    project_version__in=versions).only('team_id', 'project_version', 'stage_label', 'deliverable_id', 'status', 'file'):
+                submission_key = (submission.team_id, submission.project_version, submission.stage_label.lower())
+                self._material_submissions.setdefault(submission_key, {})[submission.deliverable_id] = submission
+        submitted = self._material_submissions.get((obj.team_id, obj.project_version, obj.stage_label.lower()), {})
+        return materials_readiness(obj, definitions=definitions, submitted=submitted)
 
     def get_grade_id(self, obj):
         try:
@@ -980,6 +1008,8 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
         from .operations import join_matching_session
         join_matching_session(schedule)
         self._sync_grade_row(schedule)
+        from .materials import notify_deadline
+        notify_deadline(schedule, actor)
         if schedule.documenter:
             send_documenter_assignment_notification(schedule)
         return schedule
@@ -1457,6 +1487,8 @@ class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
                 )
             if schedule.documenter:
                 send_documenter_assignment_notification(schedule)
+            from .materials import notify_deadline
+            notify_deadline(schedule, actor)
         return schedules
 
 

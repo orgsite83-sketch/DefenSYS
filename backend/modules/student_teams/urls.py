@@ -8,6 +8,7 @@ from .views import (
     TeamAdviserHistoryView,
     SectionAssignmentListCreateView,
     SectionAssignmentDetailView,
+    SectionDetailsView,
     StudentTeamSendReminderView,
 )
 
@@ -22,5 +23,6 @@ urlpatterns = [
     path('bulk-import/', BulkImportTeamsView.as_view(), name='student_teams_bulk_import'),
     path('<int:team_id>/remind/', StudentTeamSendReminderView.as_view(), name='student_team_send_reminder'),
     path('<int:team_id>/adviser-history/', TeamAdviserHistoryView.as_view(), name='team_adviser_history'),
+    path('<int:team_id>/section/', SectionDetailsView.as_view(), name='team_section_details'),
     path('<int:team_id>/', StudentTeamDetailView.as_view(), name='student_team_detail'),
 ]

@@ -89,11 +89,11 @@ class _FacultyStaffViewState extends ConsumerState<FacultyStaffView> {
     return 0;
   }
 
-  List<Map<String, dynamic>> _visibleUsers(List<Map<String, dynamic>> users) {
+  List<Map<String, dynamic>> _filteredUsers(List<Map<String, dynamic>> users) {
     final query = _searchController.text.trim().toLowerCase();
     var list = users.where((u) {
       final r = u['role']?.toString().toLowerCase() ?? '';
-      return r != 'student';
+      return r == 'faculty' || r == 'admin';
     }).toList();
 
     if (_selectedRole.isNotEmpty) {
@@ -122,14 +122,18 @@ class _FacultyStaffViewState extends ConsumerState<FacultyStaffView> {
         final id = u['username']?.toString().toLowerCase() ?? '';
         final fn = u['first_name']?.toString().toLowerCase() ?? '';
         final ln = u['last_name']?.toString().toLowerCase() ?? '';
+        final name = '${u['first_name'] ?? ''} ${u['last_name'] ?? ''}'
+            .trim()
+            .toLowerCase();
         final em = u['email']?.toString().toLowerCase() ?? '';
-        return id.contains(query) || fn.contains(query) || ln.contains(query) || em.contains(query);
+        return id.contains(query) ||
+            fn.contains(query) ||
+            ln.contains(query) ||
+            name.contains(query) ||
+            em.contains(query);
       }).toList();
     }
-    final start = _page * _rowsPerPage;
-    if (start >= list.length) return [];
-    final end = (start + _rowsPerPage).clamp(0, list.length);
-    return list.sublist(start, end);
+    return list;
   }
 
   Future<void> _showUserDialog([Map<String, dynamic>? user]) async {
@@ -206,7 +210,15 @@ class _FacultyStaffViewState extends ConsumerState<FacultyStaffView> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(userManagementProvider);
-    final visibleUsers = _visibleUsers(state.users);
+    final filteredUsers = _filteredUsers(state.users);
+    final lastPage = filteredUsers.isEmpty
+        ? 0
+        : (filteredUsers.length - 1) ~/ _rowsPerPage;
+    final currentPage = _page.clamp(0, lastPage);
+    final visibleUsers = filteredUsers
+        .skip(currentPage * _rowsPerPage)
+        .take(_rowsPerPage)
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -268,8 +280,9 @@ class _FacultyStaffViewState extends ConsumerState<FacultyStaffView> {
         UserManagementTable(
           state: state,
           visibleUsers: visibleUsers,
+          totalItems: filteredUsers.length,
           searchController: _searchController,
-          currentPage: _page,
+          currentPage: currentPage,
           rowsPerPage: _rowsPerPage,
           rowsPerPageOptions: _rowsPerPageOptions,
           onSearchSubmitted: (_) => setState(() => _page = 0),

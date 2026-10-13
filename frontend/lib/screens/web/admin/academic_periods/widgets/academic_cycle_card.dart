@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/feedback/empty_state.dart';
+import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class AcademicCycleCard extends StatelessWidget {
   const AcademicCycleCard({
@@ -26,7 +28,7 @@ class AcademicCycleCard extends StatelessWidget {
   final VoidCallback? onDeleteYear;
   final void Function(Map<String, dynamic> semester) onManageSemester;
   final void Function(Map<String, dynamic> semester, bool active)
-      onToggleSemesterActive;
+  onToggleSemesterActive;
   final void Function(Map<String, dynamic> semester) onDeleteSemester;
   final bool isSaving;
 
@@ -36,16 +38,21 @@ class AcademicCycleCard extends StatelessWidget {
   static const _maroon = DefensysUi.primaryMaroon;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      DefensysShadcnScope(child: _buildCycle(context));
+
+  Widget _buildCycle(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final borderColor = isDark ? DefensysTokens.mistBorder : _line;
     final surfaceColor = isDark ? DefensysTokens.mistSurface : Colors.white;
     final inkColor = isDark ? const Color(0xFFF4F4F5) : _ink;
     final mutedColor = isDark ? const Color(0xFFA1A1AA) : _muted;
-    final headerBgColor =
-        isDark ? const Color(0xFF18191E) : const Color(0xFFF8FAFC);
-    final headerTextColor =
-        isDark ? const Color(0xFFA1A1AA) : const Color(0xFF64748B);
+    final headerBgColor = isDark
+        ? const Color(0xFF18191E)
+        : const Color(0xFFF8FAFC);
+    final headerTextColor = isDark
+        ? const Color(0xFFA1A1AA)
+        : const Color(0xFF64748B);
 
     final rawSemesters = year['semesters'];
     final semesters = (rawSemesters is List)
@@ -56,24 +63,14 @@ class AcademicCycleCard extends StatelessWidget {
     final yearLabel = year['label']?.toString() ?? 'Unknown Year';
 
     return Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: surfaceColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: hasActive
-              ? (isDark ? const Color(0xFF059669) : const Color(0xFF10B981))
-              : borderColor,
-          width: hasActive ? 1.5 : 1.0,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 1),
-          ),
-        ],
+        border: Border.all(color: borderColor),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Year Header Card
@@ -107,76 +104,14 @@ class AcademicCycleCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  if (hasActive)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 3.5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? const Color(0xFF064E3B).withValues(alpha: 0.5)
-                            : const Color(0xFFECFDF5),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: isDark
-                              ? const Color(0xFF059669)
-                              : const Color(0xFF10B981),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF10B981),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            'CURRENTLY ACTIVE',
-                            style: TextStyle(
-                              color: isDark
-                                  ? const Color(0xFF34D399)
-                                  : const Color(0xFF047857),
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.4,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? const Color(0xFF27272A)
-                            : const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: isDark
-                              ? const Color(0xFF3F3F46)
-                              : const Color(0xFFE2E8F0),
-                        ),
-                      ),
-                      child: Text(
-                        semesters.isEmpty ? 'EMPTY' : 'ARCHIVED',
-                        style: TextStyle(
-                          color: mutedColor,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.4,
-                        ),
-                      ),
-                    ),
+                  _statusBadge(
+                    label: hasActive
+                        ? 'Currently active'
+                        : (semesters.isEmpty ? 'Empty' : 'Archived'),
+                    isDark: isDark,
+                    active: hasActive,
+                    showDot: hasActive,
+                  ),
                   const Spacer(),
                   Text(
                     '${semesters.length} ${semesters.length == 1 ? "Term" : "Terms"}',
@@ -206,6 +141,7 @@ class AcademicCycleCard extends StatelessWidget {
                       ),
                       minimumSize: const Size(0, 32),
                       textStyle: const TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -222,8 +158,9 @@ class AcademicCycleCard extends StatelessWidget {
                     splashRadius: 18,
                     color: surfaceColor,
                     elevation: 4,
-                    shadowColor:
-                        Colors.black.withValues(alpha: isDark ? 0.4 : 0.12),
+                    shadowColor: Colors.black.withValues(
+                      alpha: isDark ? 0.4 : 0.12,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                       side: BorderSide(color: borderColor),
@@ -259,7 +196,9 @@ class AcademicCycleCard extends StatelessWidget {
                       PopupMenuItem<String>(
                         value: 'delete',
                         enabled:
-                            semesters.isEmpty && !isSaving && onDeleteYear != null,
+                            semesters.isEmpty &&
+                            !isSaving &&
+                            onDeleteYear != null,
                         height: 38,
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -267,15 +206,16 @@ class AcademicCycleCard extends StatelessWidget {
                             Icon(
                               Icons.delete_outline_rounded,
                               size: 16,
-                              color: (semesters.isEmpty &&
+                              color:
+                                  (semesters.isEmpty &&
                                       !isSaving &&
                                       onDeleteYear != null)
                                   ? (isDark
-                                      ? const Color(0xFFF87171)
-                                      : const Color(0xFFDC2626))
+                                        ? const Color(0xFFF87171)
+                                        : const Color(0xFFDC2626))
                                   : (isDark
-                                      ? const Color(0xFF52525B)
-                                      : const Color(0xFFCBD5E1)),
+                                        ? const Color(0xFF52525B)
+                                        : const Color(0xFFCBD5E1)),
                             ),
                             const SizedBox(width: 10),
                             Flexible(
@@ -283,15 +223,16 @@ class AcademicCycleCard extends StatelessWidget {
                                 'Delete School Year',
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: (semesters.isEmpty &&
+                                  color:
+                                      (semesters.isEmpty &&
                                           !isSaving &&
                                           onDeleteYear != null)
                                       ? (isDark
-                                          ? const Color(0xFFF87171)
-                                          : const Color(0xFFDC2626))
+                                            ? const Color(0xFFF87171)
+                                            : const Color(0xFFDC2626))
                                       : (isDark
-                                          ? const Color(0xFF52525B)
-                                          : const Color(0xFFCBD5E1)),
+                                            ? const Color(0xFF52525B)
+                                            : const Color(0xFFCBD5E1)),
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -364,22 +305,28 @@ class AcademicCycleCard extends StatelessWidget {
                     _headerCell('STATUS', 200, headerTextColor),
                     _headerCell('PROGRAM TRACKS', 220, headerTextColor),
                     _headerCell('EVALUATION CONTROLS', 160, headerTextColor),
-                    _headerCell('ACTIONS', 160, headerTextColor,
-                        alignment: Alignment.centerRight),
+                    _headerCell(
+                      'ACTIONS',
+                      160,
+                      headerTextColor,
+                      alignment: Alignment.centerRight,
+                    ),
                   ],
                 ),
               ),
 
               // Rows
-              ...semesters.map((sem) => _buildSemesterRow(
-                    context,
-                    sem,
-                    isDark: isDark,
-                    borderColor: borderColor,
-                    surfaceColor: surfaceColor,
-                    inkColor: inkColor,
-                    mutedColor: mutedColor,
-                  )),
+              ...semesters.map(
+                (sem) => _buildSemesterRow(
+                  context,
+                  sem,
+                  isDark: isDark,
+                  borderColor: borderColor,
+                  surfaceColor: surfaceColor,
+                  inkColor: inkColor,
+                  mutedColor: mutedColor,
+                ),
+              ),
             ],
           ],
         ],
@@ -441,7 +388,7 @@ class AcademicCycleCard extends StatelessWidget {
       height: 52,
       decoration: BoxDecoration(
         color: isActive
-            ? (isDark ? const Color(0xFF28181A) : const Color(0xFFFFF9F9))
+            ? (isDark ? const Color(0xFF1A211E) : const Color(0xFFF7FAF8))
             : surfaceColor,
         border: Border(bottom: BorderSide(color: borderColor)),
       ),
@@ -458,7 +405,7 @@ class AcademicCycleCard extends StatelessWidget {
                   Icon(
                     Icons.calendar_today_outlined,
                     size: 14,
-                    color: isActive ? _maroon : mutedColor,
+                    color: mutedColor,
                   ),
                   const SizedBox(width: 8),
                   Flexible(
@@ -467,8 +414,9 @@ class AcademicCycleCard extends StatelessWidget {
                       style: TextStyle(
                         color: inkColor,
                         fontSize: 13.5,
-                        fontWeight:
-                            isActive ? FontWeight.w700 : FontWeight.w600,
+                        fontWeight: isActive
+                            ? FontWeight.w700
+                            : FontWeight.w600,
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -486,87 +434,12 @@ class AcademicCycleCard extends StatelessWidget {
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
-                child: isActive
-                    ? Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3.5),
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? const Color(0xFF064E3B).withValues(alpha: 0.4)
-                              : const Color(0xFFECFDF5),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: isDark
-                                ? const Color(0xFF059669).withValues(alpha: 0.5)
-                                : const Color(0xFFA7F3D0),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF10B981),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Active (Write-Enabled)',
-                              style: TextStyle(
-                                color: isDark
-                                    ? const Color(0xFF34D399)
-                                    : const Color(0xFF047857),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3.5),
-                        decoration: BoxDecoration(
-                          color: isDark
-                              ? const Color(0xFF27272A)
-                              : const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: isDark
-                                ? const Color(0xFF3F3F46)
-                                : const Color(0xFFE2E8F0),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: BoxDecoration(
-                                color: isDark
-                                    ? const Color(0xFF71717A)
-                                    : const Color(0xFF94A3B8),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Upcoming',
-                              style: TextStyle(
-                                color: isDark
-                                    ? const Color(0xFFA1A1AA)
-                                    : const Color(0xFF64748B),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                child: _statusBadge(
+                  label: isActive ? 'Active (Write-Enabled)' : 'Upcoming',
+                  isDark: isDark,
+                  active: isActive,
+                  showDot: true,
+                ),
               ),
             ),
           ),
@@ -583,8 +456,10 @@ class AcademicCycleCard extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2.5,
+                      ),
                       decoration: BoxDecoration(
                         color: isDark
                             ? const Color(0xFF31151A)
@@ -607,8 +482,10 @@ class AcademicCycleCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 5),
                     Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2.5,
+                      ),
                       decoration: BoxDecoration(
                         color: isDark
                             ? const Color(0xFF1E1B4B)
@@ -648,17 +525,9 @@ class AcademicCycleCard extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _evalChip(
-                      label: 'Peer',
-                      on: peerOn,
-                      isDark: isDark,
-                    ),
+                    _evalChip(label: 'Peer', on: peerOn, isDark: isDark),
                     const SizedBox(width: 6),
-                    _evalChip(
-                      label: 'Adviser',
-                      on: adviserOn,
-                      isDark: isDark,
-                    ),
+                    _evalChip(label: 'Adviser', on: adviserOn, isDark: isDark),
                   ],
                 ),
               ),
@@ -681,16 +550,18 @@ class AcademicCycleCard extends StatelessWidget {
                       backgroundColor: isActive
                           ? _maroon
                           : (isDark
-                              ? const Color(0xFF27272A)
-                              : const Color(0xFFF1F5F9)),
+                                ? const Color(0xFF27272A)
+                                : const Color(0xFFF1F5F9)),
                       foregroundColor: isActive
                           ? Colors.white
                           : (isDark
-                              ? const Color(0xFFE4E4E7)
-                              : const Color(0xFF334155)),
+                                ? const Color(0xFFE4E4E7)
+                                : const Color(0xFF334155)),
                       elevation: 0,
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       minimumSize: const Size(0, 30),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(6),
@@ -698,11 +569,12 @@ class AcademicCycleCard extends StatelessWidget {
                           color: isActive
                               ? Colors.transparent
                               : (isDark
-                                  ? const Color(0xFF3F3F46)
-                                  : const Color(0xFFE2E8F0)),
+                                    ? const Color(0xFF3F3F46)
+                                    : const Color(0xFFE2E8F0)),
                         ),
                       ),
                       textStyle: const TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
                         fontSize: 11.5,
                         fontWeight: FontWeight.w600,
                       ),
@@ -719,8 +591,9 @@ class AcademicCycleCard extends StatelessWidget {
                     splashRadius: 18,
                     color: surfaceColor,
                     elevation: 4,
-                    shadowColor:
-                        Colors.black.withValues(alpha: isDark ? 0.4 : 0.12),
+                    shadowColor: Colors.black.withValues(
+                      alpha: isDark ? 0.4 : 0.12,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                       side: BorderSide(color: borderColor),
@@ -767,11 +640,11 @@ class AcademicCycleCard extends StatelessWidget {
                               size: 16,
                               color: (!isActive && !isSaving)
                                   ? (isDark
-                                      ? const Color(0xFFF87171)
-                                      : const Color(0xFFDC2626))
+                                        ? const Color(0xFFF87171)
+                                        : const Color(0xFFDC2626))
                                   : (isDark
-                                      ? const Color(0xFF52525B)
-                                      : const Color(0xFFCBD5E1)),
+                                        ? const Color(0xFF52525B)
+                                        : const Color(0xFFCBD5E1)),
                             ),
                             const SizedBox(width: 10),
                             Flexible(
@@ -781,11 +654,11 @@ class AcademicCycleCard extends StatelessWidget {
                                 style: TextStyle(
                                   color: (!isActive && !isSaving)
                                       ? (isDark
-                                          ? const Color(0xFFF87171)
-                                          : const Color(0xFFDC2626))
+                                            ? const Color(0xFFF87171)
+                                            : const Color(0xFFDC2626))
                                       : (isDark
-                                          ? const Color(0xFF52525B)
-                                          : const Color(0xFFCBD5E1)),
+                                            ? const Color(0xFF52525B)
+                                            : const Color(0xFFCBD5E1)),
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -817,30 +690,62 @@ class AcademicCycleCard extends StatelessWidget {
     required bool on,
     required bool isDark,
   }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: on
-            ? (isDark
-                ? const Color(0xFF064E3B).withValues(alpha: 0.4)
-                : const Color(0xFFECFDF5))
-            : (isDark ? const Color(0xFF27272A) : const Color(0xFFF1F5F9)),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(
-          color: on
-              ? (isDark ? const Color(0xFF059669) : const Color(0xFFA7F3D0))
-              : (isDark ? const Color(0xFF3F3F46) : const Color(0xFFE2E8F0)),
-        ),
+    return _statusBadge(
+      label: '$label: ${on ? "On" : "Off"}',
+      isDark: isDark,
+      active: on,
+    );
+  }
+
+  Widget _statusBadge({
+    required String label,
+    required bool isDark,
+    bool active = false,
+    bool showDot = false,
+  }) {
+    final background = active
+        ? (isDark ? const Color(0xFF203329) : const Color(0xFFF0F7F2))
+        : (isDark ? const Color(0xFF27272A) : const Color(0xFFF8FAFC));
+    final foreground = active
+        ? (isDark ? const Color(0xFFA6CDB4) : const Color(0xFF2D6243))
+        : (isDark ? const Color(0xFFA1A1AA) : _muted);
+    final border = active
+        ? (isDark ? const Color(0xFF365241) : const Color(0xFFD5E5DA))
+        : (isDark ? DefensysTokens.mistBorder : _line);
+
+    return ShadBadge.secondary(
+      backgroundColor: background,
+      hoverBackgroundColor: background,
+      foregroundColor: foreground,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(6),
+        side: BorderSide(color: border),
       ),
-      child: Text(
-        '$label: ${on ? "On" : "Off"}',
-        style: TextStyle(
-          color: on
-              ? (isDark ? const Color(0xFF34D399) : const Color(0xFF047857))
-              : (isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8)),
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showDot) ...[
+            Container(
+              width: 5,
+              height: 5,
+              decoration: BoxDecoration(
+                color: foreground,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              color: foreground,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 0,
+            ),
+          ),
+        ],
       ),
     );
   }

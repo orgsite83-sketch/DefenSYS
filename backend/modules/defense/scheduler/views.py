@@ -25,7 +25,7 @@ from authentication_access_control.guest_authentication import (
     IsGuestPanelist,
 )
 from authentication_access_control.models import SystemAuditLog
-from authentication_access_control.scopes import visible_schedules_for
+from authentication_access_control.scopes import manageable_schedules_for, visible_schedules_for
 from user_management.permissions import IsPanelist, CanManageModule
 from user_management.models import GuestPanelistCode
 from user_management.external_evaluators import invitation_payload
@@ -69,6 +69,17 @@ def counts_payload(queryset=None, base_queryset=None):
 
 
 from .services import schedule_audit_values
+
+
+class DefenseMaterialDeadlineView(APIView):
+    permission_classes = [CanManageModule]
+
+    def post(self, request, schedule_id):
+        from .materials import MaterialDeadlineSerializer, extend_material_deadline
+        serializer = MaterialDeadlineSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        schedule = extend_material_deadline(request.user, schedule_id, serializer.validated_data, request=request)
+        return Response({'schedule': DefenseScheduleSerializer(schedule).data})
 
 
 def list_payload(queryset=None, base_queryset=None, user=None, include_options=True):
@@ -400,7 +411,7 @@ class DefenseScheduleDetailView(APIView):
     permission_classes = [CanManageModule]
 
     def get_object(self, schedule_id):
-        return get_object_or_404(visible_schedules_for(self.request.user), pk=schedule_id)
+        return get_object_or_404(manageable_schedules_for(self.request.user), pk=schedule_id)
 
     def patch(self, request, schedule_id):
         schedule = self.get_object(schedule_id)

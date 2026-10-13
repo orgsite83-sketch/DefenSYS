@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
+import '../../../../../widgets/shadcn/defensys_shadcn_scope.dart';
+import 'stage_deliverable_overview.dart';
 
 class StageMinutesSettings extends StatelessWidget {
   const StageMinutesSettings({
@@ -7,9 +10,12 @@ class StageMinutesSettings extends StatelessWidget {
     required this.requiredMinutes,
     required this.enabled,
     required this.onChanged,
+    this.errorText,
   });
-  final bool requiredMinutes, enabled;
+  final bool? requiredMinutes;
+  final bool enabled;
   final ValueChanged<bool> onChanged;
+  final String? errorText;
 
   @override
   Widget build(BuildContext context) {
@@ -93,10 +99,15 @@ class StageMinutesSettings extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          requiredMinutes
-              ? 'Adds a system-generated signed-minutes deliverable in Step 3. Documenter assignment is required when scheduling.'
-              : 'No documenter assignment or signed-minutes requirement for this stage.',
-          style: theme.textTheme.bodySmall,
+          errorText ??
+              (requiredMinutes == null
+                  ? 'Choose whether this stage requires signed minutes.'
+                  : requiredMinutes == true
+                  ? 'Adds a system-generated signed-minutes deliverable in Step 3. Documenter assignment is required when scheduling.'
+                  : 'No documenter assignment or signed-minutes requirement for this stage.'),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: errorText == null ? null : theme.colorScheme.error,
+          ),
         ),
       ],
     );
@@ -111,18 +122,22 @@ class StageMinutesDeliverableCard extends StatelessWidget {
     required this.stageName,
     required this.enabled,
     required this.onConfigure,
+    required this.expanded,
+    required this.onToggle,
   });
   final TextEditingController number, name;
   final String stageName;
   final bool enabled;
   final VoidCallback onConfigure;
+  final bool expanded;
+  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
@@ -137,81 +152,107 @@ class StageMinutesDeliverableCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'System-generated Defense Records',
+                  'System records (1)',
                   style: theme.textTheme.titleSmall,
                 ),
               ),
-              Text('1 item', style: theme.textTheme.bodySmall),
             ],
           ),
-          const SizedBox(height: 6),
-          Text(
-            'The signed PDF is provided automatically by the documenter workflow.',
-            style: theme.textTheme.bodySmall,
-          ),
-          const Divider(height: 28),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final numberField = TextField(
-                key: const ValueKey('minutes-deliverable-number'),
-                controller: number,
-                readOnly: !enabled,
-                maxLength: 20,
-                decoration: const InputDecoration(
-                  labelText: 'Official deliverable number',
-                  counterText: '',
-                  border: OutlineInputBorder(),
+          const SizedBox(height: 10),
+          if (!expanded)
+            StageCompactRecordRow(
+              title: 'Signed Minutes',
+              summary: 'PDF · Required · Created by assigned documenter',
+              icon: Icons.description_outlined,
+              onTap: onToggle,
+            )
+          else ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: DefensysTokens.borderOf(context)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Signed Minutes', style: theme.textTheme.titleSmall),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Created automatically by the assigned documenter after the required signatures.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  const Divider(height: 24),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final numberField = TextField(
+                        key: const ValueKey('minutes-deliverable-number'),
+                        controller: number,
+                        readOnly: !enabled,
+                        maxLength: 20,
+                        decoration: const InputDecoration(
+                          labelText: 'Official deliverable number',
+                          counterText: '',
+                          border: OutlineInputBorder(),
+                        ),
+                      );
+                      final nameField = TextField(
+                        key: const ValueKey('minutes-deliverable-name'),
+                        controller: name,
+                        readOnly: !enabled,
+                        maxLength: 180,
+                        decoration: InputDecoration(
+                          labelText: 'Official deliverable name',
+                          hintText: 'Signed Minutes - $stageName',
+                          counterText: '',
+                          border: const OutlineInputBorder(),
+                        ),
+                      );
+                      return constraints.maxWidth < 600
+                          ? Column(
+                              children: [
+                                numberField,
+                                const SizedBox(height: 12),
+                                nameField,
+                              ],
+                            )
+                          : Row(
+                              children: [
+                                Expanded(child: numberField),
+                                const SizedBox(width: 12),
+                                Expanded(flex: 3, child: nameField),
+                              ],
+                            );
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'PDF · Created by assigned documenter · Applies to conducted defenses regardless of result.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  DefensysShadcnScope(
+                    child: ShadButton.link(
+                      size: ShadButtonSize.sm,
+                      onPressed: onConfigure,
+                      child: const Text('Change in Stage Details'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: DefensysShadcnScope(
+                child: ShadButton.ghost(
+                  size: ShadButtonSize.sm,
+                  onPressed: onToggle,
+                  child: const Text('Done editing'),
                 ),
-              );
-              final nameField = TextField(
-                key: const ValueKey('minutes-deliverable-name'),
-                controller: name,
-                readOnly: !enabled,
-                maxLength: 180,
-                decoration: InputDecoration(
-                  labelText: 'Official deliverable name',
-                  hintText: 'Signed Minutes - $stageName',
-                  counterText: '',
-                  border: const OutlineInputBorder(),
-                ),
-              );
-              return constraints.maxWidth < 600
-                  ? Column(
-                      children: [
-                        numberField,
-                        const SizedBox(height: 12),
-                        nameField,
-                      ],
-                    )
-                  : Row(
-                      children: [
-                        Expanded(child: numberField),
-                        const SizedBox(width: 12),
-                        Expanded(flex: 3, child: nameField),
-                      ],
-                    );
-            },
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 24,
-            runSpacing: 8,
-            children: const [
-              Text('Responsible: Assigned documenter'),
-              Text('Source: System generated'),
-              Text('Format: PDF'),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Completed after all required signatures. Applies to conducted defenses regardless of result.',
-            style: theme.textTheme.bodySmall,
-          ),
-          TextButton.icon(
-            onPressed: onConfigure,
-            icon: const Icon(Icons.settings_outlined, size: 16),
-            label: const Text('Required · Set in Stage Details'),
-          ),
+              ),
+            ),
+          ],
         ],
       ),
     );

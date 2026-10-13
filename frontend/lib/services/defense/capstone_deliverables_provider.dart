@@ -120,6 +120,9 @@ class StudentTaskBadgeHelper {
       return true;
     }
     if (item['required'] != true) return false;
+    if (item['requirement_timing'] == 'defense' && item['materials_submitted'] is bool) {
+      return item['materials_submitted'] != true;
+    }
 
     if (!uploaded || submission == null || submission.isEmpty || isRejected) {
       return true;

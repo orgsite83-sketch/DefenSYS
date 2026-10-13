@@ -375,6 +375,8 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
       itemBuilder: (context, index) {
         final section = sortedSections[index];
         final sectionTeams = sectionsMap[section]!;
+        final systemName = sectionTeams.first['system_name']?.toString().trim() ?? '';
+        final managerName = sectionTeams.first['project_manager_name']?.toString().trim() ?? '';
 
         final selectedAdviser = _selectedSectionAdviserFilter[section];
         final displayedTeams = (selectedAdviser == null || selectedAdviser == 'all')
@@ -455,6 +457,23 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
               ),
               children: [
                 Divider(height: 1, color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
+                if (systemName.isNotEmpty || managerName.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Wrap(
+                        spacing: 24,
+                        runSpacing: 8,
+                        children: [
+                          if (systemName.isNotEmpty)
+                            Text('Shared system: $systemName', style: TextStyle(color: _textSecondary, fontSize: 12)),
+                          if (managerName.isNotEmpty)
+                            Text('Project manager: $managerName', style: TextStyle(color: _textSecondary, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                  ),
                 if (!isPit) ...[
                   Builder(
                     builder: (context) {

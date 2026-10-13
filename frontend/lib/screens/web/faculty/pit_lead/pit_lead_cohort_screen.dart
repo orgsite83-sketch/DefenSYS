@@ -282,6 +282,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
             _refreshAllData();
             _closeSubView();
           }
+          return success;
         },
       );
     }
@@ -1287,28 +1288,33 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
                           ),
                           child: const Text('Change'),
                         ),
-                        TextButton(
-                          onPressed: isSaving || id == null
-                              ? null
-                              : () async {
-                                  final success = await ref
-                                      .read(pitInstructorProvider.notifier)
-                                      .setAssignmentActive(id, !active);
-                                  if (success && mounted) {
-                                    showSuccessToast(
-                                      context,
-                                      active ? 'Instructor deactivated.' : 'Instructor restored.',
-                                    );
-                                    _refreshAllData();
-                                  }
-                                },
-                          style: TextButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            foregroundColor: active ? const Color(0xFFDC2626) : const Color(0xFF059669),
+                        if (!active)
+                          TextButton(
+                            onPressed: isSaving || id == null
+                                ? null
+                                : () async {
+                                    final success = await ref
+                                        .read(pitInstructorProvider.notifier)
+                                        .setAssignmentActive(id, true);
+                                    if (!mounted || !context.mounted) return;
+                                    if (success) {
+                                      showSuccessToast(context, 'Instructor restored.');
+                                      _refreshAllData();
+                                    } else {
+                                      showErrorToast(
+                                        context,
+                                        ref.read(pitInstructorProvider).error ??
+                                            'Failed to restore instructor.',
+                                      );
+                                    }
+                                  },
+                            style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              foregroundColor: const Color(0xFF059669),
+                            ),
+                            child: const Text('Restore'),
                           ),
-                          child: Text(active ? 'Deactivate' : 'Restore'),
-                        ),
                       ],
                     );
                   },

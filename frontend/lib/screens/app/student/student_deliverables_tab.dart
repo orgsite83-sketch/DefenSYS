@@ -19,6 +19,7 @@ import '../../../toasts/feedback_toast.dart';
 import '../../../utils/progress_upload.dart';
 import '../../../utils/universal_file_viewer.dart';
 import '../../../widgets/export/deliverable_document_reader_screen.dart';
+import '../../../widgets/repository/defense_material_readiness.dart';
 
 /// Smooth dashed border painter for the upload dropzone container.
 class _DashedRectPainter extends CustomPainter {
@@ -473,9 +474,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildRequiredProgressBlock(pre),
+                        _buildRequiredProgressBlock(pre.where((item) => item['requirement_timing'] != 'defense').toList()),
                         const SizedBox(height: 16),
-                        _sectionTitle('Pre-Defense Requirements', showRedDot: hasPendingPre),
+                        _sectionTitle('Scheduling Requirements', showRedDot: hasPendingPre),
                         const SizedBox(height: 8),
                         if (pre.isEmpty)
                           const Padding(
@@ -490,7 +491,16 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                             ),
                           )
                         else
-                          ...pre.map((item) => _deliverableRow(team, state.selectedStage, item, endorsed, stageGrade)),
+                          ...pre.where((item) => item['requirement_timing'] != 'defense')
+                              .map((item) => _deliverableRow(team, state.selectedStage, item, endorsed, stageGrade)),
+                        if (pre.any((item) => item['requirement_timing'] == 'defense')) ...[
+                          DefenseMaterialReadiness(readiness: Map<String, dynamic>.from(
+                              selectedStage['materials_readiness'] as Map? ?? const {})),
+                          _sectionTitle('Before Your Defense'),
+                          const SizedBox(height: 8),
+                          ...pre.where((item) => item['requirement_timing'] == 'defense')
+                              .map((item) => _deliverableRow(team, state.selectedStage, item, endorsed, stageGrade)),
+                        ],
                         const SizedBox(height: 20),
                         if (stageGrade != null) ...[
                           _buildDirectivesCard(stageGrade),
@@ -565,8 +575,13 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
   Widget _buildRequiredProgressBlock(List<Map<String, dynamic>> pre) {
     final requiredItems = pre.where((item) => item['required'] == true).toList();
     final total = requiredItems.length;
-    final done = requiredItems.where((item) => item['uploaded'] == true || item['submission'] != null).length;
-    final isAllDone = total > 0 && done == total;
+    final done = requiredItems.where((item) {
+      final submission = item['submission'] as Map?;
+      return submission != null && (widget.isCapstone
+          ? submission['status'] == 'accepted'
+          : submission['status'] != 'rejected');
+    }).length;
+    final isAllDone = total == 0 || done == total;
     final double progressPercent = total > 0 ? (done / total).clamp(0.0, 1.0) : 0.0;
     final int percentInt = (progressPercent * 100).round();
     final remaining = total - done;
@@ -631,7 +646,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     const SizedBox(width: 5),
                     Text(
                       isAllDone
-                          ? 'Clear for Defense'
+                          ? 'Clear for Scheduling'
                           : '$done / $total Cleared',
                       style: TextStyle(
                         fontSize: 10.5,
@@ -650,7 +665,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
 
           // Row 2: Prominent Title
           const Text(
-            'Pre-Defense Clearance Status',
+            'Scheduling Clearance Status',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
@@ -689,18 +704,22 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   color: isAllDone ? const Color(0xFF16A34A) : DefensysTokens.maroon,
                 ),
               ),
-              Text(
-                total == 0
-                    ? 'No requirements configured'
-                    : (isAllDone
-                        ? 'All documents ready'
-                        : (remaining == 1
-                            ? 'Awaiting 1 document'
-                            : 'Awaiting $remaining documents')),
-                style: const TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF64748B),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  total == 0
+                      ? 'No scheduling requirements'
+                      : (isAllDone
+                          ? 'All documents ready'
+                          : (remaining == 1
+                              ? 'Awaiting 1 document'
+                              : 'Awaiting $remaining documents')),
+                  textAlign: TextAlign.end,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF64748B),
+                  ),
                 ),
               ),
             ],
@@ -993,6 +1012,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   isRejected: isRejected,
                   uploaded: uploaded,
                   isRequired: isRequired,
+                  isDefenseTimed: item['requirement_timing'] == 'defense',
                 ),
               ],
             ),
@@ -1015,6 +1035,13 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
+            ],
+            if (item['requirement_timing'] == 'defense') ...[
+              const SizedBox(height: 6),
+              Text('Due: ${materialDeadlineLabel(item['due_at'])}',
+                  style: const TextStyle(fontSize: 12, color: DefensysTokens.textSecondary)),
+              if (item['upload_lock_reason']?.toString().isNotEmpty == true)
+                Text(item['upload_lock_reason'].toString(), style: Theme.of(context).textTheme.bodySmall),
             ],
             const SizedBox(height: 10),
 
@@ -1192,9 +1219,11 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     children: [
                       Icon(Icons.lock_outline_rounded, size: 14, color: Color(0xFF94A3B8)),
                       SizedBox(width: 6),
-                      Text(
-                        'Uploads are currently locked for this deliverable',
-                        style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Color(0xFF94A3B8)),
+                      Expanded(
+                        child: Text(
+                          'Uploads are currently locked for this deliverable',
+                          style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Color(0xFF94A3B8)),
+                        ),
                       ),
                     ],
                   ),
@@ -1394,6 +1423,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     required bool isRejected,
     required bool uploaded,
     required bool isRequired,
+    bool isDefenseTimed = false,
   }) {
     if (isWaived || isAccepted) {
       return Container(
@@ -1424,7 +1454,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: const Color(0xFFFECACA)),
           ),
-          child: const Row(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.warning_amber_rounded, size: 11, color: Color(0xFFDC2626)),
@@ -1444,14 +1474,14 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: const Color(0xFFFDE68A)),
           ),
-          child: const Row(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.schedule_rounded, size: 11, color: Color(0xFFD97706)),
-              SizedBox(width: 3.5),
+              const Icon(Icons.schedule_rounded, size: 11, color: Color(0xFFD97706)),
+              const SizedBox(width: 3.5),
               Text(
-                'Under Review',
-                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFFB45309)),
+                isDefenseTimed ? 'Submitted' : 'Under Review',
+                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFFB45309)),
               ),
             ],
           ),

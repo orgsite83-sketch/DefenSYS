@@ -94,6 +94,10 @@ def resolve_actions(notifications, actor):
                 # uploads. Without their original task, only endorsement is final.
                 task = notification.action_payload.get('deliverable_task')
                 done = status == 'endorsed' or (task == 'submit' and status == 'complete')
+                if task == 'materials':
+                    from repository.deliverables.timing import materials_readiness, stage_schedule
+                    schedule = stage_schedule(team, stage_label=stage)
+                    done = bool(schedule and materials_readiness(schedule)['status'] in ('ready', 'not_required'))
                 query = urlencode({'stage': stage, 'scope': 'capstone' if team.is_capstone else 'pit'})
                 route = f'/student?tab=stages&subtab=deliverables&{query}' if actor.role == 'student' else (
                     f'/admin/student-teams/{pk}?tab=deliverables&{query}' if admin else

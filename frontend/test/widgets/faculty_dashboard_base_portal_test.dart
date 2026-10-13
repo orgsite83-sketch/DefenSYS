@@ -9,8 +9,14 @@ import 'package:defensys/services/repository_provider.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/services/defense/adviser_defense_provider.dart';
+import 'package:defensys/services/adviser_grading_provider.dart';
 import 'package:defensys/notifications/notifications_provider.dart';
 import 'package:defensys/l10n/app_localizations.dart';
+
+class _FakeAdviserGradesNotifier extends AdviserGradingNotifier {
+  @override
+  Future<void> fetchAll() async {}
+}
 
 class _FakeBaseFacultyDashboardNotifier extends DashboardNotifier {
   _FakeBaseFacultyDashboardNotifier() : super('faculty');
@@ -216,6 +222,7 @@ void main() {
           _FakeAdviserDeliverablesNotifier.new,
         ),
         adviserDefenseProvider.overrideWith(_FakeAdviserDefenseNotifier.new),
+        adviserGradingProvider.overrideWith(_FakeAdviserGradesNotifier.new),
       ],
     );
     addTearDown(container.dispose);

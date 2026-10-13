@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -103,7 +104,7 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
       search: nextSearch,
       role: nextRole,
       clearError: true,
-      clearMessage: true,
+      clearMessage: successMessage == null,
     );
 
     try {
@@ -360,11 +361,20 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
           );
           return false;
         }
-        await fetchUsers(
-          successMessage:
-              '$created users imported.$recordsMessage $skipped skipped. $errors errors.$assignmentMessage',
+        final message =
+            '$created users imported.$recordsMessage $skipped skipped. $errors errors.$assignmentMessage';
+        state = state.copyWith(
+          isSaving: false,
+          message: message,
+          counts: payload['counts'] is Map
+              ? Map<String, dynamic>.from(payload['counts'])
+              : state.counts,
+          clearError: true,
         );
         _markDependentDataChanged();
+        // The POST has committed. A slow directory read must not delay closing
+        // the import workspace or make a successful import look unsuccessful.
+        unawaited(fetchUsers(successMessage: message));
         return true;
       }
 

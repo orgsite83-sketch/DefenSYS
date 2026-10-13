@@ -3,7 +3,9 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import 'package:defensys/navigation/admin_route_paths.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/screens/web/admin/widgets/file_import_staging_modal.dart';
 import 'package:defensys/services/academic/student_academic_records_provider.dart';
@@ -12,6 +14,7 @@ import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/user_management_provider.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/widgets/table/defensys_segmented_control.dart';
+import 'package:defensys/widgets/feedback/action_banner.dart';
 import 'package:defensys/utils/csv_file_io.dart';
 import 'package:flutter/services.dart';
 
@@ -46,7 +49,7 @@ class StudentBatchEnrollmentHubView extends ConsumerStatefulWidget {
   final VoidCallback onBack;
   final StudentHubMode initialMode;
   final VoidCallback? onDownloadSample;
-  final void Function(
+  final Future<bool> Function(
     List<Map<String, dynamic>> students,
     Map<String, dynamic>? studentContext,
   ) onConfirmFreshImport;
@@ -89,6 +92,7 @@ class _StudentBatchEnrollmentHubViewState
 
   StreamSubscription? _dropSubscription;
   bool _isDraggingFile = false;
+  bool _freshImportPending = false;
 
   @override
   void initState() {
@@ -204,6 +208,9 @@ class _StudentBatchEnrollmentHubViewState
 
   @override
   Widget build(BuildContext context) {
+    final activeSem = ref.watch(academicPeriodProvider).activeSemester ??
+        widget.academicState.activeSemester ??
+        ref.watch(studentAcademicRecordsProvider).activeSemester;
     return SingleChildScrollView(
       padding: DefensysUi.contentPadding,
       child: Column(
@@ -313,6 +320,18 @@ class _StudentBatchEnrollmentHubViewState
 
           const SizedBox(height: 24),
 
+          if (activeSem == null) ...[
+            DefensysActionBanner(
+              title: 'Active Academic Semester Required for Student Enrollment',
+              description:
+                  'No semester is currently active. Create and activate an academic semester in Academic Periods to enroll students or roll over returning cohorts.',
+              actionLabel: 'Open Academic Periods',
+              onAction: () => context.go(AdminRoutes.academicPeriods),
+              isBlocking: true,
+            ),
+            const SizedBox(height: 20),
+          ],
+
           // Active Mode Content
           if (_currentMode == StudentHubMode.freshIntake)
             _buildFreshIntakeView()
@@ -391,49 +410,6 @@ class _StudentBatchEnrollmentHubViewState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (activeSem == null) ...[
-          Container(
-            padding: const EdgeInsets.all(16),
-            margin: const EdgeInsets.only(bottom: 20),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFEF2F2),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFFECACA), width: 1.2),
-            ),
-            child: const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.block_rounded, color: Color(0xFFDC2626), size: 22),
-                SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Active Academic Semester Required for Student Enrollment',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF991B1B),
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        'No active semester is currently configured in the system. Student class lists cannot be imported or enrolled until an Academic Period is created and set to Active under Setup & Configuration > Academic Periods.',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: Color(0xFF7F1D1D),
-                          height: 1.35,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-
         // Top 2-Column Section: Left is Smart Format Guide, Right is Primary Upload Action
         LayoutBuilder(
           builder: (context, constraints) {
@@ -2260,20 +2236,32 @@ class _StudentBatchEnrollmentHubViewState
                 const SizedBox(width: 12),
                 ElevatedButton.icon(
                   onPressed: _parsedFreshStudents.isEmpty ||
+                          _freshImportPending ||
                           widget.userState.isSaving ||
                           activeSem == null
                       ? null
                       : _confirmFreshIntake,
-                  icon: Icon(
-                    activeSem == null
-                        ? Icons.block_rounded
-                        : Icons.check_circle_outline_rounded,
-                    size: 16,
-                  ),
+                  icon: _freshImportPending || widget.userState.isSaving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Icon(
+                          activeSem == null
+                              ? Icons.block_rounded
+                              : Icons.check_circle_outline_rounded,
+                          size: 16,
+                        ),
                   label: Text(
                     activeSem == null
                         ? 'Active Semester Required (Import Blocked)'
-                        : 'Confirm Student Intake (${_parsedFreshStudents.length} students)',
+                        : _freshImportPending || widget.userState.isSaving
+                            ? 'Importing ${_parsedFreshStudents.length} students...'
+                            : 'Confirm Student Intake (${_parsedFreshStudents.length} students)',
                   ),
                   style: ElevatedButton.styleFrom(
                     elevation: 0,
@@ -2437,7 +2425,11 @@ class _StudentBatchEnrollmentHubViewState
   }
 
   Future<void> _confirmFreshIntake() async {
-    if (_parsedFreshStudents.isEmpty) return;
+    if (_parsedFreshStudents.isEmpty ||
+        _freshImportPending ||
+        widget.userState.isSaving) {
+      return;
+    }
     final activeSem = ref.read(academicPeriodProvider).activeSemester ??
         widget.academicState.activeSemester ??
         ref.read(studentAcademicRecordsProvider).activeSemester;
@@ -2448,11 +2440,17 @@ class _StudentBatchEnrollmentHubViewState
       );
       return;
     }
-    ref.read(studentBatchDraftProvider.notifier).clearFreshDraft();
-    widget.onConfirmFreshImport(
-      _parsedFreshStudents,
-      {'semester_id': activeSem['id']},
-    );
+    final draft = ref.read(studentBatchDraftProvider.notifier);
+    setState(() => _freshImportPending = true);
+    try {
+      final success = await widget.onConfirmFreshImport(
+        List<Map<String, dynamic>>.from(_parsedFreshStudents),
+        {'semester_id': activeSem['id']},
+      );
+      if (success) draft.clearFreshDraft();
+    } finally {
+      if (mounted) setState(() => _freshImportPending = false);
+    }
   }
 
   // -------------------------------------------------------------
@@ -3867,7 +3865,6 @@ class _StudentBatchEnrollmentHubViewState
     if (ok && mounted) {
       ref.read(studentBatchDraftProvider.notifier).clearRolloverDraft();
       showSuccessToast(context, 'Semester rollover completed successfully.');
-      ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
       ref.read(userManagementProvider.notifier).fetchUsers();
       widget.onBack();
     }

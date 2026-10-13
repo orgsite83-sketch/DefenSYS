@@ -6,6 +6,8 @@ import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/widgets/widgets.dart';
+import 'package:defensys/models/adviser_workflow.dart';
+import 'package:defensys/widgets/adviser/workflow_reminder.dart';
 
 int parseAsInt(dynamic value) {
   if (value == null) return 0;
@@ -292,6 +294,9 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     Map<String, dynamic> gradeRecord,
   ) {
     final key = '$teamId-$stageLabel';
+    // A dossier can open before the grading request completes. Do not cache
+    // an empty rubric and prevent the returned scoring form from initializing.
+    if (gradeRecord['assigned_adviser_rubric_id'] == null) return;
     if (widget.teamManualScoreCtrls.containsKey(key)) {
       return; // Already initialized for this team and stage
     }
@@ -837,25 +842,8 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     final teamId = parseAsInt(widget.team['id']);
     final gradingState = ref.watch(adviserGradingProvider);
     
-    final stagePayload = (widget.team['stages'] is List)
-        ? (widget.team['stages'] as List).firstWhere(
-            (s) => s is Map && s['stage_label']?.toString() == widget.selectedStage,
-            orElse: () => null,
-          )
-        : null;
-
-    final gradeRecord = gradingState.grades.firstWhere(
-      (g) => parseAsInt(g['team_id']) == teamId && g['stage_label']?.toString() == widget.selectedStage,
-      orElse: () {
-        if (widget.team['grade'] is Map && widget.team['grade']['stage_label']?.toString() == widget.selectedStage) {
-          return Map<String, dynamic>.from(widget.team['grade'] as Map);
-        }
-        if (stagePayload is Map && stagePayload['grade'] is Map && stagePayload['grade']['stage_label']?.toString() == widget.selectedStage) {
-          return Map<String, dynamic>.from(stagePayload['grade'] as Map);
-        }
-        return <String, dynamic>{};
-      },
-    );
+    final gradeRecord = adviserGradeForTeam(widget.team, widget.selectedStage,
+        gradingState.grades) ?? <String, dynamic>{};
 
     _initializeGradingControllersForTeam(teamId, widget.selectedStage, gradeRecord);
 
@@ -872,12 +860,14 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                 s is Map &&
                 s['stage_label']?.toString() == widget.selectedStage &&
                 s['is_officially_complete'] == true));
-    final isPublished = status == 'published';
-    final isGradingLocked = isOfficiallyComplete || isPublished;
+    final guidance = AdviserGradingStatus.fromGrade(gradeRecord,
+      enabled: gradingState.adviserGradingEnabled, loading: gradingState.isLoading,
+      error: gradingState.error, officiallyComplete: isOfficiallyComplete);
+    final isGradingLocked = !guidance.canGrade;
 
     Color statusBg = const Color(0xFFFEF3C7);
     Color statusText = const Color(0xFFD97706);
-    String statusLabel = 'Pending';
+    String statusLabel = 'Awaiting all scores';
 
     if (status == 'published') {
       statusBg = const Color(0xFFD1FAE5);
@@ -905,19 +895,33 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (widget.isAdviser) ...[
+          AdviserWorkflowReminder(
+            key: const Key('adviser-grading-reminder'),
+            onLightSurface: true,
+            title: guidance.title, detail: guidance.detail, tone: guidance.tone,
+            progress: guidance.canGrade && assignedRubric != null
+                ? _filledCountForTeam(teamId, widget.selectedStage, gradeRecord) /
+                  _totalCountForTeam(teamId, widget.selectedStage, gradeRecord).clamp(1, 100000)
+                : null,
+            progressLabel: '${_filledCountForTeam(teamId, widget.selectedStage, gradeRecord)} of '
+                '${_totalCountForTeam(teamId, widget.selectedStage, gradeRecord)} criteria completed',
+          ),
+          const SizedBox(height: 18),
+        ],
         // Overall Grade Badges
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+        Wrap(
+          spacing: 12, runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Text(
-              'Grade Overview · ${widget.selectedStage}',
+              'Overall assessment · ${widget.selectedStage}',
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 14,
                 color: AppColors.textPrimary,
               ),
             ),
-            const SizedBox(width: 12),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
@@ -952,83 +956,9 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
 
         // Rubric Grading Form
         if (widget.isAdviser) ...[
-          if (!gradingState.adviserGradingEnabled) ...[
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF9FAFB),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
-              ),
-              child: const Column(
-                children: [
-                  Icon(Icons.lock_outline_rounded, size: 48, color: AppColors.textSecondary),
-                  SizedBox(height: 12),
-                  Text(
-                    'Adviser Grading is Disabled',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                  ),
-                  SizedBox(height: 6),
-                  Text(
-                    'Adviser grading is currently turned off by the administrator for this stage/period.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-          ] else if (assignedRubric == null) ...[
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.warning.withValues(alpha: 0.08),
-                border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 24),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'No adviser rubric is assigned for this defense stage yet. Ask your administrator to set panel, adviser, and peer rubrics in Defense Stages Setup or the scheduler.',
-                      style: TextStyle(color: AppColors.warning, fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ] else ...[
-            if (isGradingLocked) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                margin: const EdgeInsets.only(bottom: 14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.lock_outline_rounded, size: 20, color: AppColors.textSecondary),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        isOfficiallyComplete
-                            ? 'This defense stage is officially complete. Adviser grades are locked and cannot be edited.'
-                            : 'Grades for this stage have been finalized and published. Modifications are locked.',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            Row(
+          if (gradingState.adviserGradingEnabled && assignedRubric != null) ...[
+            Wrap(
+              spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 _sectionTitle('Rubric: ${assignedRubric['name']} (${assignedRubric['scale'] ?? ''})'),
                 const SizedBox(width: 8),
@@ -1052,7 +982,6 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                     ),
                   ),
                 ),
-                const Spacer(),
                 Builder(builder: (_) {
                   final total = _totalCountForTeam(teamId, widget.selectedStage, gradeRecord);
                   final filled = _filledCountForTeam(teamId, widget.selectedStage, gradeRecord);
@@ -1128,10 +1057,10 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                 children: [
                   const Icon(Icons.person_outline_rounded, size: 16, color: AppColors.maroon),
                   const SizedBox(width: 6),
-                  const Text(
+                  const Expanded(child: Text(
                     'Individual Criteria (Score Each Member)',
                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                  ),
+                  )),
                 ],
               ),
               const SizedBox(height: 8),
@@ -1236,7 +1165,8 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                               borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
                               border: const Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
                             ),
-                            child: Row(
+                            child: Wrap(
+                              spacing: 12, runSpacing: 6,
                               children: [
                                 Text(
                                   'Scoring: ${activeMember['name']}',
@@ -1246,7 +1176,6 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                                     color: AppColors.maroon,
                                   ),
                                 ),
-                                const Spacer(),
                                 Text(
                                   'Student Score: ${sScore.toStringAsFixed(2)} / 100',
                                   style: const TextStyle(
@@ -1296,11 +1225,10 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                         padding: const EdgeInsets.symmetric(vertical: 2),
                         child: Row(
                           children: [
-                            Text(
+                            Expanded(child: Text(
                               m['name']?.toString() ?? 'Student',
                               style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-                            ),
-                            const Spacer(),
+                            )),
                             Text(
                               isComplete ? '${sScore.toStringAsFixed(2)} / 100' : 'Incomplete',
                               style: TextStyle(
@@ -1317,11 +1245,10 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                   ],
                   Row(
                     children: [
-                      Text(
+                      Expanded(child: Text(
                         targetType != 'team' ? 'Overall Team Adviser Score (Avg):' : 'Computed Adviser Score:',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
-                      ),
-                      const Spacer(),
+                      )),
                       Text(
                         _computeOverallTeamScore(teamId, widget.selectedStage, gradeRecord).toStringAsFixed(2),
                         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.maroon),
@@ -1345,7 +1272,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                     label: Text(
                       isOfficiallyComplete
                           ? 'Stage Officially Complete (Grades Locked)'
-                          : 'Grade Finalized (Locked)',
+                          : 'Grading unavailable',
                     ),
                     style: ElevatedButton.styleFrom(
                       disabledBackgroundColor: const Color(0xFFE2E8F0),

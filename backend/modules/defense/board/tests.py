@@ -156,6 +156,75 @@ class DefenseBoardApiTests(APITestCase):
         self.assertEqual([person['name'] for person in panel], ['Dr. Lina Santos', 'Prof. Rivera'])
         self.assertTrue(all(not person['is_active'] for person in panel))
 
+    def test_pit_lead_retains_assigned_capstone_records_and_minutes_actions(self):
+        from defense.minutes.models import DefenseMinutes
+
+        self.capstone_team.adviser = self.pit_lead
+        self.capstone_team.save(update_fields=['adviser'])
+        self.capstone_schedule.status = DefenseSchedule.STATUS_DONE
+        self.capstone_schedule.save(update_fields=['status'])
+        DefenseMinutes.objects.create(schedule=self.capstone_schedule, status='submitted',
+            defense_date=self.capstone_schedule.scheduled_date, defense_time=self.capstone_schedule.start_time)
+        unrelated_team = StudentTeam.objects.create(
+            name='Unassigned Capstone Team', level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year', semester=self.semester, leader=self.pit_student,
+        )
+        unrelated = DefenseSchedule.objects.create(
+            scope=DefenseSchedule.SCOPE_CAPSTONE, semester=self.semester,
+            team=unrelated_team, defense_stage=self.stage, scheduled_date='2099-05-17',
+            start_time='08:00', slot_duration=60, room='Room 302', created_by=self.admin,
+        )
+        self.client.force_authenticate(self.pit_lead)
+
+        for _ in range(2):  # A refresh must not return to the PIT-only scope.
+            response = self.client.get('/api/defense/board/', {'scope': 'capstone'})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual([s['id'] for s in response.data['schedules']], [self.capstone_schedule.pk])
+            self.assertEqual(response.data['schedules'][0]['minutes_status'], 'submitted')
+        all_records = self.client.get('/api/defense/board/').data['schedules']
+        self.assertEqual({s['id'] for s in all_records}, {self.capstone_schedule.pk, self.pit_schedule.pk})
+        self.assertNotIn(unrelated.pk, {s['id'] for s in all_records})
+
+    def test_pit_lead_read_access_does_not_allow_capstone_schedule_management(self):
+        self.capstone_team.adviser = self.pit_lead
+        self.capstone_team.save(update_fields=['adviser'])
+        self.client.force_authenticate(self.pit_lead)
+        self.assertEqual(self.client.get('/api/defense/board/', {'scope': 'capstone'}).data['counts']['filtered'], 1)
+        for path in ('board', 'schedules'):
+            url = f'/api/defense/{path}/{self.capstone_schedule.pk}/'
+            self.assertEqual(self.client.patch(url, {'status': 'cancelled'}, format='json').status_code, 404)
+            self.assertEqual(self.client.delete(url).status_code, 404)
+        self.capstone_schedule.refresh_from_db()
+        self.assertEqual(self.capstone_schedule.status, DefenseSchedule.STATUS_SCHEDULED)
+
+    def test_pit_lead_keeps_panel_and_documenter_assignments_without_a_pit_year(self):
+        self.pit_lead.pit_lead_year = ''
+        self.pit_lead.is_panelist = True
+        self.pit_lead.is_documenter = True
+        self.pit_lead.save(update_fields=['pit_lead_year', 'is_panelist', 'is_documenter'])
+        self.client.force_authenticate(self.pit_lead)
+        for assignment in ('adviser', 'panelist', 'documenter'):
+            with self.subTest(assignment=assignment):
+                self.capstone_team.adviser = None
+                self.capstone_team.save(update_fields=['adviser'])
+                self.capstone_schedule.refresh_from_db()
+                if assignment == 'adviser':
+                    self.capstone_team.adviser = self.pit_lead
+                    self.capstone_team.save(update_fields=['adviser'])
+                elif assignment == 'panelist':
+                    SchedulePanelist.objects.create(schedule=self.capstone_schedule, panelist=self.pit_lead)
+                else:
+                    self.capstone_schedule.documenter = self.pit_lead
+                    self.capstone_schedule.save(update_fields=['documenter'])
+                response = self.client.get('/api/defense/board/')
+                self.assertEqual([s['id'] for s in response.data['schedules']], [self.capstone_schedule.pk])
+                self.capstone_team.adviser = None
+                self.capstone_team.save(update_fields=['adviser'])
+                SchedulePanelist.objects.filter(schedule=self.capstone_schedule, panelist=self.pit_lead).delete()
+                self.capstone_schedule.refresh_from_db()
+                self.capstone_schedule.documenter = None
+                self.capstone_schedule.save(update_fields=['documenter'])
+
     def test_recorded_verdict_and_revision_requirements_do_not_wait_for_publication_or_minutes(self):
         from datetime import date
         from grading.grades.models import TeamGrade

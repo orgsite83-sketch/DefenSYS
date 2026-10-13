@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -17,6 +18,7 @@ from authentication_access_control.models import SystemAuditLog
 from authentication_access_control.scopes import visible_teams_for
 from user_management.academic_records.models import StudentAcademicRecord
 from user_management.academic_records.serializers import StudentOptionSerializer
+from user_management.models import SectionInstructorAssignment
 from user_management.permissions import IsSystemAdmin, CanManageTeams
 from .bulk_import import (
     format_bulk_import_errors,
@@ -43,6 +45,7 @@ from .serializers import (
     StudentTeamWriteSerializer,
     TeamAdviserAssignmentSerializer,
     SectionAssignmentSerializer,
+    SectionDetailsWriteSerializer,
 )
 
 
@@ -683,7 +686,19 @@ class BulkImportTeamsView(APIView):
                 })
                 continue
 
-            created.append(serializer.save())
+            # Commit the section instructor with the team so failed rows cannot
+            # create assignments, and PIT imports never promote a project adviser.
+            with transaction.atomic():
+                team = serializer.save()
+                if result['instructor'] is not None:
+                    SectionInstructorAssignment.objects.update_or_create(
+                        faculty=result['instructor'],
+                        semester=team.semester,
+                        year_level=team.year_level,
+                        section=team.section,
+                        defaults={'assigned_by': request.user, 'is_active': True},
+                    )
+            created.append(team)
             imported_rows.append(index)
 
         return Response({
@@ -697,6 +712,22 @@ class BulkImportTeamsView(APIView):
             'counts': counts_payload(user=request.user),
             'adviser_filter': adviser_filter,
         }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+class SectionDetailsView(APIView):
+    permission_classes = [CanManageTeams]
+
+    def get(self, request, team_id):
+        from .sections import section_context, section_payload
+
+        return Response(section_payload(*section_context(request.user, team_id)))
+
+    def patch(self, request, team_id):
+        from .sections import update_section
+
+        serializer = SectionDetailsWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        return Response(update_section(request, team_id, serializer.validated_data))
 
 
 class SectionAssignmentListCreateView(APIView):

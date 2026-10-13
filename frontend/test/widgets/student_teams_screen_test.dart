@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:riverpod/misc.dart' show Override;
 import 'package:defensys/screens/web/admin/student_teams_screen.dart';
 import 'package:defensys/services/dashboard_provider.dart';
@@ -28,6 +29,24 @@ class _FakeStudentTeamsNotifier extends StudentTeamsNotifier {
     bool clearYearLevel = false,
     String? successMessage,
   }) async {}
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchSectionTeams({
+    required String level,
+    String scope = 'active',
+    String? yearLevel,
+    String? section,
+  }) async => initial.teams;
+
+  @override
+  Future<Map<String, dynamic>> fetchSectionDetails(int teamId) async => {
+    'section': initial.teams.firstWhere((team) => team['id'] == teamId)['section'],
+    'year_level': '4th Year',
+    'semester_label': '1st Semester 2026-2027',
+    'system_name': '',
+    'team_count': 1,
+    'students': [],
+  };
 }
 
 class _FakeAdminDashboardNotifier extends DashboardNotifier {
@@ -132,6 +151,39 @@ void main() {
     expect(find.byIcon(Icons.arrow_forward_rounded), findsOneWidget);
     expect(find.byIcon(Icons.delete_rounded), findsNothing);
   });
+
+  testWidgets('team toolbar opens centralized section editing', (tester) async {
+    await pumpTeamsScreen(tester, mode: TeamListMode.capstoneAdmin, overrides: [
+      studentTeamsProvider.overrideWith(() => _FakeStudentTeamsNotifier(
+        const StudentTeamsState(level: 'Capstone', teams: [
+          {'id': 1, 'section': 'BSIT-4A', 'level': 'Capstone', 'is_editable': true},
+        ]),
+      )),
+      dashboardProvider('admin').overrideWith(_FakeAdminDashboardNotifier.new),
+      dashboardProvider('faculty').overrideWith(_FakeFacultyPitLeadDashboardNotifier.new),
+    ]);
+    expect(find.text('Edit section'), findsNothing);
+    await tester.tap(find.byKey(const Key('manage-sections')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ShadDialog), findsOneWidget);
+    expect(find.byKey(const Key('section-picker')), findsOneWidget);
+    expect(find.byKey(const Key('edit-section-name')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final audit in [false, true]) {
+    testWidgets('section management is disabled ${audit ? 'in PIT audit mode' : 'during save'}', (tester) async {
+      await pumpTeamsScreen(tester, mode: TeamListMode.pitLead, overrides: [
+        studentTeamsProvider.overrideWith(() => _FakeStudentTeamsNotifier(
+          StudentTeamsState(level: 'PIT', isSaving: !audit, operatingMode: audit ? 'audit' : 'active'),
+        )),
+        dashboardProvider('faculty').overrideWith(_FakeFacultyPitLeadDashboardNotifier.new),
+        dashboardProvider('admin').overrideWith(_FakeAdminDashboardNotifier.new),
+      ]);
+      expect(tester.widget<ShadButton>(find.byKey(const Key('manage-sections'))).enabled, isFalse);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('current stage progress takes precedence over team result', (
     tester,

@@ -8,6 +8,7 @@ import '../../../../theme/app_theme.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/widgets.dart';
 import '../../../../widgets/repository/repository_archive_naming_panel.dart';
+import '../../../../widgets/repository/deliverable_timing_fields.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../services/dashboard_provider.dart';
 import '../../../../utils/unsaved_changes.dart';
@@ -1540,6 +1541,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       if ((current['required'] == true) != (initial['required'] == true)) return true;
       if ((current['is_restricted'] == true) != (initial['is_restricted'] == true)) return true;
       if ((current['is_defense_material'] == true) != (initial['is_defense_material'] == true)) return true;
+      if ((current['requirement_timing'] ?? 'scheduling') != (initial['requirement_timing'] ?? 'scheduling')) return true;
+      if ((current['deadline_hours_before'] ?? 24) != (initial['deadline_hours_before'] ?? 24)) return true;
       if ((current['file_format'] ?? 'any') != (initial['file_format'] ?? 'any')) return true;
 
       final curTplCtrl = current['_templateController'] as TextEditingController?;
@@ -1765,6 +1768,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
         'archive_file_template': tplCtrl != null ? tplCtrl.text.trim() : (d['archive_file_template'] ?? ''),
         'is_restricted': d['is_restricted'] == true,
         'is_defense_material': d['is_defense_material'] == true,
+        'requirement_timing': d['requirement_timing'] ?? 'scheduling',
+        'deadline_hours_before': d['deadline_hours_before'] ?? 24,
         'file_format': d['file_format'] ?? 'any',
       };
     }).toList();
@@ -2549,6 +2554,20 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                 ),
                 if (!isPost) ...[
                   const SizedBox(height: 8),
+                  DeliverableTimingFields(
+                    timing: item['requirement_timing']?.toString() ?? 'scheduling',
+                    hoursBefore: int.tryParse(item['deadline_hours_before']?.toString() ?? '') ?? 24,
+                    enabled: !isLocked,
+                    onTimingChanged: (value) {
+                      setState(() => item['requirement_timing'] = value);
+                      _markDirty();
+                    },
+                    onHoursChanged: (value) {
+                      setState(() => item['deadline_hours_before'] = value);
+                      _markDirty();
+                    },
+                  ),
+                  const SizedBox(height: 12),
                   Row(
                     children: [
                       Checkbox(
@@ -3501,8 +3520,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             _buildDeliverableSection(
-                              title: 'Pre-Defense Gatekeepers',
-                              subtitle: 'Submissions required before adviser endorsement and defense scheduling.',
+                              title: 'Pre-Defense Requirements',
+                              subtitle: 'Choose which files clear scheduling and which are due closer to the defense.',
                               icon: Icons.folder_open_rounded,
                               accentColor: const Color(0xFF2563EB),
                               bgHeaderColor: const Color(0xFFEFF6FF),

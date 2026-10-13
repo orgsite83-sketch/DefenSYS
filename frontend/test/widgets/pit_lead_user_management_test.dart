@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:defensys/screens/web/faculty/pit_lead/pit_lead_cohort_screen.dart';
+import 'package:defensys/screens/web/faculty/pit_instructor/pit_instructor_assignment_screen.dart';
 import 'package:defensys/services/academic/student_academic_records_provider.dart';
 import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/pit_lead_cohort_provider.dart';
@@ -43,10 +44,16 @@ class FakePitLeadCohortNotifier extends PitLeadCohortNotifier {
   }
 
   @override
-  Future<void> fetchCohort({String? search, String? teamStatusFilter, String? scope}) async {}
+  Future<void> fetchCohort({
+    String? search,
+    String? teamStatusFilter,
+    String? scope,
+  }) async {}
 }
 
 class FakePitInstructorNotifier extends PitInstructorNotifier {
+  final restoreRequests = <(int, bool)>[];
+
   @override
   PitInstructorState build() {
     return const PitInstructorState(
@@ -62,7 +69,16 @@ class FakePitInstructorNotifier extends PitInstructorNotifier {
           'year_level': '1st Year',
           'semester_label': '1st Semester, 2026-2027',
           'is_active': true,
-        }
+        },
+        {
+          'id': 2,
+          'faculty_id': 11,
+          'faculty_name': 'Eduardo Padilla',
+          'section': 'BSIT-1B',
+          'year_level': '1st Year',
+          'semester_label': '1st Semester, 2026-2027',
+          'is_active': false,
+        },
       ],
       faculty: [
         {
@@ -70,13 +86,28 @@ class FakePitInstructorNotifier extends PitInstructorNotifier {
           'name': 'Ricardo Fontanilla',
           'username': 'rfontanilla',
           'displayRole': {'label': 'Faculty'},
-        }
+        },
       ],
     );
   }
 
   @override
   Future<void> fetchAssignments() async {}
+
+  @override
+  Future<bool> setAssignmentActive(int assignmentId, bool isActive) async {
+    restoreRequests.add((assignmentId, isActive));
+    state = state.copyWith(
+      assignments: [
+        for (final assignment in state.assignments)
+          {
+            ...assignment,
+            if (assignment['id'] == assignmentId) 'is_active': isActive,
+          },
+      ],
+    );
+    return true;
+  }
 }
 
 class FakeAcademicPeriodNotifier extends AcademicPeriodNotifier {
@@ -86,76 +117,137 @@ class FakeAcademicPeriodNotifier extends AcademicPeriodNotifier {
   Future<void> fetchPeriods({String? successMessage}) async {}
 }
 
-class FakeStudentAcademicRecordsNotifier extends StudentAcademicRecordsNotifier {
+class FakeStudentAcademicRecordsNotifier
+    extends StudentAcademicRecordsNotifier {
   @override
   StudentAcademicRecordsState build() => const StudentAcademicRecordsState();
   @override
-  Future<void> fetchRecords({String? search, String? schoolYear, String? semester, String? successMessage}) async {}
+  Future<void> fetchRecords({
+    String? search,
+    String? schoolYear,
+    String? semester,
+    String? successMessage,
+  }) async {}
 }
 
 class FakeUserManagementNotifier extends UserManagementNotifier {
   @override
   UserManagementState build() => const UserManagementState();
   @override
-  Future<void> fetchUsers({String? search, String? role, String? successMessage}) async {}
+  Future<void> fetchUsers({
+    String? search,
+    String? role,
+    String? successMessage,
+  }) async {}
 }
 
 void main() {
-  testWidgets('PitLeadCohortScreen renders User Management layout with 2 tabs and metric cards', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1400, 900);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
+  testWidgets(
+    'PitLeadCohortScreen renders User Management layout with 2 tabs and metric cards',
+    (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
 
-    await pumpDefensysWidget(
-      tester,
-      const PitLeadCohortScreen(),
-      overrides: [
-        pitLeadCohortProvider.overrideWith(() => FakePitLeadCohortNotifier()),
-        pitInstructorProvider.overrideWith(() => FakePitInstructorNotifier()),
-        academicPeriodProvider.overrideWith(() => FakeAcademicPeriodNotifier()),
-        studentAcademicRecordsProvider.overrideWith(() => FakeStudentAcademicRecordsNotifier()),
-        userManagementProvider.overrideWith(() => FakeUserManagementNotifier()),
-      ],
-    );
+      final instructorNotifier = FakePitInstructorNotifier();
 
-    // Header
-    expect(find.text('User Management'), findsOneWidget);
-    expect(find.text('1st Year · 1st Semester, A.Y. 2026-2027'), findsOneWidget);
+      await pumpDefensysWidget(
+        tester,
+        const PitLeadCohortScreen(),
+        overrides: [
+          pitLeadCohortProvider.overrideWith(() => FakePitLeadCohortNotifier()),
+          pitInstructorProvider.overrideWith(() => instructorNotifier),
+          academicPeriodProvider.overrideWith(
+            () => FakeAcademicPeriodNotifier(),
+          ),
+          studentAcademicRecordsProvider.overrideWith(
+            () => FakeStudentAcademicRecordsNotifier(),
+          ),
+          userManagementProvider.overrideWith(
+            () => FakeUserManagementNotifier(),
+          ),
+        ],
+      );
 
-    // Action buttons for Students tab
-    expect(find.text('Batch Enrollment'), findsOneWidget);
-    expect(find.text('Rollover Preview'), findsOneWidget);
-    expect(find.text('Add Single Student'), findsOneWidget);
+      // Header
+      expect(find.text('User Management'), findsOneWidget);
+      expect(
+        find.text('1st Year · 1st Semester, A.Y. 2026-2027'),
+        findsOneWidget,
+      );
 
-    // Pill Tab Bar
-    expect(find.text('Students & Enrollment'), findsOneWidget);
-    expect(find.text('Section Instructors'), findsOneWidget);
+      // Action buttons for Students tab
+      expect(find.text('Batch Enrollment'), findsOneWidget);
+      expect(find.text('Rollover Preview'), findsOneWidget);
+      expect(find.text('Add Single Student'), findsOneWidget);
 
-    // 4 Metric cards on Students Tab
-    expect(find.text('All Records'), findsOneWidget);
-    expect(find.text('Filtered'), findsOneWidget);
-    expect(find.text('Students'), findsOneWidget);
-    expect(find.text('Active Term'), findsOneWidget);
+      // Pill Tab Bar
+      expect(find.text('Students & Enrollment'), findsOneWidget);
+      expect(find.text('Section Instructors'), findsOneWidget);
 
-    // Students table columns and data
-    expect(find.text('Sofia Lim'), findsOneWidget);
-    expect(find.text('2026-0001'), findsOneWidget);
-    expect(find.text('James Rivera'), findsOneWidget);
-    expect(find.text('2026-0002'), findsOneWidget);
-    expect(find.text('BSIT-1A'), findsWidgets);
-    expect(find.text('Ricardo Fontanilla'), findsWidgets); // Instructor tag under section
+      // 4 Metric cards on Students Tab
+      expect(find.text('All Records'), findsOneWidget);
+      expect(find.text('Filtered'), findsOneWidget);
+      expect(find.text('Students'), findsOneWidget);
+      expect(find.text('Active Term'), findsOneWidget);
 
-    // Switch to Section Instructors tab
-    await tester.tap(find.text('Section Instructors'));
-    await tester.pumpAndSettle();
+      // Students table columns and data
+      expect(find.text('Sofia Lim'), findsOneWidget);
+      expect(find.text('2026-0001'), findsOneWidget);
+      expect(find.text('James Rivera'), findsOneWidget);
+      expect(find.text('2026-0002'), findsOneWidget);
+      expect(find.text('BSIT-1A'), findsWidgets);
+      expect(
+        find.text('Ricardo Fontanilla'),
+        findsWidgets,
+      ); // Instructor tag under section
 
-    // Verify Tab 2 metrics and contents
-    expect(find.text('Total Instructors'), findsOneWidget);
-    expect(find.text('Sections Covered'), findsOneWidget);
-    expect(find.text('Needs Assignment'), findsOneWidget);
-    expect(find.text('Assign Section Instructor'), findsWidgets);
-    expect(find.text('rfontanilla@defensys.edu'), findsOneWidget);
-  });
+      // Switch to Section Instructors tab
+      await tester.tap(find.text('Section Instructors'));
+      await tester.pumpAndSettle();
+
+      // Verify Tab 2 metrics and contents
+      expect(find.text('Total Instructors'), findsOneWidget);
+      expect(find.text('Sections Covered'), findsOneWidget);
+      expect(find.text('Needs Assignment'), findsOneWidget);
+      expect(find.text('Assign Section Instructor'), findsWidgets);
+      expect(find.text('rfontanilla@defensys.edu'), findsOneWidget);
+      expect(find.text('Deactivate'), findsNothing);
+      expect(find.text('Restore'), findsOneWidget);
+      expect(find.text('Change'), findsNWidgets(2));
+
+      await tester.tap(find.text('Restore'));
+      await tester.pumpAndSettle();
+      expect(instructorNotifier.restoreRequests, [(2, true)]);
+      expect(find.text('Restore'), findsNothing);
+      expect(find.text('Deactivate'), findsNothing);
+      expect(
+        tester
+            .widget<TextButton>(find.widgetWithText(TextButton, 'Change').first)
+            .onPressed,
+        isNotNull,
+      );
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'assignment screen only offers Restore for inactive assignments',
+    (tester) async {
+      final notifier = FakePitInstructorNotifier();
+      await pumpDefensysWidget(
+        tester,
+        const PitInstructorAssignmentScreen(),
+        overrides: [pitInstructorProvider.overrideWith(() => notifier)],
+      );
+      expect(find.text('Deactivate'), findsNothing);
+      expect(find.text('Restore'), findsOneWidget);
+      await tester.ensureVisible(find.text('Restore'));
+      await tester.tap(find.text('Restore'));
+      await tester.pumpAndSettle();
+      expect(notifier.restoreRequests, [(2, true)]);
+      expect(find.text('Restore'), findsNothing);
+    },
+  );
 }

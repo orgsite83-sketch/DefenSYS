@@ -213,11 +213,24 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   }
 
   void _closeSubView() {
-    if (_navigateUserView({})) return;
+    // Imports are local subviews, so going to the current URL may not rebuild
+    // this widget. Always close locally before synchronizing the route.
+    final returnToStudents = _subView == _SubView.studentBatchHub;
     setState(() {
+      if (returnToStudents) _currentTab = UserManagementTab.students;
       _subView = _SubView.none;
       _accessControlUser = null;
+      ++_accessRequest;
+      _accessLoading = false;
+      _accessError = null;
     });
+    final router = GoRouter.maybeOf(context);
+    // A retained sidebar branch can finish importing after another tab opens.
+    if (router?.routeInformationProvider.value.uri.path == '/admin/users') {
+      _navigateUserView({
+        'tab': _currentTab == UserManagementTab.faculty ? 'faculty' : 'students',
+      });
+    }
   }
 
   Future<void> _showUserDialog([Map<String, dynamic>? user]) async {
@@ -527,9 +540,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             style: DefensysButtonStyles.secondary(context),
           ),
           OutlinedButton.icon(
-            onPressed: state.isSaving
-                ? null
-                : () => _openBulkImport('faculty'),
+            onPressed: state.isSaving ? null : () => _openBulkImport('faculty'),
             icon: const Icon(Icons.file_upload_outlined),
             label: const Text('Bulk Import Faculty'),
             style: DefensysButtonStyles.secondary(context),
@@ -577,11 +588,19 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           if (success && context.mounted) {
             showSuccessToast(
               context,
-              '${users.length} students imported successfully!',
+              ref.read(userManagementProvider).message ??
+                  'Student intake completed.',
             );
             ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
             _closeSubView();
+          } else if (context.mounted) {
+            showErrorToast(
+              context,
+              ref.read(userManagementProvider).error ??
+                  'Failed to import students.',
+            );
           }
+          return success;
         },
       );
     }
@@ -612,14 +631,15 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           if (!context.mounted) return;
           if (success) {
             await clearUserBulkImportDraft();
+            if (!context.mounted) return;
             final isStudent = studentContext != null;
             final label = isStudent ? 'students' : 'faculty & staff';
             showSuccessToast(
               context,
-              '${users.length} $label imported successfully!',
+              ref.read(userManagementProvider).message ??
+                  '$label import completed.',
             );
             ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
-            ref.read(userManagementProvider.notifier).fetchUsers();
             _closeSubView();
           } else {
             final errorMsg =

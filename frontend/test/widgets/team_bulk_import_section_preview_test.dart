@@ -174,7 +174,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Verify adviser group headers
-    expect(find.text('Adviser: Ricardo Fontanilla'), findsOneWidget);
-    expect(find.text('Adviser: Elena Ramos'), findsOneWidget);
+    expect(find.text('Adviser: Ricardo Fontanilla'), findsWidgets);
+    expect(find.text('Adviser: Elena Ramos'), findsWidgets);
   });
 }

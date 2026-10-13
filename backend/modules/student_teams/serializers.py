@@ -611,6 +611,7 @@ class BulkTeamRowSerializer(serializers.Serializer):
     project_manager = serializers.CharField(required=False, allow_blank=True, max_length=255)
     adviser_name = serializers.CharField(required=False, allow_blank=True)
     adviser_id = serializers.CharField(required=False, allow_blank=True)
+    instructor_name = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, attrs):
         if hasattr(self, 'initial_data') and isinstance(self.initial_data, dict):
@@ -686,6 +687,16 @@ class StudentTeamOptionsSerializer(serializers.Serializer):
     active_semester = SemesterSerializer(allow_null=True)
     students = StudentOptionSerializer(many=True)
     advisers = AdviserOptionSerializer(many=True)
+
+
+class SectionDetailsWriteSerializer(serializers.Serializer):
+    expected_section = serializers.CharField(max_length=80)
+    section = serializers.CharField(max_length=80)
+    system_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    project_manager_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+
+    def validate_section(self, value):
+        return ' '.join(value.split())
 
 
 class SectionAssignmentSerializer(serializers.ModelSerializer):

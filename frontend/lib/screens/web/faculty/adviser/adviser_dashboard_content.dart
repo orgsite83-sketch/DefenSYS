@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../services/capstone_deliverables_provider.dart';
 import '../../../../services/defense/adviser_defense_provider.dart';
+import '../../../../services/adviser_grading_provider.dart';
+import '../../../../models/adviser_workflow.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../admin/widgets/defensys_admin_shell.dart';
 import '../../shared/team_deliverables/deliverables_view_types.dart';
@@ -11,7 +13,8 @@ class AdviserDashboardContent extends ConsumerStatefulWidget {
   final Map<String, dynamic>? data;
   final String facultyName;
   final void Function(int? teamId) onOpenDeliverables;
-  final void Function(int? teamId) onOpenDefense;
+  final void Function(int? teamId, String stageLabel) onOpenDefense;
+  final void Function(int teamId, String stageLabel) onOpenGrades;
 
   const AdviserDashboardContent({
     super.key,
@@ -19,6 +22,7 @@ class AdviserDashboardContent extends ConsumerStatefulWidget {
     required this.facultyName,
     required this.onOpenDeliverables,
     required this.onOpenDefense,
+    required this.onOpenGrades,
   });
 
   @override
@@ -81,8 +85,10 @@ class _AdviserDashboardContentState
   void _refresh() {
     ref
         .read(capstoneDeliverablesProvider.notifier)
-        .fetchDeliverables(scope: 'capstone');
+        .fetchDeliverables(scope: 'capstone', search: '', status: '',
+          selectedStage: '', yearLevel: '', section: '');
     ref.read(adviserDefenseProvider.notifier).fetch();
+    ref.read(adviserGradingProvider.notifier).fetchAll();
   }
 
   Widget _surface(Widget child) => Container(
@@ -102,7 +108,7 @@ class _AdviserDashboardContentState
           children: [
             Icon(icon, color: DefensysTokens.maroonOf(context), size: 24),
             const SizedBox(width: 14),
-            Column(
+            Expanded(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
@@ -121,7 +127,7 @@ class _AdviserDashboardContentState
                   ),
                 ),
               ],
-            ),
+            )),
           ],
         ),
       ),
@@ -148,7 +154,7 @@ class _AdviserDashboardContentState
           ),
           const SizedBox(height: 4),
           Text(
-            'Reviews, endorsements, and minutes that need your attention.',
+            'Submission reviews, grades, endorsements, and minutes to sign.',
             style: TextStyle(
               fontSize: 12,
               color: DefensysTokens.textSecondaryOf(context),
@@ -280,7 +286,10 @@ class _AdviserDashboardContentState
                   style: const TextStyle(fontSize: 12),
                 ),
                 trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () => widget.onOpenDefense(_id(schedule['team_id'])),
+                onTap: () => widget.onOpenDefense(
+                  _id(schedule['team_id']),
+                  schedule['stage_label']?.toString() ?? '',
+                ),
               ),
         ],
       ),
@@ -390,6 +399,7 @@ class _AdviserDashboardContentState
     final teamIds = teamNames.keys.toSet();
     final deliverables = ref.watch(capstoneDeliverablesProvider);
     final defense = ref.watch(adviserDefenseProvider);
+    final grading = ref.watch(adviserGradingProvider);
     final deliverablesById = <int, Map<String, dynamic>>{
       for (final team in deliverables.teams)
         if (teamIds.contains(_id(team['id']))) _id(team['id'])!: team,
@@ -404,7 +414,8 @@ class _AdviserDashboardContentState
 
     final tasks = <_AdviserTask>[];
     var reviewCount = 0;
-    var readyCount = 0;
+    var gradeCount = 0;
+    var signatureCount = 0;
     for (final entry in deliverablesById.entries) {
       final team = entry.value;
       final name = teamNames[entry.key] ?? team['name']?.toString() ?? 'Team';
@@ -428,7 +439,6 @@ class _AdviserDashboardContentState
           (stage['deliverables_configured'] == true ||
               stage['is_presentation_only'] == true) &&
           stage['endorsed'] != true) {
-        readyCount++;
         tasks.add(
           _AdviserTask(
             name,
@@ -440,17 +450,33 @@ class _AdviserDashboardContentState
         );
       }
     }
+    for (final grade in grading.grades) {
+      final teamId = _id(grade['team_id']);
+      if (teamId == null || !teamIds.contains(teamId)) continue;
+      final guidance = AdviserGradingStatus.fromGrade(grade,
+        enabled: grading.adviserGradingEnabled, error: grading.error);
+      if (!guidance.needsGrade) continue;
+      gradeCount++;
+      final stage = grade['stage_label']?.toString() ?? '';
+      tasks.add(_AdviserTask(teamNames[teamId] ?? 'Team',
+        '$stage · Ready to grade', Icons.rate_review_outlined, teamId,
+        () => widget.onOpenGrades(teamId, stage)));
+    }
     for (final schedule in visibleSchedules) {
-      if (schedule['minutes_status'] != 'submitted') continue;
+      if (!AdviserMinutesStatus.fromSchedule(schedule).needsSignature) continue;
       final teamId = _id(schedule['team_id']);
       if (teamId == null) continue;
+      signatureCount++;
       tasks.add(
         _AdviserTask(
           teamNames[teamId] ?? 'Team',
-          'Minutes are ready for your review and signature',
+          '${schedule['stage_label']} · Minutes ready to sign',
           Icons.description_outlined,
           teamId,
-          () => widget.onOpenDefense(teamId),
+          () => widget.onOpenDefense(
+            teamId,
+            schedule['stage_label']?.toString() ?? '',
+          ),
         ),
       );
     }
@@ -497,7 +523,8 @@ class _AdviserDashboardContentState
                 'Submissions to review',
                 Icons.rate_review_outlined,
               ),
-              _stat('$readyCount', 'Ready to endorse', Icons.verified_outlined),
+              _stat('$gradeCount', 'Ready to grade', Icons.rate_review_outlined),
+              _stat('$signatureCount', 'Minutes to sign', Icons.draw_outlined),
             ];
             if (constraints.maxWidth < 760) {
               return Column(
@@ -511,11 +538,9 @@ class _AdviserDashboardContentState
             }
             return Row(
               children: [
-                stats[0],
-                const SizedBox(width: 12),
-                stats[1],
-                const SizedBox(width: 12),
-                stats[2],
+                for (var i = 0; i < stats.length; i++) ...[
+                  if (i > 0) const SizedBox(width: 12), stats[i],
+                ],
               ],
             );
           },
@@ -528,8 +553,8 @@ class _AdviserDashboardContentState
                 children: [
                   _taskList(
                     tasks,
-                    deliverables.isLoading || defense.isLoading,
-                    deliverables.error != null || defense.error != null,
+                    deliverables.isLoading || defense.isLoading || grading.isLoading,
+                    deliverables.error != null || defense.error != null || grading.error != null,
                   ),
                   const SizedBox(height: 16),
                   _upcomingDefenses(
@@ -548,8 +573,8 @@ class _AdviserDashboardContentState
                   flex: 3,
                   child: _taskList(
                     tasks,
-                    deliverables.isLoading || defense.isLoading,
-                    deliverables.error != null || defense.error != null,
+                    deliverables.isLoading || defense.isLoading || grading.isLoading,
+                    deliverables.error != null || defense.error != null || grading.error != null,
                   ),
                 ),
                 const SizedBox(width: 16),

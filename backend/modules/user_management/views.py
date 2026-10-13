@@ -3,7 +3,7 @@ import re
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import ProtectedError, Q
+from django.db.models import Count, Prefetch, ProtectedError, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers, status
@@ -44,15 +44,15 @@ User = get_user_model()
 
 
 def user_counts():
-    return {
-        'all': User.objects.count(),
-        'admins': User.objects.filter(role='admin').count(),
-        'faculty': User.objects.filter(role__in=['faculty', 'admin']).count(),
-        'students': User.objects.filter(role='student').count(),
-        'active': User.objects.filter(is_active=True).count(),
-        'advisers': User.objects.filter(role__in=['faculty', 'admin'], is_adviser=True).count(),
-        'panelists': User.objects.filter(role__in=['faculty', 'admin'], is_panelist=True).count(),
-    }
+    return User.objects.aggregate(
+        all=Count('pk'),
+        admins=Count('pk', filter=Q(role='admin')),
+        faculty=Count('pk', filter=Q(role__in=['faculty', 'admin'])),
+        students=Count('pk', filter=Q(role='student')),
+        active=Count('pk', filter=Q(is_active=True)),
+        advisers=Count('pk', filter=Q(role__in=['faculty', 'admin'], is_adviser=True)),
+        panelists=Count('pk', filter=Q(role__in=['faculty', 'admin'], is_panelist=True)),
+    )
 
 
 def guest_code_counts():
@@ -124,7 +124,6 @@ class UserListCreateView(APIView):
         elif role == 'documenter':
             users = users.filter(role__in=['faculty', 'admin'], is_documenter=True)
         elif role == 'pit_instructor':
-            from user_management.models import SectionInstructorAssignment
             active_sem = _active_semester()
             instructor_qs = SectionInstructorAssignment.objects.filter(is_active=True)
             if active_sem:
@@ -138,6 +137,11 @@ class UserListCreateView(APIView):
             'academic_records',
             'academic_records__semester',
             'academic_records__semester__school_year',
+            Prefetch(
+                'section_instructor_assignments',
+                queryset=SectionInstructorAssignment.objects.filter(is_active=True)
+                .select_related('semester__school_year'),
+            ),
         )
 
         return Response({

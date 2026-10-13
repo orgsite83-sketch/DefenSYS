@@ -9,7 +9,7 @@ from rest_framework.exceptions import APIException, PermissionDenied, Validation
 
 from authentication_access_control.audit import log_high_impact_action
 from authentication_access_control.models import SystemAuditLog
-from authentication_access_control.scopes import visible_schedules_for
+from authentication_access_control.scopes import manageable_schedules_for
 from .models import DefenseSchedule, SchedulePanelist
 from .services import deletion_blockers, delete_schedule, schedule_audit_values, adviser_panel_conflict
 
@@ -31,7 +31,7 @@ class OperationSerializer(serializers.Serializer):
 
 
 def selection(actor, data):
-    visible = visible_schedules_for(actor)
+    visible = manageable_schedules_for(actor)
     anchor = visible.filter(pk=data['anchor_id']).first()
     if not anchor:
         raise PermissionDenied('This defense is outside your management scope.')
@@ -419,6 +419,7 @@ def execute_operation(actor, data, request=None):
     if not changed_items:
         return review
     for schedule in changed_items:
+        from .materials import deadline_summary, student_ids
         panels = panel_objects.get(schedule.pk)
         external = external_objects.get(schedule.pk)
         eids = external_map[schedule.pk]
@@ -499,6 +500,8 @@ def execute_operation(actor, data, request=None):
             (old_values[schedule.pk].get('documenter_id'), 'documenter'),
             (schedule.team.adviser_id, 'adviser'), (schedule.team.leader_id, 'student'),
         ) if pk}
+        targets |= {(pk, 'student') for pk in student_ids(schedule.team)}
+        deadlines = deadline_summary(schedule) if schedule.status == 'scheduled' else ''
         users = {u.pk: u for u in get_user_model().objects.filter(pk__in={pk for pk, _ in targets})}
         delivered = set()
         for recipient, workspace in sorted(targets):
@@ -515,7 +518,8 @@ def execute_operation(actor, data, request=None):
             if workspace == 'documenter' and schedule.documenter_id != recipient:
                 route = '/documenter'
             Notification.objects.create(recipient=person, sender=actor, title='Defense schedule updated',
-                message=f'{schedule.team.name}: {schedule.stage_label}, {schedule.scheduled_date} {schedule.start_time}, {schedule.room}. Reason: {data["reason"]}',
+                message=f'{schedule.team.name}: {schedule.stage_label}, {schedule.scheduled_date} {schedule.start_time}, {schedule.room}. Reason: {data["reason"]}'
+                        + (f' Upload deadlines: {deadlines}.' if workspace == 'student' and deadlines else ''),
                 category=NotificationCategory.DEFENSE, workspace=workspace, priority='HIGH', action_route=route,
                 action_payload={'schedule_id': schedule.pk, 'team_id': schedule.team_id})
         log_high_impact_action(category=SystemAuditLog.CATEGORY_SCHEDULING, action='schedule.operational_change', target=schedule,

@@ -14,7 +14,7 @@ from defense.scheduler.serializers import (
     active_semester,
     schedule_queryset,
 )
-from authentication_access_control.scopes import visible_schedules_for
+from authentication_access_control.scopes import manageable_schedules_for, visible_schedules_for
 from user_management.permissions import CanManageModule
 
 
@@ -155,7 +155,8 @@ def latest_schedule_changes(queryset):
     from django.db.models.functions import Cast
     from django.conf import settings
     queryset = queryset.annotate(_audit_key=Cast('pk', CharField()))
-    latest = SystemAuditLog.objects.filter(target_type='DefenseSchedule', target_id=OuterRef('_audit_key'), action='schedule.operational_change').order_by('-created_at', '-pk')
+    latest = SystemAuditLog.objects.filter(target_type='DefenseSchedule', target_id=OuterRef('_audit_key'),
+        action__in=['schedule.operational_change', 'schedule.material_deadline_extended']).order_by('-created_at', '-pk')
     if settings.DEBUG:
         from datetime import datetime, timezone
         from django.db.models import DateTimeField, Value
@@ -219,12 +220,13 @@ class DefenseBoardOperationsView(APIView):
             from authentication_access_control.models import SystemAuditLog
             schedules = board_queryset_for_user(request.user).filter(session_id=schedule.session_id, semester_id=schedule.semester_id, scope=schedule.scope) if request.query_params.get('session') == '1' else board_queryset_for_user(request.user).filter(pk=schedule.pk)
             names = {str(s.pk): s.team.name for s in schedules}
-            logs = SystemAuditLog.objects.filter(target_type='DefenseSchedule', target_id__in=names, action='schedule.operational_change').select_related('actor')[:100]
+            logs = SystemAuditLog.objects.filter(target_type='DefenseSchedule', target_id__in=names,
+                action__in=['schedule.operational_change', 'schedule.material_deadline_extended']).select_related('actor')[:100]
             return Response({'history': [{**schedule_change_payload(log), 'schedule_id': int(log.target_id), 'team_name': names[log.target_id]} for log in logs]})
         payload = schedule_options_payload(user=request.user)
         if request.query_params.get('management') == '1':
             semester = active_semester()
-            schedules = board_queryset_for_user(request.user).filter(semester=semester) if semester else DefenseSchedule.objects.none()
+            schedules = manageable_schedules_for(request.user).filter(semester=semester) if semester else DefenseSchedule.objects.none()
             if not (request.user.role == 'admin' or request.user.is_superuser):
                 schedules = schedules.filter(scope='pit') if request.user.is_pit_lead else DefenseSchedule.objects.none()
             payload.update(deletion_preview(list(schedules.order_by('scheduled_date', 'start_time', 'pk'))))
@@ -243,7 +245,7 @@ class DefenseBoardDetailView(APIView):
     permission_classes = [CanManageModule]
 
     def get_object(self, request, schedule_id):
-        return get_object_or_404(board_queryset_for_user(request.user), pk=schedule_id)
+        return get_object_or_404(manageable_schedules_for(request.user), pk=schedule_id)
 
     def patch(self, request, schedule_id):
         schedule = self.get_object(request, schedule_id)

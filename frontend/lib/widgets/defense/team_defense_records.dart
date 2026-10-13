@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/defense_workflow_labels.dart';
 import '../../models/team_defense_record.dart';
+import '../../models/adviser_workflow.dart';
+import '../adviser/workflow_reminder.dart';
 import '../../services/defense/team_defense_provider.dart';
 import '../../theme/defensys_tokens.dart';
 import '../../toasts/feedback_toast.dart';
@@ -77,7 +79,7 @@ class TeamDefenseRecordsView extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
+        Material(color: DefensysTokens.surfaceOf(context), child: Row(
           children: [
             const Expanded(
               child: Text(
@@ -93,7 +95,7 @@ class TeamDefenseRecordsView extends ConsumerWidget {
               icon: const Icon(Icons.refresh_rounded, size: 19),
             ),
           ],
-        ),
+        )),
         if (state.isLoading) ...[
           const LinearProgressIndicator(minHeight: 2),
           const SizedBox(height: 12),
@@ -347,6 +349,7 @@ class DefenseRecordCard extends StatelessWidget {
             ? 'Not required for this defense'
             : 'Not started',
     };
+    final minutesGuidance = AdviserMinutesStatus.fromSchedule(schedule);
     final secondary = DefensysTokens.textSecondaryOf(context);
     final deadline =
         assessment['revision_deadline'] ?? grade?['revision_deadline'];
@@ -362,6 +365,16 @@ class DefenseRecordCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (allowAdviserReview) ...[
+            AdviserWorkflowReminder(
+              key: ValueKey('adviser-minutes-reminder-${schedule['id']}'),
+              title: minutesGuidance.title, detail: minutesGuidance.detail,
+              tone: minutesGuidance.tone,
+              actionLabel: 'Review and sign minutes',
+              onAction: minutesGuidance.needsSignature ? onOpenMinutes : null,
+            ),
+            const SizedBox(height: 18),
+          ],
           Wrap(
             spacing: 10,
             runSpacing: 8,
@@ -518,7 +531,7 @@ class DefenseRecordCard extends StatelessWidget {
           const Divider(height: 30),
           _section('Minutes'),
           Text(minutesLabel, style: TextStyle(fontSize: 13, color: secondary)),
-          if (canOpen) ...[
+          if (canOpen && !minutesGuidance.needsSignature) ...[
             const SizedBox(height: 10),
             Align(
               alignment: Alignment.centerLeft,

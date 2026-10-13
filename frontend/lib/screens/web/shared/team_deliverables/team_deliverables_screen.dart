@@ -102,10 +102,12 @@ class _TeamDeliverablesScreenState
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+        search: widget.initialTeamId != null ? '' : null,
+        status: widget.initialTeamId != null ? '' : null,
         scope: widget.initialScope,
         selectedStage: widget.initialStage,
-        yearLevel: widget.pitYearLevel,
-        section: widget.pitSection,
+        yearLevel: widget.pitYearLevel ?? '',
+        section: widget.pitSection ?? '',
       );
       ref.read(adviserGradingProvider.notifier).fetchAll();
       ref.read(weeklyProgressProvider.notifier).fetchReports();
@@ -154,6 +156,7 @@ class _TeamDeliverablesScreenState
                       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
                       if (widget.isAdviser) {
                         ref.read(adviserDefenseProvider.notifier).fetch();
+                        ref.read(adviserGradingProvider.notifier).fetchAll();
                       }
                     },
               icon: const Icon(Icons.refresh),
@@ -175,9 +178,13 @@ class _TeamDeliverablesScreenState
                   ? (state.stageOptions.isEmpty
                       ? 'No PIT events configured for this semester or year level. Add them in PIT Events Setup.'
                       : 'No deliverables configured for ${state.selectedStage}. Add them in PIT Events Setup.')
-                  : (state.stageOptions.isEmpty
-                      ? 'No defense stages configured. Add them in Defense Stages Setup.'
-                      : 'No deliverables configured for ${state.selectedStage}. Add them in Defense Stages Setup so Required progress can be tracked.'),
+                  : widget.isAdviser
+                      ? (state.stageOptions.isEmpty
+                          ? 'No defense stages configured.'
+                          : 'No deliverables configured for ${state.selectedStage}.')
+                      : (state.stageOptions.isEmpty
+                          ? 'No defense stages configured. Add them in Defense Stages Setup.'
+                          : 'No deliverables configured for ${state.selectedStage}. Add them in Defense Stages Setup so Required progress can be tracked.'),
               AppColors.gold,
             ),
           ],

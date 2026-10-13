@@ -229,20 +229,20 @@ class _PitInstructorAssignmentScreenState
                       ),
                       DataCell(_statusBadge(active)),
                       DataCell(
-                        TextButton.icon(
-                          icon: Icon(
-                            active
-                                ? Icons.visibility_off_outlined
-                                : Icons.restore_outlined,
-                            size: 17,
-                          ),
-                          label: Text(active ? 'Deactivate' : 'Restore'),
-                          onPressed: id == null || state.isSaving
-                              ? null
-                              : () => ref
-                                    .read(pitInstructorProvider.notifier)
-                                    .setAssignmentActive(id, !active),
-                        ),
+                        active
+                            ? const SizedBox.shrink()
+                            : TextButton.icon(
+                                icon: const Icon(
+                                  Icons.restore_outlined,
+                                  size: 17,
+                                ),
+                                label: const Text('Restore'),
+                                onPressed: id == null || state.isSaving
+                                    ? null
+                                    : () => ref
+                                          .read(pitInstructorProvider.notifier)
+                                          .setAssignmentActive(id, true),
+                              ),
                       ),
                     ],
                   );

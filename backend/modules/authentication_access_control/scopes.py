@@ -99,6 +99,7 @@ def manageable_teams_for(user):
 
 def visible_schedules_for(user):
     from defense.scheduler.models import DefenseSchedule
+    from student_teams.models import StudentTeam
 
     base = (
         DefenseSchedule.objects.select_related(
@@ -118,27 +119,26 @@ def visible_schedules_for(user):
         return base.none()
     if is_admin_user(user):
         return base
-    if is_pit_lead_only(user):
-        pit_year = _pit_year(user)
-        if not pit_year:
-            return base.none()
-        return (
-            base.filter(
-                scope=DefenseSchedule.SCOPE_PIT,
-                team__level__icontains='PIT',
-                team__year_level=pit_year,
-            )
-            .exclude(team__year_level='3rd Year', semester__label='2nd Semester')
-        )
-    if getattr(user, 'is_uploader', False):
-        return base.filter(semester__is_active=True)
     if getattr(user, 'role', None) == 'faculty':
-        return base.filter(
+        # Faculty assignments remain visible when the same account is also a
+        # PIT lead. PIT management scope must not replace adviser/panel access.
+        assignments = (
             Q(team__adviser=user)
             | Q(panel_assignments__panelist=user)
             | Q(documenter=user)
-            | Q(team__in=visible_teams_for(user))
-        ).distinct()
+            | Q(team__in=StudentTeam.objects.filter(
+                section_instructor_section_filters(user)
+            ))
+        )
+        if is_pit_lead_only(user):
+            assignments |= _pit_schedule_filters(user)
+        if getattr(user, 'is_uploader', False):
+            assignments |= Q(semester__is_active=True)
+        return base.filter(assignments).distinct()
+    if is_pit_lead_only(user):
+        return base.filter(_pit_schedule_filters(user))
+    if getattr(user, 'is_uploader', False):
+        return base.filter(semester__is_active=True)
     if getattr(user, 'role', None) == 'student':
         from student_teams.models import SectionAssignment
         pm_section = SectionAssignment.objects.filter(
@@ -154,6 +154,27 @@ def visible_schedules_for(user):
         return base.filter(
             Q(team__leader=user) | Q(team__memberships__student=user)
         ).distinct()
+    return base.none()
+
+
+def _pit_schedule_filters(user):
+    """Year-scoped PIT access, independent of other faculty assignments."""
+    pit_year = _pit_year(user)
+    if not is_pit_lead_only(user) or not pit_year:
+        return Q(pk__in=[])
+    return (
+        Q(scope='pit', team__level__icontains='PIT', team__year_level=pit_year)
+        & ~Q(team__year_level='3rd Year', semester__label='2nd Semester')
+    )
+
+
+def manageable_schedules_for(user):
+    """Read access as adviser, panelist, or documenter never grants management."""
+    base = visible_schedules_for(user)
+    if is_admin_user(user):
+        return base
+    if is_pit_lead_only(user):
+        return base.filter(_pit_schedule_filters(user))
     return base.none()
 
 

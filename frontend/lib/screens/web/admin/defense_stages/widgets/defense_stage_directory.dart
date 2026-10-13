@@ -44,6 +44,7 @@ class DefenseStageDirectory extends StatefulWidget {
     required this.onDelete,
     required this.onMove,
     this.exportAction,
+    this.draftNotice,
   });
   final DefenseStagesState state;
   final Future<void> Function() onRefresh;
@@ -52,6 +53,7 @@ class DefenseStageDirectory extends StatefulWidget {
   final StageMutation onPublish, onDelete;
   final Future<void> Function(Map<String, dynamic>, int, int) onMove;
   final Widget? exportAction;
+  final Widget? draftNotice;
 
   @override
   State<DefenseStageDirectory> createState() => _DefenseStageDirectoryState();
@@ -114,6 +116,10 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
               children: [
                 _header(compact),
                 const SizedBox(height: 24),
+                if (widget.draftNotice != null) ...[
+                  widget.draftNotice!,
+                  const SizedBox(height: 24),
+                ],
                 if (widget.state.isLoading)
                   _loading()
                 else ...[
@@ -1326,28 +1332,33 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
   }
 
   Widget _empty() => ShadCard(
+    key: const ValueKey('stage-directory-empty'),
     width: double.infinity,
     backgroundColor: _surface,
     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 44),
-    child: Column(
-      children: [
-        Icon(LucideIcons.layers, size: 30, color: _muted),
-        const SizedBox(height: 16),
-        Text(
-          'Build your defense sequence',
-          style: TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w600,
-            color: _ink,
+    child: SizedBox(
+      width: double.infinity,
+      child: Column(
+        children: [
+          Icon(LucideIcons.layers, size: 30, color: _muted),
+          const SizedBox(height: 16),
+          Text(
+            'Build your defense sequence',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+              color: _ink,
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Add your first stage, then configure its rubrics and requirements.',
-          textAlign: TextAlign.center,
-          style: _small,
-        ),
-      ],
+          const SizedBox(height: 8),
+          Text(
+            'Add your first stage, then configure its rubrics and requirements.',
+            textAlign: TextAlign.center,
+            style: _small,
+          ),
+        ],
+      ),
     ),
   );
 

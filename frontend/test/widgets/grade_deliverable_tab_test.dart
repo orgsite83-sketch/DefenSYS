@@ -24,6 +24,7 @@ void main() {
     'team_id': 10,
     'stage_label': 'Concept Proposal',
     'status': 'pending',
+    'adviser_grading_available': true,
     'assigned_adviser_rubric_id': 5,
     'assigned_adviser_rubric_name': 'CP - Adviser',
     'assigned_adviser_rubric_scale': '10-Point Scale',

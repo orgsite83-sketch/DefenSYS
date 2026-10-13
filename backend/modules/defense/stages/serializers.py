@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from .models import DefenseStage, StageDeliverable, StageGradingConfig
 from .readiness import stage_setup_readiness
+from defense.deliverable_timing import validate_timing
 
 
 class StageDeliverableSerializer(serializers.ModelSerializer):
@@ -14,6 +15,8 @@ class StageDeliverableSerializer(serializers.ModelSerializer):
             'label',
             'deliverable_type',
             'required',
+            'requirement_timing',
+            'deadline_hours_before',
             'display_order',
             'archive_note',
             'archive_file_template',
@@ -38,6 +41,13 @@ class StageDeliverableSerializer(serializers.ModelSerializer):
                     f'Archive naming template cannot exceed 3 dynamic variables (found {len(vars_found)}). Phone filenames have character limits.'
                 )
         return value
+
+    def validate(self, attrs):
+        values = {name: getattr(self.instance, name) for name in (
+            'deliverable_type', 'requirement_timing', 'deadline_hours_before')} if self.instance else {}
+        values.update(attrs)
+        attrs.update(validate_timing(values))
+        return attrs
 
 
 def check_stage_locked(stage, semester=None):
@@ -337,6 +347,7 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
                     label = label.strip()
                 if not label:
                     raise serializers.ValidationError('Deliverable label cannot be blank.')
+                item.update(validate_timing(item))
         return value
 
     def create(self, validated_data):
@@ -408,6 +419,8 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
                 label=deliverable_data.get('label', ''),
                 deliverable_type=dtype,
                 required=bool(required),
+                requirement_timing=deliverable_data.get('requirement_timing', 'scheduling'),
+                deadline_hours_before=deliverable_data.get('deadline_hours_before', 24),
                 display_order=deliverable_data.get('display_order', 1),
                 archive_note=deliverable_data.get('archive_note', ''),
                 archive_file_template=tpl,

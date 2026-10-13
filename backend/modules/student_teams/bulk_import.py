@@ -594,6 +594,24 @@ def validate_bulk_team_row(
             if not (issue.startswith('Adviser "') or issue.endswith('is not a project adviser.'))
         ]
 
+    # Instructors belong to a PIT section, never to the team's adviser field.
+    # Preview resolves the reference without granting roles or writing assignments.
+    instructor = None
+    instructor_ref = (data.get('instructor_name') or '').strip()
+    if instructor_ref:
+        if not pit_row:
+            issues.append('Instructor is only supported for PIT sections. Use Adviser for Capstone teams.')
+        else:
+            instructor, instructor_error = resolve_user_by_full_name(
+                instructor_ref, role=['faculty', 'admin'], field_label='Instructor',
+            )
+            if instructor_error:
+                issues.append(instructor_error)
+            elif not instructor.is_active:
+                issues.append(f'Instructor "{instructor_ref}" is inactive.')
+            if not (data.get('section') or '').strip():
+                issues.append('A section is required to assign a PIT instructor.')
+
     if member_user_ids and not issues:
         issues.extend(
             _existing_team_membership_issues(
@@ -616,6 +634,8 @@ def validate_bulk_team_row(
         'adviser_id': adviser_ref,
         'adviser_status': adviser_status,
         'adviser_name': adviser_name,
+        'instructor_name': display_name(instructor) if instructor else instructor_ref,
+        'instructor': instructor,
         'ready': ready,
         'issues': issues,
         'warnings': warnings,
@@ -665,6 +685,7 @@ def preview_bulk_teams(
                 'adviser_id': (row.get('adviser_id') or row.get('adviser_name') or '').strip(),
                 'adviser_name': (row.get('adviser_name') or row.get('adviser_id') or '').strip(),
                 'adviser_status': ADVISER_STATUS_NONE,
+                'instructor_name': (row.get('instructor_name') or '').strip(),
                 'section': (row.get('section') or '').strip(),
                 'ready': False,
                 'issues': prep_issues,
@@ -693,6 +714,7 @@ def preview_bulk_teams(
                 'adviser_id': (row.get('adviser_id') or row.get('adviser_name') or '').strip(),
                 'adviser_name': (row.get('adviser_name') or row.get('adviser_id') or '').strip(),
                 'adviser_status': ADVISER_STATUS_NONE,
+                'instructor_name': (row.get('instructor_name') or '').strip(),
                 'section': (row.get('section') or '').strip(),
                 'ready': False,
                 'issues': ['; '.join(format_bulk_import_errors(row_serializer.errors))],
@@ -721,6 +743,7 @@ def preview_bulk_teams(
             'adviser_id': result['adviser_id'],
             'adviser_status': result['adviser_status'],
             'adviser_name': result['adviser_name'],
+            'instructor_name': result['instructor_name'],
             'year_level': row_data.get('year_level', ''),
             'section': row_data.get('section', ''),
             'level': row_data.get('level', ''),

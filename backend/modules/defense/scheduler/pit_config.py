@@ -4,6 +4,7 @@ from django.core.exceptions import ValidationError
 from grading.rubrics.models import Rubric
 
 from .models import PitEventGradingConfig, PitEventDeliverable
+from defense.deliverable_timing import validate_timing
 
 
 DEFAULT_PIT_PANEL_WEIGHT = 80
@@ -100,6 +101,13 @@ def upsert_pit_event_config(
         raise ValidationError({'event_name': 'PIT event name is required.'})
     if panel_weight + peer_weight != 100:
         raise ValidationError('Panel and peer weights must total 100%.')
+    if deliverables is not None:
+        from rest_framework.exceptions import ValidationError as ApiValidationError
+        for item in deliverables:
+            try:
+                item.update(validate_timing(item))
+            except ApiValidationError as exc:
+                raise ValidationError({'deliverables': str(exc.detail)}) from exc
 
     existing_config = PitEventGradingConfig.objects.filter(
         semester=semester, event_name__iexact=event_name
@@ -252,6 +260,8 @@ def upsert_pit_event_config(
                     target.archive_file_template = archive_file_template
                     target.is_restricted = is_restricted
                     target.is_defense_material = is_defense_material
+                    target.requirement_timing = d['requirement_timing']
+                    target.deadline_hours_before = d['deadline_hours_before']
                     target.file_format = file_format
                     if provided_deliv_id:
                         target.deliverable_id = provided_deliv_id
@@ -271,6 +281,8 @@ def upsert_pit_event_config(
                         archive_file_template=archive_file_template,
                         is_restricted=is_restricted,
                         is_defense_material=is_defense_material,
+                        requirement_timing=d['requirement_timing'],
+                        deadline_hours_before=d['deadline_hours_before'],
                         file_format=file_format,
                     )
                     if not deliv.deliverable_id:
@@ -295,6 +307,8 @@ def pit_event_config_payload(config):
             'archive_file_template': d.archive_file_template,
             'is_restricted': d.is_restricted,
             'is_defense_material': getattr(d, 'is_defense_material', False),
+            'requirement_timing': d.requirement_timing,
+            'deadline_hours_before': d.deadline_hours_before,
             'file_format': getattr(d, 'file_format', 'any') or 'any',
         }
         for d in config.deliverables.all().order_by('display_order', 'deliverable_id')

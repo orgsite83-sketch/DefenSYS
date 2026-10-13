@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.utils.functional import cached_property
 from rest_framework import serializers
 
 from defense.scheduler.models import DefenseSchedule
@@ -151,12 +152,7 @@ class ManagedUserSerializer(serializers.ModelSerializer):
         return full_name or obj.username
 
     def get_facultyRoles(self, obj):
-        is_pit_instructor = False
-        if obj.role in ['faculty', 'admin']:
-            from user_management.models import SectionInstructorAssignment
-            is_pit_instructor = SectionInstructorAssignment.objects.filter(
-                faculty=obj, is_active=True
-            ).exists()
+        is_pit_instructor = bool(self._instructor_assignments(obj, current_semester_only=False))
         return {
             'panelist': obj.is_panelist,
             'pitLead': obj.is_pit_lead,
@@ -168,17 +164,38 @@ class ManagedUserSerializer(serializers.ModelSerializer):
         }
 
     def get_displayRole(self, obj):
-        return compute_display_role(obj)
+        return compute_display_role(
+            obj, semester=self._active_semester,
+            instructor_assignments=self._instructor_assignments(obj),
+        )
+
+    @cached_property
+    def _active_semester(self):
+        # A many=True serializer shares this lookup across the entire directory.
+        from academic_period_management.services import active_semester
+        return active_semester()
+
+    def _instructor_assignments(self, obj, *, current_semester_only=True):
+        if obj.role not in ('faculty', 'admin'):
+            return []
+        prefetched = getattr(obj, '_prefetched_objects_cache', {}).get('section_instructor_assignments')
+        if prefetched is not None:
+            assignments = [assignment for assignment in prefetched if assignment.is_active]
+        else:
+            if not hasattr(self, '_assignments_by_user'):
+                self._assignments_by_user = {}
+            if obj.pk not in self._assignments_by_user:
+                self._assignments_by_user[obj.pk] = list(
+                    SectionInstructorAssignment.objects.filter(faculty=obj, is_active=True)
+                    .select_related('semester__school_year')
+                )
+            assignments = self._assignments_by_user[obj.pk]
+        semester = self._active_semester if current_semester_only else None
+        if semester is not None:
+            assignments = [assignment for assignment in assignments if assignment.semester_id == semester.pk]
+        return assignments
 
     def get_instructor_assignments(self, obj):
-        if obj.role not in ['faculty', 'admin']:
-            return []
-        from user_management.models import SectionInstructorAssignment
-        from academic_period_management.services import active_semester
-        sem = active_semester()
-        qs = SectionInstructorAssignment.objects.filter(faculty=obj, is_active=True)
-        if sem:
-            qs = qs.filter(semester=sem)
         return [
             {
                 'id': a.id,
@@ -186,7 +203,7 @@ class ManagedUserSerializer(serializers.ModelSerializer):
                 'section': a.section,
                 'semester': a.semester.display_name,
             }
-            for a in qs
+            for a in self._instructor_assignments(obj)
         ]
 
     def validate_username(self, value):

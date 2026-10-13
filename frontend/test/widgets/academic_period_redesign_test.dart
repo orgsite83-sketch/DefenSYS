@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/screens/web/admin/academic_periods/academic_periods_screen.dart';
-import 'package:defensys/screens/web/admin/academic_periods/semester_detail_screen.dart';
 import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/defense_stages_provider.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
@@ -192,7 +191,7 @@ void main() {
     // 1. Verify Level 1 Hub: Accordion School Years are present
     expect(find.text('A.Y. 2026-2027'), findsOneWidget);
     expect(find.text('A.Y. 2025-2026'), findsOneWidget);
-    expect(find.text('CURRENTLY ACTIVE'), findsOneWidget);
+    expect(find.text('Currently active'), findsOneWidget);
 
     // 2. Verify that active A.Y. 2026-2027 is expanded and shows its terms
     expect(find.text('1st Semester'), findsWidgets);
@@ -209,9 +208,9 @@ void main() {
 
     // 4. Verify SemesterDetailScreen Command Center is loaded
     expect(find.text('Back to Academic Cycles'), findsOneWidget);
-    expect(find.text('🎓 Capstone Program (4th Year)'), findsOneWidget);
-    expect(find.text('🚀 PIT Program (1st–3rd Year)'), findsOneWidget);
-    expect(find.text('⚙️ Master Controls & Logs'), findsOneWidget);
+    expect(find.text('Capstone Program (4th Year)'), findsOneWidget);
+    expect(find.text('PIT Program (1st–3rd Year)'), findsOneWidget);
+    expect(find.text('Master Controls & Logs'), findsOneWidget);
 
     // 5. In Capstone Tab (default selected): verify policies and defense stages pipeline
     expect(find.text('⚙️ Capstone Cohort Policies'), findsOneWidget);
@@ -222,7 +221,7 @@ void main() {
     expect(find.text('Final Defense'), findsOneWidget);
 
     // 6. Switch to Tab 2: PIT Program (1st–3rd Year)
-    await tester.tap(find.text('🚀 PIT Program (1st–3rd Year)'));
+    await tester.tap(find.text('PIT Program (1st–3rd Year)'));
     await tester.pumpAndSettle();
 
     // Verify PIT Governance Banner
@@ -268,8 +267,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // 7. Switch to Tab 3: Master Controls & Logs
-    await tester.ensureVisible(find.text('⚙️ Master Controls & Logs'));
-    await tester.tap(find.text('⚙️ Master Controls & Logs'));
+    await tester.ensureVisible(find.text('Master Controls & Logs'));
+    await tester.tap(find.text('Master Controls & Logs'));
     await tester.pumpAndSettle();
 
     expect(find.text('⚙️ Semester Lifecycle & Status'), findsOneWidget);

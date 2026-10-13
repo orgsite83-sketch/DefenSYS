@@ -3,6 +3,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../widgets/shadcn/defensys_action_menu.dart';
 import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import 'components/schedule_operations_dialog.dart';
+import 'components/material_deadline_dialog.dart';
+import '../../../../widgets/repository/defense_material_readiness.dart';
 import 'components/schedule_group_actions.dart';
 import 'components/session_evaluator_access_dialog.dart';
 import 'components/schedule_manager_dialog.dart';
@@ -34,7 +36,6 @@ import '../../../../services/grading/grade_center_provider.dart';
 import '../widgets/defensys_admin_shell.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import '../../../../widgets/table/defensys_segmented_control.dart';
-import '../../faculty/minutes_form_screen.dart';
 import '../../../../widgets/minutes/minutes_pdf_dialog.dart';
 import '../../../../utils/import/schedule_import_draft.dart';
 import '../../../../utils/scheduler/defense_scheduler_draft.dart';
@@ -55,7 +56,6 @@ class DefenseBoardScreen extends ConsumerStatefulWidget {
 
 class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   final TextEditingController _searchController = TextEditingController();
-  int? _selectedMinutesScheduleId;
   bool _showScheduler = false;
   String? _schedulerScope;
   int? _schedulerStageId;
@@ -196,18 +196,6 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_selectedMinutesScheduleId != null) {
-      return MinutesFormScreen(
-        scheduleId: _selectedMinutesScheduleId!,
-        onBack: () {
-          setState(() {
-            _selectedMinutesScheduleId = null;
-          });
-          ref.read(defenseBoardProvider.notifier).fetchBoard();
-        },
-      );
-    }
-
     if (_showScheduleBulkImport) {
       final user = ref.watch(authProvider).user;
       final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
@@ -1013,13 +1001,15 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                     size: 24,
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    'Defense Operations',
-                    style: TextStyle(
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
-                      color: _isDark ? DefensysTokens.textPrimaryDark : AppColors.maroon,
-                      height: 1.1,
+                  Expanded(
+                    child: Text(
+                      'Defense Operations',
+                      style: TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.w800,
+                        color: _isDark ? DefensysTokens.textPrimaryDark : AppColors.maroon,
+                        height: 1.1,
+                      ),
                     ),
                   ),
                 ],
@@ -1039,12 +1029,14 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         ),
         if (canSchedule) ...[
           const SizedBox(width: 16),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            alignment: WrapAlignment.end,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
+          Flexible(
+            flex: 2,
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
               if (currentView == DefenseOperationsView.schedules) const ReportExportMenu(reportId: 'defense-schedules'),
               OutlinedButton.icon(
                 onPressed: _openManualScheduleDialog,
@@ -1137,7 +1129,8 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   ],
                 ),
               ),
-            ],
+              ],
+            ),
           ),
         ],
       ],
@@ -2237,13 +2230,20 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                             color: _textSecondaryColor,
                           ),
                           const SizedBox(width: 5),
-                          Text(
-                            _shortTime(schedule['start_time']),
-                            style: TextStyle(
-                              fontFamily: DefensysTokens.fontFamilyInter,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: _textPrimaryColor,
+                          Flexible(
+                            child: Tooltip(
+                              message: _shortTime(schedule['start_time']),
+                              child: Text(
+                                _shortTime(schedule['start_time']),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: DefensysTokens.fontFamilyInter,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: _textPrimaryColor,
+                                ),
+                              ),
                             ),
                           ),
                         ],
@@ -2340,10 +2340,16 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   ),
                   _BodyCell(
                     flex: 2,
-                    child: _statusChip(
-                      schedule['display_status']?.toString() ??
-                          schedule['status']?.toString() ??
-                          '',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _statusChip(schedule['display_status']?.toString() ?? schedule['status']?.toString() ?? ''),
+                        if (((schedule['materials_readiness'] as Map?)?['required_total'] as num? ?? 0) > 0) ...[
+                          const SizedBox(height: 4),
+                          DefenseMaterialReadiness(compact: true, readiness: Map<String, dynamic>.from(
+                              schedule['materials_readiness'] as Map? ?? const {})),
+                        ],
+                      ],
                     ),
                   ),
                   _BodyCell(
@@ -2580,6 +2586,8 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                       ),
                       if (!isPit) _minutesStatusChip(schedule),
                       _evaluationChip(schedule),
+                      DefenseMaterialReadiness(compact: true, readiness: Map<String, dynamic>.from(
+                          schedule['materials_readiness'] as Map? ?? const {})),
                     ],
                   ),
                 ],
@@ -2626,6 +2634,12 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           if (!isSchedulePit) DefensysMenuItem(label: 'Change documenter', icon: LucideIcons.filePenLine, onPressed: editable ? () => edit('documenter') : null),
           DefensysMenuItem(label: 'Change room', icon: LucideIcons.mapPin, hint: canReschedule ? null : 'Recorded evaluations keep their original room and time.', onPressed: canReschedule ? () => edit('room') : null),
           DefensysMenuItem(label: 'Reschedule defense', icon: LucideIcons.calendarClock, hint: canReschedule ? null : 'Recorded evaluations keep their original room and time.', onPressed: canReschedule ? () => edit('time') : null),
+          if (schedule['status'] == 'scheduled' &&
+              ((schedule['materials_readiness'] as Map?)?['required_total'] as num? ?? 0) > 0 &&
+              (DateTime.tryParse((schedule['materials_readiness'] as Map?)?['defense_starts_at']?.toString() ?? '')
+                  ?.isAfter(DateTime.now()) ?? false))
+            DefensysMenuItem(label: 'Extend material deadline', icon: LucideIcons.clock,
+              onPressed: editable ? () => showMaterialDeadlineDialog(context, schedule) : null),
           const Divider(height: 9),
           DefensysMenuItem(
             label: schedule['operation_state'] != null && schedule['operation_state'] != 'normal' || schedule['status'] == 'cancelled' ? 'Resume defense' : 'Pause defense',
@@ -3320,13 +3334,16 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   Future<void> _previewMinutes(Map<String, dynamic> schedule) async {
     final scheduleId = _asInt(schedule['id']);
     if (scheduleId == null) return;
-    await MinutesPdfDialog.show(context, scheduleId: scheduleId,
+    final user = ref.read(authProvider).user;
+    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final signed = await MinutesPdfDialog.show(context, scheduleId: scheduleId,
       finalized: schedule['minutes_status'] == 'completed',
-      teamName: schedule['team_name']?.toString() ?? 'Defense minutes',
-      onReviewAndSign: schedule['minutes_status'] == 'adviser_signed' &&
-          ref.read(authProvider).user?['role'] == 'admin'
-        ? () => setState(() => _selectedMinutesScheduleId = scheduleId)
-        : null);
+      teamName: '${schedule['team_name'] ?? 'Defense'} · ${schedule['stage_label'] ?? 'Minutes'}',
+      allowChairmanSigning: isAdmin && schedule['status'] != 'cancelled' &&
+          schedule['minutes_status'] == 'adviser_signed');
+    if (!mounted || signed != true) return;
+    await ref.read(defenseBoardProvider.notifier).fetchBoard(
+      successMessage: 'Signed as chairman successfully. Official minutes PDF generated.');
   }
 
   Widget _minutesStatusChip(Map<String, dynamic> schedule) {
@@ -3478,17 +3495,18 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             schedule['status']?.toString() ??
             '')
         .toLowerCase();
-    final isDone = ['done', 'completed'].contains(status);
+    final gradeStatus = (schedule['grade_status']?.toString() ?? '').toLowerCase();
+    final isDone = ['done', 'completed'].contains(status) || gradeStatus == 'published';
 
     final Color bg = isDone
-        ? (_isDark ? const Color(0xFF78350F).withValues(alpha: 0.3) : const Color(0xFFFFFBEB))
-        : _panelBgColor;
+        ? (_isDark ? const Color(0xFF064E3B).withValues(alpha: 0.3) : DefensysTokens.successBg)
+        : (_isDark ? const Color(0xFF78350F).withValues(alpha: 0.3) : DefensysTokens.warningBg);
     final Color fg = isDone
-        ? (_isDark ? const Color(0xFFFDE68A) : const Color(0xFFB45309))
-        : _textSecondaryColor;
+        ? (_isDark ? const Color(0xFF6EE7B7) : DefensysTokens.successText)
+        : (_isDark ? const Color(0xFFFDE68A) : DefensysTokens.warningText);
     final Color border = isDone
-        ? (_isDark ? const Color(0xFFB45309).withValues(alpha: 0.5) : const Color(0xFFFDE68A))
-        : _borderColor;
+        ? (_isDark ? const Color(0xFF059669).withValues(alpha: 0.5) : DefensysTokens.successBorder)
+        : (_isDark ? const Color(0xFFB45309).withValues(alpha: 0.5) : DefensysTokens.warningBorder);
     final String label = isDone ? 'View Evaluation' : 'Evaluation & Grades';
 
     return InkWell(
@@ -3510,13 +3528,17 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               color: fg,
             ),
             const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: DefensysTokens.fontFamilyInter,
-                color: fg,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                  color: fg,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
             const SizedBox(width: 3),

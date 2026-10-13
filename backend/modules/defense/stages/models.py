@@ -1,6 +1,7 @@
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.text import slugify
+from defense.deliverable_timing import TIMING_CHOICES, TIMING_SCHEDULING
 
 
 DEFAULT_PANEL_WEIGHT = 50
@@ -39,6 +40,8 @@ class StageDeliverable(models.Model):
         default=TYPE_PRE,
     )
     required = models.BooleanField(default=False)
+    requirement_timing = models.CharField(max_length=20, choices=TIMING_CHOICES, default=TIMING_SCHEDULING)
+    deadline_hours_before = models.PositiveSmallIntegerField(default=24)
     display_order = models.PositiveSmallIntegerField(default=1)
     archive_note = models.TextField(blank=True)
     archive_file_template = models.CharField(
