@@ -23,8 +23,9 @@ Map<String, dynamic> _readiness({bool overdue = false}) => {
 };
 
 class _MaterialsNotifier extends CapstoneDeliverablesNotifier {
-  _MaterialsNotifier({this.closed = false});
+  _MaterialsNotifier({this.closed = false, this.pitAutoEligible = false});
   final bool closed;
+  final bool pitAutoEligible;
 
   @override
   CapstoneDeliverablesState build() {
@@ -62,15 +63,17 @@ class _MaterialsNotifier extends CapstoneDeliverablesNotifier {
             : '',
       },
     ];
+    final visiblePre = pitAutoEligible ? [pre.last] : pre;
     final stage = <String, dynamic>{
       'stage_label': 'Concept Proposal',
-      'endorsed': true,
+      'endorsed': !pitAutoEligible,
+      'endorsement_required': !pitAutoEligible,
       'deliverables_configured': true,
       'required_complete': true,
-      'required_total': 1,
-      'required_uploaded': 1,
-      'pre': pre,
-      'deliverables': pre,
+      'required_total': pitAutoEligible ? 0 : 1,
+      'required_uploaded': pitAutoEligible ? 0 : 1,
+      'pre': visiblePre,
+      'deliverables': visiblePre,
       'post': [],
       'materials_readiness': _readiness(overdue: closed),
     };
@@ -173,6 +176,13 @@ void main() {
         find.byKey(const ValueKey('defense-material-timing-preview')),
         'defense-material-timing-choices',
       );
+      await tester.enterText(
+        find.byKey(const ValueKey('stage-custom-deadline-hours')),
+        '721',
+      );
+      await tester.pumpAndSettle();
+      expect(hours, 36);
+      expect(find.text('Enter 0 to 720 hours.'), findsOneWidget);
 
       await tester.tap(find.text('Defense material for panelists'));
       await tester.pumpAndSettle();
@@ -216,6 +226,28 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('locked timing remains visible but cannot be changed', (
+    tester,
+  ) async {
+    var timing = 'scheduling';
+    await pumpDefensysWidget(
+      tester,
+      DeliverableTimingFields(
+        timing: timing,
+        hoursBefore: 24,
+        enabled: false,
+        showTimingChoices: true,
+        onTimingChanged: (value) => timing = value,
+        onHoursChanged: (_) {},
+      ),
+    );
+    expect(find.text('Before scheduled defense'), findsOneWidget);
+    await tester.tap(find.text('Before scheduled defense'));
+    await tester.pumpAndSettle();
+    expect(timing, 'scheduling');
+    expect(tester.takeException(), isNull);
+  });
 
   for (final dark in [false, true]) {
     testWidgets(
@@ -309,4 +341,31 @@ void main() {
       },
     );
   }
+
+  testWidgets(
+    'PIT student can see pending defense files without an endorsement gate',
+    (tester) async {
+      tester.view.physicalSize = const Size(440, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await pumpDefensysWidget(
+        tester,
+        const StudentDeliverablesTab(
+          isCapstone: false,
+          studentData: null,
+        ),
+        overrides: [
+          capstoneDeliverablesProvider.overrideWith(
+            () => _MaterialsNotifier(pitAutoEligible: true),
+          ),
+        ],
+      );
+      expect(find.text('Ready to Schedule'), findsOneWidget);
+      expect(find.text('Before Your Defense'), findsOneWidget);
+      expect(find.text('Upload Pitch deck'), findsOneWidget);
+      expect(find.text('Awaiting Endorsement'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

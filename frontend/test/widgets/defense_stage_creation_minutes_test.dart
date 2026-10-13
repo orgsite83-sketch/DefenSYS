@@ -184,12 +184,15 @@ void main() {
             await tester.pumpAndSettle();
             await tester.enterText(
               find.byWidgetPredicate(
-                (widget) => widget is TextField &&
+                (widget) =>
+                    widget is TextField &&
                     widget.decoration?.labelText ==
                         'Pre-Defense Deliverable Name *',
               ),
               'Panel Deck',
             );
+            await tester.tap(find.text('More options'));
+            await tester.pumpAndSettle();
             await tester.tap(find.text('Defense material for panelists'));
             await tester.pumpAndSettle();
             await tester.tap(find.text('Before scheduled defense').last);
@@ -204,14 +207,22 @@ void main() {
             await tester.pumpAndSettle();
             await tester.enterText(
               find.byWidgetPredicate(
-                (widget) => widget is TextField &&
+                (widget) =>
+                    widget is TextField &&
                     widget.decoration?.labelText ==
                         'Post-Defense Deliverable Name *',
               ),
               'Revision Matrix',
             );
+            await tester.tap(find.text('More options'));
+            await tester.pumpAndSettle();
             await tester.tap(find.text('Approved with revisions only'));
             await tester.pumpAndSettle();
+            await capturePreview(
+              tester,
+              find.byKey(const ValueKey('stage-dialog-preview')),
+              'stage-setup-step-three-controls',
+            );
           }
           await tester.tap(find.text('Add Stage'));
           await tester.pumpAndSettle();

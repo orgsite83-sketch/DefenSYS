@@ -29,6 +29,30 @@ class StageFileFormatPicker extends StatelessWidget {
     'audio': 'Audio (.mp3, .wav)',
   };
 
+  static IconData iconFor(String key) => switch (key.toLowerCase()) {
+    'pdf' => Icons.picture_as_pdf_rounded,
+    'video' => Icons.videocam_rounded,
+    'image' => Icons.image_rounded,
+    'presentation' => Icons.slideshow_rounded,
+    'document' => Icons.article_rounded,
+    'spreadsheet' => Icons.table_chart_rounded,
+    'archive' => Icons.folder_zip_rounded,
+    'audio' => Icons.audio_file_rounded,
+    _ => Icons.insert_drive_file_outlined,
+  };
+
+  static Color colorFor(String key) => switch (key.toLowerCase()) {
+    'pdf' => const Color(0xFFDC2626),
+    'video' => const Color(0xFF7C3AED),
+    'image' => const Color(0xFF0284C7),
+    'presentation' => const Color(0xFFEA580C),
+    'document' => const Color(0xFF2563EB),
+    'spreadsheet' => const Color(0xFF16A34A),
+    'archive' => const Color(0xFFD97706),
+    'audio' => const Color(0xFF0D9488),
+    _ => const Color(0xFF64748B),
+  };
+
   @override
   Widget build(BuildContext context) => DefensysShadcnScope(
     child: ShadSelect<String>(
@@ -36,16 +60,44 @@ class StageFileFormatPicker extends StatelessWidget {
       initialValue: formats.containsKey(value) ? value : 'any',
       enabled: enabled,
       minWidth: 210,
-      maxWidth: 300,
+      maxWidth: 320,
       placeholder: const Text('File format'),
       options: [
         for (final option in formats.entries)
-          ShadOption<String>(value: option.key, child: Text(option.value)),
+          ShadOption<String>(
+            value: option.key,
+            child: Row(
+              children: [
+                Icon(
+                  iconFor(option.key),
+                  size: 16,
+                  color: colorFor(option.key),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    option.value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
-      selectedOptionBuilder: (context, selected) => Text(
-        formats[selected] ?? selected,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      selectedOptionBuilder: (context, selected) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(iconFor(selected), size: 16, color: colorFor(selected)),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              formats[selected] ?? selected,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
       onChanged: (selected) {
         if (selected != null) onChanged(selected);
@@ -70,55 +122,97 @@ class StageVerdictConditionChoices extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     Widget choice(String id, String title, String explanation) {
       final selected = value == id;
       return Semantics(
         button: true,
         selected: selected,
         child: Material(
-          color: selected
-              ? Color.alphaBlend(
-                  theme.colorScheme.primary.withValues(alpha: .07),
-                  theme.colorScheme.surface,
-                )
-              : theme.colorScheme.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: BorderSide(
-              color: selected ? theme.colorScheme.primary : theme.dividerColor,
-              width: selected ? 1.5 : 1,
-            ),
-          ),
+          color: Colors.transparent,
           child: InkWell(
             onTap: enabled ? () => onChanged(id) : null,
             borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.all(10),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              constraints: const BoxConstraints(minHeight: 82),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: selected
+                    ? (isDark ? const Color(0xFF1E293B) : Colors.white)
+                    : (isDark
+                          ? const Color(0xFF0F172A)
+                          : const Color(0xFFFAFAFA)),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: selected
+                      ? const Color(0xFF0F172A)
+                      : const Color(0xFFE2E8F0),
+                  width: selected ? 1.5 : 1,
+                ),
+                boxShadow: selected
+                    ? const [
+                        BoxShadow(
+                          color: Color(0x0A000000),
+                          blurRadius: 4,
+                          offset: Offset(0, 1),
+                        ),
+                      ]
+                    : null,
+              ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    selected
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_unchecked,
-                    size: 18,
-                    color: selected
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.onSurfaceVariant,
+                  Container(
+                    margin: const EdgeInsets.only(top: 2),
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: selected
+                            ? const Color(0xFF0F172A)
+                            : const Color(0xFFCBD5E1),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: selected
+                        ? Center(
+                            child: Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                          )
+                        : null,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           title,
-                          style: theme.textTheme.labelMedium?.copyWith(
+                          style: TextStyle(
+                            fontSize: 13,
                             fontWeight: FontWeight.w700,
+                            color: selected
+                                ? const Color(0xFF0F172A)
+                                : const Color(0xFF334155),
                           ),
                         ),
                         const SizedBox(height: 3),
-                        Text(explanation, style: theme.textTheme.bodySmall),
+                        Text(
+                          explanation,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            color: Color(0xFF64748B),
+                            height: 1.35,
+                          ),
+                        ),
                       ],
                     ),
                   ),

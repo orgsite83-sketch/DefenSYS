@@ -6,6 +6,59 @@ import 'package:defensys/services/defense_scheduler_provider.dart';
 import '../helpers/auth_test_overrides.dart';
 
 void main() {
+  testWidgets('PIT event without scheduling files is ready without endorsement', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: authTestOverrides(),
+        child: MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: TeamReadinessTracker(
+                state: DefenseSchedulerState(
+                  teams: const [{
+                    'id': 1,
+                    'name': 'Team Alpha',
+                    'level': '1st Year PIT',
+                    'section': 'BSIT-1A',
+                  }],
+                  pitEvents: const [{
+                    'event_name': 'System Concept Pitching',
+                    'deliverables': [
+                      {'deliverable_type': 'pre', 'required': true, 'requirement_timing': 'defense'},
+                    ],
+                  }],
+                ),
+                scope: 'pit',
+                activeStageOrEventName: 'System Concept Pitching',
+                onReviewTeamDeliverables: (_, _) {},
+                onSendReminder: (_, _) {},
+                isSendingReminder: false,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('BSIT-1A'));
+    await tester.pumpAndSettle();
+    final statusCell = find.byKey(
+      const ValueKey('team-defense-status-1-System Concept Pitching'),
+    );
+    expect(
+      find.descendant(of: statusCell, matching: find.text('Ready to Schedule')),
+      findsOneWidget,
+    );
+    expect(find.text('Awaiting Endorsement'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final scenario in [
     (
       'awaiting_completion',

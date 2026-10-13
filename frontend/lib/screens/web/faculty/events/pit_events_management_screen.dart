@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../navigation/admin_route_paths.dart';
 import '../../../../services/defense_scheduler_provider.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/widgets.dart';
+import '../../../../widgets/shadcn/defensys_shadcn_scope.dart';
 import '../../../../widgets/repository/repository_archive_naming_panel.dart';
 import '../../../../widgets/repository/deliverable_timing_fields.dart';
 import '../../../../toasts/feedback_toast.dart';
@@ -14,6 +16,9 @@ import '../../../../services/dashboard_provider.dart';
 import '../../../../utils/unsaved_changes.dart';
 import '../../admin/widgets/defensys_admin_shell.dart';
 import '../../admin/grade_center/grade_center_shared.dart' show showPeerGradingHelpDialog;
+import '../../admin/defense_stages/widgets/stage_deliverable_choices.dart';
+import '../../admin/defense_stages/widgets/stage_deliverable_overview.dart';
+import '../../admin/defense_stages/widgets/stage_deliverable_presets_bar.dart';
 
 class PitEventsManagementScreen extends ConsumerStatefulWidget {
   const PitEventsManagementScreen({super.key});
@@ -27,6 +32,12 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
   bool _isLoadingConfigs = true;
   bool _isMatrixView = false;
   final Set<int> _expandedConfigIds = {};
+
+  Color get _muted => DefensysTokens.textSecondaryOf(context);
+  Color get _border => DefensysTokens.borderOf(context);
+  Color get _surface => DefensysTokens.surfaceOf(context);
+  Color get _ink => DefensysTokens.textPrimaryOf(context);
+  Color get _fill => DefensysTokens.surfaceHigherOf(context);
 
   @override
   void initState() {
@@ -128,142 +139,149 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
     );
 
     final activeSem = state.activeSemester;
-    final activeSemLabel = activeSem != null ? (activeSem['display_name']?.toString() ?? '') : 'No active semester';
+    final activeSemLabel = activeSem != null
+        ? (activeSem['display_name']?.toString() ?? '')
+        : 'No active semester';
 
     if (isLoading) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(64.0),
-          child: CircularProgressIndicator(color: AppColors.maroon),
+          padding: const EdgeInsets.all(64.0),
+          child: CircularProgressIndicator(color: DefensysTokens.maroonOf(context)),
         ),
       );
     }
 
-    return RefreshIndicator(
-      color: AppColors.maroon,
-      onRefresh: _loadData,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: DefensysUi.contentPadding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildExecutiveHeader(activeSemLabel, state.isSaving),
-            const SizedBox(height: 24),
-            _buildExecutiveStatCards(),
-            const SizedBox(height: 20),
-            _buildLifecycleLegend(),
-            const SizedBox(height: 24),
-            _buildSectionHeader(),
-            const SizedBox(height: 16),
-            if (_configs.isEmpty)
-              _buildEmptyState()
-            else if (!_isMatrixView)
-              _buildShowcaseCardsView()
-            else
-              _buildEventMatrixView(),
-          ],
+    return DefensysShadcnScope(
+      child: RefreshIndicator(
+        color: DefensysTokens.maroonOf(context),
+        onRefresh: _loadData,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: DefensysUi.contentPadding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildExecutiveHeader(activeSemLabel, state.isSaving),
+              const SizedBox(height: 20),
+              _buildExecutiveStatCards(),
+              const SizedBox(height: 16),
+              _buildLifecycleLegend(),
+              const SizedBox(height: 24),
+              _buildSectionHeader(),
+              const SizedBox(height: 16),
+              if (_configs.isEmpty)
+                _buildEmptyState()
+              else if (!_isMatrixView)
+                _buildShowcaseCardsView()
+              else
+                _buildEventMatrixView(),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildExecutiveHeader(String activeSemLabel, bool isSaving) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFFEE2E2),
-                      shape: BoxShape.circle,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 700;
+
+        final titleBlock = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2),
                     ),
-                    child: const Icon(Icons.confirmation_number_rounded, color: AppColors.maroon, size: 22),
                   ),
-                  const SizedBox(width: 12),
-                  const Text(
+                  child: Icon(
+                    LucideIcons.calendarCheck2,
+                    color: DefensysTokens.maroonOf(context),
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
                     'PIT Event Operations & Setup',
                     style: TextStyle(
-                      color: AppColors.maroon,
+                      color: _ink,
                       fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      height: 1.1,
-                      letterSpacing: -0.3,
-                      fontFamily: DefensysTokens.fontFamily,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.4,
+                      fontFamily: DefensysTokens.fontFamilyInter,
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Configure discrete academic exhibition events, evaluation weight ratios (Panel vs Peer), rubrics, and deliverable checklists for $activeSemLabel.',
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 14,
-                  height: 1.35,
-                  fontFamily: DefensysTokens.fontFamily,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 20),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            const ReportExportMenu(reportId: 'pit-event-setup'),
-            SizedBox(
-              height: 42,
-              child: OutlinedButton.icon(
-                onPressed: isSaving ? null : _loadData,
-                icon: const Icon(Icons.sync_rounded, size: 17),
-                label: const Text('Refresh Events'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.textPrimary,
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  textStyle: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontFamily: DefensysTokens.fontFamily,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              ),
+              ],
             ),
-            SizedBox(
-              height: 42,
-              child: ElevatedButton.icon(
-                onPressed: isSaving ? null : () => _showEventDialog(),
-                icon: const Icon(Icons.add_rounded, size: 19),
-                label: const Text('Add Event'),
-                style: ElevatedButton.styleFrom(
-                  elevation: 0,
-                  backgroundColor: AppColors.maroon,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  textStyle: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.1,
-                    fontFamily: DefensysTokens.fontFamily,
-                  ),
-                ),
+            const SizedBox(height: 6),
+            Text(
+              'Configure discrete academic exhibition events, evaluation weight ratios (Panel vs Peer), rubrics, and deliverable checklists for $activeSemLabel.',
+              style: TextStyle(
+                color: _muted,
+                fontSize: 13,
+                height: 1.4,
+                fontFamily: DefensysTokens.fontFamilyInter,
               ),
             ),
           ],
-        ),
-      ],
+        );
+
+        final actionButtons = Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            const ReportExportMenu(reportId: 'pit-event-setup'),
+            ShadButton.outline(
+              enabled: !isSaving,
+              leading: const Icon(LucideIcons.refreshCw, size: 15),
+              onPressed: _loadData,
+              child: const Text('Refresh'),
+            ),
+            ShadButton(
+              enabled: !isSaving,
+              backgroundColor: DefensysTokens.maroonOf(context),
+              hoverBackgroundColor: DefensysTokens.maroonDark,
+              foregroundColor: Colors.white,
+              leading: const Icon(LucideIcons.plus, size: 16),
+              onPressed: () => _showEventDialog(),
+              child: const Text('Add Event'),
+            ),
+          ],
+        );
+
+        if (isCompact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              titleBlock,
+              const SizedBox(height: 16),
+              actionButtons,
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: titleBlock),
+            const SizedBox(width: 24),
+            actionButtons,
+          ],
+        );
+      },
     );
   }
 
@@ -275,7 +293,6 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
       (sum, c) => sum + ((c['deliverables'] as List? ?? []).length),
     );
 
-    // Calculate average panel vs peer weight ratio
     double avgPanelWeight = 80;
     if (_configs.isNotEmpty) {
       final sumPanel = _configs.fold<double>(0, (sum, c) => sum + (int.tryParse(c['panel_weight']?.toString() ?? '') ?? 80));
@@ -283,376 +300,219 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
     }
     final avgPeerWeight = 100 - avgPanelWeight.round();
 
+    final metrics = [
+      _metricTile('Configured Events', '$total', 'Active exhibition showcases', LucideIcons.calendar),
+      _metricTile('Weight Split', '${avgPanelWeight.round()}% / $avgPeerWeight%', 'Avg Panel vs Peer ratio', LucideIcons.scale),
+      _metricTile('Active Rubrics', '$rubricsLinked / $total', 'Panel & peer rubrics linked', LucideIcons.clipboardCheck),
+      _metricTile('Archive Templates', '$totalDeliverables', 'Deliverable checklist items', LucideIcons.files),
+    ];
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isCompact = constraints.maxWidth < 800;
+        final isCompact = constraints.maxWidth < 750;
 
-        final cards = [
-          _statTile(
-            title: 'Configured Events',
-            value: '$total',
-            subtitle: 'Exhibition event showcases',
-            icon: Icons.event_available_rounded,
-            accentColor: AppColors.maroon,
-          ),
-          _statTile(
-            title: 'Grading Weight Ratios',
-            value: '${avgPanelWeight.round()}% / $avgPeerWeight%',
-            subtitle: 'Avg Panel vs Peer split ratio',
-            icon: Icons.donut_large_rounded,
-            accentColor: const Color(0xFFF59E0B),
-            badgeText: 'Grading Model',
-            badgeColor: const Color(0xFFFEF3C7),
-            badgeTextColor: const Color(0xFF92400E),
-          ),
-          _statTile(
-            title: 'Active Rubric Links',
-            value: '$rubricsLinked / $total',
-            subtitle: 'Panel & Peer rubrics configured',
-            icon: Icons.assignment_turned_in_outlined,
-            accentColor: const Color(0xFF10B981),
-            badgeText: rubricsLinked == total ? 'Rubrics Complete' : 'Pending Setup',
-            badgeColor: const Color(0xFFECFDF5),
-            badgeTextColor: const Color(0xFF047857),
-          ),
-          _statTile(
-            title: 'Archive Templates',
-            value: '$totalDeliverables',
-            subtitle: 'Deliverable checklist templates',
-            icon: Icons.folder_copy_outlined,
-            accentColor: const Color(0xFF6366F1),
-            badgeText: 'Templates Active',
-            badgeColor: const Color(0xFFEEF2FF),
-            badgeTextColor: const Color(0xFF4338CA),
-          ),
-        ];
-
-        if (isCompact) {
-          return Column(
-            children: cards.map((card) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: card,
-            )).toList(),
-          );
-        }
-
-        return Row(
-          children: cards
-              .map((card) => Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      child: card,
-                    ),
-                  ))
-              .toList(),
+        return ShadCard(
+          width: double.infinity,
+          backgroundColor: _surface,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: isCompact
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var i = 0; i < metrics.length; i++) ...[
+                      metrics[i],
+                      if (i < metrics.length - 1)
+                        Divider(height: 24, color: _border),
+                    ],
+                  ],
+                )
+              : Row(
+                  children: [
+                    for (var i = 0; i < metrics.length; i++) ...[
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.only(left: i == 0 ? 0 : 20),
+                          child: metrics[i],
+                        ),
+                      ),
+                      if (i < metrics.length - 1)
+                        Container(width: 1, height: 46, color: _border),
+                    ],
+                  ],
+                ),
         );
       },
     );
   }
 
-  Widget _statTile({
-    required String title,
-    required String value,
-    required String subtitle,
-    required IconData icon,
-    required Color accentColor,
-    String? badgeText,
-    Color? badgeColor,
-    Color? badgeTextColor,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: accentColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, size: 20, color: accentColor),
-              ),
-              if (badgeText != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: badgeColor ?? const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    badgeText,
-                    style: TextStyle(
-                      color: badgeTextColor ?? const Color(0xFF475569),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      fontFamily: DefensysTokens.fontFamily,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w900,
-              color: AppColors.textPrimary,
-              letterSpacing: -0.5,
-              fontFamily: DefensysTokens.fontFamily,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
-              fontFamily: DefensysTokens.fontFamily,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            subtitle,
-            style: const TextStyle(
-              fontSize: 11.5,
-              color: AppColors.textSecondary,
-              fontFamily: DefensysTokens.fontFamily,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLifecycleLegend() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.shield_outlined, size: 18, color: AppColors.maroon),
-              SizedBox(width: 8),
-              Text(
-                'PIT Event Lifecycle & Audit Safeguards',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
-                  fontFamily: DefensysTokens.fontFamily,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final isCompact = constraints.maxWidth < 750;
-
-              final steps = [
-                _buildLegendStep(
-                  stepNum: '01',
-                  title: 'Event & Weights',
-                  desc: 'Set event badge, tier code & panel vs peer weight split',
-                  color: const Color(0xFFFEF3C7),
-                  textColor: const Color(0xFF92400E),
-                  numColor: const Color(0xFFF59E0B),
-                ),
-                _buildLegendStep(
-                  stepNum: '02',
-                  title: 'Rubrics & Checklists',
-                  desc: 'Attach evaluation rubrics & archive filename templates',
-                  color: const Color(0xFFECFDF5),
-                  textColor: const Color(0xFF047857),
-                  numColor: const Color(0xFF10B981),
-                ),
-                _buildLegendStep(
-                  stepNum: '03',
-                  title: 'Audit Lock Protection',
-                  desc: 'Enforces read-only status once defenses or grades exist',
-                  color: const Color(0xFFF1F5F9),
-                  textColor: const Color(0xFF334155),
-                  numColor: const Color(0xFF64748B),
-                ),
-              ];
-
-              if (isCompact) {
-                return Column(
-                  children: steps.map((step) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: step,
-                  )).toList(),
-                );
-              }
-
-              return Row(
-                children: [
-                  Expanded(child: steps[0]),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8),
-                    child: Icon(Icons.arrow_forward_rounded, size: 16, color: Color(0xFF94A3B8)),
-                  ),
-                  Expanded(child: steps[1]),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8),
-                    child: Icon(Icons.arrow_forward_rounded, size: 16, color: Color(0xFF94A3B8)),
-                  ),
-                  Expanded(child: steps[2]),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLegendStep({
-    required String stepNum,
-    required String title,
-    required String desc,
-    required Color color,
-    required Color textColor,
-    required Color numColor,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-            decoration: BoxDecoration(
-              color: numColor,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              stepNum,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 10.5,
-                fontWeight: FontWeight.w900,
-                fontFamily: DefensysTokens.fontFamily,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: textColor,
-                    fontFamily: DefensysTokens.fontFamily,
-                  ),
-                ),
-                Text(
-                  desc,
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    color: textColor.withValues(alpha: 0.8),
-                    fontFamily: DefensysTokens.fontFamily,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _metricTile(String label, String value, String hint, IconData icon) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        Row(
           children: [
+            Icon(icon, size: 14, color: _muted),
+            const SizedBox(width: 6),
             Text(
-              'PIT Event Showcase Hub',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
-                color: AppColors.textPrimary,
-                fontFamily: DefensysTokens.fontFamily,
-                letterSpacing: -0.2,
-              ),
-            ),
-            SizedBox(height: 2),
-            Text(
-              'Independent event cards with grading models and deliverable checklists',
+              label,
               style: TextStyle(
                 fontSize: 12.5,
-                color: AppColors.textSecondary,
-                fontFamily: DefensysTokens.fontFamily,
+                fontWeight: FontWeight.w500,
+                color: _muted,
+                fontFamily: DefensysTokens.fontFamilyInter,
               ),
             ),
           ],
         ),
-        Container(
-          height: 36,
-          decoration: BoxDecoration(
-            color: const Color(0xFFF1F5F9),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+        const SizedBox(height: 6),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 22,
+            height: 1.15,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.4,
+            color: _ink,
+            fontFamily: DefensysTokens.fontFamilyInter,
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
-          child: Row(
+        ),
+        const SizedBox(height: 4),
+        Text(
+          hint,
+          style: TextStyle(
+            fontSize: 11.5,
+            color: _muted,
+            fontFamily: DefensysTokens.fontFamilyInter,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLifecycleLegend() {
+    return ShadCard(
+      width: double.infinity,
+      backgroundColor: _surface,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isCompact = constraints.maxWidth < 800;
+
+          final header = Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _viewToggleButton(
-                icon: Icons.style_rounded,
-                label: 'Showcase Cards',
-                isSelected: !_isMatrixView,
-                onTap: () => setState(() => _isMatrixView = false),
+              Icon(LucideIcons.shieldCheck, size: 16, color: DefensysTokens.maroonOf(context)),
+              const SizedBox(width: 8),
+              Text(
+                'PIT Event Lifecycle',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: _ink,
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                ),
               ),
-              _viewToggleButton(
-                icon: Icons.table_chart_rounded,
-                label: 'Event Matrix',
-                isSelected: _isMatrixView,
-                onTap: () => setState(() => _isMatrixView = true),
+            ],
+          );
+
+          final steps = [
+            _legendStepPill('01', 'Event & Weights', 'Tier code & weight split'),
+            _legendStepPill('02', 'Rubrics & Checklists', 'Evaluation rubrics & templates'),
+            _legendStepPill('03', 'Audit Lock', 'Read-only once grades exist'),
+          ];
+
+          if (isCompact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                header,
+                const SizedBox(height: 10),
+                for (final step in steps)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: step,
+                  ),
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              header,
+              const SizedBox(width: 20),
+              Expanded(
+                child: Row(
+                  children: [
+                    Expanded(child: steps[0]),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Icon(LucideIcons.arrowRight, size: 14, color: _border),
+                    ),
+                    Expanded(child: steps[1]),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Icon(LucideIcons.arrowRight, size: 14, color: _border),
+                    ),
+                    Expanded(child: steps[2]),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _legendStepPill(String num, String title, String desc) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: _fill,
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: _border),
+          ),
+          child: Text(
+            num,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: _ink,
+              fontFamily: DefensysTokens.fontFamilyInter,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: _ink,
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              Text(
+                desc,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: _muted,
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -661,71 +521,64 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
     );
   }
 
-  Widget _viewToggleButton({
-    required IconData icon,
-    required String label,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(6),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 4,
-                    offset: const Offset(0, 1),
-                  ),
-                ]
-              : null,
-        ),
-        child: Row(
+  Widget _buildSectionHeader() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              icon,
-              size: 15,
-              color: isSelected ? AppColors.maroon : const Color(0xFF64748B),
-            ),
-            const SizedBox(width: 6),
             Text(
-              label,
+              'PIT Event Showcase Hub',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: _ink,
+                fontFamily: DefensysTokens.fontFamilyInter,
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Independent event cards with grading models and deliverable checklists',
               style: TextStyle(
                 fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected ? AppColors.maroon : const Color(0xFF64748B),
-                fontFamily: DefensysTokens.fontFamily,
+                color: _muted,
+                fontFamily: DefensysTokens.fontFamilyInter,
               ),
             ),
           ],
         ),
-      ),
+        SizedBox(
+          width: 250,
+          child: ShadTabs<String>(
+            scrollable: true,
+            value: _isMatrixView ? 'matrix' : 'cards',
+            onChanged: (val) => setState(() => _isMatrixView = val == 'matrix'),
+            tabs: const [
+              ShadTab(value: 'cards', child: Text('Cards')),
+              ShadTab(value: 'matrix', child: Text('Matrix')),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildEmptyState() {
-    return Container(
+    return ShadCard(
       width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
+      backgroundColor: _surface,
+      padding: const EdgeInsets.all(32),
       child: DefensysEmptyState(
-        icon: Icons.event_busy_outlined,
+        icon: LucideIcons.calendar,
         title: 'No PIT Events Configured',
         description:
             'Configure evaluation weight splits, rubrics, and deliverable checklists for this academic semester.',
         size: DefensysEmptyStateSize.standard,
         primaryAction: DefensysEmptyAction(
           label: 'Add Event Configuration',
-          icon: Icons.add_rounded,
+          icon: LucideIcons.plus,
           onPressed: _showEventDialog,
         ),
       ),
@@ -767,7 +620,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
             crossAxisCount: crossCount,
             crossAxisSpacing: 16,
             mainAxisSpacing: 16,
-            mainAxisExtent: isDesktop ? 360 : 390,
+            mainAxisExtent: isDesktop ? 335 : 360,
           ),
           itemCount: _configs.length,
           itemBuilder: (context, index) {
@@ -786,460 +639,393 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
             final eventCode = config['event_code']?.toString() ?? '';
             final tierColor = _getTierColor(index, eventName, eventCode);
 
-            return Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.03),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Top Event Tier Accent Banner
-                    Container(
-                      height: 6,
-                      color: tierColor,
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(18),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Card Header Row: Title, Code, Status & Actions
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(9),
-                                decoration: BoxDecoration(
-                                  color: tierColor.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(10),
+            return ShadCard(
+              width: double.infinity,
+              backgroundColor: _surface,
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Card Header Row: Title, Code, Status & Actions
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          color: _fill,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: _border),
+                        ),
+                        child: Icon(LucideIcons.calendar, size: 16, color: tierColor),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    eventName,
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      color: _ink,
+                                      fontFamily: DefensysTokens.fontFamilyInter,
+                                      letterSpacing: -0.2,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
-                                child: Icon(Icons.confirmation_number_outlined, size: 20, color: tierColor),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
+                                if (eventCode.isNotEmpty) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: _fill,
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: _border),
+                                    ),
+                                    child: Text(
+                                      eventCode,
+                                      style: TextStyle(
+                                        color: _muted,
+                                        fontSize: 10.5,
+                                        fontFamily: 'monospace',
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                if (isLocked)
+                                  Tooltip(
+                                    message: lockReason,
+                                    child: ShadBadge.secondary(
+                                      backgroundColor: const Color(0xFFFEF3C7),
+                                      foregroundColor: const Color(0xFF92400E),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(LucideIcons.lock, size: 10),
+                                          SizedBox(width: 4),
+                                          Text('Audit Locked'),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  ShadBadge.secondary(
+                                    backgroundColor: _fill,
+                                    foregroundColor: _muted,
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
+                                        Icon(LucideIcons.checkCircle2, size: 10, color: Color(0xFF10B981)),
+                                        SizedBox(width: 4),
+                                        Text('Active Showcase'),
+                                      ],
+                                    ),
+                                  ),
+                                if (peerWeight > 0)
+                                  ShadBadge.outline(
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          config['peer_grading_enabled'] == true ? LucideIcons.check : LucideIcons.pause,
+                                          size: 10,
+                                          color: config['peer_grading_enabled'] == true ? const Color(0xFF10B981) : _muted,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(config['peer_grading_enabled'] == true ? 'Peer Open' : 'Peer Closed'),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ShadButton.outline(
+                            size: ShadButtonSize.sm,
+                            leading: Icon(
+                              isLocked ? LucideIcons.eye : LucideIcons.pencil,
+                              size: 13,
+                            ),
+                            onPressed: () => _showEventDialog(config),
+                            child: Text(isLocked ? 'View' : 'Edit'),
+                          ),
+                          const SizedBox(width: 4),
+                          Tooltip(
+                            message: isLocked ? lockReason : 'Delete Event',
+                            child: ShadButton.ghost(
+                              width: 30,
+                              height: 30,
+                              padding: EdgeInsets.zero,
+                              foregroundColor: isLocked ? _muted : DefensysTokens.danger,
+                              hoverBackgroundColor: isLocked ? _fill : DefensysTokens.dangerBg,
+                              onPressed: () => _deleteConfig(config),
+                              child: Icon(
+                                LucideIcons.trash2,
+                                size: 14,
+                                color: isLocked ? _muted : DefensysTokens.danger,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  // Dual Evaluation Weight Gauge Bar
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Container(width: 6, height: 6, decoration: BoxDecoration(color: DefensysTokens.maroonOf(context), shape: BoxShape.circle)),
+                              const SizedBox(width: 5),
+                              Text(
+                                'Panel: $panelWeight%',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: DefensysTokens.maroonOf(context),
+                                  fontFamily: DefensysTokens.fontFamilyInter,
+                                  fontFeatures: const [FontFeature.tabularFigures()],
+                                ),
+                              ),
+                            ],
+                          ),
+                          Row(
+                            children: [
+                              Container(width: 6, height: 6, decoration: const BoxDecoration(color: Color(0xFFF59E0B), shape: BoxShape.circle)),
+                              const SizedBox(width: 5),
+                              Text(
+                                'Peer: $peerWeight%',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFFB45309),
+                                  fontFamily: DefensysTokens.fontFamilyInter,
+                                  fontFeatures: const [FontFeature.tabularFigures()],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: SizedBox(
+                          height: 6,
+                          child: Row(
+                            children: [
+                              if (panelWeight > 0)
+                                Expanded(
+                                  flex: panelWeight,
+                                  child: Container(color: DefensysTokens.maroonOf(context)),
+                                ),
+                              if (peerWeight > 0)
+                                Expanded(
+                                  flex: peerWeight,
+                                  child: Container(color: const Color(0xFFF59E0B)),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Rubric Micro-cards Row
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildMicroRubricCard(
+                          icon: LucideIcons.fileCheck,
+                          label: 'Panel Rubric',
+                          value: rubricName(config['panel_rubric_id']),
+                          accentColor: DefensysTokens.maroonOf(context),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildMicroRubricCard(
+                          icon: LucideIcons.users,
+                          label: 'Peer Rubric',
+                          value: peerRubricName(config['peer_rubric_id']),
+                          accentColor: const Color(0xFFD97706),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  // Expandable Deliverable Checklist Drawer
+                  InkWell(
+                    onTap: () {
+                      setState(() {
+                        if (isExpanded) {
+                          _expandedConfigIds.remove(configId);
+                        } else {
+                          _expandedConfigIds.add(configId);
+                        }
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: _fill,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: _border),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(LucideIcons.folder, size: 14, color: _muted),
+                              const SizedBox(width: 7),
+                              Text(
+                                'Deliverable Checklist ($preCount Pre, $postCount Post)',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: _ink,
+                                  fontFamily: DefensysTokens.fontFamilyInter,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Icon(
+                            isExpanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+                            size: 14,
+                            color: _muted,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (isExpanded) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 110),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: _surface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: _border),
+                      ),
+                      child: delivs.isEmpty
+                          ? Text(
+                              'No deliverable templates configured for this event.',
+                              style: TextStyle(fontSize: 11, color: _muted, fontFamily: DefensysTokens.fontFamilyInter),
+                            )
+                          : SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: delivs.map<Widget>((d) {
+                                  final isPost = d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault';
+                                  final isReq = d['required'] == true;
+
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 4),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          isPost ? LucideIcons.archive : LucideIcons.fileText,
+                                          size: 12,
+                                          color: _muted,
+                                        ),
+                                        const SizedBox(width: 6),
                                         Expanded(
                                           child: Text(
-                                            eventName,
-                                            style: const TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w900,
-                                              color: AppColors.textPrimary,
-                                              fontFamily: DefensysTokens.fontFamily,
-                                              letterSpacing: -0.2,
+                                            d['label']?.toString() ?? 'Deliverable',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w500,
+                                              color: _ink,
+                                              fontFamily: DefensysTokens.fontFamilyInter,
                                             ),
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
-                                        if (eventCode.isNotEmpty) ...[
-                                          const SizedBox(width: 8),
+                                        if (isReq)
                                           Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                            margin: const EdgeInsets.only(left: 4),
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                                             decoration: BoxDecoration(
-                                              color: const Color(0xFFF1F5F9),
-                                              borderRadius: BorderRadius.circular(6),
-                                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                                              color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border.all(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2)),
                                             ),
                                             child: Text(
-                                              eventCode,
-                                              style: const TextStyle(
-                                                color: AppColors.textSecondary,
-                                                fontSize: 11,
-                                                fontFamily: DefensysTokens.fontFamily,
-                                                fontWeight: FontWeight.w700,
+                                              'Req',
+                                              style: TextStyle(
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.w600,
+                                                color: DefensysTokens.maroonOf(context),
+                                                fontFamily: DefensysTokens.fontFamilyInter,
                                               ),
+                                            ),
+                                          ),
+                                        if (!isPost && d['is_defense_material'] == true) ...[
+                                          const SizedBox(width: 4),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: _fill,
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border.all(color: _border),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(LucideIcons.eye, size: 9.5, color: _muted),
+                                                const SizedBox(width: 3),
+                                                Text(
+                                                  'Panel View',
+                                                  style: TextStyle(
+                                                    fontSize: 9.5,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: _muted,
+                                                    fontFamily: DefensysTokens.fontFamilyInter,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
                                         ],
                                       ],
                                     ),
-                                    const SizedBox(height: 4),
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 4,
-                                      crossAxisAlignment: WrapCrossAlignment.center,
-                                      children: [
-                                        if (isLocked)
-                                          Tooltip(
-                                            message: lockReason,
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                const Icon(Icons.lock_outline_rounded, size: 12, color: Color(0xFFB45309)),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  'Audit Locked & Secured',
-                                                  style: TextStyle(
-                                                    color: const Color(0xFF92400E),
-                                                    fontSize: 11.5,
-                                                    fontFamily: DefensysTokens.fontFamily,
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          )
-                                        else
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Icon(Icons.check_circle_outline_rounded, size: 12, color: Color(0xFF047857)),
-                                              const SizedBox(width: 4),
-                                              Text(
-                                                'Active Event Showcase',
-                                                style: TextStyle(
-                                                  color: const Color(0xFF047857),
-                                                  fontSize: 11.5,
-                                                  fontFamily: DefensysTokens.fontFamily,
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        if (peerWeight > 0)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: config['peer_grading_enabled'] == true ? const Color(0xFFECFDF5) : const Color(0xFFF1F5F9),
-                                              borderRadius: BorderRadius.circular(5),
-                                              border: Border.all(
-                                                color: config['peer_grading_enabled'] == true ? const Color(0xFFA7F3D0) : const Color(0xFFCBD5E1),
-                                              ),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(
-                                                  config['peer_grading_enabled'] == true ? Icons.check_circle_rounded : Icons.pause_circle_outline_rounded,
-                                                  size: 11,
-                                                  color: config['peer_grading_enabled'] == true ? const Color(0xFF059669) : const Color(0xFF64748B),
-                                                ),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  config['peer_grading_enabled'] == true ? 'Peer Grading Open' : 'Peer Grading Closed',
-                                                  style: TextStyle(
-                                                    fontSize: 10.5,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: config['peer_grading_enabled'] == true ? const Color(0xFF047857) : const Color(0xFF475569),
-                                                    fontFamily: DefensysTokens.fontFamily,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  SizedBox(
-                                    height: 32,
-                                    child: OutlinedButton.icon(
-                                      onPressed: () => _showEventDialog(config),
-                                      icon: Icon(
-                                        isLocked ? Icons.visibility_outlined : Icons.edit_outlined,
-                                        size: 13,
-                                      ),
-                                      label: Text(isLocked ? 'View' : 'Edit'),
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: AppColors.textPrimary,
-                                        side: const BorderSide(color: Color(0xFFCBD5E1)),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(7),
-                                        ),
-                                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                                        textStyle: const TextStyle(
-                                          fontSize: 11.5,
-                                          fontWeight: FontWeight.w700,
-                                          fontFamily: DefensysTokens.fontFamily,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Tooltip(
-                                    message: isLocked ? lockReason : 'Delete Event',
-                                    child: SizedBox(
-                                      width: 32,
-                                      height: 32,
-                                      child: InkWell(
-                                        onTap: () => _deleteConfig(config),
-                                        borderRadius: BorderRadius.circular(7),
-                                        hoverColor: isLocked ? Colors.grey.shade100 : DefensysTokens.dangerBg,
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            border: Border.all(
-                                              color: isLocked ? const Color(0xFFE2E8F0) : const Color(0xFFFCA5A5),
-                                            ),
-                                            borderRadius: BorderRadius.circular(7),
-                                          ),
-                                          child: Center(
-                                            child: Icon(
-                                              Icons.delete_outline_rounded,
-                                              size: 15,
-                                              color: isLocked ? Colors.grey : DefensysTokens.danger,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          // Dual Evaluation Weight Gauge Bar
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Container(width: 7, height: 7, decoration: const BoxDecoration(color: AppColors.maroon, shape: BoxShape.circle)),
-                                      const SizedBox(width: 5),
-                                      Text(
-                                        'Panel: $panelWeight%',
-                                        style: const TextStyle(
-                                          fontSize: 11.5,
-                                          fontWeight: FontWeight.w800,
-                                          color: AppColors.maroon,
-                                          fontFamily: DefensysTokens.fontFamily,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  Row(
-                                    children: [
-                                      Container(width: 7, height: 7, decoration: const BoxDecoration(color: Color(0xFFF59E0B), shape: BoxShape.circle)),
-                                      const SizedBox(width: 5),
-                                      Text(
-                                        'Peer: $peerWeight%',
-                                        style: const TextStyle(
-                                          fontSize: 11.5,
-                                          fontWeight: FontWeight.w800,
-                                          color: Color(0xFFB45309),
-                                          fontFamily: DefensysTokens.fontFamily,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 6),
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: SizedBox(
-                                  height: 8,
-                                  child: Row(
-                                    children: [
-                                      if (panelWeight > 0)
-                                        Expanded(
-                                          flex: panelWeight,
-                                          child: Container(color: AppColors.maroon),
-                                        ),
-                                      if (peerWeight > 0)
-                                        Expanded(
-                                          flex: peerWeight,
-                                          child: Container(color: const Color(0xFFF59E0B)),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          // Rubric Micro-cards Row
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildMicroRubricCard(
-                                  icon: Icons.assignment_outlined,
-                                  label: 'Panel Rubric',
-                                  value: rubricName(config['panel_rubric_id']),
-                                  color: const Color(0xFFFEF2F2),
-                                  iconColor: AppColors.maroon,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: _buildMicroRubricCard(
-                                  icon: Icons.groups_outlined,
-                                  label: 'Peer Rubric',
-                                  value: peerRubricName(config['peer_rubric_id']),
-                                  color: const Color(0xFFFFFBEB),
-                                  iconColor: const Color(0xFFD97706),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          // Expandable Deliverable Checklist Drawer
-                          InkWell(
-                            onTap: () {
-                              setState(() {
-                                if (isExpanded) {
-                                  _expandedConfigIds.remove(configId);
-                                } else {
-                                  _expandedConfigIds.add(configId);
-                                }
-                              });
-                            },
-                            borderRadius: BorderRadius.circular(8),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF8FAFC),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.folder_outlined, size: 16, color: Color(0xFF6366F1)),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        'Deliverable Checklist ($preCount Pre, $postCount Post)',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.textPrimary,
-                                          fontFamily: DefensysTokens.fontFamily,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  Icon(
-                                    isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                                    size: 18,
-                                    color: const Color(0xFF64748B),
-                                  ),
-                                ],
+                                  );
+                                }).toList(),
                               ),
                             ),
-                          ),
-                          if (isExpanded) ...[
-                            const SizedBox(height: 8),
-                            Container(
-                              constraints: const BoxConstraints(maxHeight: 120),
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF1F5F9),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: delivs.isEmpty
-                                  ? const Text(
-                                      'No deliverable templates configured for this event.',
-                                      style: TextStyle(fontSize: 11, color: AppColors.textSecondary, fontFamily: DefensysTokens.fontFamily),
-                                    )
-                                  : SingleChildScrollView(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: delivs.map<Widget>((d) {
-                                          final isPost = d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault';
-                                          final isReq = d['required'] == true;
-
-                                          return Padding(
-                                            padding: const EdgeInsets.only(bottom: 6),
-                                            child: Row(
-                                              children: [
-                                                Icon(
-                                                  isPost ? Icons.archive_outlined : Icons.description_outlined,
-                                                  size: 13,
-                                                  color: isPost ? const Color(0xFF6366F1) : AppColors.maroon,
-                                                ),
-                                                const SizedBox(width: 6),
-                                                Expanded(
-                                                  child: Text(
-                                                    d['label']?.toString() ?? 'Deliverable',
-                                                    style: const TextStyle(
-                                                      fontSize: 11.5,
-                                                      fontWeight: FontWeight.w700,
-                                                      color: AppColors.textPrimary,
-                                                      fontFamily: DefensysTokens.fontFamily,
-                                                    ),
-                                                    maxLines: 1,
-                                                    overflow: TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                                if (isReq)
-                                                  Container(
-                                                    margin: const EdgeInsets.only(left: 4),
-                                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                                    decoration: BoxDecoration(
-                                                      color: const Color(0xFFFEE2E2),
-                                                      borderRadius: BorderRadius.circular(4),
-                                                    ),
-                                                    child: const Text(
-                                                      'Req',
-                                                      style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: AppColors.maroon),
-                                                    ),
-                                                  ),
-                                                if (!isPost && d['is_defense_material'] == true) ...[
-                                                  const SizedBox(width: 4),
-                                                  Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                                    decoration: BoxDecoration(
-                                                      color: const Color(0xFFEFF6FF),
-                                                      borderRadius: BorderRadius.circular(4),
-                                                      border: Border.all(color: const Color(0xFFBFDBFE)),
-                                                    ),
-                                                    child: const Row(
-                                                      mainAxisSize: MainAxisSize.min,
-                                                      children: [
-                                                        Icon(Icons.visibility_rounded, size: 9.5, color: Color(0xFF1D4ED8)),
-                                                        SizedBox(width: 2.5),
-                                                        Text(
-                                                          'Panel View',
-                                                          style: TextStyle(
-                                                            fontSize: 9.5,
-                                                            fontWeight: FontWeight.w700,
-                                                            color: Color(0xFF1D4ED8),
-                                                            fontFamily: DefensysTokens.fontFamily,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ],
-                                              ],
-                                            ),
-                                          );
-                                        }).toList(),
-                                      ),
-                                    ),
-                            ),
-                          ],
-                        ],
-                      ),
                     ),
                   ],
-                ),
+                ],
               ),
             );
           },
@@ -1252,47 +1038,41 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
     required IconData icon,
     required String label,
     required String value,
-    required Color color,
-    required Color iconColor,
+    required Color accentColor,
   }) {
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: _fill,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: _border),
       ),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(5),
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, size: 13, color: iconColor),
-          ),
+          Icon(icon, size: 14, color: _muted),
           const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 10.5,
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w600,
-                    fontFamily: DefensysTokens.fontFamily,
+                    color: _muted,
+                    fontWeight: FontWeight.w500,
+                    fontFamily: DefensysTokens.fontFamilyInter,
                   ),
                 ),
+                const SizedBox(height: 1),
                 Text(
                   value,
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w800,
-                    fontFamily: DefensysTokens.fontFamily,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: _ink,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: DefensysTokens.fontFamilyInter,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -1328,33 +1108,26 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
       return r['name']?.toString() ?? 'Unknown Peer Rubric';
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+    return ShadCard(
+      width: double.infinity,
+      backgroundColor: _surface,
+      padding: EdgeInsets.zero,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: DataTable(
-          headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-          dataRowMinHeight: 60,
-          dataRowMaxHeight: 60,
-          columns: const [
-            DataColumn(label: Text('Event & Code', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.textPrimary, fontFamily: DefensysTokens.fontFamily))),
-            DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.textPrimary, fontFamily: DefensysTokens.fontFamily))),
-            DataColumn(label: Text('Weight Split', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.textPrimary, fontFamily: DefensysTokens.fontFamily))),
-            DataColumn(label: Text('Panel Rubric', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.textPrimary, fontFamily: DefensysTokens.fontFamily))),
-            DataColumn(label: Text('Peer Rubric', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.textPrimary, fontFamily: DefensysTokens.fontFamily))),
-            DataColumn(label: Text('Deliverables', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.textPrimary, fontFamily: DefensysTokens.fontFamily))),
-            DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.textPrimary, fontFamily: DefensysTokens.fontFamily))),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            headingRowColor: WidgetStateProperty.all(_fill),
+            dataRowMinHeight: 64,
+            dataRowMaxHeight: 68,
+          columns: [
+            DataColumn(label: Text('Event & Code', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
+            DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
+            DataColumn(label: Text('Weight Split', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
+            DataColumn(label: Text('Panel Rubric', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
+            DataColumn(label: Text('Peer Rubric', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
+            DataColumn(label: Text('Deliverables', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
+            DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
           ],
           rows: _configs.map((config) {
             final delivs = config['deliverables'] as List? ?? [];
@@ -1372,12 +1145,12 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                     children: [
                       Text(
                         config['event_name']?.toString() ?? '',
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.textPrimary, fontFamily: DefensysTokens.fontFamily),
+                        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: _ink, fontFamily: DefensysTokens.fontFamilyInter),
                       ),
                       if (config['event_code']?.toString().isNotEmpty == true)
                         Text(
                           config['event_code']?.toString() ?? '',
-                          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, fontFamily: DefensysTokens.fontFamily),
+                          style: TextStyle(fontSize: 11, color: _muted, fontFamily: 'monospace'),
                         ),
                     ],
                   ),
@@ -1386,32 +1159,37 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                   isLocked
                       ? Tooltip(
                           message: lockReason,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(color: const Color(0xFFFFFBEB), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFFDE68A))),
-                            child: const Text('Locked', style: TextStyle(color: Color(0xFF92400E), fontSize: 11, fontWeight: FontWeight.w800)),
+                          child: ShadBadge.secondary(
+                            backgroundColor: const Color(0xFFFEF3C7),
+                            foregroundColor: const Color(0xFF92400E),
+                            child: const Text('Locked'),
                           ),
                         )
-                      : Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFFA7F3D0))),
-                          child: const Text('Active', style: TextStyle(color: Color(0xFF047857), fontSize: 11, fontWeight: FontWeight.w800)),
+                      : ShadBadge.secondary(
+                          backgroundColor: _fill,
+                          foregroundColor: _muted,
+                          child: const Text('Active'),
                         ),
                 ),
                 DataCell(
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(color: DefensysTokens.maroon.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(12)),
-                    child: Text('${config['panel_weight']}% Panel / ${config['peer_weight']}% Peer', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: DefensysTokens.maroon)),
+                  Text(
+                    '${config['panel_weight']}% / ${config['peer_weight']}%',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _ink,
+                      fontFamily: DefensysTokens.fontFamilyInter,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
                   ),
                 ),
-                DataCell(Text(rubricName(config['panel_rubric_id']), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
+                DataCell(Text(rubricName(config['panel_rubric_id']), style: TextStyle(fontSize: 12, color: _ink, fontFamily: DefensysTokens.fontFamilyInter))),
                 DataCell(
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(peerRubricName(config['peer_rubric_id']), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                      Text(peerRubricName(config['peer_rubric_id']), style: TextStyle(fontSize: 12, color: _ink, fontFamily: DefensysTokens.fontFamilyInter)),
                       if ((config['peer_weight'] ?? 0) > 0)
                         Padding(
                           padding: const EdgeInsets.only(top: 2),
@@ -1419,21 +1197,21 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Container(
-                                width: 6,
-                                height: 6,
+                                width: 5,
+                                height: 5,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: config['peer_grading_enabled'] == true ? const Color(0xFF10B981) : const Color(0xFF94A3B8),
+                                  color: config['peer_grading_enabled'] == true ? const Color(0xFF10B981) : _muted,
                                 ),
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                config['peer_grading_enabled'] == true ? 'Peer Grading Open' : 'Peer Grading Closed',
+                                config['peer_grading_enabled'] == true ? 'Open' : 'Closed',
                                 style: TextStyle(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: config['peer_grading_enabled'] == true ? const Color(0xFF047857) : const Color(0xFF64748B),
-                                  fontFamily: DefensysTokens.fontFamily,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w500,
+                                  color: _muted,
+                                  fontFamily: DefensysTokens.fontFamilyInter,
                                 ),
                               ),
                             ],
@@ -1442,18 +1220,22 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                     ],
                   ),
                 ),
-                DataCell(Text('$preCount Pre, $postCount Post', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600))),
+                DataCell(Text('$preCount Pre, $postCount Post', style: TextStyle(fontSize: 12, color: _muted, fontFamily: DefensysTokens.fontFamilyInter))),
                 DataCell(
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      IconButton(
+                      ShadButton.ghost(
+                        size: ShadButtonSize.sm,
                         onPressed: () => _showEventDialog(config),
-                        icon: Icon(isLocked ? Icons.visibility_outlined : Icons.edit_outlined, size: 16, color: AppColors.textPrimary),
+                        leading: Icon(isLocked ? LucideIcons.eye : LucideIcons.pencil, size: 14),
                       ),
-                      IconButton(
+                      ShadButton.ghost(
+                        size: ShadButtonSize.sm,
+                        hoverBackgroundColor: DefensysTokens.dangerBg,
+                        foregroundColor: isLocked ? _muted : DefensysTokens.danger,
                         onPressed: () => _deleteConfig(config),
-                        icon: Icon(Icons.delete_outline_rounded, size: 16, color: isLocked ? Colors.grey : DefensysTokens.danger),
+                        leading: const Icon(LucideIcons.trash2, size: 14),
                       ),
                     ],
                   ),
@@ -1463,8 +1245,9 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
           }).toList(),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 
@@ -1497,6 +1280,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
   bool _peerGradingEnabled = true;
 
   List<Map<String, dynamic>> _deliverables = [];
+  Map<String, dynamic>? _selectedDeliverable;
   bool _isDirty = false;
   bool _allowPop = false;
 
@@ -1703,17 +1487,23 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       'is_restricted': false,
       'is_defense_material': false,
       'file_format': 'any',
+      'requirement_timing': 'scheduling',
+      'deadline_hours_before': 24,
     };
     newMap['_labelController'] = TextEditingController(text: '');
     newMap['_templateController'] = TextEditingController(text: defaultTemplate);
     setState(() {
       _deliverables.add(newMap);
+      _selectedDeliverable = newMap;
     });
     _markDirty();
   }
 
   void _removeDeliverable(Map<String, dynamic> item) {
     setState(() {
+      if (identical(_selectedDeliverable, item)) {
+        _selectedDeliverable = null;
+      }
       _deliverables.remove(item);
       (item['_labelController'] as TextEditingController?)?.dispose();
       (item['_templateController'] as TextEditingController?)?.dispose();
@@ -2121,77 +1911,6 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     );
   }
 
-  List<DropdownMenuItem<String>> _deliverableFormatDropdownItems() {
-    return const [
-      DropdownMenuItem(
-        value: 'any',
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.all_inclusive, size: 14, color: Colors.blueGrey),
-            SizedBox(width: 6),
-            Text('Any File Type'),
-          ],
-        ),
-      ),
-      DropdownMenuItem(
-        value: 'pdf',
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.picture_as_pdf_outlined, size: 14, color: Color(0xFFEF4444)),
-            SizedBox(width: 6),
-            Text('PDF Document (.pdf)'),
-          ],
-        ),
-      ),
-      DropdownMenuItem(
-        value: 'video',
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.video_library_outlined, size: 14, color: Color(0xFF8B5CF6)),
-            SizedBox(width: 6),
-            Text('Video (.mp4, .mov)'),
-          ],
-        ),
-      ),
-      DropdownMenuItem(
-        value: 'image',
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.image_outlined, size: 14, color: Color(0xFF06B6D4)),
-            SizedBox(width: 6),
-            Text('Image / Poster (.png, .jpg)'),
-          ],
-        ),
-      ),
-      DropdownMenuItem(
-        value: 'presentation',
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.slideshow_outlined, size: 14, color: Color(0xFFEA580C)),
-            SizedBox(width: 6),
-            Text('Slides (.pptx, .ppt)'),
-          ],
-        ),
-      ),
-      DropdownMenuItem(
-        value: 'document',
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.description_outlined, size: 14, color: Color(0xFF2563EB)),
-            SizedBox(width: 6),
-            Text('Word / Doc (.docx, .doc)'),
-          ],
-        ),
-      ),
-    ];
-  }
-
   Widget _buildDeliverableSection({
     required String title,
     required String subtitle,
@@ -2231,8 +1950,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
               children: [
                 Container(
                   padding: const EdgeInsets.all(5),
-                  decoration: BoxDecoration(
-                    color: accentColor.withValues(alpha: 0.12),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF1F5F9),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(icon, size: 15, color: accentColor),
@@ -2285,17 +2004,12 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                   ),
                 ),
                 const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: isLocked ? null : onAdd,
-                  icon: Icon(Icons.add_rounded, size: 14, color: isLocked ? Colors.grey : accentColor),
-                  label: Text(buttonText),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: isLocked ? Colors.grey : accentColor,
-                    side: BorderSide(color: (isLocked ? Colors.grey : accentColor).withValues(alpha: 0.4)),
-                    backgroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, fontFamily: DefensysTokens.fontFamily),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                DefensysShadcnScope(
+                  child: ShadButton.outline(
+                    size: ShadButtonSize.sm,
+                    onPressed: isLocked ? null : onAdd,
+                    leading: const Icon(Icons.add_rounded, size: 14),
+                    child: Text(buttonText),
                   ),
                 ),
               ],
@@ -2329,7 +2043,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               textAlign: TextAlign.center,
                               style: const TextStyle(
                                 color: Color(0xFF64748B),
-                                fontSize: 12.5,
+                                fontSize: 12,
                                 fontWeight: FontWeight.w500,
                                 fontFamily: DefensysTokens.fontFamily,
                               ),
@@ -2339,16 +2053,20 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                       ),
                     ),
                   )
-                : Column(
-                    children: items.asMap().entries.map((entry) {
-                      return _buildDeliverableItemCard(
-                        item: entry.value,
-                        isPost: isPost,
-                        pitYear: pitYear,
-                        isLocked: isLocked,
-                        index: entry.key + 1,
-                      );
-                    }).toList(),
+                : StageDeliverableOverview(
+                    items: items,
+                    isPost: isPost,
+                    selectedItem: _selectedDeliverable,
+                    onSelect: (item) => setState(() => _selectedDeliverable = item),
+                    showDoneEditingButton: false,
+                    buildEditor: (item, index) => _buildDeliverableItemCard(
+                      item: item,
+                      isPost: isPost,
+                      pitYear: pitYear,
+                      isLocked: isLocked,
+                      index: index,
+                      onDone: () => setState(() => _selectedDeliverable = null),
+                    ),
                   ),
           ),
         ],
@@ -2362,6 +2080,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     required String pitYear,
     required bool isLocked,
     required int index,
+    VoidCallback? onDone,
   }) {
     final labelController = item['_labelController'] as TextEditingController? ??
         (item['_labelController'] = TextEditingController(text: item['label']?.toString() ?? ''));
@@ -2370,7 +2089,12 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
           text: item['archive_file_template']?.toString() ?? '',
         ));
 
-    final accentColor = isPost ? AppColors.maroon : const Color(0xFF2563EB);
+    const legacyDefault = '{year}.{course}.{project}.{stage}.{deliverable}.{semester}';
+    if (templateController.text.trim() == legacyDefault) {
+      templateController.text = '';
+      item['archive_file_template'] = '';
+    }
+
     final currentFormat = (item['file_format']?.toString().isNotEmpty == true)
         ? item['file_format'].toString()
         : 'any';
@@ -2380,19 +2104,19 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: accentColor.withValues(alpha: 0.2)),
-        boxShadow: [
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
+            color: Color(0x06000000),
             blurRadius: 3,
-            offset: const Offset(0, 1),
+            offset: Offset(0, 1),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 1. Distinct Item Header
+          // 1. Item Header
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: const BoxDecoration(
@@ -2408,18 +2132,18 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                   decoration: BoxDecoration(
-                    color: accentColor.withValues(alpha: 0.1),
+                    color: const Color(0xFFF1F5F9),
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(
-                      color: accentColor.withValues(alpha: 0.25),
+                      color: const Color(0xFFCBD5E1),
                     ),
                   ),
                   child: Text(
                     '#$index',
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
-                      color: accentColor,
+                      color: Color(0xFF334155),
                       fontFamily: DefensysTokens.fontFamily,
                     ),
                   ),
@@ -2463,197 +2187,278 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Primary Row: Name Input + Format Dropdown + Required Checkbox
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: labelController,
-                        readOnly: isLocked,
-                        decoration: _dialogInputDecoration(
-                          labelText: isPost ? 'Post-Defense Deliverable Name *' : 'Pre-Defense Deliverable Name *',
-                          hintText: isPost
-                              ? 'e.g. Final Manuscript PDF, Source Code Archive'
-                              : 'e.g. Project Proposal Manuscript, Pitch Deck',
-                        ),
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: DefensysTokens.fontFamily),
-                        onChanged: (value) {
-                          item['label'] = value.trim();
-                          setState(() {});
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final nameField = TextFormField(
+                      controller: labelController,
+                      readOnly: isLocked,
+                      decoration: _dialogInputDecoration(
+                        labelText: isPost ? 'Post-Defense Deliverable Name *' : 'Pre-Defense Deliverable Name *',
+                        hintText: isPost
+                            ? 'e.g. Final Manuscript PDF, Source Code Archive'
+                            : 'e.g. Project Proposal Manuscript, Pitch Deck',
+                      ),
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: DefensysTokens.fontFamily),
+                      onChanged: (value) {
+                        item['label'] = value.trim();
+                        setState(() {});
+                        _markDirty();
+                      },
+                    );
+                    final formatField = SizedBox(
+                      width: 210,
+                      child: StageFileFormatPicker(
+                        value: currentFormat,
+                        enabled: !isLocked,
+                        onChanged: (val) {
+                          setState(() {
+                            item['file_format'] = val;
+                          });
                           _markDirty();
                         },
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Container(
-                      height: 44,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                        borderRadius: BorderRadius.circular(8),
+                    );
+                    final requiredField = DefensysShadcnScope(
+                      child: ShadCheckbox(
+                        value: item['required'] == true,
+                        enabled: !isLocked,
+                        label: const Text('Required'),
+                        onChanged: (value) {
+                          setState(() {
+                            item['required'] = value == true;
+                          });
+                          _markDirty();
+                        },
                       ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: currentFormat,
-                          isDense: true,
-                          borderRadius: BorderRadius.circular(8),
-                          style: const TextStyle(fontSize: 12, color: AppColors.textPrimary, fontWeight: FontWeight.w600, fontFamily: DefensysTokens.fontFamily),
-                          items: _deliverableFormatDropdownItems(),
-                          onChanged: isLocked
-                              ? null
-                              : (val) {
-                                  setState(() {
-                                    item['file_format'] = val ?? 'any';
-                                  });
-                                  _markDirty();
-                                },
+                    );
+
+                    final hasAdvancedSettings = isPost
+                        ? (item['is_restricted'] == true ||
+                            (item['archive_file_template'] != null &&
+                                item['archive_file_template'].toString().trim().isNotEmpty &&
+                                item['archive_file_template'] != '{project}' &&
+                                item['archive_file_template'] != '{project}_{deliverable}'))
+                        : (item['is_defense_material'] == true || item['requirement_timing'] == 'defense');
+                    final isAdvancedExpanded = item['_expandedAdvanced'] as bool? ?? hasAdvancedSettings;
+
+                    final moreOptionsBtn = DefensysShadcnScope(
+                      child: ShadButton.outline(
+                        size: ShadButtonSize.sm,
+                        onPressed: () {
+                          setState(() {
+                            item['_expandedAdvanced'] = !isAdvancedExpanded;
+                          });
+                        },
+                        leading: Icon(
+                          isAdvancedExpanded ? Icons.expand_less_rounded : Icons.tune_rounded,
+                          size: 14,
+                        ),
+                        child: Text(
+                          isAdvancedExpanded ? 'Fewer options' : 'More options',
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Container(
-                      height: 44,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    );
+
+                    return constraints.maxWidth < 620
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              nameField,
+                              const SizedBox(height: 10),
+                              Wrap(
+                                spacing: 12,
+                                runSpacing: 8,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [formatField, requiredField, moreOptionsBtn],
+                              ),
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              Expanded(child: nameField),
+                              const SizedBox(width: 10),
+                              formatField,
+                              const SizedBox(width: 10),
+                              requiredField,
+                              const SizedBox(width: 6),
+                              moreOptionsBtn,
+                            ],
+                          );
+                  },
+                ),
+
+                Builder(
+                  builder: (context) {
+                    final hasAdvancedSettings = isPost
+                        ? (item['is_restricted'] == true ||
+                            (item['archive_file_template'] != null &&
+                                item['archive_file_template'].toString().trim().isNotEmpty &&
+                                item['archive_file_template'] != '{project}' &&
+                                item['archive_file_template'] != '{project}_{deliverable}'))
+                        : (item['is_defense_material'] == true || item['requirement_timing'] == 'defense');
+                    final isAdvancedExpanded = item['_expandedAdvanced'] as bool? ?? hasAdvancedSettings;
+
+                    if (!isAdvancedExpanded) {
+                      final summaryText = isPost
+                          ? 'Archive deliverable${item['is_restricted'] == true ? ' • Restricted archive' : ''}'
+                          : (item['requirement_timing'] == 'defense'
+                              ? 'Due ${item['deadline_hours_before'] ?? 24}h before defense${item['is_defense_material'] == true ? ' • Panel material' : ''}'
+                              : 'Cleared before scheduling${item['is_defense_material'] == true ? ' • Panel material' : ''}');
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.info_outline_rounded, size: 12, color: Color(0xFF64748B)),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    summaryText,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: Color(0xFF475569),
+                                      fontWeight: FontWeight.w600,
+                                      fontFamily: DefensysTokens.fontFamily,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    return Container(
+                      margin: const EdgeInsets.only(top: 12),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF8FAFC),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
                         borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Checkbox(
-                            value: item['required'] == true,
-                            activeColor: accentColor,
-                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            onChanged: isLocked
-                                ? null
-                                : (value) {
-                                    setState(() {
-                                      item['required'] = value == true;
-                                    });
-                                    _markDirty();
-                                  },
+                          Row(
+                            children: [
+                              const Icon(Icons.tune_rounded, size: 14, color: Color(0xFF475569)),
+                              const SizedBox(width: 6),
+                              Text(
+                                isPost ? 'Advanced Post-Defense Rules & Archiving' : 'Advanced Timing & Panel Access',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF334155),
+                                  fontFamily: DefensysTokens.fontFamily,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 2),
-                          const Text(
-                            'Required',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary,
-                              fontFamily: DefensysTokens.fontFamily,
+                          const SizedBox(height: 10),
+                          if (!isPost) ...[
+                            DefenseMaterialToggle(
+                              value: item['is_defense_material'] == true,
+                              enabled: !isLocked,
+                              onChanged: (value) {
+                                setState(() {
+                                  item['is_defense_material'] = value;
+                                });
+                                _markDirty();
+                              },
                             ),
-                          ),
+                            const SizedBox(height: 8),
+                            DeliverableTimingFields(
+                              timing: item['requirement_timing']?.toString() ?? 'scheduling',
+                              hoursBefore: int.tryParse(item['deadline_hours_before']?.toString() ?? '') ?? 24,
+                              enabled: !isLocked,
+                              showTimingChoices: true,
+                              isDefenseMaterial: item['is_defense_material'] == true,
+                              onTimingChanged: (value) {
+                                setState(() => item['requirement_timing'] = value);
+                                _markDirty();
+                              },
+                              onHoursChanged: (value) {
+                                setState(() => item['deadline_hours_before'] = value);
+                                _markDirty();
+                              },
+                            ),
+                          ],
+                          if (isPost) ...[
+                            Row(
+                              children: [
+                                DefensysShadcnScope(
+                                  child: ShadCheckbox(
+                                    value: item['is_restricted'] == true,
+                                    enabled: !isLocked,
+                                    onChanged: (value) {
+                                      setState(() {
+                                        item['is_restricted'] = value == true;
+                                      });
+                                      _markDirty();
+                                    },
+                                    label: const Text(
+                                      'Restricted / Private in Institutional Archive',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textPrimary,
+                                        fontFamily: DefensysTokens.fontFamily,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                const Tooltip(
+                                  message: 'Private for faculty and admin records only; hidden from students.',
+                                  constraints: BoxConstraints(maxWidth: 240),
+                                  child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            RepositoryArchiveNamingPanel(
+                              templateController: templateController,
+                              deliverableLabel: labelController.text,
+                              fileFormat: currentFormat,
+                              isLocked: isLocked,
+                              isPit: true,
+                              pitYear: pitYear,
+                              stageOrEventLabel: _eventNameController.text,
+                              siblingDeliverables: _deliverables.where((d) => d['deliverable_type'] == 'post').toList(),
+                              currentIndex: _deliverables.where((d) => d['deliverable_type'] == 'post').toList().indexOf(item),
+                              onChanged: () {
+                                item['archive_file_template'] = templateController.text.trim();
+                                setState(() {});
+                                _markDirty();
+                              },
+                            ),
+                          ],
                         ],
                       ),
-                    ),
-                  ],
+                    );
+                  },
                 ),
-                if (!isPost) ...[
-                  const SizedBox(height: 8),
-                  DeliverableTimingFields(
-                    timing: item['requirement_timing']?.toString() ?? 'scheduling',
-                    hoursBefore: int.tryParse(item['deadline_hours_before']?.toString() ?? '') ?? 24,
-                    enabled: !isLocked,
-                    onTimingChanged: (value) {
-                      setState(() => item['requirement_timing'] = value);
-                      _markDirty();
-                    },
-                    onHoursChanged: (value) {
-                      setState(() => item['deadline_hours_before'] = value);
-                      _markDirty();
-                    },
-                  ),
+                if (onDone != null) ...[
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: item['is_defense_material'] == true,
-                        activeColor: const Color(0xFF2563EB),
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        onChanged: isLocked
-                            ? null
-                            : (v) {
-                                setState(() {
-                                  item['is_defense_material'] = v == true;
-                                });
-                                _markDirty();
-                              },
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: DefensysShadcnScope(
+                      child: ShadButton.outline(
+                        size: ShadButtonSize.sm,
+                        onPressed: onDone,
+                        leading: const Icon(Icons.check_rounded, size: 14),
+                        child: const Text('Done editing'),
                       ),
-                      const SizedBox(width: 4),
-                      const Text(
-                        'Defense Material (Visible to Defense Panelists)',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
-                          fontFamily: DefensysTokens.fontFamily,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Tooltip(
-                        message: 'Evaluated by defense panelists (uncheck for administrative forms).',
-                        constraints: BoxConstraints(maxWidth: 240),
-                        child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
-                      ),
-                    ],
-                  ),
-                ],
-                if (isPost) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: item['is_restricted'] == true,
-                        activeColor: AppColors.maroon,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        onChanged: isLocked
-                            ? null
-                            : (value) {
-                                setState(() {
-                                  item['is_restricted'] = value == true;
-                                });
-                                _markDirty();
-                              },
-                      ),
-                      const SizedBox(width: 4),
-                      const Text(
-                        'Restricted / Private in Institutional Archive',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
-                          fontFamily: DefensysTokens.fontFamily,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Tooltip(
-                        message: 'Private for faculty and admin records only; hidden from students.',
-                        constraints: BoxConstraints(maxWidth: 240),
-                        child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  // Smart Enterprise Repository Archiving Panel
-                  RepositoryArchiveNamingPanel(
-                    templateController: templateController,
-                    deliverableLabel: labelController.text,
-                    fileFormat: currentFormat,
-                    isLocked: isLocked,
-                    isPit: true,
-                    pitYear: pitYear,
-                    stageOrEventLabel: _eventNameController.text,
-                    siblingDeliverables: _deliverables.where((d) => d['deliverable_type'] == (isPost ? 'post' : 'pre')).toList(),
-                    currentIndex: _deliverables.where((d) => d['deliverable_type'] == (isPost ? 'post' : 'pre')).toList().indexOf(item),
-                    onChanged: () {
-                      item['archive_file_template'] = templateController.text.trim();
-                      setState(() {});
-                      _markDirty();
-                    },
+                    ),
                   ),
                 ],
               ],
@@ -3519,13 +3324,37 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            StageDeliverablePresetsBar(
+                              existingStages: [
+                                ...state.pitEvents.map((e) => {
+                                  'id': e['id'],
+                                  'label': e['event_name'] ?? e['name'] ?? 'PIT Event',
+                                  'deliverables': e['deliverables'] ?? [],
+                                }),
+                                ...state.defenseStages,
+                              ],
+                              currentDeliverables: _deliverables,
+                              enabled: !isLocked,
+                              onApplyDeliverables: (newDeliverables) {
+                                setState(() {
+                                  _deliverables.clear();
+                                  _deliverables.addAll(newDeliverables);
+                                  _selectedDeliverable = _deliverables.isNotEmpty ? _deliverables.first : null;
+                                });
+                                _markDirty();
+                              },
+                            ),
+                            StageDeliverableCounts(
+                              deliverables: _deliverables,
+                              minutesRequired: false,
+                            ),
                             _buildDeliverableSection(
                               title: 'Pre-Defense Requirements',
                               subtitle: 'Choose which files clear scheduling and which are due closer to the defense.',
                               icon: Icons.folder_open_rounded,
-                              accentColor: const Color(0xFF2563EB),
-                              bgHeaderColor: const Color(0xFFEFF6FF),
-                              borderColor: const Color(0xFFBFDBFE),
+                              accentColor: const Color(0xFF0F172A),
+                              bgHeaderColor: const Color(0xFFF8FAFC),
+                              borderColor: const Color(0xFFE2E8F0),
                               count: preDeliverables.length,
                               buttonText: 'Add Pre-Defense',
                               onAdd: () => _addDeliverable(type: 'pre'),
@@ -3540,9 +3369,9 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               title: 'Post-Defense Requirements & Archive',
                               subtitle: 'Deliverables required for final event clearance and repository archiving.',
                               icon: Icons.inventory_2_rounded,
-                              accentColor: AppColors.maroon,
-                              bgHeaderColor: const Color(0xFFFFF1F2),
-                              borderColor: const Color(0xFFFECDD3),
+                              accentColor: const Color(0xFF0F172A),
+                              bgHeaderColor: const Color(0xFFF8FAFC),
+                              borderColor: const Color(0xFFE2E8F0),
                               count: postDeliverables.length,
                               buttonText: 'Add Post-Defense',
                               onAdd: () => _addDeliverable(type: 'post'),

@@ -339,6 +339,18 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                     return a.compareTo(b);
                   });
 
+                final pitEvent = widget.scope == 'pit'
+                    ? widget.state.pitEvents.firstWhere(
+                        (event) =>
+                            event['event_name']?.toString().toLowerCase() ==
+                            activeStageOrEventName.toLowerCase(),
+                        orElse: () => <String, dynamic>{},
+                      )
+                    : <String, dynamic>{};
+                bool teamReady(Map<String, dynamic> team) => widget.scope == 'pit'
+                    ? isPitTeamReadyToSchedule(team, activeStageOrEventName, pitEvent)
+                    : isTeamStageReady(team, activeStageOrEventName);
+
                 return Column(
                   children: sortedSections.map((section) {
                     final sectionTeams = sectionsMap[section]!;
@@ -356,14 +368,15 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                             isTeamStageCompleted(team, activeStageOrEventName));
                     final isSectionReady = activeStageOrEventName.isNotEmpty &&
                         sectionTeams.every((team) =>
-                            isTeamStageReady(team, activeStageOrEventName));
+                            teamReady(team));
                     final sectionReadyCount = activeStageOrEventName.isNotEmpty
                         ? sectionTeams
-                            .where((team) => isTeamStageReady(team, activeStageOrEventName))
+                            .where(teamReady)
                             .length
                         : 0;
                     final sectionPendingCount = sectionTeams.where((team) =>
-                        getTeamStageStatus(team, activeStageOrEventName) == 'pending').length;
+                        getTeamStageStatus(team, activeStageOrEventName) == 'pending' &&
+                        !teamReady(team)).length;
                     final sectionAwaitingCompletion = sectionTeams.every((team) =>
                         getTeamStageStatus(team, activeStageOrEventName) == 'awaiting_completion');
                     final sectionHasVerdicts = sectionTeams.every((team) =>
@@ -696,8 +709,8 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                     final stageStatus = getTeamStageStatus(team, activeStageOrEventName);
                                     final isCompleted = stageStatus == 'completed';
                                     final isScheduled = stageStatus == 'scheduled';
-                                    final isReady = isTeamStageReady(team, activeStageOrEventName);
-                                    final isPending = stageStatus == 'pending';
+                                    final isReady = teamReady(team);
+                                    final isPending = stageStatus == 'pending' && !isReady;
                                     final verdict = (team['stage_verdicts'] as Map?)?[activeStageOrEventName]?.toString() ?? '';
                                     final hasVerdict = verdict.isNotEmpty;
 
@@ -723,7 +736,9 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                           ? 'Ready for Re-defense'
                                           : stageStatus == 'failed'
                                               ? 'Ready for Retake'
-                                              : 'Ready for Defense';
+                                              : widget.scope == 'pit'
+                                                  ? 'Ready to Schedule'
+                                                  : 'Ready for Defense';
                                       statusIcon = Icons.auto_awesome_rounded;
                                     } else if (isPending) {
                                       dotColor = _isDark ? const Color(0xFFFBBF24) : const Color(0xFFF59E0B);

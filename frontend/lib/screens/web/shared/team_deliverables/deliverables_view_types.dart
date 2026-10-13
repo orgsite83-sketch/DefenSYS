@@ -72,16 +72,28 @@ class DeliverablesTriageHelper {
   static bool isReadyForDefense(Map<String, dynamic> team) {
     final activeStage = resolveActiveStage(team);
     if (activeStage == null) return false;
+    if (activeStage['has_active_schedule'] == true ||
+        activeStage['has_done_schedule'] == true) {
+      return false;
+    }
 
     final endorsed = activeStage['endorsed'] == true;
     final statusDetail = activeStage['stage_status_detail']?.toString() ?? activeStage['status']?.toString();
     return !hasPendingReview(team) &&
-        (endorsed || statusDetail == 'endorsed' || statusDetail == 'ready');
+        (endorsed || statusDetail == 'endorsed' || statusDetail == 'ready' ||
+            statusDetail == 'scheduling_eligible');
   }
 
   static bool isOverdueOrMissing(Map<String, dynamic> team) {
     final activeStage = resolveActiveStage(team);
     if (activeStage == null) return false;
+
+    final materials = activeStage['materials_readiness'];
+    if (materials is Map) {
+      final required = int.tryParse('${materials['required_total'] ?? 0}') ?? 0;
+      final submitted = int.tryParse('${materials['submitted_total'] ?? 0}') ?? 0;
+      if (required > submitted) return true;
+    }
 
     final statusDetail = activeStage['stage_status_detail']?.toString() ?? activeStage['status']?.toString();
     if (statusDetail == 'missing_requirements' || statusDetail == 'missing' || activeStage['required_complete'] == false) {

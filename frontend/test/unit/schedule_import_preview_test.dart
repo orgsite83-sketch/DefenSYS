@@ -8,6 +8,62 @@ void main() {
     const stageId = 10;
     const stageLabel = 'Project Proposal';
 
+    test('PIT import permits defense-timed files and gates scheduling files', () {
+      const event = 'System Concept Pitching';
+      final source = ParsedScheduleImport(rows: [
+        const ParsedScheduleImportRow(
+          sheetRow: 2,
+          time: '09:00 - 09:30',
+          startTime: '09:00',
+          endTime: '09:30',
+          teamName: 'Team Alpha',
+          projectTitle: 'Project Alpha',
+          adviser: '',
+          members: [],
+          chair: 'Jonathan Beltran',
+          panelMembers: [],
+          documenter: '',
+          room: 'Room 301',
+          date: '2026-06-18',
+          stage: event,
+          slotDuration: 30,
+        ),
+      ]);
+      ScheduleImportPreviewRow preview(String timing) =>
+          buildScheduleImportPreviewRows(
+            source,
+            DefenseSchedulerState(
+              faculty: const [{'id': 101, 'name': 'Jonathan Beltran'}],
+              teams: const [{
+                'id': 1,
+                'name': 'Team Alpha',
+                'project_title': 'Project Alpha',
+                'level': '1st Year PIT',
+              }],
+              pitEvents: [{
+                'event_name': event,
+                'deliverables': [
+                  {'deliverable_type': 'pre', 'required': true, 'requirement_timing': timing},
+                ],
+              }],
+            ),
+            scope: 'pit',
+            stageId: null,
+            eventName: event,
+            date: '2026-06-18',
+            room: 'Room 301',
+            fallbackDuration: 30,
+            panelRubricId: 1,
+            adviserRubricId: null,
+            peerRubricId: 2,
+            panelWeight: 80,
+            peerWeight: 20,
+          ).single;
+
+      expect(preview('defense').rowType, ScheduleImportRowType.initialReady);
+      expect(preview('scheduling').rowType, ScheduleImportRowType.notEndorsed);
+    });
+
     final testState = DefenseSchedulerState(
       defenseStages: const [
         {'id': stageId, 'label': stageLabel},

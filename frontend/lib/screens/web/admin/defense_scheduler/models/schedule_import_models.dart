@@ -226,6 +226,26 @@ bool isTeamStageReady(Map<String, dynamic> team, String stageLabel) {
   return getTeamStageStatus(team, stageLabel) == 'ready';
 }
 
+bool pitEventRequiresEndorsement(Map<String, dynamic> event) {
+  return (event['deliverables'] as List? ?? []).any((item) =>
+      item is Map &&
+      item['deliverable_type'] == 'pre' &&
+      item['required'] == true &&
+      item['requirement_timing'] != 'defense');
+}
+
+bool isPitTeamReadyToSchedule(
+  Map<String, dynamic> team,
+  String eventName,
+  Map<String, dynamic> event,
+) {
+  if (pitEventRequiresEndorsement(event)) {
+    return isTeamStageReady(team, eventName);
+  }
+  return {'pending', 'ready'}.contains(getTeamStageStatus(team, eventName)) &&
+      !isTeamStageScheduled(team, eventName);
+}
+
 bool isTeamStageScheduled(Map<String, dynamic> team, String stageLabel) {
   return (team['scheduled_stages'] as List?)?.contains(stageLabel) == true ||
       getTeamStageStatus(team, stageLabel) == 'scheduled';
@@ -956,13 +976,8 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
                 eventName.toLowerCase(),
             orElse: () => <String, dynamic>{},
           );
-          final hasPre =
-              (pitConfig['deliverables'] as List?)?.any(
-                (d) => d['deliverable_type'] == 'pre',
-              ) ??
-              false;
-
-          if (hasPre && readyFor != eventName.toLowerCase()) {
+          if (pitEventRequiresEndorsement(pitConfig) &&
+              readyFor != eventName.toLowerCase()) {
             rowType = ScheduleImportRowType.notEndorsed;
             teamIssues.add('$teamName is not endorsed for "$eventName".');
           } else {

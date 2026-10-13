@@ -2081,6 +2081,7 @@ class PitEventGradingConfigTests(APITestCase):
         self.assertFalse(PitEventGradingConfig.objects.filter(id=config.id).exists())
 
     def test_scheduling_gated_by_pre_defense_deliverables(self):
+        from repository.deliverables.services import stage_payload
         config = PitEventGradingConfig.objects.create(
             semester=self.semester,
             event_name='2nd Year PIT Expo Gated',
@@ -2100,6 +2101,7 @@ class PitEventGradingConfigTests(APITestCase):
 
         self.team.ready_for_stage = ''
         self.team.save()
+        self.assertTrue(stage_payload(self.team, config.event_name)['endorsement_required'])
 
         payload = self.pit_payload(event_name='2nd Year PIT Expo Gated', team_id=self.team.id)
         response = self.client.post('/api/defense/schedules/', payload, format='json')
@@ -2135,6 +2137,75 @@ class PitEventGradingConfigTests(APITestCase):
         payload = self.pit_payload(event_name='2nd Year PIT Expo Open', team_id=self.team.id)
         response = self.client.post('/api/defense/schedules/', payload, format='json')
         self.assertEqual(response.status_code, 201)
+
+    def test_pit_defense_timed_and_optional_files_do_not_require_endorsement(self):
+        from .models import PitEventDeliverable
+        from repository.deliverables.services import stage_payload
+
+        event_name = '2nd Year PIT Expo Auto Eligible'
+        config = PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name=event_name,
+            panel_rubric=self.panel_rubric,
+            peer_rubric=self.peer_rubric,
+            panel_weight=75,
+            peer_weight=25,
+        )
+        PitEventDeliverable.objects.create(
+            pit_event_config=config, deliverable_id='DECK', label='Pitch deck',
+            deliverable_type=PitEventDeliverable.TYPE_PRE, required=True,
+            requirement_timing='defense',
+        )
+        PitEventDeliverable.objects.create(
+            pit_event_config=config, deliverable_id='OPTIONAL', label='Optional brief',
+            deliverable_type=PitEventDeliverable.TYPE_PRE, required=False,
+        )
+        self.team.ready_for_stage = ''
+        self.team.save(update_fields=['ready_for_stage'])
+
+        stage = stage_payload(self.team, event_name)
+        self.assertFalse(stage['endorsement_required'])
+        self.assertTrue(stage['required_complete'])
+        self.assertEqual(stage['stage_status_detail'], 'scheduling_eligible')
+        self.assertEqual(stage['materials_readiness']['required_total'], 1)
+
+        payload = self.pit_payload(event_name=event_name, team_id=self.team.id)
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.team.refresh_from_db()
+        self.assertFalse(self.team.ready_for_stage)
+
+    def test_pit_auto_eligible_team_is_in_schedule_plan(self):
+        from .models import PitEventDeliverable
+
+        event_name = '2nd Year PIT Expo Plan Eligible'
+        config = PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name=event_name,
+            panel_rubric=self.panel_rubric,
+            peer_rubric=self.peer_rubric,
+            panel_weight=75,
+            peer_weight=25,
+        )
+        PitEventDeliverable.objects.create(
+            pit_event_config=config, deliverable_id='DECK', label='Pitch deck',
+            deliverable_type=PitEventDeliverable.TYPE_PRE, required=True,
+            requirement_timing='defense',
+        )
+        self.team.ready_for_stage = ''
+        self.team.save(update_fields=['ready_for_stage'])
+
+        payload = self.pit_payload(event_name=event_name)
+        preview = self.client.post('/api/defense/schedules/generate-plan/', payload, format='json')
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertIn(self.team.id, {slot['team_id'] for slot in preview.data['slots']})
+
+        confirm = self.client.post('/api/defense/schedules/confirm-plan/', {
+            **payload, 'slots': [{'team_id': self.team.id}],
+        }, format='json')
+        self.assertEqual(confirm.status_code, 201, confirm.data)
+        self.team.refresh_from_db()
+        self.assertFalse(self.team.ready_for_stage)
 
     def test_retroactive_pit_weights_sync(self):
         from grading.grades.models import TeamGrade

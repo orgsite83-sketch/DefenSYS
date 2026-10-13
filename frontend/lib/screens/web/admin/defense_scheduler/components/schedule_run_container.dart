@@ -323,11 +323,6 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           activeStageOrEvent.toLowerCase(),
       orElse: () => <String, dynamic>{},
     );
-    final hasPrerequisites =
-        widget.scope == 'capstone' ||
-        (pitConfig['deliverables'] as List? ?? []).any(
-          (item) => item['deliverable_type'] == 'pre',
-        );
     return activeScopeTeams.where((team) {
       final alreadyScheduled = state.schedules.any(
         (schedule) {
@@ -357,10 +352,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
           }
         });
       if (alreadyScheduled) return false;
-      return hasPrerequisites
+      return widget.scope == 'capstone'
           ? isTeamStageReady(team, activeStageOrEvent)
-          : !isTeamStageScheduled(team, activeStageOrEvent) &&
-                {'pending', 'ready'}.contains(getTeamStageStatus(team, activeStageOrEvent));
+          : isPitTeamReadyToSchedule(team, activeStageOrEvent, pitConfig);
     }).toList();
   }
 

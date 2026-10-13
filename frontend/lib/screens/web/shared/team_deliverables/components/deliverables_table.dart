@@ -1188,6 +1188,22 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       );
     }
 
+    if (configured && total == 0) {
+      return const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Scheduling Clearance', style: TextStyle(
+            fontSize: 12, fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
+          )),
+          SizedBox(height: 6),
+          Text('No scheduling uploads required', style: TextStyle(
+            fontSize: 12, color: AppColors.textSecondary,
+          )),
+        ],
+      );
+    }
+
     final pct = total > 0 ? (accepted / total).clamp(0.0, 1.0) : 0.0;
     final color = accepted == total && total > 0 ? AppColors.success : const Color(0xFF2563EB);
 
@@ -1351,7 +1367,31 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       };
     }
 
+    if (widget.state.scope == 'pit' && stage['endorsement_required'] == false) {
+      return {
+        'label': 'Ready to Schedule',
+        'color': AppColors.success,
+        'bg': AppColors.success.withValues(alpha: 0.1),
+        'border': AppColors.success.withValues(alpha: 0.3),
+        'icon': Icons.event_available_outlined,
+      };
+    }
+
     if (complete) {
+      final materials = stage['materials_readiness'];
+      if (widget.state.scope == 'pit' && materials is Map) {
+        final required = parseAsInt(materials['required_total']);
+        final submitted = parseAsInt(materials['submitted_total']);
+        if (required > submitted) {
+          return {
+            'label': 'Files Pending',
+            'color': AppColors.warning,
+            'bg': AppColors.warning.withValues(alpha: 0.1),
+            'border': AppColors.warning.withValues(alpha: 0.3),
+            'icon': Icons.upload_file_outlined,
+          };
+        }
+      }
       return {
         'label': 'Ready for Endorsement',
         'color': Colors.blue,
@@ -1557,7 +1597,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final configured = stage['deliverables_configured'] == true || isPresentationOnly;
     final complete = stage['required_complete'] == true || isPresentationOnly;
     final endorsed = stage['endorsed'] == true;
-    final canEndorse = configured && complete && !endorsed;
+    final canEndorse = configured && complete && !endorsed &&
+        (widget.state.scope != 'pit' || stage['endorsement_required'] != false);
     final canCancelEndorsement = (stage['can_cancel_endorsement'] == true) ||
         (endorsed &&
             stage['has_active_schedule'] != true &&
@@ -2419,9 +2460,14 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final yearLevel = team['year_level']?.toString().trim() ?? '';
     final section = team['section']?.toString().trim() ?? '';
     final isPresentationOnly = stagePayload['is_presentation_only'] == true;
+    final materialReadiness = stagePayload['materials_readiness'];
+    final materialsPending = materialReadiness is Map &&
+        parseAsInt(materialReadiness['required_total']) >
+            parseAsInt(materialReadiness['submitted_total']);
     final canEndorse = (stagePayload['deliverables_configured'] == true || isPresentationOnly) &&
         (stagePayload['required_complete'] == true || isPresentationOnly) &&
-        stagePayload['endorsed'] != true;
+        stagePayload['endorsed'] != true &&
+        (!isPit || stagePayload['endorsement_required'] != false);
     final endorsementHint = isPresentationOnly
         ? 'No uploads required. Endorse the team for presentation scheduling.'
         : stagePayload['deliverables_configured'] != true
@@ -2748,6 +2794,21 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 _buildStageStatusBadge(stagePayload),
               ],
             ),
+            if (isPit &&
+                stagePayload['deliverables_configured'] == true &&
+                stagePayload['endorsed'] != true &&
+                (stagePayload['endorsement_required'] == false ||
+                    (stagePayload['required_complete'] == true && materialsPending))) ...[
+              const SizedBox(height: 6),
+              Text(
+                stagePayload['endorsement_required'] == false
+                    ? (materialsPending
+                        ? 'No endorsement needed. This team can be scheduled now. Required defense files are still awaiting student uploads and are due before the scheduled defense.'
+                        : 'No endorsement needed. This team can be scheduled now.')
+                    : 'Scheduling checks are clear. Required defense files are still awaiting student uploads and are due before the scheduled defense.',
+                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+            ],
           ],
           if (widget.isAdviser && stages.isNotEmpty && stagePayload['endorsed'] != true) ...[
               const SizedBox(height: 14),

@@ -2,6 +2,34 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:defensys/screens/web/admin/defense_scheduler/models/schedule_import_models.dart';
 
 void main() {
+  test('PIT scheduling skips endorsement only without required scheduling files', () {
+    const event = 'System Concept Pitching';
+    final team = <String, dynamic>{
+      'level': '1st Year PIT',
+      'ready_for_stage': null,
+    };
+    final defenseFilesOnly = <String, dynamic>{
+      'deliverables': [
+        {'deliverable_type': 'pre', 'required': true, 'requirement_timing': 'defense'},
+        {'deliverable_type': 'pre', 'required': false, 'requirement_timing': 'scheduling'},
+      ],
+    };
+    expect(pitEventRequiresEndorsement(defenseFilesOnly), isFalse);
+    expect(isPitTeamReadyToSchedule(team, event, defenseFilesOnly), isTrue);
+
+    final schedulingFile = <String, dynamic>{
+      'deliverables': [
+        {'deliverable_type': 'pre', 'required': true, 'requirement_timing': 'scheduling'},
+      ],
+    };
+    expect(pitEventRequiresEndorsement(schedulingFile), isTrue);
+    expect(isPitTeamReadyToSchedule(team, event, schedulingFile), isFalse);
+    team['ready_for_stage'] = event;
+    expect(isPitTeamReadyToSchedule(team, event, schedulingFile), isTrue);
+    team['scheduled_stages'] = [event];
+    expect(isPitTeamReadyToSchedule(team, event, defenseFilesOnly), isFalse);
+  });
+
   group('Team Stage Readiness & Completion Lifecycle Tests', () {
     for (final status in [
       'awaiting_verdict',

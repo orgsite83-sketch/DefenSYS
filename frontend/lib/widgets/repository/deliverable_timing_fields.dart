@@ -55,22 +55,9 @@ class DeliverableTimingFields extends StatelessWidget {
       padding: showTimingChoices ? const EdgeInsets.all(12) : EdgeInsets.zero,
       decoration: showTimingChoices
           ? BoxDecoration(
-              color: isDefenseMaterial
-                  ? Color.alphaBlend(
-                      Theme.of(
-                        context,
-                      ).colorScheme.primary.withValues(alpha: 0.04),
-                      Theme.of(context).colorScheme.surface,
-                    )
-                  : Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: isDefenseMaterial
-                    ? Theme.of(
-                        context,
-                      ).colorScheme.primary.withValues(alpha: 0.55)
-                    : Theme.of(context).dividerColor,
-              ),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
             )
           : null,
       child: Column(
@@ -193,53 +180,92 @@ class DeliverableTimingFields extends StatelessWidget {
     required IconData icon,
   }) {
     final selected = timing == value;
-    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Semantics(
       button: true,
       selected: selected,
       child: InkWell(
         onTap: enabled ? () => onTimingChanged(value) : null,
         borderRadius: BorderRadius.circular(8),
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
           constraints: const BoxConstraints(minHeight: 82),
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: selected
-                ? Color.alphaBlend(
-                    scheme.primary.withValues(alpha: 0.07),
-                    scheme.surface,
-                  )
-                : scheme.surface,
+                ? (isDark ? const Color(0xFF1E293B) : Colors.white)
+                : (isDark ? const Color(0xFF0F172A) : const Color(0xFFFAFAFA)),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: selected ? scheme.primary : Theme.of(context).dividerColor,
+              color: selected
+                  ? const Color(0xFF0F172A)
+                  : const Color(0xFFE2E8F0),
               width: selected ? 1.5 : 1,
             ),
+            boxShadow: selected
+                ? const [
+                    BoxShadow(
+                      color: Color(0x0A000000),
+                      blurRadius: 4,
+                      offset: Offset(0, 1),
+                    ),
+                  ]
+                : null,
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                selected
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_unchecked,
-                size: 18,
-                color: selected ? scheme.primary : scheme.onSurfaceVariant,
+              Container(
+                margin: const EdgeInsets.only(top: 2),
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: selected
+                        ? const Color(0xFF0F172A)
+                        : const Color(0xFFCBD5E1),
+                    width: 1.5,
+                  ),
+                ),
+                child: selected
+                    ? Center(
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                      )
+                    : null,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        Icon(icon, size: 15, color: scheme.onSurfaceVariant),
-                        const SizedBox(width: 5),
+                        Icon(
+                          icon,
+                          size: 15,
+                          color: selected
+                              ? const Color(0xFF0F172A)
+                              : const Color(0xFF64748B),
+                        ),
+                        const SizedBox(width: 6),
                         Flexible(
                           child: Text(
                             title,
-                            style: Theme.of(context).textTheme.labelMedium
-                                ?.copyWith(fontWeight: FontWeight.w700),
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: selected
+                                  ? const Color(0xFF0F172A)
+                                  : const Color(0xFF334155),
+                            ),
                           ),
                         ),
                       ],
@@ -247,7 +273,11 @@ class DeliverableTimingFields extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       description,
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: Color(0xFF64748B),
+                        height: 1.35,
+                      ),
                     ),
                   ],
                 ),

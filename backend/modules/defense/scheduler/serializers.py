@@ -16,7 +16,7 @@ from grading.rubrics.serializers import RubricSerializer
 from student_teams.models import StudentTeam, TeamStageProgress
 from student_teams.services import get_ready_teams, is_stage_ready, mark_stage_scheduled
 from .models import DefenseSchedule, SchedulePanelist, PitEventDeliverable
-from .pit_config import get_pit_event_config, pit_event_config_payload, upsert_pit_event_config
+from .pit_config import get_pit_event_config, pit_endorsement_required, pit_event_config_payload, upsert_pit_event_config
 from .services import VALID_TRANSITIONS, transition_schedule_status, adviser_panel_conflict
 from user_management.external_evaluators import create_invitations, resolve_evaluators, evaluator_payload
 from user_management.models import ExternalEvaluator
@@ -1070,11 +1070,9 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
         if attrs['scope'] == DefenseSchedule.SCOPE_PIT:
             self._validate_pit_team_scope(team)
             config = get_pit_event_config(attrs['semester'], attrs['event_name'])
-            if config:
-                has_pre = config.deliverables.filter(deliverable_type=PitEventDeliverable.TYPE_PRE).exists()
-                if has_pre:
-                    if (team.ready_for_stage or '').strip().lower() != attrs['event_name'].strip().lower():
-                        raise serializers.ValidationError({'team_id': f'Team {team.name} is not endorsed for {attrs["event_name"]}.'})
+            if pit_endorsement_required(config):
+                if (team.ready_for_stage or '').strip().lower() != attrs['event_name'].strip().lower():
+                    raise serializers.ValidationError({'team_id': f'Team {team.name} is not endorsed for {attrs["event_name"]}.'})
         return team
 
     def _validate_duplicate(self, attrs):
@@ -1311,10 +1309,8 @@ class GenerateSchedulePlanSerializer(SchedulePlanSerializer):
             queryset = queryset.exclude(year_level='3rd Year', semester__label=Semester.SECOND)
 
             config = get_pit_event_config(attrs['semester'], attrs['event_name'])
-            if config:
-                has_pre = config.deliverables.filter(deliverable_type=PitEventDeliverable.TYPE_PRE).exists()
-                if has_pre:
-                    queryset = queryset.filter(ready_for_stage__iexact=attrs['event_name'])
+            if pit_endorsement_required(config):
+                queryset = queryset.filter(ready_for_stage__iexact=attrs['event_name'])
 
         return list(queryset.exclude(pk__in=scheduled_team_ids).order_by('name'))
 
@@ -1359,11 +1355,9 @@ class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
             else:
                 self._validate_pit_team_scope(team)
                 config = get_pit_event_config(attrs['semester'], attrs['event_name'])
-                if config:
-                    has_pre = config.deliverables.filter(deliverable_type=PitEventDeliverable.TYPE_PRE).exists()
-                    if has_pre:
-                        if (team.ready_for_stage or '').strip().lower() != attrs['event_name'].strip().lower():
-                            raise serializers.ValidationError({'slots': f'{team.name} is not endorsed for {attrs["event_name"]}.'})
+                if pit_endorsement_required(config):
+                    if (team.ready_for_stage or '').strip().lower() != attrs['event_name'].strip().lower():
+                        raise serializers.ValidationError({'slots': f'{team.name} is not endorsed for {attrs["event_name"]}.'})
 
             active_existing = DefenseSchedule.objects.filter(
                 scope=attrs['scope'],

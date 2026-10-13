@@ -6,7 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/pump_app.dart';
 
 void main() {
-  testWidgets('file format uses a shadcn select at narrow width', (tester) async {
+  testWidgets('file format uses a shadcn select at narrow width', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);

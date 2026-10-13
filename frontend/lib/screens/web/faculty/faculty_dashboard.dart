@@ -1726,8 +1726,14 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           facultyName: facultyName,
           yearLevel: yearLevel,
           section: section,
-          onOpenDeliverables: () => _goToSection('deliverables'),
-          onOpenGrading: () => _goToSection('deliverables'),
+          onOpenDeliverables: (teamId) => _goToSection('deliverables', queryParameters: {
+            if (teamId != null) 'teamId': teamId.toString(),
+            'tab': '0',
+          }),
+          onOpenGrading: (teamId) => _goToSection('deliverables', queryParameters: {
+            if (teamId != null) 'teamId': teamId.toString(),
+            'tab': '1',
+          }),
         );
       case FacultyWorkspace.documenter:
         return DocumenterDashboardContent(

@@ -567,14 +567,18 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
             ),
             _buildTriageChip(
               filter: TeamTriageFilter.readyForDefense,
-              label: 'Ready for Defense ($readyCount)',
+              label: widget.state.scope == 'pit'
+                  ? 'Ready to Schedule ($readyCount)'
+                  : 'Ready for Defense ($readyCount)',
               dotColor: const Color(0xFF10B981),
             ),
             _buildTriageChip(
               filter: TeamTriageFilter.overdue,
-              label: widget.isAdviser
-                  ? 'Missing Requirements ($overdueCount)'
-                  : 'Missing / Overdue ($overdueCount)',
+              label: widget.state.scope == 'pit'
+                  ? 'Files Pending / Overdue ($overdueCount)'
+                  : widget.isAdviser
+                      ? 'Missing Requirements ($overdueCount)'
+                      : 'Missing / Overdue ($overdueCount)',
               dotColor: const Color(0xFFF59E0B),
             ),
           ],

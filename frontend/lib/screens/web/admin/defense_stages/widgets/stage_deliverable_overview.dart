@@ -77,15 +77,26 @@ class StageDeliverableCounts extends StatelessWidget {
   }
 
   Widget _count(ThemeData theme, String label, int count) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
     decoration: BoxDecoration(
-      color: theme.colorScheme.surfaceContainerLow,
+      color: Colors.white,
       borderRadius: BorderRadius.circular(7),
-      border: Border.all(color: theme.dividerColor),
+      border: Border.all(color: const Color(0xFFE2E8F0)),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x06000000),
+          blurRadius: 3,
+          offset: Offset(0, 1),
+        ),
+      ],
     ),
     child: Text(
       '$label: $count',
-      style: theme.textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700),
+      style: const TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        color: Color(0xFF334155),
+      ),
     ),
   );
 }
@@ -100,6 +111,7 @@ class StageDeliverableOverview extends StatelessWidget {
     required this.selectedItem,
     required this.onSelect,
     required this.buildEditor,
+    this.showDoneEditingButton = true,
   });
 
   final List<Map<String, dynamic>> items;
@@ -107,6 +119,7 @@ class StageDeliverableOverview extends StatelessWidget {
   final Map<String, dynamic>? selectedItem;
   final ValueChanged<Map<String, dynamic>?> onSelect;
   final Widget Function(Map<String, dynamic> item, int index) buildEditor;
+  final bool showDoneEditingButton;
 
   @override
   Widget build(BuildContext context) {
@@ -137,7 +150,7 @@ class StageDeliverableOverview extends StatelessWidget {
             child: Text(
               '$title (${groupItems.length})',
               style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+                color: const Color(0xFF475569),
                 fontWeight: FontWeight.w700,
               ),
             ),
@@ -148,23 +161,28 @@ class StageDeliverableOverview extends StatelessWidget {
               child: Text(
                 isPost ? 'No archive files yet.' : 'No files in this group.',
                 style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+                  color: const Color(0xFF94A3B8),
                 ),
               ),
             ),
           for (final item in groupItems) ...[
             if (identical(item, selectedItem)) ...[
               buildEditor(item, items.indexOf(item) + 1),
-              Align(
-                alignment: Alignment.centerRight,
-                child: DefensysShadcnScope(
-                  child: ShadButton.ghost(
-                    size: ShadButtonSize.sm,
-                    onPressed: () => onSelect(null),
-                    child: const Text('Done editing'),
+              if (showDoneEditingButton)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 8),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: DefensysShadcnScope(
+                      child: ShadButton.outline(
+                        size: ShadButtonSize.sm,
+                        onPressed: () => onSelect(null),
+                        leading: const Icon(Icons.check_rounded, size: 14),
+                        child: const Text('Done editing'),
+                      ),
+                    ),
                   ),
                 ),
-              ),
             ] else
               _DeliverableSummaryRow(
                 key: ObjectKey(item),
@@ -259,23 +277,24 @@ class StageCompactRecordRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Material(
-        color: theme.colorScheme.surface,
+        color: Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: theme.dividerColor),
+          side: const BorderSide(color: Color(0xFFE2E8F0)),
         ),
+        elevation: 0,
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(8),
+          hoverColor: const Color(0xFFF8FAFC),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
             child: Row(
               children: [
-                Icon(icon, size: 18, color: theme.colorScheme.primary),
+                Icon(icon, size: 18, color: const Color(0xFF475569)),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -285,8 +304,10 @@ class StageCompactRecordRow extends StatelessWidget {
                         title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium?.copyWith(
+                        style: const TextStyle(
+                          fontSize: 13,
                           fontWeight: FontWeight.w700,
+                          color: Color(0xFF0F172A),
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -294,25 +315,28 @@ class StageCompactRecordRow extends StatelessWidget {
                         summary,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: Color(0xFF64748B),
                         ),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text(
+                const Text(
                   'Edit',
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: theme.colorScheme.primary,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF2563EB),
                   ),
                 ),
                 const SizedBox(width: 4),
-                Icon(
+                const Icon(
                   Icons.chevron_right_rounded,
                   size: 18,
-                  color: theme.colorScheme.primary,
+                  color: Color(0xFF94A3B8),
                 ),
               ],
             ),

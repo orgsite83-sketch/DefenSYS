@@ -1014,6 +1014,7 @@ def stage_payload(team, stage_label, evaluator=None):
 
     is_pres = is_presentation_stage(team, stage_label)
     configured = len(definitions) > 0 or is_pres
+    endorsement_required = is_capstone or bool(required_items)
     archive_required_complete = (
         not archive_required_items
         or all(
@@ -1023,6 +1024,8 @@ def stage_payload(team, stage_label, evaluator=None):
         )
     )
     stage_status_detail = compute_stage_status_detail(team, stage_label, configured, archive_required_complete)
+    if configured and not endorsement_required and stage_status_detail == 'awaiting_endorsement':
+        stage_status_detail = 'scheduling_eligible'
 
     # Resolve stage-scoped schedule
     stage_sched = active_schedules.order_by('-scheduled_date', '-start_time', '-id').first()
@@ -1085,6 +1088,7 @@ def stage_payload(team, stage_label, evaluator=None):
         'peer_eval_unavailable_reason': stage_peer_reason,
         'deliverables_configured': configured,
         'is_presentation_only': is_pres,
+        'endorsement_required': endorsement_required,
         'endorsed': is_endorsed,
         'is_officially_complete': is_stage_officially_complete,
         'has_active_schedule': has_active_schedule,

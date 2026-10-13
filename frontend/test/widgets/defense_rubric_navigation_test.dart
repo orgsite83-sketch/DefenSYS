@@ -459,66 +459,75 @@ void main() {
     },
   );
 
-  testWidgets('Edit Stage draft preserves independent defense timing and visibility', (
-    tester,
-  ) async {
-    var router = await pumpWorkspace(tester);
-    router.go(AdminRoutes.defenseStageEdit(7));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Minutes not required'));
-    await tester.tap(find.text('3. Deliverables'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Add Pre-Defense'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byWidgetPredicate(
-        (widget) => widget is TextField &&
-            widget.decoration?.labelText == 'Pre-Defense Requirement Name *',
-      ),
-      'Panel Deck',
-    );
-    await tester.tap(find.text('Defense material for panelists'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Before scheduled defense').last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Custom'));
-    await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey('stage-custom-deadline-hours')),
-      '36',
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Required').last);
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Save draft'));
-    await tester.tap(find.text('Save draft'));
-    await tester.pumpAndSettle();
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
+  testWidgets(
+    'Edit Stage draft preserves independent defense timing and visibility',
+    (tester) async {
+      var router = await pumpWorkspace(tester);
+      router.go(AdminRoutes.defenseStageEdit(7));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Minutes not required'));
+      await tester.tap(find.text('3. Deliverables'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add Pre-Defense'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is TextField &&
+              widget.decoration?.labelText == 'Pre-Defense Requirement Name *',
+        ),
+        'Panel Deck',
+      );
+      await tester.tap(find.text('More options'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Defense material for panelists'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Before scheduled defense').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Custom'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('stage-custom-deadline-hours')),
+        '36',
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Required').last);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Save draft'));
+      await tester.tap(find.text('Save draft'));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
 
-    router = await pumpWorkspace(
-      tester,
-      resetStorage: false,
-      initialLocation: AdminRoutes.defenseStageEdit(7),
-    );
-    expect(find.text('Panel Deck'), findsWidgets);
-    final stages = ProviderScope.containerOf(
-      tester.element(find.byType(DefenseStageEditorScreen)),
-    ).read(defenseStagesProvider.notifier) as _Stages;
-    await tester.ensureVisible(find.text('Save changes'));
-    await tester.tap(find.text('Save changes'));
-    await tester.pumpAndSettle();
+      router = await pumpWorkspace(
+        tester,
+        resetStorage: false,
+        initialLocation: AdminRoutes.defenseStageEdit(7),
+      );
+      expect(find.text('Panel Deck'), findsWidgets);
+      final stages =
+          ProviderScope.containerOf(
+                tester.element(find.byType(DefenseStageEditorScreen)),
+              ).read(defenseStagesProvider.notifier)
+              as _Stages;
+      await tester.ensureVisible(find.text('Save changes'));
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
 
-    final files = (stages.savedUpdate?['deliverables'] as List).cast<Map>();
-    expect(files.length, 1);
-    expect(files.single['label'], 'Panel Deck');
-    expect(files.single['requirement_timing'], 'defense');
-    expect(files.single['deadline_hours_before'], 36);
-    expect(files.single['is_defense_material'], true);
-    expect(files.single['required'], false);
-    expect(router.routeInformationProvider.value.uri.path, AdminRoutes.defenseStages);
-    expect(tester.takeException(), isNull);
-  });
+      final files = (stages.savedUpdate?['deliverables'] as List).cast<Map>();
+      expect(files.length, 1);
+      expect(files.single['label'], 'Panel Deck');
+      expect(files.single['requirement_timing'], 'defense');
+      expect(files.single['deadline_hours_before'], 36);
+      expect(files.single['is_defense_material'], true);
+      expect(files.single['required'], false);
+      expect(
+        router.routeInformationProvider.value.uri.path,
+        AdminRoutes.defenseStages,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'partial creation resumes the created stage without duplicating it',

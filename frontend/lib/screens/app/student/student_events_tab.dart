@@ -1511,7 +1511,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     final isActive = (normSelected == normActive);
     final isUpcoming = !isCleared && !isActive;
     final isStageEndorsed = stageInfo['endorsed'] == true;
-    final isEndorsedOrCleared = isCleared || isStageEndorsed;
+    final noEndorsementNeeded = !isCapstone &&
+        stageInfo['deliverables_configured'] == true &&
+        stageInfo['endorsement_required'] == false;
+    final isEndorsedOrCleared = isCleared || isStageEndorsed || noEndorsementNeeded;
 
     // Resolve Grade / Deliberation data
     final stageGradeMap = (stageInfo['grade'] as Map<String, dynamic>?) ??
@@ -1994,7 +1997,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
             const SizedBox(height: 14),
           ],
 
-          // Adviser Endorsement Row
+          // Scheduling clearance for this stage or event.
           Row(
             children: [
               Icon(
@@ -2012,7 +2015,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Adviser: $adviserName',
+                      isCapstone ? 'Adviser: $adviserName' : 'PIT scheduling',
                       style: const TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.bold,
@@ -2022,10 +2025,14 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     ),
                     Text(
                       isCleared
-                          ? 'Milestone Endorsed & Completed ✓'
+                          ? (isCapstone ? 'Milestone Endorsed & Completed ✓' : 'Event Completed ✓')
                           : (isStageEndorsed
                               ? 'Approved & Endorsed for Defense ✓'
-                              : 'Awaiting Adviser Endorsement'),
+                              : noEndorsementNeeded
+                                  ? 'No endorsement required; ready to schedule'
+                                  : isCapstone
+                                      ? 'Awaiting Adviser Endorsement'
+                                      : 'Awaiting PIT Endorsement'),
                       style: TextStyle(
                         fontSize: 10,
                         color: isEndorsedOrCleared

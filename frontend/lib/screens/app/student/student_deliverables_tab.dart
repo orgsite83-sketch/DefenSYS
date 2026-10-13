@@ -219,6 +219,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final isPresentationOnly = selectedStage['is_presentation_only'] == true;
     final configured = selectedStage['deliverables_configured'] == true || isPresentationOnly;
     final endorsed = selectedStage['endorsed'] == true;
+    final noEndorsementNeeded = !widget.isCapstone &&
+        configured &&
+        selectedStage['endorsement_required'] == false;
     final pre = _deliverables(selectedStage, 'pre');
     final vault = _deliverables(selectedStage, 'post');
     final systemRecords = _deliverables(selectedStage, 'system');
@@ -255,8 +258,14 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     Builder(
                       builder: (context) {
                         final detail = selectedStage['stage_status_detail']?.toString();
-                        String label = endorsed ? 'Endorsed' : (isPresentationOnly ? 'Oral / Demo' : 'Awaiting Endorsement');
-                        Color bg = endorsed ? Colors.green.shade600 : (isPresentationOnly ? const Color(0xFF2563EB) : Colors.orange.shade600);
+                        String label = endorsed
+                            ? 'Endorsed'
+                            : noEndorsementNeeded
+                                ? 'Ready to Schedule'
+                                : (isPresentationOnly ? 'Oral / Demo' : 'Awaiting Endorsement');
+                        Color bg = endorsed || noEndorsementNeeded
+                            ? Colors.green.shade600
+                            : (isPresentationOnly ? const Color(0xFF2563EB) : Colors.orange.shade600);
 
                         if (['failed', 'project_rejected', 'for_redefense', 'revisions_pending'].contains(detail)) {
                           label = defenseProgressLabel(detail!);
@@ -409,19 +418,27 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                             Row(
                               children: [
                                   Icon(
-                                    endorsed ? Icons.verified_rounded : Icons.pending_actions_rounded,
+                                    endorsed || noEndorsementNeeded
+                                        ? Icons.verified_rounded
+                                        : Icons.pending_actions_rounded,
                                     size: 16,
-                                    color: endorsed ? const Color(0xFF16A34A) : const Color(0xFFD97706),
+                                    color: endorsed || noEndorsementNeeded
+                                        ? const Color(0xFF16A34A)
+                                        : const Color(0xFFD97706),
                                   ),
                                 const SizedBox(width: 8),
                                 Text(
                                   endorsed
                                       ? 'Adviser Endorsed — Ready for Scheduling'
-                                      : 'Awaiting Adviser Verbal Endorsement',
+                                      : noEndorsementNeeded
+                                          ? 'Ready to Schedule'
+                                          : 'Awaiting Adviser Verbal Endorsement',
                                   style: TextStyle(
                                     fontSize: 12.5,
                                     fontWeight: FontWeight.w700,
-                                    color: endorsed ? const Color(0xFF15803D) : const Color(0xFFB45309),
+                                    color: endorsed || noEndorsementNeeded
+                                        ? const Color(0xFF15803D)
+                                        : const Color(0xFFB45309),
                                   ),
                                 ),
                               ],
@@ -430,7 +447,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                             Text(
                               endorsed
                                   ? 'Your adviser has endorsed your team. Administrators can now schedule your presentation / demo slot.'
-                                  : 'Prepare your presentation materials, slides, and live demonstration. Your adviser can endorse your readiness directly without file uploads.',
+                                  : noEndorsementNeeded
+                                      ? 'No endorsement or file uploads are needed for scheduling. Prepare your presentation materials, slides, and live demonstration.'
+                                      : 'Prepare your presentation materials, slides, and live demonstration. Your adviser can endorse your readiness directly without file uploads.',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: Color(0xFF475569),

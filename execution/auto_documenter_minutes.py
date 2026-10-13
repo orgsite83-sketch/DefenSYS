@@ -96,7 +96,7 @@ def parse_args():
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Preview generated comments without updating the server",
+        help="Preview  erated comments without updating the server",
     )
     parser.add_argument(
         "--delay",

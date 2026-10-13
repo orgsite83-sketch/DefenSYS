@@ -26,6 +26,7 @@ import 'widgets/stage_setup_draft_notice.dart';
 import 'widgets/stage_setup_actions.dart';
 import 'widgets/stage_deliverable_overview.dart';
 import 'widgets/stage_deliverable_choices.dart';
+import 'widgets/stage_deliverable_presets_bar.dart';
 import 'widgets/endorsed_stage_resolution_dialog.dart';
 
 class DefenseStagesScreen extends ConsumerStatefulWidget {
@@ -920,6 +921,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                     isPost: isPost,
                     selectedItem: selectedItem,
                     onSelect: onSelect,
+                    showDoneEditingButton: false,
                     buildEditor: (item, index) => Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -942,6 +944,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                           allDeliverables: allDeliverables,
                           setDialogState: setDialogState,
                           stageLabelCtrl: stageLabelCtrl,
+                          onDone: () => onSelect(null),
                         ),
                       ],
                     ),
@@ -959,6 +962,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     required List<Map<String, dynamic>> allDeliverables,
     required void Function(void Function()) setDialogState,
     required TextEditingController stageLabelCtrl,
+    VoidCallback? onDone,
   }) {
     final labelController = item['_labelController'] as TextEditingController? ??
         (item['_labelController'] = TextEditingController(text: item['label']?.toString() ?? ''));
@@ -972,7 +976,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       templateController.text = '';
       item['archive_file_template'] = '';
     }
-    final accentColor = isPost ? AppColors.maroon : const Color(0xFF2563EB);
     final currentFormat = (item['file_format']?.toString().isNotEmpty == true)
         ? item['file_format'].toString()
         : 'any';
@@ -1010,18 +1013,18 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                   decoration: BoxDecoration(
-                    color: accentColor.withValues(alpha: 0.1),
+                    color: const Color(0xFFF1F5F9),
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(
-                      color: accentColor.withValues(alpha: 0.25),
+                      color: const Color(0xFFCBD5E1),
                     ),
                   ),
                   child: Text(
                     '#$index',
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
-                      color: accentColor,
+                      color: Color(0xFF334155),
                     ),
                   ),
                 ),
@@ -1105,7 +1108,36 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                         }),
                       ),
                     );
-                    return constraints.maxWidth < 560
+
+                    final hasAdvancedSettings = isPost
+                        ? (item['is_restricted'] == true ||
+                            item['verdict_condition'] == 'revisions_only' ||
+                            (item['archive_file_template'] != null &&
+                                item['archive_file_template'].toString().trim().isNotEmpty &&
+                                item['archive_file_template'] != '{project}' &&
+                                item['archive_file_template'] != '{project}_{deliverable}'))
+                        : (item['is_defense_material'] == true || item['requirement_timing'] == 'defense');
+                    final isAdvancedExpanded = item['_expandedAdvanced'] as bool? ?? hasAdvancedSettings;
+
+                    final moreOptionsBtn = DefensysShadcnScope(
+                      child: ShadButton.outline(
+                        size: ShadButtonSize.sm,
+                        onPressed: () {
+                          setDialogState(() {
+                            item['_expandedAdvanced'] = !isAdvancedExpanded;
+                          });
+                        },
+                        leading: Icon(
+                          isAdvancedExpanded ? Icons.expand_less_rounded : Icons.tune_rounded,
+                          size: 14,
+                        ),
+                        child: Text(
+                          isAdvancedExpanded ? 'Fewer options' : 'More options',
+                        ),
+                      ),
+                    );
+
+                    return constraints.maxWidth < 620
                         ? Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -1115,7 +1147,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                 spacing: 12,
                                 runSpacing: 8,
                                 crossAxisAlignment: WrapCrossAlignment.center,
-                                children: [formatField, requiredField],
+                                children: [formatField, requiredField, moreOptionsBtn],
                               ),
                             ],
                           )
@@ -1126,89 +1158,176 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                               formatField,
                               const SizedBox(width: 10),
                               requiredField,
+                              const SizedBox(width: 6),
+                              moreOptionsBtn,
                             ],
                           );
                   },
                 ),
 
-                if (!isPost) ...[
-                  const SizedBox(height: 12),
-                  DefenseMaterialToggle(
-                    value: item['is_defense_material'] == true,
-                    onChanged: (value) => setDialogState(() {
-                      item['is_defense_material'] = value;
-                    }),
-                  ),
-                  const SizedBox(height: 8),
-                  DeliverableTimingFields(
-                    timing: item['requirement_timing']?.toString() ?? 'scheduling',
-                    hoursBefore: int.tryParse(item['deadline_hours_before']?.toString() ?? '') ?? 24,
-                    showTimingChoices: true,
-                    isDefenseMaterial: item['is_defense_material'] == true,
-                    onTimingChanged: (value) => setDialogState(() => item['requirement_timing'] = value),
-                    onHoursChanged: (value) => setDialogState(() => item['deadline_hours_before'] = value),
-                  ),
-                ],
+                Builder(
+                  builder: (context) {
+                    final hasAdvancedSettings = isPost
+                        ? (item['is_restricted'] == true ||
+                            item['verdict_condition'] == 'revisions_only' ||
+                            (item['archive_file_template'] != null &&
+                                item['archive_file_template'].toString().trim().isNotEmpty &&
+                                item['archive_file_template'] != '{project}' &&
+                                item['archive_file_template'] != '{project}_{deliverable}'))
+                        : (item['is_defense_material'] == true || item['requirement_timing'] == 'defense');
+                    final isAdvancedExpanded = item['_expandedAdvanced'] as bool? ?? hasAdvancedSettings;
 
-                if (isPost) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: item['is_restricted'] == true,
-                        activeColor: AppColors.maroon,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        onChanged: (value) {
-                          setDialogState(() {
-                            item['is_restricted'] = value == true;
-                          });
-                        },
-                      ),
-                      const SizedBox(width: 4),
-                      const Expanded(
-                        child: Text(
-                          'Restricted / Private in Institutional Archive',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
-                          ),
+                    if (!isAdvancedExpanded) {
+                      final summaryText = isPost
+                          ? (item['verdict_condition'] == 'revisions_only'
+                              ? 'Required with revisions only${item['is_restricted'] == true ? ' • Restricted archive' : ''}'
+                              : 'Required for all passing teams${item['is_restricted'] == true ? ' • Restricted archive' : ''}')
+                          : (item['requirement_timing'] == 'defense'
+                              ? 'Due ${item['deadline_hours_before'] ?? 24}h before defense${item['is_defense_material'] == true ? ' • Panel material' : ''}'
+                              : 'Cleared before scheduling${item['is_defense_material'] == true ? ' • Panel material' : ''}');
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.info_outline_rounded, size: 12, color: Color(0xFF64748B)),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    summaryText,
+                                    style: const TextStyle(fontSize: 11, color: Color(0xFF475569), fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Tooltip(
-                        message: 'Private for faculty and admin records only; hidden from students.',
-                        constraints: BoxConstraints(maxWidth: 240),
-                        child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
-                      ),
-                    ],
-                  ),
+                      );
+                    }
 
-                  const SizedBox(height: 10),
-                  StageVerdictConditionChoices(
-                    value: item['verdict_condition']?.toString() == 'revisions_only'
-                        ? 'revisions_only'
-                        : 'all_pass',
-                    onChanged: (value) => setDialogState(() {
-                      item['verdict_condition'] = value;
-                    }),
-                  ),
-                  const SizedBox(height: 10),
-                  // Smart Enterprise Repository Archiving Panel
-                  RepositoryArchiveNamingPanel(
-                    templateController: templateController,
-                    deliverableLabel: labelController.text,
-                    fileFormat: currentFormat,
-                    isLocked: false,
-                    isPit: false,
-                    stageOrEventLabel: stageLabelCtrl.text,
-                    siblingDeliverables: allDeliverables.where((d) => d['deliverable_type'] == (isPost ? 'post' : 'pre')).toList(),
-                    currentIndex: allDeliverables.where((d) => d['deliverable_type'] == (isPost ? 'post' : 'pre')).toList().indexOf(item),
-                    onChanged: () {
-                      setDialogState(() {
-                        item['archive_file_template'] = templateController.text.trim();
-                      });
-                    },
+                    return Container(
+                      margin: const EdgeInsets.only(top: 12),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.tune_rounded, size: 14, color: Color(0xFF475569)),
+                              const SizedBox(width: 6),
+                              Text(
+                                isPost ? 'Advanced Post-Defense Rules & Archiving' : 'Advanced Timing & Panel Access',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF334155),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          if (!isPost) ...[
+                            DefenseMaterialToggle(
+                              value: item['is_defense_material'] == true,
+                              onChanged: (value) => setDialogState(() {
+                                item['is_defense_material'] = value;
+                              }),
+                            ),
+                            const SizedBox(height: 8),
+                            DeliverableTimingFields(
+                              timing: item['requirement_timing']?.toString() ?? 'scheduling',
+                              hoursBefore: int.tryParse(item['deadline_hours_before']?.toString() ?? '') ?? 24,
+                              showTimingChoices: true,
+                              isDefenseMaterial: item['is_defense_material'] == true,
+                              onTimingChanged: (value) => setDialogState(() => item['requirement_timing'] = value),
+                              onHoursChanged: (value) => setDialogState(() => item['deadline_hours_before'] = value),
+                            ),
+                          ],
+                          if (isPost) ...[
+                            Row(
+                              children: [
+                                DefensysShadcnScope(
+                                  child: ShadCheckbox(
+                                    value: item['is_restricted'] == true,
+                                    onChanged: (value) {
+                                      setDialogState(() {
+                                        item['is_restricted'] = value;
+                                      });
+                                    },
+                                    label: const Text(
+                                      'Restricted / Private in Institutional Archive',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                const Tooltip(
+                                  message: 'Private for faculty and admin records only; hidden from students.',
+                                  constraints: BoxConstraints(maxWidth: 240),
+                                  child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            StageVerdictConditionChoices(
+                              value: item['verdict_condition']?.toString() == 'revisions_only'
+                                  ? 'revisions_only'
+                                  : 'all_pass',
+                              onChanged: (value) => setDialogState(() {
+                                item['verdict_condition'] = value;
+                              }),
+                            ),
+                            const SizedBox(height: 10),
+                            RepositoryArchiveNamingPanel(
+                              templateController: templateController,
+                              deliverableLabel: labelController.text,
+                              fileFormat: currentFormat,
+                              isLocked: false,
+                              isPit: false,
+                              stageOrEventLabel: stageLabelCtrl.text,
+                              siblingDeliverables: allDeliverables.where((d) => d['deliverable_type'] == (isPost ? 'post' : 'pre')).toList(),
+                              currentIndex: allDeliverables.where((d) => d['deliverable_type'] == (isPost ? 'post' : 'pre')).toList().indexOf(item),
+                              onChanged: () {
+                                setDialogState(() {
+                                  item['archive_file_template'] = templateController.text.trim();
+                                });
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                if (onDone != null) ...[
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: DefensysShadcnScope(
+                      child: ShadButton.outline(
+                        size: ShadButtonSize.sm,
+                        onPressed: onDone,
+                        leading: const Icon(Icons.check_rounded, size: 14),
+                        child: const Text('Done editing'),
+                      ),
+                    ),
                   ),
                 ],
               ],
@@ -1974,18 +2093,31 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                   if (isPresentationOnly)
                                     _buildPresentationOnlyInfoBanner()
                                   else ...[
-                                     StageDeliverableCounts(
-                                       deliverables: deliverables,
-                                       minutesRequired: minutesRequired == true,
-                                     ),
+                                    StageDeliverablePresetsBar(
+                                      existingStages: existingStages,
+                                      currentDeliverables: deliverables,
+                                      enabled: !stageIsLocked,
+                                      onApplyDeliverables: (newDeliverables) {
+                                        setDialogState(() {
+                                          deliverables.clear();
+                                          deliverables.addAll(newDeliverables);
+                                          selectedDeliverable = deliverables.isNotEmpty ? deliverables.first : null;
+                                          deliverableError = null;
+                                        });
+                                      },
+                                    ),
+                                    StageDeliverableCounts(
+                                      deliverables: deliverables,
+                                      minutesRequired: minutesRequired == true,
+                                    ),
                                     // Pre-Defense Gatekeepers
                                     _buildDeliverableSection(
                                       title: 'Pre-Defense Requirements',
                                       subtitle: 'Choose which files clear scheduling and which are due closer to the defense.',
                                       icon: Icons.folder_open_rounded,
-                                      accentColor: const Color(0xFF2563EB),
-                                      bgHeaderColor: const Color(0xFFEFF6FF),
-                                      borderColor: const Color(0xFFBFDBFE),
+                                      accentColor: const Color(0xFF0F172A),
+                                      bgHeaderColor: const Color(0xFFF8FAFC),
+                                      borderColor: const Color(0xFFE2E8F0),
                                       count: preDeliverables.length,
                                       buttonText: 'Add Pre-Defense',
                                       onAdd: () {
@@ -2033,9 +2165,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                       title: 'Post-Defense Requirements & Archive',
                                       subtitle: 'Deliverables required for milestone clearance and repository archiving.',
                                       icon: Icons.inventory_2_rounded,
-                                      accentColor: AppColors.maroon,
-                                      bgHeaderColor: const Color(0xFFFFF1F2),
-                                      borderColor: const Color(0xFFFECDD3),
+                                      accentColor: const Color(0xFF0F172A),
+                                      bgHeaderColor: const Color(0xFFF8FAFC),
+                                      borderColor: const Color(0xFFE2E8F0),
                                       count: postDeliverables.length,
                                       buttonText: 'Add Post-Defense',
                                       onAdd: () {
