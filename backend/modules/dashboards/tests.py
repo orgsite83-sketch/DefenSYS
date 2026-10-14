@@ -1,4 +1,5 @@
 from decimal import Decimal
+from uuid import uuid4
 
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
@@ -16,6 +17,66 @@ User = get_user_model()
 
 
 class DashboardApiTests(APITestCase):
+    def test_schedule_planner_groups_complete_sessions_and_scopes_pit_leads(self):
+        admin = User.objects.create_user(username='planner-admin', password='pass12345', role='admin')
+        pit_lead = User.objects.create_user(
+            username='planner-lead', password='pass12345', role='faculty',
+            is_pit_lead=True, pit_lead_year='3rd Year',
+        )
+        ordinary = User.objects.create_user(username='planner-faculty', password='pass12345', role='faculty')
+        semester = Semester.objects.create(
+            school_year=SchoolYear.objects.create(label='2026-2027'),
+            label=Semester.FIRST, is_active=True,
+        )
+        session_id = uuid4()
+        for index, hour in enumerate((8, 9, 10, 11, 13, 14)):
+            leader = User.objects.create_user(
+                username=f'planner-student-{index}', password='pass12345', role='student',
+            )
+            team = StudentTeam.objects.create(
+                name=f'PIT Team {index}', leader=leader, semester=semester,
+                level=StudentTeam.LEVEL_3_PIT, year_level='3rd Year',
+            )
+            DefenseSchedule.objects.create(
+                session_id=session_id, scope=DefenseSchedule.SCOPE_PIT,
+                team=team, semester=semester, event_name='System Concept Pitching',
+                scheduled_date='2026-10-14', start_time=f'{hour:02d}:00:00',
+                slot_duration=60, room='Room 301',
+            )
+        capstone_leader = User.objects.create_user(
+            username='planner-capstone-student', password='pass12345', role='student',
+        )
+        capstone_team = StudentTeam.objects.create(
+            name='Capstone Team', leader=capstone_leader, semester=semester,
+            level=StudentTeam.LEVEL_3_CAPSTONE, year_level='3rd Year',
+        )
+        DefenseSchedule.objects.create(
+            scope=DefenseSchedule.SCOPE_CAPSTONE, team=capstone_team,
+            semester=semester, defense_stage=DefenseStage.objects.create(label='Proposal Defense'),
+            scheduled_date='2026-10-14', start_time='13:00:00', room='Room 402',
+        )
+        url = '/api/dashboards/schedule-planner/?start=2026-10-12&end=2026-10-18'
+
+        self.client.force_authenticate(user=admin)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['sessions']), 2)
+        pit = next(item for item in response.data['sessions'] if item['scope'] == 'pit')
+        self.assertEqual(pit['team_count'], 6)
+        self.assertEqual(pit['session_id'], str(session_id))
+        self.assertEqual(len(pit['time_blocks']), 2)
+        self.assertEqual(pit['time_blocks'][0]['start'], '2026-10-14T08:00')
+        self.assertEqual(pit['time_blocks'][0]['end'], '2026-10-14T12:00')
+
+        self.client.force_authenticate(user=pit_lead)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['sessions']), 1)
+        self.assertEqual(response.data['sessions'][0]['scope'], 'pit')
+
+        self.client.force_authenticate(user=ordinary)
+        self.assertEqual(self.client.get(url).status_code, 403)
+
     def test_admin_dashboard_uses_django_user_counts(self):
         admin = User.objects.create_user(
             username='admin-user',

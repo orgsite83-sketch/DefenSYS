@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 
 import '../../../../widgets/feedback/empty_state.dart';
 import '../../admin/widgets/defensys_admin_shell.dart';
+import '../../shared/dashboard_schedule_planner.dart';
 
 class PitLeadDashboardContent extends StatefulWidget {
   final Map<String, dynamic>? data;
   final String facultyName;
   final VoidCallback onOpenStudentTeams;
   final VoidCallback onOpenScheduler;
+  final VoidCallback onOpenDefenseBoard;
   final VoidCallback onOpenGradeCenter;
   final VoidCallback onOpenRubrics;
   final VoidCallback onOpenCohort;
@@ -20,6 +22,7 @@ class PitLeadDashboardContent extends StatefulWidget {
     required this.facultyName,
     required this.onOpenStudentTeams,
     required this.onOpenScheduler,
+    required this.onOpenDefenseBoard,
     required this.onOpenGradeCenter,
     required this.onOpenRubrics,
     required this.onOpenCohort,
@@ -108,7 +111,7 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                         icon: Icons.event_available_rounded,
                         iconColor: const Color(0xFF92400E),
                         iconBackground: const Color(0xFFFFEDB8),
-                        onTap: widget.onOpenScheduler,
+                        onTap: widget.onOpenDefenseBoard,
                       ),
                     ),
                     SizedBox(
@@ -128,7 +131,10 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                 if (stacked) ...[
                   _quickActionsCard(compact: true),
                   const SizedBox(height: 20),
-                  _upcomingDefensesCard(overview, compact: true),
+                  _dashboardCard(
+                    title: 'Upcoming PIT Events',
+                    child: DashboardSchedulePlanner(workspace: 'faculty', refreshToken: widget.data),
+                  ),
                   const SizedBox(height: 20),
                   _teamPipelineCard(overview, pitYear, compact: true),
                   const SizedBox(height: 20),
@@ -139,7 +145,10 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                     children: [
                       Expanded(child: _quickActionsCard()),
                       const SizedBox(width: 20),
-                      Expanded(child: _upcomingDefensesCard(overview)),
+                      Expanded(child: _dashboardCard(
+                        title: 'Upcoming PIT Events',
+                        child: DashboardSchedulePlanner(workspace: 'faculty', refreshToken: widget.data),
+                      )),
                     ],
                   ),
                   const SizedBox(height: 20),
@@ -271,286 +280,6 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
               subtitle: 'Manage PIT stages & event milestones',
               onTap: widget.onOpenPitEvents,
               isLast: true,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _upcomingDefensesCard(
-    Map<String, dynamic> overview, {
-    bool compact = false,
-  }) {
-    final upcomingList = _upcomingDefensesFrom(overview);
-    final count = upcomingList.length;
-
-    return _dashboardCard(
-      height: compact ? null : _cardHeight,
-      title: 'Upcoming PIT Events',
-      actionLabel: count > 0 ? 'View Calendar' : null,
-      onActionTap: widget.onOpenScheduler,
-      child: count == 0
-          ? Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: const Icon(
-                      Icons.calendar_month_rounded,
-                      color: Color(0xFF64748B),
-                      size: 26,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'No Scheduled PIT Events',
-                    style: TextStyle(
-                      color: _ink,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'There are no defense or presentation sessions currently on the calendar for this period.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: _muted,
-                      fontSize: 12.5,
-                      height: 1.35,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      FilledButton.icon(
-                        onPressed: widget.onOpenScheduler,
-                        icon: const Icon(Icons.add_rounded, size: 18),
-                        label: const Text('Schedule Event'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _maroon,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          textStyle: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      OutlinedButton(
-                        onPressed: widget.onOpenPitEvents,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF475569),
-                          side: const BorderSide(color: Color(0xFFCBD5E1)),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          textStyle: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Text('Events Setup'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            )
-          : ListView.separated(
-              shrinkWrap: compact,
-              physics: compact ? const NeverScrollableScrollPhysics() : null,
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-              itemCount: count,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (context, index) {
-                final item = upcomingList[index];
-                return _defenseScheduleItem(item);
-              },
-            ),
-    );
-  }
-
-  Widget _defenseScheduleItem(Map<String, dynamic> item) {
-    final teamName = item['team_name']?.toString() ?? 'Team';
-    final projectTitle = item['project_title']?.toString() ?? '';
-    final stageLabel = item['stage_label']?.toString() ?? 'PIT Event';
-    final dateStr = item['date']?.toString() ?? '';
-    final timeStr = item['start_time']?.toString() ?? '';
-    final room = item['room']?.toString() ?? 'TBD';
-    final panelistCount = item['panelist_count']?.toString() ?? '0';
-
-    return InkWell(
-      onTap: widget.onOpenScheduler,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    _formatMonth(dateStr),
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      color: _maroon,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  Text(
-                    _formatDay(dateStr),
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      color: _ink,
-                      height: 1.0,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          teamName,
-                          style: const TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w800,
-                            color: _ink,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEFF6FF),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: const Color(0xFFBFDBFE)),
-                        ),
-                        child: Text(
-                          stageLabel,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF1D4ED8),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (projectTitle.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      projectTitle,
-                      style: const TextStyle(fontSize: 12, color: _muted),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                  const SizedBox(height: 5),
-                  Wrap(
-                    spacing: 3,
-                    runSpacing: 4,
-                    children: [
-                      if (timeStr.isNotEmpty) ...[
-                        const Icon(
-                          Icons.schedule_rounded,
-                          size: 13,
-                          color: Color(0xFF64748B),
-                        ),
-                        const SizedBox(width: 3),
-                        Text(
-                          timeStr,
-                          style: const TextStyle(
-                            fontSize: 11.5,
-                            color: Color(0xFF475569),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                      ],
-                      const Icon(
-                        Icons.meeting_room_outlined,
-                        size: 13,
-                        color: Color(0xFF64748B),
-                      ),
-                      const SizedBox(width: 3),
-                      Text(
-                        room,
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          color: Color(0xFF475569),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      const Icon(
-                        Icons.group_outlined,
-                        size: 13,
-                        color: Color(0xFF64748B),
-                      ),
-                      const SizedBox(width: 3),
-                      Text(
-                        '$panelistCount Panelists',
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          color: Color(0xFF64748B),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
             ),
           ],
         ),
@@ -1556,40 +1285,6 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
     );
   }
 
-  String _formatMonth(String dateStr) {
-    if (dateStr.isEmpty) return 'TBD';
-    try {
-      final dt = DateTime.parse(dateStr);
-      const months = [
-        'JAN',
-        'FEB',
-        'MAR',
-        'APR',
-        'MAY',
-        'JUN',
-        'JUL',
-        'AUG',
-        'SEP',
-        'OCT',
-        'NOV',
-        'DEC',
-      ];
-      return months[dt.month - 1];
-    } catch (_) {
-      return 'DEF';
-    }
-  }
-
-  String _formatDay(String dateStr) {
-    if (dateStr.isEmpty) return '--';
-    try {
-      final dt = DateTime.parse(dateStr);
-      return '${dt.day}';
-    } catch (_) {
-      return '--';
-    }
-  }
-
   String _timeAgo(String isoTimestamp) {
     if (isoTimestamp.isEmpty) return '';
     try {
@@ -1645,17 +1340,6 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
       default:
         return Icons.history_rounded;
     }
-  }
-
-  List<Map<String, dynamic>> _upcomingDefensesFrom(
-    Map<String, dynamic> overview,
-  ) {
-    final raw = overview['upcoming_defenses_list'];
-    if (raw is! List) return const [];
-    return raw
-        .whereType<Map>()
-        .map((item) => item.map((k, v) => MapEntry(k.toString(), v)))
-        .toList();
   }
 
   List<Map<String, dynamic>> _actionItemsFrom(Map<String, dynamic> overview) {

@@ -70,6 +70,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   // Session Accordion & Pagination State
   final Set<String> _collapsedSessions = {};
   final Map<String, int> _sessionPages = {};
+  String? _plannerDate;
+  String? _plannerSessionId;
+  String? _plannerScope;
+  String? _lastPlannerRoute;
+  bool _plannerInitialized = false;
   bool _hasImportDraft = false;
   bool _hasSchedulerDraft = false;
   ScheduleImportDraft? _savedImportDraft;
@@ -89,8 +94,14 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       _showScheduleBulkImport = true;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _plannerInitialized = true;
       ref.read(defenseBoardProvider.notifier).fetchBoard(
-            scope: _effectiveBoardScope(ref.read(defenseBoardProvider)),
+            scope: _plannerDate != null
+                ? (_plannerScope ?? '')
+                : _effectiveBoardScope(ref.read(defenseBoardProvider)),
+            stage: _plannerDate == null ? null : '',
+            status: _plannerDate == null ? null : '',
+            search: _plannerDate == null ? null : '',
           );
       ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
       _checkImportDraft();
@@ -112,6 +123,25 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     super.didChangeDependencies();
     if (GoRouter.maybeOf(context) == null) return;
     final uri = GoRouterState.of(context).uri;
+    final plannerKey = '${uri.queryParameters['date'] ?? ''}|${uri.queryParameters['session'] ?? ''}|${uri.queryParameters['scope'] ?? ''}';
+    if (plannerKey != _lastPlannerRoute) {
+      _lastPlannerRoute = plannerKey;
+      final rawDate = uri.queryParameters['date'];
+      _plannerDate = rawDate != null && DateTime.tryParse(rawDate) != null ? rawDate : null;
+      _plannerSessionId = _plannerDate == null ? null : uri.queryParameters['session'];
+      final scope = uri.queryParameters['scope'];
+      _plannerScope = scope == 'pit' || scope == 'capstone' ? scope : null;
+      if (_plannerInitialized) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          ref.read(defenseBoardActiveViewProvider.notifier).setView(DefenseOperationsView.schedules);
+          ref.read(defenseBoardProvider.notifier).fetchBoard(
+            scope: _plannerScope ?? '', stage: '', status: '', search: '',
+            adviser: '', section: '',
+          );
+        });
+      }
+    }
     final id = int.tryParse(uri.queryParameters['panelistRequest'] ?? '');
     if (id == _lastPanelistRequest) return;
     _lastPanelistRequest = id;
@@ -342,6 +372,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                       _buildSummaryCards(state),
                       const SizedBox(height: 22),
                       _buildFilterBar(state),
+                      if (_plannerDate != null) _buildPlannerContext(),
                     ] else ...[
                       _buildReadinessSummaryCards(
                         schedState,
@@ -367,7 +398,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                     ),
                   ),
                 )
-              else if (state.schedules.isEmpty)
+              else if (_plannerSchedules(state.schedules).isEmpty)
                 SliverFillRemaining(
                   hasScrollBody: false,
                   child: SizedBox.expand(
@@ -986,154 +1017,170 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     final isPitLead = user?['is_pit_lead'] == true;
     final canSchedule = isAdmin || isPitLead;
 
-    return Row(
+    final title = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.view_agenda_outlined,
-                    color: _isDark ? DefensysTokens.textPrimaryDark : AppColors.maroon,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Defense Operations',
-                      style: TextStyle(
-                        fontSize: 21,
-                        fontWeight: FontWeight.w800,
-                        color: _isDark ? DefensysTokens.textPrimaryDark : AppColors.maroon,
-                        height: 1.1,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                state.activeSemester?['display_name']?.toString() ??
-                    'Live defense schedule, room timetable, and session operations.',
+        Row(
+          children: [
+            Icon(
+              Icons.view_agenda_outlined,
+              color: _isDark
+                  ? DefensysTokens.textPrimaryDark
+                  : AppColors.maroon,
+              size: 24,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Defense Operations',
                 style: TextStyle(
-                  fontSize: 15,
-                  color: _textSecondaryColor,
-                  height: 1.35,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w800,
+                  color: _isDark
+                      ? DefensysTokens.textPrimaryDark
+                      : AppColors.maroon,
+                  height: 1.1,
                 ),
               ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          state.activeSemester?['display_name']?.toString() ??
+              'Live defense schedule, room timetable, and session operations.',
+          style: TextStyle(
+            fontSize: 15,
+            color: _textSecondaryColor,
+            height: 1.35,
+          ),
+        ),
+      ],
+    );
+    final actions = Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      alignment: WrapAlignment.end,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        if (currentView == DefenseOperationsView.schedules)
+          const ReportExportMenu(reportId: 'defense-schedules'),
+        OutlinedButton.icon(
+          onPressed: _openManualScheduleDialog,
+          style: DefensysButtonStyles.secondary(context),
+          icon: const Icon(Icons.edit_calendar_outlined),
+          label: const Text('Manual Schedule'),
+        ),
+        OutlinedButton.icon(
+          onPressed: _openImportScheduleDialog,
+          style: DefensysButtonStyles.secondary(context),
+          icon: const Icon(Icons.upload_file_rounded),
+          label: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Import Schedule'),
+              if (_hasImportDraft) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 1.5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _isDark
+                        ? const Color(0xFFD97706)
+                        : const Color(0xFFB45309),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'DRAFT',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
-        if (canSchedule) ...[
-          const SizedBox(width: 16),
-          Flexible(
-            flex: 2,
-            child: Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              alignment: WrapAlignment.end,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-              if (currentView == DefenseOperationsView.schedules) const ReportExportMenu(reportId: 'defense-schedules'),
-              OutlinedButton.icon(
-                onPressed: _openManualScheduleDialog,
-                style: DefensysButtonStyles.secondary(context),
-                icon: const Icon(Icons.edit_calendar_outlined),
-                label: const Text('Manual Schedule'),
+        ElevatedButton.icon(
+          onPressed: () {
+            if (currentView == DefenseOperationsView.readiness &&
+                readyCount > 0) {
+              _openScheduler(
+                scope: effectiveReadinessScope,
+                stageId: _selectedReadinessStageId,
+                eventName: _selectedReadinessEventName,
+              );
+            } else {
+              _openScheduler();
+            }
+          },
+          style: DefensysButtonStyles.primary(context),
+          icon: const Icon(Icons.auto_awesome_rounded),
+          label: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                currentView == DefenseOperationsView.readiness && readyCount > 0
+                    ? 'Schedule $readyCount Ready ${readyCount == 1 ? 'Team' : 'Teams'}'
+                    : (_hasSchedulerDraft
+                          ? 'Resume Schedule Draft'
+                          : 'Generate Schedule'),
               ),
-              OutlinedButton.icon(
-                onPressed: _openImportScheduleDialog,
-                style: DefensysButtonStyles.secondary(context),
-                icon: const Icon(Icons.upload_file_rounded),
-                label: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text('Import Schedule'),
-                    if (_hasImportDraft) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5,
-                          vertical: 1.5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _isDark
-                              ? const Color(0xFFD97706)
-                              : const Color(0xFFB45309),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'DRAFT',
-                          style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              ElevatedButton.icon(
-                onPressed: () {
-                  if (currentView == DefenseOperationsView.readiness &&
-                      readyCount > 0) {
-                    _openScheduler(
-                      scope: effectiveReadinessScope,
-                      stageId: _selectedReadinessStageId,
-                      eventName: _selectedReadinessEventName,
-                    );
-                  } else {
-                    _openScheduler();
-                  }
-                },
-                style: DefensysButtonStyles.primary(context),
-                icon: const Icon(Icons.auto_awesome_rounded),
-                label: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      currentView == DefenseOperationsView.readiness && readyCount > 0
-                          ? 'Schedule $readyCount Ready ${readyCount == 1 ? 'Team' : 'Teams'}'
-                          : (_hasSchedulerDraft ? 'Resume Schedule Draft' : 'Generate Schedule'),
+              if (_hasSchedulerDraft &&
+                  !(currentView == DefenseOperationsView.readiness &&
+                      readyCount > 0)) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 1.5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _isDark
+                        ? const Color(0xFFD97706)
+                        : const Color(0xFFB45309),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'DRAFT',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      letterSpacing: 0.5,
                     ),
-                    if (_hasSchedulerDraft && !(currentView == DefenseOperationsView.readiness && readyCount > 0)) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5,
-                          vertical: 1.5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _isDark
-                              ? const Color(0xFFD97706)
-                              : const Color(0xFFB45309),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'DRAFT',
-                          style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
-              ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) => constraints.maxWidth < 1050
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                title,
+                if (canSchedule) ...[
+                  const SizedBox(height: 16),
+                  Align(alignment: Alignment.centerRight, child: actions),
+                ],
+              ],
+            )
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: title),
+                if (canSchedule) ...[const SizedBox(width: 16), actions],
               ],
             ),
-          ),
-        ],
-      ],
     );
   }
 
@@ -1387,6 +1434,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   }
 
   Widget _buildScopeTabs(DefenseBoardState state) {
+    if (_plannerDate != null && _plannerScope == null) {
+      return const SizedBox.shrink();
+    }
     return DefensysSegmentedControl<String>(
       value: _effectiveBoardScope(state),
       items: const [
@@ -1739,13 +1789,45 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     );
   }
 
+  List<Map<String, dynamic>> _plannerSchedules(List<Map<String, dynamic>> schedules) {
+    if (_plannerDate == null) return schedules;
+    return schedules.where((schedule) {
+      if (schedule['scheduled_date']?.toString() != _plannerDate) return false;
+      if (_plannerSessionId != null && schedule['session_id']?.toString() != _plannerSessionId) return false;
+      return true;
+    }).toList();
+  }
+
+  Widget _buildPlannerContext() {
+    final day = DateTime.tryParse(_plannerDate!);
+    final label = day == null ? _plannerDate! : '${day.month}/${day.day}/${day.year}';
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Row(children: [
+        Icon(Icons.event_available_outlined, size: 17, color: _textSecondaryColor),
+        const SizedBox(width: 8),
+        Expanded(child: Text(
+          _plannerSessionId == null ? 'Schedule for $label' : 'Session scheduled for $label',
+          style: TextStyle(color: _textPrimaryColor, fontWeight: FontWeight.w700),
+        )),
+        TextButton(
+          onPressed: () => context.go(
+            GoRouterState.of(context).uri.path,
+          ),
+          child: const Text('Show all schedules'),
+        ),
+      ]),
+    );
+  }
+
   Widget _buildBoardSection(DefenseBoardState state) {
-    if (state.schedules.isEmpty) {
+    final visibleSchedules = _plannerSchedules(state.schedules);
+    if (visibleSchedules.isEmpty) {
       return _buildEmptyBoard();
     }
 
     final now = DateTime.now();
-    final groups = _groupSchedules(state.schedules)
+    final groups = _groupSchedules(visibleSchedules)
       ..sort((a, b) {
         final result = compareSessionActivity(a.schedules, b.schedules, now: now);
         return result != 0 ? result : a.key.compareTo(b.key);
@@ -1833,7 +1915,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   }
 
   Widget _buildSessionCard(_SessionGroup group, DefenseBoardState state) {
-    final isCollapsed = _collapsedSessions.contains(group.key);
+    final isCollapsed = _plannerSessionId == group.schedules.first['session_id']?.toString()
+        ? false
+        : _collapsedSessions.contains(group.key);
 
     return Container(
       width: double.infinity,
@@ -2215,38 +2299,25 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   _BodyCell(
                     flex: 1,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                       decoration: BoxDecoration(
                         color: _panelBgColor,
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(color: _borderColor),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.access_time_rounded,
-                            size: 13,
-                            color: _textSecondaryColor,
+                      child: Tooltip(
+                        message: _slotTimeRange(schedule),
+                        child: Text(
+                          _slotTimeRange(schedule).replaceFirst('–', '\n–'),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontFamily: DefensysTokens.fontFamilyInter,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: _textPrimaryColor,
                           ),
-                          const SizedBox(width: 5),
-                          Flexible(
-                            child: Tooltip(
-                              message: _shortTime(schedule['start_time']),
-                              child: Text(
-                                _shortTime(schedule['start_time']),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontFamily: DefensysTokens.fontFamilyInter,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: _textPrimaryColor,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -2494,7 +2565,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                           border: Border.all(color: _borderColor),
                         ),
                         child: Text(
-                          _shortTime(schedule['start_time']),
+                          _slotTimeRange(schedule),
                           style: TextStyle(
                             fontFamily: DefensysTokens.fontFamilyInter,
                             fontSize: 12,
@@ -2686,8 +2757,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     final leaderName = schedule['leader_name']?.toString() ?? '';
     final rubricName = schedule['rubric_name']?.toString() ?? 'Default Evaluation Rubric';
     final status = (schedule['display_status']?.toString() ?? schedule['status']?.toString() ?? 'scheduled').toLowerCase();
-    final startTime = _shortTime(schedule['start_time']);
-    final slotDuration = schedule['slot_duration']?.toString() ?? '60';
+    final slotTimeRange = _slotTimeRange(schedule);
     final panelNames = _panelistNames(schedule);
     final documenterName = schedule['documenter_name']?.toString() ?? '';
 
@@ -2746,7 +2816,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '${schedule['scheduled_date']} • $startTime ($slotDuration min) • ${schedule['room']}',
+                            '${schedule['scheduled_date']} • $slotTimeRange • ${schedule['room']}',
                             style: TextStyle(
                               fontSize: 12,
                               color: _textSecondaryColor,
@@ -3312,6 +3382,23 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   String _shortTime(dynamic value) {
     final text = value?.toString() ?? '';
     return text.length >= 5 ? text.substring(0, 5) : text;
+  }
+
+  String _slotTimeRange(Map<String, dynamic> schedule) {
+    final start = _shortTime(schedule['start_time']);
+    final match = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(start);
+    final duration = _asInt(schedule['slot_duration']);
+    if (match == null || duration == null || duration <= 0) return start;
+
+    final hour = int.parse(match.group(1)!);
+    final minute = int.parse(match.group(2)!);
+    if (hour > 23 || minute > 59) return start;
+
+    final endMinutes = hour * 60 + minute + duration;
+    final endHour = (endMinutes ~/ 60) % 24;
+    final endMinute = endMinutes % 60;
+    final end = '${endHour.toString().padLeft(2, '0')}:${endMinute.toString().padLeft(2, '0')}';
+    return '$start–$end${endMinutes >= 24 * 60 ? ' next day' : ''}';
   }
 
   String _statusLabel(String status) {

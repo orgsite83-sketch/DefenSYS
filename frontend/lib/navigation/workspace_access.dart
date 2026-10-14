@@ -5,10 +5,12 @@ import 'admin_route_paths.dart';
 /// Chooses workspaces from server supplied roles. API permissions remain authoritative.
 abstract final class WorkspaceAccess {
   static bool canEvaluate(Map<String, dynamic> user) =>
-      user['role'] == 'faculty' && user['is_panelist'] == true;
+      (user['role'] == 'faculty' || user['role'] == 'admin') &&
+      user['is_panelist'] == true;
 
   static bool canDocument(Map<String, dynamic> user) =>
-      user['role'] == 'faculty' && user['is_documenter'] == true;
+      (user['role'] == 'faculty' || user['role'] == 'admin') &&
+      user['is_documenter'] == true;
 
   static bool canUsePhone(Map<String, dynamic> user) =>
       user['role'] == 'student' || canEvaluate(user) || canDocument(user);

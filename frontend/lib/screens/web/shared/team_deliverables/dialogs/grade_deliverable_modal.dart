@@ -864,6 +864,9 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
       enabled: gradingState.adviserGradingEnabled, loading: gradingState.isLoading,
       error: gradingState.error, officiallyComplete: isOfficiallyComplete);
     final isGradingLocked = !guidance.canGrade;
+    final hasRecordedScores = panelScore != null || peerScore != null ||
+        adviserScore != null || finalGrade != null;
+    final showAssessment = hasRecordedScores;
 
     Color statusBg = const Color(0xFFFEF3C7);
     Color statusText = const Color(0xFFD97706);
@@ -907,9 +910,10 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
             progressLabel: '${_filledCountForTeam(teamId, widget.selectedStage, gradeRecord)} of '
                 '${_totalCountForTeam(teamId, widget.selectedStage, gradeRecord)} criteria completed',
           ),
-          const SizedBox(height: 18),
+          if (showAssessment) const SizedBox(height: 18),
         ],
-        // Overall Grade Badges
+        // An empty assessment looks like a pending grade before grading opens.
+        if (showAssessment) ...[
         Wrap(
           spacing: 12, runSpacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
@@ -953,6 +957,14 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
         const SizedBox(height: 24),
         const Divider(color: Color(0xFFF1F5F9), height: 1),
         const SizedBox(height: 16),
+        ] else if (!widget.isAdviser)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'No grades are available for this stage yet.',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            ),
+          ),
 
         // Rubric Grading Form
         if (widget.isAdviser) ...[

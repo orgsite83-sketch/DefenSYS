@@ -6,10 +6,12 @@ from .views import (
     PitLeadCohortView,
     PitLeadCohortRolloverConfirmView,
     PitLeadCohortRolloverPreviewView,
+    SchedulePlannerView,
     StudentDashboardView,
 )
 
 urlpatterns = [
+    path('schedule-planner/', SchedulePlannerView.as_view(), name='dashboard_schedule_planner'),
     path('admin/', AdminDashboardView.as_view(), name='dashboard_admin'),
     path('pit-lead/cohort/', PitLeadCohortView.as_view(), name='dashboard_pit_lead_cohort'),
     path(

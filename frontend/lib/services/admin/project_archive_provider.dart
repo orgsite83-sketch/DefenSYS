@@ -39,6 +39,11 @@ class ProjectArchiveState {
   final String viewMode;
   final List<Map<String, dynamic>> groupedByStage;
   final Map<String, dynamic> deliverableSummary;
+  final Map<String, dynamic> folderBrowser;
+  final Map<String, dynamic> pagination;
+  final String groupBy;
+  final String folderKey;
+  final int pageOffset;
   final String? error;
   final String? message;
   final List<Map<String, dynamic>> lastUploadSkipped;
@@ -67,6 +72,11 @@ class ProjectArchiveState {
     this.viewMode = '',
     this.groupedByStage = const [],
     this.deliverableSummary = const {},
+    this.folderBrowser = const {},
+    this.pagination = const {},
+    this.groupBy = 'team',
+    this.folderKey = '',
+    this.pageOffset = 0,
     this.error,
     this.message,
     this.lastUploadSkipped = const [],
@@ -96,6 +106,11 @@ class ProjectArchiveState {
     String? viewMode,
     List<Map<String, dynamic>>? groupedByStage,
     Map<String, dynamic>? deliverableSummary,
+    Map<String, dynamic>? folderBrowser,
+    Map<String, dynamic>? pagination,
+    String? groupBy,
+    String? folderKey,
+    int? pageOffset,
     String? error,
     String? message,
     List<Map<String, dynamic>>? lastUploadSkipped,
@@ -127,6 +142,11 @@ class ProjectArchiveState {
       viewMode: viewMode ?? this.viewMode,
       groupedByStage: groupedByStage ?? this.groupedByStage,
       deliverableSummary: deliverableSummary ?? this.deliverableSummary,
+      folderBrowser: folderBrowser ?? this.folderBrowser,
+      pagination: pagination ?? this.pagination,
+      groupBy: groupBy ?? this.groupBy,
+      folderKey: folderKey ?? this.folderKey,
+      pageOffset: pageOffset ?? this.pageOffset,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
       lastUploadSkipped: clearLastUploadSkipped
@@ -169,6 +189,9 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
     String? deliverableId,
     String? submissionKind,
     String? viewMode,
+    String? groupBy,
+    String? folderKey,
+    int? pageOffset,
     String? successMessage,
     bool clearDeliverable = false,
     bool clearTeam = false,
@@ -181,9 +204,32 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
     final nextSemester = semester ?? state.semester;
     final nextTeamId = clearTeam ? '' : (teamId ?? state.teamId);
     final nextStage = stage ?? state.stage;
-    final nextDeliverableId =
-        clearDeliverable ? '' : (deliverableId ?? state.deliverableId);
+    final nextDeliverableId = clearDeliverable
+        ? ''
+        : (deliverableId ?? state.deliverableId);
     final nextSubmissionKind = submissionKind ?? state.submissionKind;
+    final nextGroupBy = groupBy ?? state.groupBy;
+    final filtersChanged =
+        search != null ||
+        type != null ||
+        yearLevel != null ||
+        academicYear != null ||
+        status != null ||
+        semester != null ||
+        teamId != null ||
+        stage != null ||
+        deliverableId != null ||
+        submissionKind != null ||
+        clearTeam ||
+        clearDeliverable;
+    final nextFolderKey =
+        folderKey ??
+        ((groupBy != null || filtersChanged) ? '' : state.folderKey);
+    final nextPageOffset =
+        pageOffset ??
+        ((folderKey != null || groupBy != null || filtersChanged)
+            ? 0
+            : state.pageOffset);
     var nextViewMode = viewMode ?? state.viewMode;
     if (nextDeliverableId.isNotEmpty) {
       nextViewMode = 'deliverable';
@@ -207,6 +253,9 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
       deliverableId: nextDeliverableId,
       submissionKind: nextSubmissionKind,
       viewMode: nextViewMode,
+      groupBy: nextGroupBy,
+      folderKey: nextFolderKey,
+      pageOffset: nextPageOffset,
       clearError: true,
       clearMessage: true,
       clearLastUploadSkipped: true,
@@ -227,8 +276,10 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
           deliverableId: nextDeliverableId,
           submissionKind: nextSubmissionKind,
           viewMode: nextViewMode,
+          groupBy: nextGroupBy,
+          folderKey: nextFolderKey,
+          offset: nextPageOffset,
         ),
-        
       );
 
       if (response.statusCode == 200) {
@@ -327,7 +378,9 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
     }
   }
 
-  Future<UploadPitResult> _postUploadAction(Map<String, dynamic> payload) async {
+  Future<UploadPitResult> _postUploadAction(
+    Map<String, dynamic> payload,
+  ) async {
     state = state.copyWith(
       isSaving: true,
       clearError: true,
@@ -338,7 +391,7 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/upload-pit/'),
-        
+
         body: jsonEncode(payload),
       );
 
@@ -367,12 +420,16 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
     }
   }
 
-  Future<bool> requestResubmission(String entryId, {String status = 'Needs Revision', String feedback = ''}) {
-    return _postAction('request-resubmission', {
-      'entry_id': entryId,
-      'status': status,
-      'feedback': feedback,
-    }, successMessage: 'Requested file resubmission from team.');
+  Future<bool> requestResubmission(
+    String entryId, {
+    String status = 'Needs Revision',
+    String feedback = '',
+  }) {
+    return _postAction(
+      'request-resubmission',
+      {'entry_id': entryId, 'status': status, 'feedback': feedback},
+      successMessage: 'Requested file resubmission from team.',
+    );
   }
 
   Future<bool> overrideStatus(String entryId, String status) {
@@ -380,13 +437,19 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
   }
 
   Future<bool> cancelFileReplacement(String entryId, {required String reason}) {
-    return _postAction('cancel-file-replacement', {
-      'entry_id': entryId,
-      'reason': reason,
-    }, successMessage: 'Canceled student file replacement unlock. Approval retained.');
+    return _postAction(
+      'cancel-file-replacement',
+      {'entry_id': entryId, 'reason': reason},
+      successMessage:
+          'Canceled student file replacement unlock. Approval retained.',
+    );
   }
 
-  Future<bool> replaceFile(String entryId, List<int> bytes, String fileName) async {
+  Future<bool> replaceFile(
+    String entryId,
+    List<int> bytes,
+    String fileName,
+  ) async {
     state = state.copyWith(
       isSaving: true,
       clearError: true,
@@ -447,10 +510,7 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
         ),
       );
       if (response.statusCode == 200) {
-        state = state.copyWith(
-          isExporting: false,
-          clearError: true,
-        );
+        state = state.copyWith(isExporting: false, clearError: true);
         return response.body;
       }
       state = state.copyWith(
@@ -478,7 +538,7 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/$action/'),
-        
+
         body: jsonEncode(payload),
       );
 
@@ -514,6 +574,9 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
     String deliverableId = '',
     String submissionKind = '',
     String viewMode = '',
+    String groupBy = 'team',
+    String folderKey = '',
+    int offset = 0,
   }) {
     return Uri.parse(path.isEmpty ? baseUrl : '$baseUrl/$path/').replace(
       queryParameters: {
@@ -528,6 +591,9 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
         if (deliverableId.isNotEmpty) 'deliverable_id': deliverableId,
         if (submissionKind.isNotEmpty) 'submission_kind': submissionKind,
         if (viewMode.isNotEmpty) 'view': viewMode,
+        'group_by': groupBy,
+        if (folderKey.isNotEmpty) 'folder_key': folderKey,
+        if (offset > 0) 'offset': '$offset',
       },
     );
   }
@@ -555,7 +621,8 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
     return const [];
   }
 
-  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
+  AuthenticatedHttpClient get _client =>
+      ref.read(authenticatedHttpClientProvider);
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     final payloadScope = payload['scope'] is Map
@@ -580,6 +647,21 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
           ? Map<String, dynamic>.from(payload['capstone_upload_window'])
           : const {},
       groupedByStage: _readMapList(payload['grouped_by_stage']),
+      folderBrowser: payload['folder_browser'] is Map
+          ? Map<String, dynamic>.from(payload['folder_browser'])
+          : const {},
+      pagination: payload['pagination'] is Map
+          ? Map<String, dynamic>.from(payload['pagination'])
+          : const {},
+      folderKey: (payload['folder_browser'] is Map)
+          ? (payload['folder_browser']['folder_key']?.toString() ?? '')
+          : state.folderKey,
+      groupBy: (payload['folder_browser'] is Map)
+          ? (payload['folder_browser']['group_by']?.toString() ?? state.groupBy)
+          : state.groupBy,
+      pageOffset: (payload['pagination'] is Map)
+          ? ((payload['pagination']['offset'] as num?)?.toInt() ?? state.pageOffset)
+          : state.pageOffset,
       deliverableSummary: payload['deliverable_summary'] is Map
           ? Map<String, dynamic>.from(payload['deliverable_summary'])
           : const {},
@@ -603,7 +685,11 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
         ? payload['created_count'] as int
         : int.tryParse('${payload['created_count']}') ?? 0;
 
-    final feedback = _uploadFeedback(createdCount, skipped, uploadLabel: uploadLabel);
+    final feedback = _uploadFeedback(
+      createdCount,
+      skipped,
+      uploadLabel: uploadLabel,
+    );
 
     state = state.copyWith(
       isLoading: false,
@@ -623,6 +709,21 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
           ? Map<String, dynamic>.from(payload['capstone_upload_window'])
           : const {},
       groupedByStage: _readMapList(payload['grouped_by_stage']),
+      folderBrowser: payload['folder_browser'] is Map
+          ? Map<String, dynamic>.from(payload['folder_browser'])
+          : const {},
+      pagination: payload['pagination'] is Map
+          ? Map<String, dynamic>.from(payload['pagination'])
+          : const {},
+      folderKey: (payload['folder_browser'] is Map)
+          ? (payload['folder_browser']['folder_key']?.toString() ?? '')
+          : state.folderKey,
+      groupBy: (payload['folder_browser'] is Map)
+          ? (payload['folder_browser']['group_by']?.toString() ?? state.groupBy)
+          : state.groupBy,
+      pageOffset: (payload['pagination'] is Map)
+          ? ((payload['pagination']['offset'] as num?)?.toInt() ?? state.pageOffset)
+          : state.pageOffset,
       deliverableSummary: payload['deliverable_summary'] is Map
           ? Map<String, dynamic>.from(payload['deliverable_summary'])
           : const {},

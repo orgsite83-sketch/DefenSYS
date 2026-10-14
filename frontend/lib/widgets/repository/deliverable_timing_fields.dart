@@ -18,11 +18,15 @@ class DefenseMaterialToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => DefensysShadcnScope(
-    child: ShadCheckbox(
-      value: value,
-      enabled: enabled,
-      onChanged: onChanged,
-      label: const Text('Defense material for panelists'),
+    child: Tooltip(
+      message:
+          'Panelists can view this uploaded file during oral grading. This choice does not change the submission deadline.',
+      child: ShadCheckbox(
+        value: value,
+        enabled: enabled,
+        onChanged: onChanged,
+        label: const Text('Defense material for panelists'),
+      ),
     ),
   );
 }
@@ -93,7 +97,7 @@ class DeliverableTimingFields extends StatelessWidget {
                   value: 'defense',
                   title: 'Before scheduled defense',
                   description:
-                      'Students may submit it after endorsement until its deadline.',
+                      'Does not block endorsement or scheduling. Students can upload it before the defense deadline.',
                   icon: Icons.event_outlined,
                 );
                 return constraints.maxWidth < 540

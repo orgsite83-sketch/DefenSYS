@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:defensys/screens/web/admin/admin_dashboard_content.dart';
-import 'package:defensys/screens/web/admin/admin_shell.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/dashboard_provider.dart';
+import 'package:defensys/services/network/authenticated_client.dart';
 
+import '../helpers/fake_planner_client.dart';
 import '../helpers/pump_app.dart';
 
 class FakeAdminDashboardNotifier extends DashboardNotifier {
@@ -105,6 +106,7 @@ void main() {
       overrides: [
         dashboardProvider('admin').overrideWith(() => dashNotifier),
         academicPeriodProvider.overrideWith(() => acadNotifier),
+        authenticatedHttpClientProvider.overrideWithValue(FakePlannerClient()),
       ],
     );
 
@@ -155,6 +157,7 @@ void main() {
         overrides: [
           dashboardProvider('admin').overrideWith(() => dashNotifier),
           academicPeriodProvider.overrideWith(() => acadNotifier),
+          authenticatedHttpClientProvider.overrideWithValue(FakePlannerClient()),
         ],
       );
 
@@ -207,6 +210,7 @@ void main() {
       overrides: [
         dashboardProvider('admin').overrideWith(() => dashNotifier),
         academicPeriodProvider.overrideWith(() => acadNotifier),
+        authenticatedHttpClientProvider.overrideWithValue(FakePlannerClient()),
       ],
     );
 
@@ -286,6 +290,7 @@ void main() {
         overrides: [
           dashboardProvider('admin').overrideWith(() => dashNotifier),
           academicPeriodProvider.overrideWith(() => acadNotifier),
+          authenticatedHttpClientProvider.overrideWithValue(FakePlannerClient()),
         ],
       );
 

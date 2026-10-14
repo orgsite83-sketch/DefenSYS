@@ -891,7 +891,8 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
     team = schedule.team
     progress = schedule_progress(schedule)
     unavailable_reason = grading_unavailable_reason(schedule, team_grade)
-    verdict_reason = verdict_unavailable_reason(schedule, team_grade)
+    is_capstone = schedule.scope == DefenseSchedule.SCOPE_CAPSTONE
+    verdict_reason = verdict_unavailable_reason(schedule, team_grade) if is_capstone else ''
     raw_weights = weights_for_schedule(schedule)
     grade_weights = _grade_weights_payload(schedule, raw_weights)
     panel_rubric = _panel_rubric_payload(schedule.rubric, grade_weights)
@@ -905,16 +906,16 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
     from grading.grades.models import GradeAttemptHistory
     attempt = team_grade or GradeAttemptHistory.objects.filter(schedule=schedule).select_related('verdict_by').order_by('-pk').first()
     if attempt:
-        verdict = attempt.verdict or ''
-        verdict_remarks = attempt.verdict_remarks or ''
-        if attempt.verdict_by:
+        verdict = (attempt.verdict or '') if is_capstone else ''
+        verdict_remarks = (attempt.verdict_remarks or '') if is_capstone else ''
+        if is_capstone and attempt.verdict_by:
             verdict_by_name = (
                 f"{attempt.verdict_by.first_name} {attempt.verdict_by.last_name}".strip()
                 or attempt.verdict_by.username
             )
         revision_deadline = (
             attempt.revision_deadline.isoformat()
-            if attempt.revision_deadline
+            if is_capstone and attempt.revision_deadline
             else None
         )
         attempt_count = (team_grade.attempt_count if team_grade else attempt.attempt_number) or 1
@@ -1003,8 +1004,8 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
         'grading_available': not is_posted and not unavailable_reason,
         'grading_unavailable_reason': unavailable_reason,
         'evaluation_context': evaluation_context(schedule, team_grade),
-        'can_issue_verdict': is_chair and not verdict_reason,
-        'verdict_unavailable_reason': verdict_reason if is_chair else '',
+        'can_issue_verdict': is_capstone and is_chair and not verdict_reason,
+        'verdict_unavailable_reason': verdict_reason if is_capstone and is_chair else '',
         'submissions': submissions or [],
         'defense_materials': defense_materials,
         'is_chair': is_chair,

@@ -1,18 +1,21 @@
 from datetime import datetime, timedelta, timezone as datetime_timezone
+from decimal import Decimal
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from authentication_access_control.guest_authentication import GuestPanelistPrincipal
-from grading.grades.models import PanelistGradeSubmission
+from grading.grades.models import PanelistGradeSubmission, TeamGrade
 from grading.grades.services import GradeContextService
 from grading.rubrics.models import Rubric
-from student_teams.models import TeamMembership
+from student_teams.models import StudentTeam, TeamMembership
 from user_management.models import GuestPanelistCode
 from . import tests as fixtures
-from .models import DefenseSchedule, PanelistEvaluationDraft, SchedulePanelist
+from .models import DefenseSchedule, PanelistEvaluationDraft, PitEventGradingConfig, SchedulePanelist
 from .panelist_evaluation import evaluation_context
+from .progress import schedule_progress
 from .services import transition_schedule_status
 
 
@@ -98,6 +101,65 @@ class PanelistEvaluationTests(APITestCase):
         self.assertEqual(response.status_code, 400, response.data)
         self.assertEqual(response.data['detail'], assignment['verdict_unavailable_reason'])
         self.assertFalse(schedule.grade_records.first().verdict)
+
+    def test_pit_chair_can_grade_but_cannot_issue_a_verdict(self):
+        student = get_user_model().objects.create_user(username='pit-verdict-student', role='student')
+        team = StudentTeam.objects.create(
+            name='PIT Verdict Team', project_title='PIT Event Project',
+            level=StudentTeam.LEVEL_2_PIT, year_level='2nd Year',
+            semester=self.semester, leader=student,
+        )
+        TeamMembership.objects.create(team=team, student=student, is_leader=True, order=0)
+        rubric = Rubric.objects.create(
+            name='PIT Verdict Test Rubric', scope=Rubric.SCOPE_PIT,
+            semester=self.semester, evaluation_type=Rubric.EVAL_PANEL,
+            status=Rubric.STATUS_PUBLISHED, created_by=self.admin,
+        )
+        PitEventGradingConfig.objects.create(
+            semester=self.semester, event_name='2nd Year PIT Verdict Test',
+            panel_rubric=rubric, panel_weight=80, peer_weight=20,
+        )
+        schedule = self.schedule(
+            scope=DefenseSchedule.SCOPE_PIT, team=team, defense_stage=None,
+            event_name='2nd Year PIT Verdict Test', rubric=rubric,
+        )
+        grade, _, _ = GradeContextService.get_or_create_for_schedule(schedule)
+        assignment = next(
+            item for item in self.client.get('/api/defense/schedules/panelist-assignments/').data['teams']
+            if item['schedule_id'] == schedule.pk
+        )
+        self.assertTrue(assignment['is_chair'])
+        self.assertTrue(assignment['grading_available'])
+        self.assertFalse(assignment['can_issue_verdict'])
+        self.assertEqual(assignment['verdict_unavailable_reason'], '')
+
+        for user in (self.panelist, self.admin):
+            self.client.force_authenticate(user=user)
+            for url in (
+                f'/api/defense/schedules/{schedule.pk}/verdict/',
+                f'/api/grading/grades/{grade.pk}/verdict/',
+            ):
+                with self.subTest(user=user.username, url=url):
+                    response = self.client.patch(url, {'verdict': 'approved'}, format='json')
+                    self.assertEqual(response.status_code, 400, response.data)
+                    self.assertIn('PIT events do not use official defense verdicts', response.data['detail'])
+        grade.refresh_from_db()
+        self.assertEqual(grade.verdict, '')
+
+        # Legacy PIT verdict data must not override the numeric event result.
+        TeamGrade.objects.filter(pk=grade.pk).update(
+            verdict=TeamGrade.VERDICT_APPROVED,
+            panel_score=Decimal('60'), peer_score=Decimal('60'), final_grade=Decimal('60'),
+        )
+        grade.refresh_from_db()
+        self.assertEqual(grade.result, 'failed')
+        progress = schedule_progress(DefenseSchedule.objects.get(pk=schedule.pk))
+        self.assertEqual(progress['verdict'], '')
+        self.assertEqual(DefenseSchedule.objects.get(pk=schedule.pk).status, DefenseSchedule.STATUS_SCHEDULED)
+        self.client.force_authenticate(user=self.admin)
+        detail = self.client.get(f'/api/grading/grades/{grade.pk}/')
+        self.assertEqual(detail.status_code, 200, detail.data)
+        self.assertEqual(detail.data['grade']['verdict'], '')
 
     def test_submitted_zero_scores_unlock_verdict_only_for_the_chair(self):
         schedule = self.schedule()

@@ -9,6 +9,7 @@ from repository.deliverables.services import (
     archive_unlocked,
 )
 from repository.archive.models import ArchiveEntry
+from repository.entry_payloads import empty_ml_fields
 from student_teams.models import StudentTeam
 
 from .constants import STATUS_OPTIONS, SUBMISSION_KIND_OPTIONS, TYPE_OPTIONS
@@ -290,8 +291,114 @@ def grouped_by_stage_for_team(
     return groups
 
 
-def augment_deliverable_missing_rows(entries, deliverable_id, stage_filter=''):
-    return entries
+def _missing_deliverable_row(team, semester, stage, definition, *, track, event_id=None):
+    required = definition.get('required', False)
+    return {
+        'id': f'missing-{track}-{team.id}-{semester.id}-{stage}-{definition["id"]}',
+        'source_id': None,
+        'type': track,
+        'file_name': '',
+        'file_size': 0,
+        'file_url': '',
+        'has_file': False,
+        'deliverable_id': definition['id'],
+        'deliverable_label': definition['label'],
+        'team_id': team.id,
+        'team_name': team.name,
+        'project_title': team.project_title,
+        'year_level': team.year_level,
+        'level': team.level,
+        'academic_year': semester.school_year.label,
+        'semester': semester.label,
+        'stage': stage,
+        'pit_event_config_id': event_id,
+        'course_code': '',
+        'status': 'Missing required' if required else 'Not submitted',
+        'submission_kind': definition['type'],
+        'deliverable_type': definition['type'],
+        'is_restricted_archive': definition.get('is_restricted', False),
+        'archive_locked': False,
+        'is_missing': True,
+        'uploaded_by': '',
+        'uploaded_at': None,
+        'can_override': False,
+        'audit_trail': [],
+        **empty_ml_fields(),
+    }
+
+
+def augment_deliverable_missing_rows(entries, deliverable_id='', stage_filter='', scope=None):
+    """Include eligible current-period teams without a configured deliverable file."""
+    scope = scope or {'scope': 'admin'}
+    requested_id = (deliverable_id or '').strip()
+    result = [
+        {**entry, 'is_missing': True, 'status': 'Not uploaded'}
+        if entry.get('deliverable_id') and not entry.get('has_file')
+        else entry
+        for entry in entries
+    ]
+    existing = {
+        (e.get('type'), e.get('academic_year'), e.get('semester'),
+         e.get('team_id'), e.get('stage'), e.get('deliverable_id'))
+        for e in entries if e.get('deliverable_id')
+    }
+
+    if scope.get('scope') == 'admin':
+        stage_names = sorted(set(STAGE_OPTIONS + [e.get('stage') for e in entries if e.get('type') == 'capstone' and e.get('stage')]))
+        teams = list(_capstone_teams_queryset())
+        for stage_name in stage_names:
+            if stage_filter and stage_name != stage_filter:
+                continue
+            definitions = deliverable_definitions_for_stage(stage_name)
+            for definition in definitions:
+                if requested_id and definition['id'] != requested_id:
+                    continue
+                for team in teams:
+                    semester = team.semester
+                    key = ('capstone', semester.school_year.label, semester.label,
+                           team.id, stage_name, definition['id'])
+                    if key not in existing:
+                        result.append(_missing_deliverable_row(
+                            team, semester, stage_name, definition, track='capstone',
+                        ))
+
+    if scope.get('scope') in ('admin', 'pit_lead'):
+        from defense.scheduler.models import PitEventDeliverable
+        from grading.grades.models import TeamGrade
+        definitions = PitEventDeliverable.objects.select_related(
+            'pit_event_config', 'pit_event_config__semester',
+            'pit_event_config__semester__school_year',
+        )
+        if requested_id:
+            definitions = definitions.filter(deliverable_id=requested_id)
+        for item in definitions:
+            config = item.pit_event_config
+            if stage_filter and config.event_name != stage_filter:
+                continue
+            team_ids = TeamGrade.objects.filter(
+                pit_event_config=config, scope=TeamGrade.SCOPE_PIT,
+            ).values_list('team_id', flat=True)
+            teams = StudentTeam.objects.select_related(
+                'semester', 'semester__school_year',
+            ).filter(id__in=team_ids, semester=config.semester,
+                     level__icontains='PIT')
+            if scope.get('scope') == 'pit_lead':
+                teams = teams.filter(year_level=scope.get('pit_year_level'))
+            definition = {
+                'id': item.deliverable_id, 'label': item.label,
+                'type': item.deliverable_type, 'required': item.required,
+                'is_restricted': item.is_restricted,
+            }
+            for team in teams:
+                semester = config.semester
+                key = ('pit', semester.school_year.label, semester.label,
+                       team.id, config.event_name, item.deliverable_id)
+                if key not in existing:
+                    result.append(_missing_deliverable_row(
+                        team, semester, config.event_name, definition,
+                        track='pit', event_id=config.id,
+                    ))
+    return result
 
 
 def deliverable_summary_payload(deliverable_id, entries, stage_filter=''):

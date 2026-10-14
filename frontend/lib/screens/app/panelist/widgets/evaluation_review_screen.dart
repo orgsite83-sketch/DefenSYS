@@ -120,14 +120,16 @@ class EvaluationReviewScreen extends StatelessWidget {
           ShadAlert(
             title: Text(
               team.isPosted
-                  ? 'Submitted · Locked'
+                  ? 'Submitted'
                   : complete
                   ? 'Scores complete'
                   : 'Some scores are missing',
             ),
             description: Text(
               team.isPosted
-                  ? 'Your scores are saved and locked. The official verdict is separate.'
+                  ? team.isCapstone
+                        ? 'Your scores are saved and locked. The official stage verdict is separate.'
+                        : 'Your scores are saved and locked. The PIT event result follows the final numeric grade.'
                   : complete
                   ? 'Check the team identity and each score before submitting.'
                   : 'Use Edit to finish the required criteria.',

@@ -63,6 +63,31 @@ class _PublishedGradeNotifier extends AdviserGradingNotifier {
 
 class _DashboardDeliverablesNotifier extends CapstoneDeliverablesNotifier {
   @override
+  CapstoneDeliverablesState build() => const CapstoneDeliverablesState(
+    teams: [
+      {
+        'id': 7,
+        'current_stage': 'Concept Proposal',
+        'stages': [
+          {
+            'stage_label': 'Concept Proposal',
+            'deliverables_configured': true,
+            'required_complete': false,
+            'pre': [
+              {
+                'id': 'PAPER',
+                'type': 'pre',
+                'required': true,
+                'uploaded': false,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  );
+
+  @override
   Future<void> fetchDeliverables({
     String? search,
     String? selectedStage,
@@ -112,6 +137,111 @@ class _UpcomingDefenseNotifier extends AdviserDefenseNotifier {
 }
 
 void main() {
+  testWidgets('endorsed team shows post-defense files as locked', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1500, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await pumpDefensysWidget(
+      tester,
+      SingleChildScrollView(
+        child: DeliverablesTablePane(
+          state: const CapstoneDeliverablesState(
+            selectedStage: 'Concept Proposal',
+            stageOptions: ['Concept Proposal'],
+            teams: [
+              {
+                'id': 7,
+                'name': 'Team BioPulse',
+                'current_stage': 'Concept Proposal',
+                'stages': [
+                  {
+                    'stage_label': 'Concept Proposal',
+                    'deliverables_configured': true,
+                    'required_complete': true,
+                    'endorsed': true,
+                    'archive_unlocked': false,
+                    'pre': [],
+                    'post': [
+                      {
+                        'id': 'FINAL',
+                        'label': 'Final Manuscript',
+                        'type': 'post',
+                        'required': true,
+                        'uploaded': false,
+                        'can_upload': false,
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          ),
+          isAdviser: true,
+        ),
+      ),
+      overrides: [
+        adviserDefenseProvider.overrideWith(_ScheduledDefenseNotifier.new),
+        adviserGradingProvider.overrideWith(_PublishedGradeNotifier.new),
+      ],
+    );
+
+    expect(find.text('Post-Defense Deliverables'), findsOneWidget);
+    expect(find.text('Final Manuscript'), findsOneWidget);
+    expect(
+      find.textContaining('Student uploads and faculty review open once'),
+      findsOneWidget,
+    );
+    expect(find.text('Awaiting student upload'), findsNothing);
+  });
+
+  testWidgets('adviser team footer is outlined without paging controls', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1500, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    int? openedTeam = -1;
+
+    await pumpDefensysWidget(
+      tester,
+      SingleChildScrollView(
+        child: AdviserDashboardContent(
+          data: {
+            'advised_teams': List.generate(
+              5,
+              (index) => {'id': index + 1, 'name': 'Advised Team ${index + 1}'},
+            ),
+          },
+          facultyName: 'Ricardo Fontanilla',
+          onOpenGrades: (_, _) {},
+          onOpenDeliverables: (id) => openedTeam = id,
+          onOpenDefense: (_, _) {},
+        ),
+      ),
+      overrides: [
+        capstoneDeliverablesProvider.overrideWith(
+          _DashboardDeliverablesNotifier.new,
+        ),
+        adviserDefenseProvider.overrideWith(_UpcomingDefenseNotifier.new),
+        adviserGradingProvider.overrideWith(_PublishedGradeNotifier.new),
+      ],
+    );
+
+    expect(find.text('Advised Team 1'), findsOneWidget);
+    expect(find.text('Advised Team 5'), findsNothing);
+    expect(find.byKey(const Key('team-page-next')), findsNothing);
+    final openTeams = find.widgetWithText(
+      OutlinedButton,
+      'Open Capstone Teams',
+    );
+    expect(openTeams, findsOneWidget);
+    await tester.tap(openTeams);
+    expect(openedTeam, isNull);
+  });
+
   testWidgets('dashboard shows adviser actions and only assigned defenses', (
     tester,
   ) async {
@@ -163,7 +293,17 @@ void main() {
     );
 
     expect(find.text('My actions'), findsOneWidget);
+    expect(find.text('Quick Actions'), findsNothing);
     expect(find.text('Upcoming defenses'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('My teams')).dx,
+      lessThan(tester.getTopLeft(find.text('Upcoming defenses')).dx),
+    );
+    expect(
+      tester.getTopLeft(find.text('My actions')).dy,
+      greaterThan(tester.getTopLeft(find.text('Upcoming defenses')).dy),
+    );
+    expect(find.text('1 to endorse'), findsOneWidget);
     expect(find.textContaining('Room 301'), findsOneWidget);
     expect(find.textContaining('Room 302'), findsNothing);
     expect(find.text('Team Old'), findsNothing);
@@ -171,6 +311,12 @@ void main() {
       find.text('Concept Proposal · Minutes ready to sign'),
       findsOneWidget,
     );
+
+    await tester.tap(find.byTooltip('Actions for Team BioPulse'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Defense records'));
+    await tester.pumpAndSettle();
+    expect(openedDefense, 7);
 
     await tester.tap(find.textContaining('Room 301'));
     expect(openedDefense, 7);
@@ -228,19 +374,56 @@ void main() {
     );
 
     expect(find.text('Team roster (2)'), findsOneWidget);
+    expect(find.text('Export teams'), findsOneWidget);
+    expect(find.text('Export team summary'), findsOneWidget);
+    expect(find.textContaining('Review first'), findsNothing);
+    expect(
+      tester.getTopLeft(find.text('Export teams')).dx,
+      greaterThan(tester.getTopLeft(find.text('Teams (1)')).dx),
+    );
+    expect(
+      tester.getTopLeft(find.text('Export team summary')).dy,
+      closeTo(tester.getTopLeft(find.descendant(
+        of: find.byKey(const Key('adviser-team-summary')),
+        matching: find.text('Awaiting Endorsement'),
+      )).dy, 16),
+    );
     final summary = find.byKey(const Key('adviser-team-summary'));
     expect(summary, findsOneWidget);
-    expect(find.descendant(of: summary, matching: find.text('Project title')), findsOneWidget);
-    expect(find.descendant(of: summary, matching: find.text('Vital Triage System')), findsOneWidget);
-    expect(find.descendant(of: summary, matching: find.text('Year level: 3rd Year')), findsOneWidget);
-    expect(find.descendant(of: summary, matching: find.text('Section: IT3A')), findsOneWidget);
-    expect(find.descendant(of: summary, matching: find.text('Team roster (2)')), findsOneWidget);
-    expect(find.descendant(of: summary, matching: find.text('Next step')), findsOneWidget);
+    expect(
+      find.descendant(of: summary, matching: find.text('Project title')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: summary, matching: find.text('Vital Triage System')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: summary, matching: find.text('Year level: 3rd Year')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: summary, matching: find.text('Section: IT3A')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: summary, matching: find.text('Team roster (2)')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: summary, matching: find.text('Next step')),
+      findsOneWidget,
+    );
     expect(find.text('Ryan Torres'), findsOneWidget);
     expect(find.text('Nina Villanueva'), findsOneWidget);
     expect(find.text('Defense'), findsOneWidget);
     expect(find.text('Download grade report'), findsOneWidget);
-    expect(find.textContaining('Accept all required pre-defense deliverables, then endorse'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Accept all required pre-defense deliverables, then endorse',
+      ),
+      findsOneWidget,
+    );
     final pendingEndorseButton = find.ancestor(
       of: find.text('Endorse Team'),
       matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
@@ -276,7 +459,8 @@ void main() {
               {
                 'id': 7,
                 'name': 'Team BioPulse',
-                'project_title': 'A long project title about emergency response and patient monitoring',
+                'project_title':
+                    'A long project title about emergency response and patient monitoring',
                 'year_level': '3rd Year',
                 'section': 'IT3A',
                 'current_stage': 'Concept Proposal',
@@ -294,7 +478,25 @@ void main() {
                         'required': true,
                         'submission': {'status': 'accepted'},
                       },
+                      {
+                        'id': 2,
+                        'label': 'Pitch Deck',
+                        'type': 'pre',
+                        'required': true,
+                        'requirement_timing': 'defense',
+                        'materials_status': 'awaiting_schedule',
+                        'materials_submitted': false,
+                        'uploaded': false,
+                      },
                     ],
+                    'materials_readiness': {
+                      'status': 'awaiting_schedule',
+                      'required_total': 1,
+                      'submitted_total': 0,
+                      'missing': [
+                        {'id': 2, 'materials_status': 'awaiting_schedule'},
+                      ],
+                    },
                     'post': [],
                   },
                 ],
@@ -316,11 +518,28 @@ void main() {
     );
     final summary = find.byKey(const Key('adviser-team-summary'));
     expect(endorseButton, findsOneWidget);
-    expect(find.descendant(of: summary, matching: endorseButton), findsOneWidget);
-    expect(find.descendant(of: summary, matching: find.text('Ready for Endorsement')), findsOneWidget);
+    expect(
+      find.descendant(of: summary, matching: endorseButton),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: summary,
+        matching: find.text('Ready for Endorsement'),
+      ),
+      findsOneWidget,
+    );
     expect(tester.widget<ElevatedButton>(endorseButton).onPressed, isNotNull);
     expect(find.text('Stage status'), findsNothing);
     expect(find.text('Next step'), findsOneWidget);
+    expect(find.text('Before endorsement'), findsOneWidget);
+    expect(find.text('Before defense'), findsOneWidget);
+    expect(find.textContaining('No defense date yet'), findsOneWidget);
+    expect(find.text('Due after scheduling'), findsNothing);
+    expect(
+      find.textContaining('do not block endorsement or scheduling'),
+      findsOneWidget,
+    );
     expect(
       tester.getTopLeft(find.text('Ready for Endorsement').last).dx,
       greaterThan(tester.getTopLeft(find.text('Team BioPulse').last).dx + 150),
@@ -336,6 +555,10 @@ void main() {
     await tester.tap(endorseButton);
     await tester.pumpAndSettle();
     expect(find.text('Endorse Team'), findsNWidgets(2));
+    expect(
+      find.textContaining('can still be uploaded after endorsement'),
+      findsOneWidget,
+    );
     await tester.tap(find.text('Cancel'));
   });
 
@@ -420,7 +643,8 @@ void main() {
           child: Column(
             children: [
               TextButton(
-                onPressed: () => setState(() => selectedStage = 'Project Proposal'),
+                onPressed: () =>
+                    setState(() => selectedStage = 'Project Proposal'),
                 child: const Text('Switch stage'),
               ),
               DeliverablesTablePane(state: buildState(), isAdviser: true),
@@ -479,7 +703,8 @@ void main() {
               {
                 'id': 7,
                 'name': 'Team BioPulse',
-                'project_title': 'A long project title about emergency response and patient monitoring',
+                'project_title':
+                    'A long project title about emergency response and patient monitoring',
                 'year_level': '3rd Year',
                 'section': 'IT3A',
                 'current_stage': 'Concept Proposal',
@@ -511,10 +736,13 @@ void main() {
     );
 
     expect(find.text('Back to Team List'), findsOneWidget);
-    expect(find.descendant(
-      of: find.byKey(const Key('adviser-team-summary')),
-      matching: find.text('Team roster (1)'),
-    ), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('adviser-team-summary')),
+        matching: find.text('Team roster (1)'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Room 301'), findsOneWidget);
   });
 }

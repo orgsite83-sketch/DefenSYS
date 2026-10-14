@@ -19,6 +19,7 @@ import '../../admin/grade_center/grade_center_shared.dart' show showPeerGradingH
 import '../../admin/defense_stages/widgets/stage_deliverable_choices.dart';
 import '../../admin/defense_stages/widgets/stage_deliverable_overview.dart';
 import '../../admin/defense_stages/widgets/stage_deliverable_presets_bar.dart';
+import '../../admin/defense_stages/widgets/stage_deliverable_presets.dart';
 
 class PitEventsManagementScreen extends ConsumerStatefulWidget {
   const PitEventsManagementScreen({super.key});
@@ -92,6 +93,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
       barrierDismissible: false,
       builder: (context) => _EventConfigEditDialog(
         config: config,
+        availableEvents: _configs,
         onSaveSuccess: () {
           Navigator.of(context).pop();
           _loadData();
@@ -100,25 +102,21 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
     );
   }
 
-  Color _getTierColor(int index, String? name, String? code) {
-    final search = '${name ?? ''} ${code ?? ''}'.toLowerCase();
-    if (search.contains('1st') || search.contains('101')) {
-      return const Color(0xFFF59E0B); // Amber
-    } else if (search.contains('2nd') || search.contains('201')) {
-      return AppColors.maroon; // Crimson Maroon
-    } else if (search.contains('3rd') || search.contains('301')) {
-      return const Color(0xFF6366F1); // Indigo
-    } else if (search.contains('4th') || search.contains('401')) {
-      return const Color(0xFF10B981); // Emerald
+  Widget _eventActions(Map<String, dynamic> config) {
+    if (config['is_locked'] == true) {
+      return ShadButton.outline(
+        size: ShadButtonSize.sm,
+        leading: const Icon(LucideIcons.eye, size: 13),
+        onPressed: () => _showEventDialog(config),
+        child: const Text('View'),
+      );
     }
-    final palette = [
-      const Color(0xFFF59E0B),
-      AppColors.maroon,
-      const Color(0xFF6366F1),
-      const Color(0xFF10B981),
-      const Color(0xFFEC4899),
-    ];
-    return palette[index % palette.length];
+    return _PitEventActionsMenu(
+      eventId: config['id'],
+      eventName: config['event_name']?.toString() ?? 'PIT event',
+      onEdit: () => _showEventDialog(config),
+      onDelete: () => _deleteConfig(config),
+    );
   }
 
   @override
@@ -165,8 +163,6 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
               _buildExecutiveHeader(activeSemLabel, state.isSaving),
               const SizedBox(height: 20),
               _buildExecutiveStatCards(),
-              const SizedBox(height: 16),
-              _buildLifecycleLegend(),
               const SizedBox(height: 24),
               _buildSectionHeader(),
               const SizedBox(height: 16),
@@ -287,24 +283,36 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
 
   Widget _buildExecutiveStatCards() {
     final total = _configs.length;
-    final rubricsLinked = _configs.where((c) => c['panel_rubric_id'] != null && c['peer_rubric_id'] != null).length;
+    final rubricsLinked = _configs.where((config) {
+      final peerWeight =
+          int.tryParse(config['peer_weight']?.toString() ?? '') ?? 0;
+      return config['panel_rubric_id'] != null &&
+          (peerWeight == 0 || config['peer_rubric_id'] != null);
+    }).length;
     final totalDeliverables = _configs.fold<int>(
       0,
       (sum, c) => sum + ((c['deliverables'] as List? ?? []).length),
     );
 
-    double avgPanelWeight = 80;
-    if (_configs.isNotEmpty) {
-      final sumPanel = _configs.fold<double>(0, (sum, c) => sum + (int.tryParse(c['panel_weight']?.toString() ?? '') ?? 80));
-      avgPanelWeight = sumPanel / _configs.length;
-    }
-    final avgPeerWeight = 100 - avgPanelWeight.round();
-
     final metrics = [
-      _metricTile('Configured Events', '$total', 'Active exhibition showcases', LucideIcons.calendar),
-      _metricTile('Weight Split', '${avgPanelWeight.round()}% / $avgPeerWeight%', 'Avg Panel vs Peer ratio', LucideIcons.scale),
-      _metricTile('Active Rubrics', '$rubricsLinked / $total', 'Panel & peer rubrics linked', LucideIcons.clipboardCheck),
-      _metricTile('Archive Templates', '$totalDeliverables', 'Deliverable checklist items', LucideIcons.files),
+      _metricTile(
+        'Total events',
+        '$total',
+        'Independent PIT events',
+        LucideIcons.calendar,
+      ),
+      _metricTile(
+        'Rubrics linked',
+        '$rubricsLinked / $total',
+        'Required evaluation rubrics attached',
+        LucideIcons.clipboardCheck,
+      ),
+      _metricTile(
+        'Checklist items',
+        '$totalDeliverables',
+        'Event deliverable requirements',
+        LucideIcons.files,
+      ),
     ];
 
     return LayoutBuilder(
@@ -392,144 +400,15 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
     );
   }
 
-  Widget _buildLifecycleLegend() {
-    return ShadCard(
-      width: double.infinity,
-      backgroundColor: _surface,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isCompact = constraints.maxWidth < 800;
-
-          final header = Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(LucideIcons.shieldCheck, size: 16, color: DefensysTokens.maroonOf(context)),
-              const SizedBox(width: 8),
-              Text(
-                'PIT Event Lifecycle',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: _ink,
-                  fontFamily: DefensysTokens.fontFamilyInter,
-                ),
-              ),
-            ],
-          );
-
-          final steps = [
-            _legendStepPill('01', 'Event & Weights', 'Tier code & weight split'),
-            _legendStepPill('02', 'Rubrics & Checklists', 'Evaluation rubrics & templates'),
-            _legendStepPill('03', 'Audit Lock', 'Read-only once grades exist'),
-          ];
-
-          if (isCompact) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                header,
-                const SizedBox(height: 10),
-                for (final step in steps)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: step,
-                  ),
-              ],
-            );
-          }
-
-          return Row(
-            children: [
-              header,
-              const SizedBox(width: 20),
-              Expanded(
-                child: Row(
-                  children: [
-                    Expanded(child: steps[0]),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Icon(LucideIcons.arrowRight, size: 14, color: _border),
-                    ),
-                    Expanded(child: steps[1]),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Icon(LucideIcons.arrowRight, size: 14, color: _border),
-                    ),
-                    Expanded(child: steps[2]),
-                  ],
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _legendStepPill(String num, String title, String desc) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: _fill,
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: _border),
-          ),
-          child: Text(
-            num,
-            style: TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w700,
-              color: _ink,
-              fontFamily: DefensysTokens.fontFamilyInter,
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: _ink,
-                  fontFamily: DefensysTokens.fontFamilyInter,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              Text(
-                desc,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: _muted,
-                  fontFamily: DefensysTokens.fontFamilyInter,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildSectionHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 700;
+        final title = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'PIT Event Showcase Hub',
+              'PIT events',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
@@ -540,7 +419,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
             ),
             const SizedBox(height: 2),
             Text(
-              'Independent event cards with grading models and deliverable checklists',
+              'Each event is independent. Numbers identify entries; they do not set an order.',
               style: TextStyle(
                 fontSize: 12,
                 color: _muted,
@@ -548,20 +427,32 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
               ),
             ),
           ],
-        ),
-        SizedBox(
+        );
+        final toggle = SizedBox(
           width: 250,
           child: ShadTabs<String>(
             scrollable: true,
             value: _isMatrixView ? 'matrix' : 'cards',
             onChanged: (val) => setState(() => _isMatrixView = val == 'matrix'),
             tabs: const [
-              ShadTab(value: 'cards', child: Text('Cards')),
-              ShadTab(value: 'matrix', child: Text('Matrix')),
+              ShadTab(value: 'cards', child: Text('Events')),
+              ShadTab(value: 'matrix', child: Text('Table')),
             ],
           ),
-        ),
-      ],
+        );
+        return compact
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [title, const SizedBox(height: 12), toggle],
+              )
+            : Row(
+                children: [
+                  Expanded(child: title),
+                  const SizedBox(width: 20),
+                  toggle,
+                ],
+              );
+      },
     );
   }
 
@@ -608,22 +499,11 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
       return r['name']?.toString() ?? 'Unknown Peer Rubric';
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isDesktop = constraints.maxWidth > 900;
-        final crossCount = isDesktop ? 2 : 1;
-
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossCount,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            mainAxisExtent: isDesktop ? 335 : 360,
-          ),
-          itemCount: _configs.length,
-          itemBuilder: (context, index) {
+    return Column(
+      children: [
+        for (var index = 0; index < _configs.length; index++) ...[
+          Builder(
+            builder: (context) {
             final config = _configs[index];
             final configId = int.tryParse(config['id']?.toString() ?? '') ?? index;
             final isExpanded = _expandedConfigIds.contains(configId);
@@ -635,14 +515,44 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
             final panelWeight = int.tryParse(config['panel_weight']?.toString() ?? '') ?? 80;
             final peerWeight = int.tryParse(config['peer_weight']?.toString() ?? '') ?? 20;
 
+              final missingRubrics = <String>[
+                if (config['panel_rubric_id'] == null) 'panel',
+                if (peerWeight > 0 && config['peer_rubric_id'] == null) 'peer',
+              ];
+
             final eventName = config['event_name']?.toString() ?? '';
             final eventCode = config['event_code']?.toString() ?? '';
-            final tierColor = _getTierColor(index, eventName, eventCode);
 
-            return ShadCard(
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    key: ValueKey('pit-event-number-$index'),
+                    width: 44,
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: _fill,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _border),
+                    ),
+                    child: Text(
+                      (index + 1).toString().padLeft(2, '0'),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: _ink,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: ShadCard(
+                      key: ValueKey('pit-event-card-$configId'),
               width: double.infinity,
               backgroundColor: _surface,
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -650,16 +560,6 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(7),
-                        decoration: BoxDecoration(
-                          color: _fill,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: _border),
-                        ),
-                        child: Icon(LucideIcons.calendar, size: 16, color: tierColor),
-                      ),
-                      const SizedBox(width: 10),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -758,37 +658,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ShadButton.outline(
-                            size: ShadButtonSize.sm,
-                            leading: Icon(
-                              isLocked ? LucideIcons.eye : LucideIcons.pencil,
-                              size: 13,
-                            ),
-                            onPressed: () => _showEventDialog(config),
-                            child: Text(isLocked ? 'View' : 'Edit'),
-                          ),
-                          const SizedBox(width: 4),
-                          Tooltip(
-                            message: isLocked ? lockReason : 'Delete Event',
-                            child: ShadButton.ghost(
-                              width: 30,
-                              height: 30,
-                              padding: EdgeInsets.zero,
-                              foregroundColor: isLocked ? _muted : DefensysTokens.danger,
-                              hoverBackgroundColor: isLocked ? _fill : DefensysTokens.dangerBg,
-                              onPressed: () => _deleteConfig(config),
-                              child: Icon(
-                                LucideIcons.trash2,
-                                size: 14,
-                                color: isLocked ? _muted : DefensysTokens.danger,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                      _eventActions(config),
                     ],
                   ),
                   const SizedBox(height: 14),
@@ -879,7 +749,45 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
+                          if (missingRubrics.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: DefensysTokens.goldOf(context)
+                                    .withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: DefensysTokens.goldOf(context)
+                                      .withValues(alpha: 0.45),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    LucideIcons.circleAlert,
+                                    size: 15,
+                                    color: DefensysTokens.goldOf(context),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Attach ${missingRubrics.join(' and ')} evaluation rubric${missingRubrics.length == 1 ? '' : 's'}.',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: _ink,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 10),
                   // Expandable Deliverable Checklist Drawer
                   InkWell(
                     onTap: () {
@@ -1027,10 +935,15 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                   ],
                 ],
               ),
-            );
-          },
-        );
-      },
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          if (index < _configs.length - 1) const SizedBox(height: 14),
+        ],
+      ],
     );
   }
 
@@ -1121,6 +1034,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
             dataRowMinHeight: 64,
             dataRowMaxHeight: 68,
           columns: [
+            DataColumn(label: Text('No.', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
             DataColumn(label: Text('Event & Code', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
             DataColumn(label: Text('Status', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
             DataColumn(label: Text('Weight Split', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
@@ -1129,7 +1043,9 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
             DataColumn(label: Text('Deliverables', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
             DataColumn(label: Text('Actions', style: TextStyle(fontWeight: FontWeight.w600, color: _ink, fontFamily: DefensysTokens.fontFamilyInter, fontSize: 12.5))),
           ],
-          rows: _configs.map((config) {
+          rows: _configs.asMap().entries.map((entry) {
+            final index = entry.key;
+            final config = entry.value;
             final delivs = config['deliverables'] as List? ?? [];
             final preCount = delivs.where((d) => d['deliverable_type'] == 'pre').length;
             final postCount = delivs.where((d) => d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault').length;
@@ -1138,6 +1054,10 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
 
             return DataRow(
               cells: [
+                DataCell(Text(
+                  (index + 1).toString().padLeft(2, '0'),
+                  style: TextStyle(color: _ink, fontWeight: FontWeight.w700, fontFeatures: const [FontFeature.tabularFigures()]),
+                )),
                 DataCell(
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1222,23 +1142,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                 ),
                 DataCell(Text('$preCount Pre, $postCount Post', style: TextStyle(fontSize: 12, color: _muted, fontFamily: DefensysTokens.fontFamilyInter))),
                 DataCell(
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ShadButton.ghost(
-                        size: ShadButtonSize.sm,
-                        onPressed: () => _showEventDialog(config),
-                        leading: Icon(isLocked ? LucideIcons.eye : LucideIcons.pencil, size: 14),
-                      ),
-                      ShadButton.ghost(
-                        size: ShadButtonSize.sm,
-                        hoverBackgroundColor: DefensysTokens.dangerBg,
-                        foregroundColor: isLocked ? _muted : DefensysTokens.danger,
-                        onPressed: () => _deleteConfig(config),
-                        leading: const Icon(LucideIcons.trash2, size: 14),
-                      ),
-                    ],
-                  ),
+                  _eventActions(config),
                 ),
               ],
             );
@@ -1250,13 +1154,91 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
 }
 }
 
+class _PitEventActionsMenu extends StatefulWidget {
+  const _PitEventActionsMenu({
+    required this.eventId,
+    required this.eventName,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final Object? eventId;
+  final String eventName;
+  final VoidCallback onEdit;
+  final Future<void> Function() onDelete;
+
+  @override
+  State<_PitEventActionsMenu> createState() => _PitEventActionsMenuState();
+}
+
+class _PitEventActionsMenuState extends State<_PitEventActionsMenu> {
+  final _controller = ShadPopoverController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ShadPopover(
+    controller: _controller,
+    padding: const EdgeInsets.all(6),
+    popover: (context) => SizedBox(
+      width: 240,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ShadButton.ghost(
+            width: 240,
+            size: ShadButtonSize.sm,
+            mainAxisAlignment: MainAxisAlignment.start,
+            leading: const Icon(LucideIcons.pencil, size: 15),
+            onPressed: () {
+              _controller.hide();
+              widget.onEdit();
+            },
+            child: const Text('Edit event'),
+          ),
+          Divider(height: 8, color: DefensysTokens.borderOf(context)),
+          ShadButton.ghost(
+            width: 240,
+            size: ShadButtonSize.sm,
+            mainAxisAlignment: MainAxisAlignment.start,
+            foregroundColor: DefensysTokens.danger,
+            leading: const Icon(LucideIcons.trash2, size: 15),
+            onPressed: () async {
+              _controller.hide();
+              await widget.onDelete();
+            },
+            child: const Text('Delete event'),
+          ),
+        ],
+      ),
+    ),
+    child: Tooltip(
+      message: 'More actions for ${widget.eventName}',
+      child: ShadButton.outline(
+        key: ValueKey('pit-event-menu-${widget.eventId}'),
+        size: ShadButtonSize.sm,
+        width: 34,
+        padding: EdgeInsets.zero,
+        onPressed: _controller.toggle,
+        child: const Icon(LucideIcons.ellipsis, size: 16),
+      ),
+    ),
+  );
+}
 
 class _EventConfigEditDialog extends ConsumerStatefulWidget {
   final Map<String, dynamic>? config;
+  final List<Map<String, dynamic>> availableEvents;
   final VoidCallback onSaveSuccess;
 
   const _EventConfigEditDialog({
     this.config,
+    required this.availableEvents,
     required this.onSaveSuccess,
   });
 
@@ -2653,7 +2635,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
         : 'Active Semester';
 
     final dashboard = ref.watch(dashboardProvider('faculty')).data;
-    final pitYear = dashboard?['pit_lead_year']?.toString() ?? '2nd Year';
+    final assignedPitYear = dashboard?['pit_lead_year']?.toString().trim();
+    final pitYear = assignedPitYear?.isNotEmpty == true ? assignedPitYear! : '2nd Year';
 
     final panelRubrics = state.rubrics.where((r) {
       return r['scope'] == 'pit' && r['evaluation_type'] == 'panel';
@@ -3325,13 +3308,20 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             StageDeliverablePresetsBar(
+                              scope: DeliverablePresetScope.pit,
+                              yearLevel: assignedPitYear,
+                              currentSourceId: widget.config?['id'],
                               existingStages: [
-                                ...state.pitEvents.map((e) => {
+                                ...widget.availableEvents.where((e) =>
+                                    StageDeliverablePresetManager.pitEventMatchesYearLevel(
+                                      e['event_name']?.toString() ?? '',
+                                      assignedPitYear ?? '',
+                                    )).map((e) => {
                                   'id': e['id'],
+                                  'scope': 'pit',
                                   'label': e['event_name'] ?? e['name'] ?? 'PIT Event',
                                   'deliverables': e['deliverables'] ?? [],
                                 }),
-                                ...state.defenseStages,
                               ],
                               currentDeliverables: _deliverables,
                               enabled: !isLocked,

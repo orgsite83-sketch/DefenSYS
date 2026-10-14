@@ -237,16 +237,31 @@ void main() {
       },
     );
     test(
-      'Admin stays web only, including an admin with panelist flag on web=$isWeb',
+      'Admin without panelist eligibility cannot enter evaluation on web=$isWeb',
       () {
-        const admin = {'role': 'admin', 'is_panelist': true};
+        const plainAdmin = {'role': 'admin', 'is_panelist': false};
         expect(
-          WorkspaceAccess.home(admin, isWeb: isWeb),
+          WorkspaceAccess.home(plainAdmin, isWeb: isWeb),
           isWeb ? AdminRoutes.overview : AppRoutes.webWorkspaceOnly,
         );
         expect(
-          WorkspaceAccess.redirect(admin, AppRoutes.panelist, isWeb: isWeb),
+          WorkspaceAccess.redirect(plainAdmin, AppRoutes.panelist, isWeb: isWeb),
           isWeb ? AdminRoutes.overview : AppRoutes.webWorkspaceOnly,
+        );
+      },
+    );
+    test(
+      'Admin with panelist eligibility can evaluate on web=$isWeb',
+      () {
+        const panelistAdmin = {'role': 'admin', 'is_panelist': true};
+        expect(WorkspaceAccess.canEvaluate(panelistAdmin), isTrue);
+        expect(
+          WorkspaceAccess.home(panelistAdmin, isWeb: isWeb),
+          isWeb ? AdminRoutes.overview : AppRoutes.panelist,
+        );
+        expect(
+          WorkspaceAccess.redirect(panelistAdmin, AppRoutes.panelist, isWeb: isWeb),
+          isNull,
         );
       },
     );

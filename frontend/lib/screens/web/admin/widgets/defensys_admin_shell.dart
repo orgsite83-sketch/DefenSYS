@@ -12,6 +12,8 @@ import '../../../../widgets/defensys_logo_mark.dart';
 import '../../faculty/e_signature_upload_dialog.dart';
 import '../../../../widgets/buttons/defensys_theme_toggle.dart';
 import '../../../../services/theme_provider.dart';
+import '../../../../navigation/admin_route_paths.dart';
+import '../../../../navigation/workspace_access.dart';
 
 export '../../../../widgets/status_badge.dart';
 
@@ -307,7 +309,7 @@ class DefensysCard extends StatelessWidget {
   }
 }
 
-class _TopNav extends StatelessWidget {
+class _TopNav extends ConsumerWidget {
   final String activeSemesterLabel;
   final bool showMenuButton;
 
@@ -317,7 +319,10 @@ class _TopNav extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(authProvider).user ?? {};
+    final canEval = WorkspaceAccess.canEvaluate(user);
+    final canDoc = WorkspaceAccess.canDocument(user);
     return Container(
       height: DefensysUi.topNavHeight,
       padding: EdgeInsets.only(
@@ -344,6 +349,22 @@ class _TopNav extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           const Spacer(),
+          if (canDoc) ...[
+            IconButton(
+              icon: const Icon(Icons.edit_note_rounded),
+              tooltip: 'Documenter workspace',
+              onPressed: () => context.push(AppRoutes.documenter),
+            ),
+            const SizedBox(width: 4),
+          ],
+          if (canEval) ...[
+            IconButton(
+              icon: const Icon(Icons.rate_review_outlined),
+              tooltip: 'Panelist evaluations',
+              onPressed: () => context.push(AppRoutes.panelist),
+            ),
+            const SizedBox(width: 4),
+          ],
           _SemesterPill(label: activeSemesterLabel),
           const SizedBox(width: 16),
           const NotificationsBell(workspace: 'admin', workspaceLabel: 'Administrator'),
@@ -701,7 +722,59 @@ class _UserProfileCard extends ConsumerWidget {
         ? ApiConfig.publicMediaUrl(user!['avatar'] as String)
         : null;
 
+    final canEval = WorkspaceAccess.canEvaluate(user ?? {});
+    final canDoc = WorkspaceAccess.canDocument(user ?? {});
+
     final popupItems = <PopupMenuEntry<String>>[
+      if (canEval)
+        PopupMenuItem(
+          value: 'panelist_workspace',
+          height: 38,
+          child: Row(
+            children: [
+              Icon(
+                Icons.rate_review_outlined,
+                size: 16,
+                color: isDark ? DefensysTokens.mistGold : DefensysUi.primaryMaroon,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Panelist Workspace',
+                style: TextStyle(
+                  fontFamily: DefensysUi.fontFamily,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+                ),
+              ),
+            ],
+          ),
+        ),
+      if (canDoc)
+        PopupMenuItem(
+          value: 'documenter_workspace',
+          height: 38,
+          child: Row(
+            children: [
+              Icon(
+                Icons.edit_note_rounded,
+                size: 16,
+                color: isDark ? DefensysTokens.mistGold : DefensysUi.primaryMaroon,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'Documenter Workspace',
+                style: TextStyle(
+                  fontFamily: DefensysUi.fontFamily,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+                ),
+              ),
+            ],
+          ),
+        ),
+      if (canEval || canDoc) const PopupMenuDivider(height: 1),
       PopupMenuItem(
         value: 'profile',
         height: 38,
@@ -794,7 +867,11 @@ class _UserProfileCard extends ConsumerWidget {
     ];
 
     void handleSelect(String value) {
-      if (value == 'profile') {
+      if (value == 'panelist_workspace') {
+        context.push(AppRoutes.panelist);
+      } else if (value == 'documenter_workspace') {
+        context.push(AppRoutes.documenter);
+      } else if (value == 'profile') {
         context.go('/admin/profile');
       } else if (value == 'signature') {
         WidgetsBinding.instance.addPostFrameCallback((_) {

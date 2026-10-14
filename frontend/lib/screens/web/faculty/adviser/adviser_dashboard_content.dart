@@ -8,6 +8,7 @@ import '../../../../models/adviser_workflow.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../admin/widgets/defensys_admin_shell.dart';
 import '../../shared/team_deliverables/deliverables_view_types.dart';
+import '../dashboard_widgets.dart';
 
 class AdviserDashboardContent extends ConsumerStatefulWidget {
   final Map<String, dynamic>? data;
@@ -50,29 +51,6 @@ class _AdviserDashboardContentState
     extends ConsumerState<AdviserDashboardContent> {
   static int? _id(dynamic value) => int.tryParse(value?.toString() ?? '');
 
-  String _defenseSummary(Map<String, dynamic> schedule) {
-    final date = DateTime.tryParse(
-      schedule['scheduled_date']?.toString() ?? '',
-    );
-    final dateLabel = date == null
-        ? 'Date pending'
-        : MaterialLocalizations.of(context).formatMediumDate(date);
-    final rawTime = schedule['start_time']?.toString() ?? '';
-    final hour = rawTime.length >= 5
-        ? int.tryParse(rawTime.substring(0, 2))
-        : null;
-    final timeLabel = hour == null
-        ? 'Time pending'
-        : '${hour % 12 == 0 ? 12 : hour % 12}:${rawTime.substring(3, 5)} ${hour < 12 ? 'AM' : 'PM'}';
-    final room = schedule['room']?.toString() ?? '';
-    return [
-      schedule['stage_label']?.toString() ?? 'Defense',
-      dateLabel,
-      timeLabel,
-      if (room.isNotEmpty) room,
-    ].join(' · ');
-  }
-
   @override
   void initState() {
     super.initState();
@@ -85,8 +63,14 @@ class _AdviserDashboardContentState
   void _refresh() {
     ref
         .read(capstoneDeliverablesProvider.notifier)
-        .fetchDeliverables(scope: 'capstone', search: '', status: '',
-          selectedStage: '', yearLevel: '', section: '');
+        .fetchDeliverables(
+          scope: 'capstone',
+          search: '',
+          status: '',
+          selectedStage: '',
+          yearLevel: '',
+          section: '',
+        );
     ref.read(adviserDefenseProvider.notifier).fetch();
     ref.read(adviserGradingProvider.notifier).fetchAll();
   }
@@ -108,26 +92,28 @@ class _AdviserDashboardContentState
           children: [
             Icon(icon, color: DefensysTokens.maroonOf(context), size: 24),
             const SizedBox(width: 14),
-            Expanded(child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: DefensysTokens.textPrimaryOf(context),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: DefensysTokens.textPrimaryOf(context),
+                    ),
                   ),
-                ),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: DefensysTokens.textSecondaryOf(context),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: DefensysTokens.textSecondaryOf(context),
+                    ),
                   ),
-                ),
-              ],
-            )),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -224,76 +210,14 @@ class _AdviserDashboardContentState
     Map<int, String> teamNames,
     bool loading,
     bool hasError,
-  ) => _surface(
-    Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Upcoming defenses',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: DefensysTokens.textPrimaryOf(context),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Open a team’s Defense tab for its full record.',
-            style: TextStyle(
-              fontSize: 12,
-              color: DefensysTokens.textSecondaryOf(context),
-            ),
-          ),
-          const SizedBox(height: 16),
-          if (loading && schedules.isEmpty)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(18),
-                child: CircularProgressIndicator(),
-              ),
-            )
-          else if (hasError && schedules.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Text(
-                'Unable to load defense schedules. Refresh to try again.',
-              ),
-            )
-          else if (schedules.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Text('No defenses scheduled for your teams yet.'),
-            )
-          else
-            for (final schedule in schedules.take(4))
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(
-                  Icons.event_outlined,
-                  color: DefensysTokens.maroonOf(context),
-                ),
-                title: Text(
-                  teamNames[_id(schedule['team_id'])] ?? 'Team',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-                subtitle: Text(
-                  _defenseSummary(schedule),
-                  style: const TextStyle(fontSize: 12),
-                ),
-                trailing: const Icon(Icons.chevron_right_rounded),
-                onTap: () => widget.onOpenDefense(
-                  _id(schedule['team_id']),
-                  schedule['stage_label']?.toString() ?? '',
-                ),
-              ),
-        ],
-      ),
-    ),
+  ) => DefenseScheduleCalendar(
+    title: 'Upcoming defenses',
+    subtitle: 'Select a date to see your teams’ defenses and materials.',
+    schedules: schedules,
+    teamNames: teamNames,
+    loading: loading,
+    hasError: hasError,
+    onOpenDefense: widget.onOpenDefense,
   );
 
   Widget _teamList(
@@ -305,24 +229,15 @@ class _AdviserDashboardContentState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'My teams',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: DefensysTokens.textPrimaryOf(context),
-                  ),
-                ),
-              ),
-              TextButton(
-                onPressed: () => widget.onOpenDeliverables(null),
-                child: const Text('Open Capstone Teams'),
-              ),
-            ],
+          Text(
+            'My teams',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: DefensysTokens.textPrimaryOf(context),
+            ),
           ),
+          const SizedBox(height: 12),
           if (teams.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 20),
@@ -331,7 +246,7 @@ class _AdviserDashboardContentState
               ),
             )
           else
-            for (final team in teams) ...[
+            for (final team in teams.take(4)) ...[
               const Divider(height: 1),
               ListTile(
                 contentPadding: const EdgeInsets.symmetric(vertical: 4),
@@ -346,28 +261,72 @@ class _AdviserDashboardContentState
                   team['project_title']?.toString() ??
                       team['projectTitle']?.toString() ??
                       'No project title',
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                trailing: const Icon(Icons.chevron_right_rounded),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TeamRequirementBadge(
+                      team: deliverablesById[_id(team['id'])],
+                    ),
+                    FacultyTeamMenu(
+                      teamName: team['name']?.toString() ?? 'Team',
+                      actions: [
+                        FacultyTeamAction(
+                          label: 'Open deliverables',
+                          icon: Icons.folder_open_outlined,
+                          onTap: () =>
+                              widget.onOpenDeliverables(_id(team['id'])),
+                        ),
+                        FacultyTeamAction(
+                          label: 'Grades & rubric',
+                          icon: Icons.fact_check_outlined,
+                          onTap: () {
+                            final id = _id(team['id']);
+                            if (id == null) return;
+                            final stage =
+                                DeliverablesTriageHelper.resolveActiveStage(
+                                  deliverablesById[id] ?? const {},
+                                )?['stage_label']?.toString() ??
+                                '';
+                            widget.onOpenGrades(id, stage);
+                          },
+                        ),
+                        FacultyTeamAction(
+                          label: 'Defense records',
+                          icon: Icons.event_note_outlined,
+                          onTap: () {
+                            final id = _id(team['id']);
+                            final stage =
+                                DeliverablesTriageHelper.resolveActiveStage(
+                                  deliverablesById[id] ?? const {},
+                                )?['stage_label']?.toString() ??
+                                '';
+                            widget.onOpenDefense(id, stage);
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
                 onTap: () => widget.onOpenDeliverables(_id(team['id'])),
               ),
-              if (deliverablesById[_id(team['id'])] case final detail?)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Text(
-                    DeliverablesTriageHelper.hasPendingReview(detail)
-                        ? '${DeliverablesTriageHelper.pendingReviewCount(detail)} submission(s) awaiting review'
-                        : DeliverablesTriageHelper.isOverdueOrMissing(detail)
-                        ? 'Waiting on team requirements'
-                        : 'No submission review pending',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: DefensysTokens.textSecondaryOf(context),
-                    ),
-                  ),
-                ),
             ],
+          Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: SizedBox(
+                height: 32,
+                child: OutlinedButton(
+                  onPressed: () => widget.onOpenDeliverables(null),
+                  style: facultyDashboardOutlineStyle(context),
+                  child: const Text('Open Capstone Teams'),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     ),
@@ -439,10 +398,17 @@ class _AdviserDashboardContentState
           (stage['deliverables_configured'] == true ||
               stage['is_presentation_only'] == true) &&
           stage['endorsed'] != true) {
+        final materials = stage['materials_readiness'];
+        final defenseFilesDueLater =
+            materials is Map &&
+            (materials['required_total'] as num? ?? 0) >
+                (materials['submitted_total'] as num? ?? 0);
         tasks.add(
           _AdviserTask(
             name,
-            'Required items complete; ready for endorsement',
+            defenseFilesDueLater
+                ? 'Ready for endorsement; defense files are due later'
+                : 'Required items complete; ready for endorsement',
             Icons.verified_outlined,
             entry.key,
             () => widget.onOpenDeliverables(entry.key),
@@ -453,14 +419,23 @@ class _AdviserDashboardContentState
     for (final grade in grading.grades) {
       final teamId = _id(grade['team_id']);
       if (teamId == null || !teamIds.contains(teamId)) continue;
-      final guidance = AdviserGradingStatus.fromGrade(grade,
-        enabled: grading.adviserGradingEnabled, error: grading.error);
+      final guidance = AdviserGradingStatus.fromGrade(
+        grade,
+        enabled: grading.adviserGradingEnabled,
+        error: grading.error,
+      );
       if (!guidance.needsGrade) continue;
       gradeCount++;
       final stage = grade['stage_label']?.toString() ?? '';
-      tasks.add(_AdviserTask(teamNames[teamId] ?? 'Team',
-        '$stage · Ready to grade', Icons.rate_review_outlined, teamId,
-        () => widget.onOpenGrades(teamId, stage)));
+      tasks.add(
+        _AdviserTask(
+          teamNames[teamId] ?? 'Team',
+          '$stage · Ready to grade',
+          Icons.rate_review_outlined,
+          teamId,
+          () => widget.onOpenGrades(teamId, stage),
+        ),
+      );
     }
     for (final schedule in visibleSchedules) {
       if (!AdviserMinutesStatus.fromSchedule(schedule).needsSignature) continue;
@@ -523,7 +498,11 @@ class _AdviserDashboardContentState
                 'Submissions to review',
                 Icons.rate_review_outlined,
               ),
-              _stat('$gradeCount', 'Ready to grade', Icons.rate_review_outlined),
+              _stat(
+                '$gradeCount',
+                'Ready to grade',
+                Icons.rate_review_outlined,
+              ),
               _stat('$signatureCount', 'Minutes to sign', Icons.draw_outlined),
             ];
             if (constraints.maxWidth < 760) {
@@ -539,60 +518,30 @@ class _AdviserDashboardContentState
             return Row(
               children: [
                 for (var i = 0; i < stats.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 12), stats[i],
+                  if (i > 0) const SizedBox(width: 12),
+                  stats[i],
                 ],
               ],
             );
           },
         ),
         const SizedBox(height: 18),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            if (constraints.maxWidth < 1000) {
-              return Column(
-                children: [
-                  _taskList(
-                    tasks,
-                    deliverables.isLoading || defense.isLoading || grading.isLoading,
-                    deliverables.error != null || defense.error != null || grading.error != null,
-                  ),
-                  const SizedBox(height: 16),
-                  _upcomingDefenses(
-                    upcoming,
-                    teamNames,
-                    defense.isLoading,
-                    defense.error != null,
-                  ),
-                ],
-              );
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: _taskList(
-                    tasks,
-                    deliverables.isLoading || defense.isLoading || grading.isLoading,
-                    deliverables.error != null || defense.error != null || grading.error != null,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  flex: 2,
-                  child: _upcomingDefenses(
-                    upcoming,
-                    teamNames,
-                    defense.isLoading,
-                    defense.error != null,
-                  ),
-                ),
-              ],
-            );
-          },
+        FacultyDashboardColumns(
+          left: _teamList(advisedTeams, deliverablesById),
+          topRight: _upcomingDefenses(
+            upcoming,
+            teamNames,
+            defense.isLoading,
+            defense.error != null,
+          ),
+          bottomRight: _taskList(
+            tasks,
+            deliverables.isLoading || defense.isLoading || grading.isLoading,
+            deliverables.error != null ||
+                defense.error != null ||
+                grading.error != null,
+          ),
         ),
-        const SizedBox(height: 18),
-        _teamList(advisedTeams, deliverablesById),
       ],
     );
   }

@@ -1,3 +1,5 @@
+from datetime import date, datetime, timedelta
+
 from django.contrib.auth import get_user_model
 from django.db.models import Prefetch, Q
 from rest_framework import status
@@ -10,6 +12,7 @@ from user_management.permissions import (
     IsFacultyRole,
     IsPanelist,
     IsPitLead,
+    IsPitLeadOrAdmin,
     IsStudentRole,
 )
 
@@ -51,6 +54,72 @@ from student_teams.term_scope import (
 
 
 User = get_user_model()
+
+
+class SchedulePlannerView(APIView):
+    """Small, complete calendar feed for the dashboard's visible date range."""
+
+    permission_classes = [IsAuthenticated, IsPitLeadOrAdmin]
+
+    def get(self, request):
+        user = request.user
+        is_admin = user.role == 'admin' or user.is_superuser
+        try:
+            start = date.fromisoformat(request.query_params['start'])
+            end = date.fromisoformat(request.query_params['end'])
+        except (KeyError, ValueError):
+            return Response({'detail': 'Use ISO start and end dates.'}, status=status.HTTP_400_BAD_REQUEST)
+        if end < start or (end - start).days > 41:
+            return Response({'detail': 'The calendar range must be 1 to 42 days.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        semester = active_semester()
+        if semester is None:
+            return Response({'sessions': []})
+        schedules = DefenseSchedule.objects.filter(
+            semester=semester,
+            status=DefenseSchedule.STATUS_SCHEDULED,
+            scheduled_date__range=(start, end),
+        ).select_related('defense_stage').order_by('scheduled_date', 'start_time', 'pk')
+        if not is_admin:
+            schedules = schedules.filter(
+                scope=DefenseSchedule.SCOPE_PIT,
+                team_id__in=_pit_teams_queryset(user).values('id'),
+            )
+
+        groups = {}
+        for schedule in schedules:
+            key = (str(schedule.session_id), schedule.scheduled_date)
+            group = groups.setdefault(key, {
+                'session_id': str(schedule.session_id),
+                'date': schedule.scheduled_date.isoformat(),
+                'scope': schedule.scope,
+                'event_name': schedule.stage_label or 'Defense session',
+                'rooms': set(),
+                'team_ids': set(),
+                'slots': [],
+            })
+            group['team_ids'].add(schedule.team_id)
+            group['rooms'].add(schedule.room or 'Venue to be confirmed')
+            start_at = datetime.combine(schedule.scheduled_date, schedule.start_time)
+            group['slots'].append((start_at, start_at + timedelta(minutes=schedule.slot_duration)))
+
+        result = []
+        for group in groups.values():
+            merged = []
+            for begins, ends in sorted(group.pop('slots')):
+                if merged and begins <= merged[-1][1]:
+                    merged[-1] = (merged[-1][0], max(ends, merged[-1][1]))
+                else:
+                    merged.append((begins, ends))
+            group['team_count'] = len(group.pop('team_ids'))
+            rooms = group.pop('rooms')
+            group['room'] = next(iter(rooms)) if len(rooms) == 1 else 'multiple rooms'
+            group['time_blocks'] = [
+                {'start': begins.isoformat(timespec='minutes'), 'end': ends.isoformat(timespec='minutes')}
+                for begins, ends in merged
+            ]
+            result.append(group)
+        return Response({'sessions': result})
 
 
 def _next_school_year_label(label):

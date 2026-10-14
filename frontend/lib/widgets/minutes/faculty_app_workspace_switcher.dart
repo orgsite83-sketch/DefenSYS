@@ -35,8 +35,12 @@ class FacultyAppWorkspaceSwitcher extends ConsumerWidget {
         ),
       if (kIsWeb && WorkspaceAccess.hasStaffWorkspace(user))
         (
-          route: FacultyRoutes.dashboard,
-          label: 'Staff web workspace',
+          route: user['role'] == 'admin'
+              ? AdminRoutes.overview
+              : FacultyRoutes.dashboard,
+          label: user['role'] == 'admin'
+              ? 'Admin workspace'
+              : 'Staff web workspace',
           icon: Icons.desktop_windows_outlined,
         ),
     ];

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:defensys/screens/web/faculty/pit_lead/pit_lead_dashboard_content.dart';
+import 'package:defensys/services/network/authenticated_client.dart';
 
+import '../helpers/fake_planner_client.dart';
 import '../helpers/pump_app.dart';
 
 void main() {
@@ -62,12 +64,11 @@ void main() {
 
     var studentTeamsOpened = false;
     var schedulerOpened = false;
-    var gradeCenterOpened = false;
     var rubricsOpened = false;
-    var cohortOpened = false;
     var pitEventsOpened = false;
-    var auditOpened = false;
 
+    final today = DateTime.now();
+    final date = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
     await pumpDefensysWidget(
       tester,
       PitLeadDashboardContent(
@@ -75,12 +76,20 @@ void main() {
         facultyName: 'Ricardo Fontanilla',
         onOpenStudentTeams: () => studentTeamsOpened = true,
         onOpenScheduler: () => schedulerOpened = true,
-        onOpenGradeCenter: () => gradeCenterOpened = true,
+        onOpenDefenseBoard: () {},
+        onOpenGradeCenter: () {},
         onOpenRubrics: () => rubricsOpened = true,
-        onOpenCohort: () => cohortOpened = true,
+        onOpenCohort: () {},
         onOpenPitEvents: () => pitEventsOpened = true,
-        onOpenAuditCompliance: () => auditOpened = true,
+        onOpenAuditCompliance: () {},
       ),
+      overrides: [authenticatedHttpClientProvider.overrideWithValue(FakePlannerClient([
+        {
+          'session_id': 'pit-session', 'date': date, 'scope': 'pit',
+          'event_name': 'Concept Proposal', 'room': 'Lab 1', 'team_count': 3,
+          'time_blocks': [{'start': '${date}T08:00', 'end': '${date}T11:00'}],
+        },
+      ]))],
     );
 
     // Verify Header
@@ -89,7 +98,7 @@ void main() {
 
     // Verify 4 Metric Cards
     expect(find.text('Students in Cohort'), findsOneWidget);
-    expect(find.text('12'), findsOneWidget);
+    expect(find.text('12'), findsWidgets);
     expect(find.text('Active PIT Teams'), findsOneWidget);
     expect(find.text('3'), findsWidgets);
     expect(find.text('Scheduled PIT Events'), findsOneWidget);
@@ -104,8 +113,7 @@ void main() {
 
     // Verify Upcoming Events
     expect(find.text('Upcoming PIT Events'), findsOneWidget);
-    expect(find.text('Team Apex'), findsOneWidget);
-    expect(find.text('Concept Proposal'), findsWidgets);
+    expect(find.textContaining('Concept Proposal has 3 teams scheduled'), findsOneWidget);
 
     // Verify Pipeline
     expect(find.text('PIT Pipeline & Readiness'), findsOneWidget);
@@ -131,5 +139,12 @@ void main() {
 
     await tester.tap(find.text('PIT Events Setup'));
     expect(pitEventsOpened, isTrue);
+
+    // The planner offers both calendar scales and a sentence for the session.
+    expect(find.text('Week'), findsOneWidget);
+    expect(find.text('Month'), findsOneWidget);
+    expect(find.text('Mon'), findsOneWidget);
+    expect(find.text('Tue'), findsOneWidget);
+    expect(find.text('Wed'), findsOneWidget);
   });
 }

@@ -9,6 +9,7 @@ import 'package:defensys/services/repository_provider.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/services/defense/adviser_defense_provider.dart';
+import 'package:defensys/services/defense/team_defense_provider.dart';
 import 'package:defensys/services/adviser_grading_provider.dart';
 import 'package:defensys/notifications/notifications_provider.dart';
 import 'package:defensys/l10n/app_localizations.dart';
@@ -124,6 +125,11 @@ class _FakeAdviserDefenseNotifier extends AdviserDefenseNotifier {
   Future<void> fetch() async {}
 }
 
+class _FakePitInstructorDefenseNotifier extends PitInstructorDefenseNotifier {
+  @override
+  Future<void> fetch() async {}
+}
+
 void main() {
   testWidgets('Faculty Portal base role displays public Research Repository instead of admin audit', (
     tester,
@@ -222,6 +228,9 @@ void main() {
           _FakeAdviserDeliverablesNotifier.new,
         ),
         adviserDefenseProvider.overrideWith(_FakeAdviserDefenseNotifier.new),
+        pitInstructorDefenseProvider.overrideWith(
+          _FakePitInstructorDefenseNotifier.new,
+        ),
         adviserGradingProvider.overrideWith(_FakeAdviserGradesNotifier.new),
       ],
     );
@@ -273,7 +282,95 @@ void main() {
 
     // Verify that "Faculty Portal" is NOT in the dropdown items
     expect(find.text('Faculty Portal'), findsNothing);
+
+    await tester.tap(find.textContaining('PIT Instructor').last);
+    await tester.pumpAndSettle();
+    expect(find.text('PIT Teams'), findsOneWidget);
+    expect(find.text('Reports'), findsNothing);
   });
+
+  testWidgets('instructor audit URL stays in the instructor workspace', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final container = ProviderContainer(
+      overrides: [
+        dashboardProvider('faculty').overrideWith(
+          _FakeInstructorDashboardNotifier.new,
+        ),
+        authProvider.overrideWith(_FakeAuthNotifier.new),
+        notificationsProvider.overrideWith2(_FakeNotificationsNotifier.new),
+        capstoneDeliverablesProvider.overrideWith(
+          _FakeAdviserDeliverablesNotifier.new,
+        ),
+        pitInstructorDefenseProvider.overrideWith(
+          _FakePitInstructorDefenseNotifier.new,
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+    final router = GoRouter(
+      initialLocation: '/faculty/audit-compliance',
+      routes: [
+        GoRoute(
+          path: '/faculty/audit-compliance',
+          builder: (context, state) => PrimaryScrollController(
+            controller: scrollController,
+            child: const FacultyDashboard(),
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp.router(
+          routerConfig: router,
+          localizationsDelegates: const [
+            AppLocalizations.delegate,
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          supportedLocales: AppLocalizations.supportedLocales,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('PIT Teams'), findsOneWidget);
+    expect(find.text('Reports'), findsNothing);
+    expect(find.text('Audit Trail'), findsNothing);
+    expect(find.text('Project Archive'), findsNothing);
+  });
+}
+
+class _FakeInstructorDashboardNotifier extends DashboardNotifier {
+  _FakeInstructorDashboardNotifier() : super('faculty');
+
+  @override
+  DashboardState build() => DashboardState(
+    data: {
+      'faculty': {'name': 'Prof. Jonathan Beltran'},
+      'roles': {
+        'pit_lead': false,
+        'adviser': false,
+        'pit_instructor': true,
+        'pit_instructor_sections': [
+          {'year_level': '2nd Year', 'section': 'BSIT-2A'},
+        ],
+      },
+    },
+  );
+
+  @override
+  Future<void> fetchDashboardData({bool silent = false}) async {}
 }
 
 class _FakeMultiRoleFacultyDashboardNotifier extends DashboardNotifier {

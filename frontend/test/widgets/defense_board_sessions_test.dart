@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import '../helpers/capture_preview.dart';
@@ -70,6 +71,7 @@ Map<String, dynamic> _defense(
       .split('T')
       .first,
   'start_time': '08:00:00',
+  'slot_duration': 60,
   'room': 'Room 301',
   'status': display == 'completed' ? 'done' : 'scheduled',
   'display_status': display,
@@ -127,6 +129,33 @@ class _External extends ExternalEvaluatorNotifier {
 }
 
 const _admin = {'id': 1, 'role': 'admin'};
+
+Future<void> _pumpPlannerLink(WidgetTester tester, String date, {bool focusSession = true}) async {
+  SharedPreferences.setMockInitialValues({});
+  tester.view.physicalSize = const Size(1400, 1100);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  final router = GoRouter(
+    initialLocation: '/admin/defense-board?date=$date${focusSession ? '&session=focus&scope=capstone' : ''}',
+    routes: [GoRoute(path: '/admin/defense-board', builder: (_, __) => const DefenseBoardScreen())],
+  );
+  addTearDown(router.dispose);
+  await tester.pumpWidget(ProviderScope(
+    overrides: [
+      authProvider.overrideWith(() => _Auth(_admin)),
+      defenseBoardProvider.overrideWith(() => _Board([
+        _defense(1, days: 1, session: 'focus'),
+        _defense(2, days: 1, session: 'other'),
+        _defense(3, days: 2, session: 'later'),
+      ])),
+      defenseSchedulerProvider.overrideWith(_Scheduler.new),
+      externalEvaluatorProvider.overrideWith(_External.new),
+    ],
+    child: MaterialApp.router(routerConfig: router, theme: AppTheme.lightTheme),
+  ));
+  await tester.pumpAndSettle();
+}
 Future<void> _pump(
   WidgetTester tester, {
   required _External external,
@@ -187,6 +216,67 @@ Future<void> _menu(
 }
 
 void main() {
+  testWidgets('team slots show start and end times', (tester) async {
+    await _pump(
+      tester,
+      external: _External(),
+      schedules: [
+        {
+          ..._defense(31),
+          'start_time': '16:00:00',
+          'slot_duration': 60,
+        },
+        {
+          ..._defense(32),
+          'start_time': '09:15:00',
+          'slot_duration': 45,
+        },
+      ],
+    );
+    expect(find.text('16:00\n–17:00'), findsOneWidget);
+    expect(find.text('09:15\n–10:00'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('planner session link focuses one session and can show all schedules', (tester) async {
+    final day = DateTime.now().add(const Duration(days: 1));
+    final date = day.toIso8601String().split('T').first;
+    await _pumpPlannerLink(tester, date);
+    expect(find.text('Team 1'), findsOneWidget);
+    expect(find.text('Team 2'), findsNothing);
+    expect(find.textContaining('Session scheduled for'), findsOneWidget);
+    await tester.tap(find.text('Show all schedules'));
+    await tester.pumpAndSettle();
+    expect(find.text('Team 2'), findsOneWidget);
+    expect(find.text('Team 3'), findsOneWidget);
+  });
+
+  testWidgets('planner date link includes every session on that day', (tester) async {
+    final day = DateTime.now().add(const Duration(days: 1));
+    final date = day.toIso8601String().split('T').first;
+    await _pumpPlannerLink(tester, date, focusSession: false);
+    expect(find.text('Team 1'), findsOneWidget);
+    expect(find.text('Team 2'), findsOneWidget);
+    expect(find.text('Team 3'), findsNothing);
+    expect(find.textContaining('Schedule for'), findsOneWidget);
+  });
+
+  testWidgets('schedule actions are anchored to the upper right', (tester) async {
+    await _pump(tester, external: _External(), schedules: [], width: 1400);
+
+    final action = find.ancestor(
+      of: find.text('Generate Schedule'),
+      matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
+    );
+    expect(action, findsOneWidget);
+    expect(tester.getRect(action).right, greaterThan(1300));
+    expect(
+      tester.getTopLeft(action).dy,
+      lessThan(tester.getTopLeft(find.text('Total Schedules')).dy),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('board prioritizes current work across stage groups and dates', (
     tester,
   ) async {

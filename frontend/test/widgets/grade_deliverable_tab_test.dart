@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/dialogs/grade_deliverable_modal.dart';
 import 'package:defensys/services/adviser_grading_provider.dart';
@@ -64,6 +63,61 @@ void main() {
     'breakdowns': [],
   };
 
+  testWidgets('unopened grading does not show an empty overall assessment', (
+    tester,
+  ) async {
+    final notifier = _MockAdviserGradingNotifier([]);
+    await pumpDefensysWidget(
+      tester,
+      SingleChildScrollView(
+        child: GradeDeliverableTab(
+          team: mockTeam,
+          selectedStage: 'Concept Proposal',
+          isAdviser: true,
+          teamCriteriaScoreCtrls: {},
+          teamStudentCriteriaScoreCtrls: {},
+          teamManualScoreCtrls: {},
+          teamSelectedRubrics: {},
+        ),
+      ),
+      overrides: [adviserGradingProvider.overrideWith(() => notifier)],
+    );
+
+    expect(find.text('Grading is not open yet'), findsOneWidget);
+    expect(find.textContaining('Overall assessment'), findsNothing);
+    expect(find.text('Awaiting all scores'), findsNothing);
+  });
+
+  testWidgets('recorded scores remain visible when adviser grading is closed', (
+    tester,
+  ) async {
+    final notifier = _MockAdviserGradingNotifier([
+      {
+        ...mockGradeRecord,
+        'adviser_grading_available': false,
+        'panel_score': 85.0,
+      },
+    ]);
+    await pumpDefensysWidget(
+      tester,
+      SingleChildScrollView(
+        child: GradeDeliverableTab(
+          team: mockTeam,
+          selectedStage: 'Concept Proposal',
+          isAdviser: true,
+          teamCriteriaScoreCtrls: {},
+          teamStudentCriteriaScoreCtrls: {},
+          teamManualScoreCtrls: {},
+          teamSelectedRubrics: {},
+        ),
+      ),
+      overrides: [adviserGradingProvider.overrideWith(() => notifier)],
+    );
+
+    expect(find.textContaining('Overall assessment'), findsOneWidget);
+    expect(find.textContaining('85'), findsWidgets);
+  });
+
   testWidgets('GradeDeliverableTab renders team and individual criteria for both target type', (
     tester,
   ) async {
@@ -99,6 +153,7 @@ void main() {
     // Verify rubric header and target type pill
     expect(find.textContaining('Rubric: CP - Adviser'), findsOneWidget);
     expect(find.text('Both (Team & Individual)'), findsOneWidget);
+    expect(find.textContaining('Overall assessment'), findsNothing);
 
     // 1 team criterion + 2 individual * 4 students = 9 total
     expect(find.text('0 / 9 scored'), findsOneWidget);

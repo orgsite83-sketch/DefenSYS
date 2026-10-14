@@ -61,6 +61,72 @@ void main() {
       customs = await StageDeliverablePresetManager.loadCustomPresets();
       expect(customs.isEmpty, isTrue);
     });
+
+    test('keeps Capstone and each PIT year in separate preset lists', () async {
+      final items = [
+        {'label': 'Pitch Deck', 'deliverable_type': 'pre'},
+      ];
+      await StageDeliverablePresetManager.saveCustomPreset('Concept Proposal', items);
+      await StageDeliverablePresetManager.saveCustomPreset(
+        'First Year Pitch', items,
+        scope: DeliverablePresetScope.pit,
+        yearLevel: '1st Year',
+      );
+      await StageDeliverablePresetManager.saveCustomPreset(
+        'Second Year Pitch', items,
+        scope: DeliverablePresetScope.pit,
+        yearLevel: '2nd Year',
+      );
+
+      expect((await StageDeliverablePresetManager.loadCustomPresets())
+          .map((p) => p.name), ['Concept Proposal']);
+      expect((await StageDeliverablePresetManager.loadCustomPresets(
+        scope: DeliverablePresetScope.pit,
+        yearLevel: '1st Year',
+      )).map((p) => p.name), ['First Year Pitch']);
+      expect((await StageDeliverablePresetManager.loadCustomPresets(
+        scope: DeliverablePresetScope.pit,
+        yearLevel: '2nd Year',
+      )).map((p) => p.name), ['Second Year Pitch']);
+      expect(await StageDeliverablePresetManager.loadCustomPresets(
+        scope: DeliverablePresetScope.pit,
+      ), isEmpty);
+    });
+
+    test('moves only an exact legacy event checklist into its PIT year', () async {
+      final eventItems = [
+        {'label': 'Concept Paper', 'deliverable_type': 'pre'},
+        {'label': 'Pitch Deck', 'deliverable_type': 'pre'},
+      ];
+      await StageDeliverablePresetManager.saveCustomPreset(
+        'System Concept Pitching', eventItems,
+      );
+      await StageDeliverablePresetManager.saveCustomPreset(
+        'Concept Proposal', eventItems,
+      );
+      await StageDeliverablePresetManager.adoptMatchingLegacyPitPresets(
+        '1st Year',
+        [
+          {'label': 'System Concept Pitching', 'deliverables': eventItems},
+        ],
+      );
+
+      expect((await StageDeliverablePresetManager.loadCustomPresets(
+        scope: DeliverablePresetScope.pit,
+        yearLevel: '1st Year',
+      )).map((p) => p.name), ['System Concept Pitching']);
+      expect((await StageDeliverablePresetManager.loadCustomPresets())
+          .map((p) => p.name), ['Concept Proposal']);
+    });
+
+    test('recognizes an explicitly named PIT year without treating others as matching', () {
+      expect(StageDeliverablePresetManager.pitEventMatchesYearLevel(
+        '1st Year PIT Expo', '1st Year'), isTrue);
+      expect(StageDeliverablePresetManager.pitEventMatchesYearLevel(
+        '2nd Year PIT Expo', '1st Year'), isFalse);
+      expect(StageDeliverablePresetManager.pitEventMatchesYearLevel(
+        'System Concept Pitching', '1st Year'), isTrue);
+    });
   });
 
   group('StageDeliverablePresetsBar widget', () {
@@ -106,6 +172,65 @@ void main() {
 
       expect(applied.isNotEmpty, isTrue);
       expect(applied.first['label'], 'Adviser Acceptance Form');
+    });
+
+    testWidgets('PIT menu shows only its year presets and PIT event copy sources', (tester) async {
+      await StageDeliverablePresetManager.saveCustomPreset(
+        'Capstone Only',
+        [{'label': 'Capstone File', 'deliverable_type': 'pre'}],
+      );
+      await StageDeliverablePresetManager.saveCustomPreset(
+        'PIT Year One',
+        [{'label': 'PIT File', 'deliverable_type': 'pre'}],
+        scope: DeliverablePresetScope.pit,
+        yearLevel: '1st Year',
+      );
+      await StageDeliverablePresetManager.saveCustomPreset(
+        'PIT Year Two',
+        [{'label': 'Other File', 'deliverable_type': 'pre'}],
+        scope: DeliverablePresetScope.pit,
+        yearLevel: '2nd Year',
+      );
+      List<Map<String, dynamic>> applied = [];
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(body: StageDeliverablePresetsBar(
+          scope: DeliverablePresetScope.pit,
+          yearLevel: '1st Year',
+          currentSourceId: 1,
+          existingStages: [
+            {'id': 1, 'scope': 'pit', 'label': '1st Year PIT Current', 'deliverables': [{'label': 'Current'}]},
+            {'id': 2, 'scope': 'pit', 'label': '1st Year PIT Expo', 'deliverables': [{'label': 'Expo'}]},
+            {'id': 3, 'scope': 'pit', 'label': '2nd Year PIT Expo', 'deliverables': [{'label': 'Wrong Year'}]},
+            {'id': 4, 'label': 'Concept Proposal', 'deliverables': [{'label': 'Capstone'}]},
+          ],
+          currentDeliverables: const [],
+          onApplyDeliverables: (items) => applied = items,
+        )),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('PIT · 1st Year'), findsOneWidget);
+      expect(find.text('Copy from Event'), findsOneWidget);
+      expect(find.text('Copy from Stage'), findsNothing);
+      await tester.tap(find.text('Load Preset'));
+      await tester.pumpAndSettle();
+      expect(find.text('PIT Year One (1 files)'), findsOneWidget);
+      expect(find.text('PIT Year Two (1 files)'), findsNothing);
+      expect(find.text('Capstone Only (1 files)'), findsNothing);
+      expect(find.text('Concept Proposal / Title Hearing'), findsNothing);
+      await tester.tap(find.text('PIT Year One (1 files)'));
+      await tester.pumpAndSettle();
+      expect(applied.single['label'], 'PIT File');
+
+      await tester.tap(find.text('Copy from Event'));
+      await tester.pumpAndSettle();
+      expect(find.text('1st Year PIT Expo (1 files)'), findsOneWidget);
+      expect(find.text('1st Year PIT Current (1 files)'), findsNothing);
+      expect(find.text('2nd Year PIT Expo (1 files)'), findsNothing);
+      expect(find.text('Concept Proposal (1 files)'), findsNothing);
+      await tester.tap(find.text('1st Year PIT Expo (1 files)'));
+      await tester.pumpAndSettle();
+      expect(applied.single['label'], 'Expo');
     });
   });
 }

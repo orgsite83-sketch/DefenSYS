@@ -33,6 +33,18 @@ class DeliverableSubmission(models.Model):
     )
     stage_label = models.CharField(max_length=80)
     project_version = models.PositiveIntegerField(default=1)
+    archive_semester = models.ForeignKey(
+        'academic_period_management.Semester', null=True, blank=True,
+        on_delete=models.PROTECT, related_name='archive_deliverable_submissions',
+    )
+    archive_team_name = models.CharField(max_length=120, blank=True, default='')
+    archive_project_title = models.CharField(max_length=255, blank=True, default='')
+    archive_year_level = models.CharField(max_length=20, blank=True, default='')
+    archive_team_level = models.CharField(max_length=30, blank=True, default='')
+    pit_event_config = models.ForeignKey(
+        'defense.PitEventGradingConfig', null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='archive_deliverable_submissions',
+    )
     objects = CurrentProjectManager()
     all_objects = models.Manager()
     deliverable_id = models.CharField(max_length=20)
@@ -151,6 +163,17 @@ class DeliverableSubmission(models.Model):
         invalidate_changed_pdf_cache(self, kwargs)
         if not self.pk:
             self.project_version = self.team.project_version
+            self.archive_semester = self.archive_semester or self.team.semester
+            self.archive_team_name = self.archive_team_name or self.team.name
+            self.archive_project_title = self.archive_project_title or self.team.project_title
+            self.archive_year_level = self.archive_year_level or self.team.year_level
+            self.archive_team_level = self.archive_team_level or self.team.level
+            if self.team.is_pit and not self.pit_event_config_id:
+                from defense.scheduler.models import PitEventGradingConfig
+                self.pit_event_config = PitEventGradingConfig.objects.filter(
+                    semester=self.archive_semester,
+                    event_name__iexact=self.stage_label.strip(),
+                ).first()
         self.full_clean()
         
         # Extract PDF content if file exists and hasn't been extracted yet

@@ -9,6 +9,7 @@ import '../../../widgets/defensys_skeleton.dart';
 import '../../../widgets/feedback/empty_state.dart';
 import 'admin_shell.dart';
 import 'widgets/defensys_admin_shell.dart';
+import '../shared/dashboard_schedule_planner.dart';
 
 class AdminDashboardContent extends ConsumerStatefulWidget {
   final ValueChanged<DefensysAdminSection> onNavigate;
@@ -21,7 +22,6 @@ class AdminDashboardContent extends ConsumerStatefulWidget {
 }
 
 class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
-  static const _line = Color(0xFFF3F4F6);
   static const _ink = DefensysUi.textDark;
   static const _muted = DefensysUi.steelGrey;
   static const _maroon = DefensysUi.primaryMaroon;
@@ -158,7 +158,10 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
               children: [
                 Expanded(child: _quickActionsCard()),
                 const SizedBox(width: 20),
-                Expanded(child: _upcomingDefensesCard(dashState)),
+                Expanded(child: _dashboardCard(
+                  title: 'Upcoming Defenses',
+                  child: DashboardSchedulePlanner(workspace: 'admin', refreshToken: dashState.data),
+                )),
               ],
             ),
             const SizedBox(height: 20),
@@ -288,296 +291,6 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
               onTap: () =>
                   widget.onNavigate(DefensysAdminSection.defenseStages),
               isLast: true,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _upcomingDefensesCard(DashboardState dashState) {
-    final upcomingList = _upcomingDefensesFrom(dashState);
-    final count = upcomingList.length;
-
-    return _dashboardCard(
-      height: _cardHeight,
-      title: 'Upcoming Defenses',
-      actionLabel: count > 0 ? 'View Calendar' : null,
-      onActionTap: () => widget.onNavigate(DefensysAdminSection.scheduling),
-      child: dashState.isLoading && dashState.data == null
-          ? const Center(child: CircularProgressIndicator())
-          : count == 0
-          ? Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24,
-                vertical: 16,
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 50,
-                    height: 50,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: const Icon(
-                      Icons.calendar_month_rounded,
-                      color: Color(0xFF64748B),
-                      size: 26,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'No Scheduled Defenses',
-                    style: TextStyle(
-                      color: _ink,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'There are no defense sessions currently on the calendar for this period.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: _muted,
-                      fontSize: 12.5,
-                      height: 1.35,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      FilledButton.icon(
-                        onPressed: () => widget.onNavigate(
-                          DefensysAdminSection.scheduling,
-                        ),
-                        icon: const Icon(Icons.add_rounded, size: 18),
-                        label: const Text('Schedule Defense'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _maroon,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          textStyle: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      OutlinedButton(
-                        onPressed: () => widget.onNavigate(
-                          DefensysAdminSection.defenseStages,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF475569),
-                          side: const BorderSide(color: Color(0xFFCBD5E1)),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          textStyle: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: const Text('Stage Setup'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 18,
-                vertical: 12,
-              ),
-              itemCount: count,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (context, index) {
-                final item = upcomingList[index];
-                return _defenseScheduleItem(item);
-              },
-            ),
-    );
-  }
-
-  Widget _defenseScheduleItem(Map<String, dynamic> item) {
-    final teamName = item['team_name']?.toString() ?? 'Team';
-    final projectTitle = item['project_title']?.toString() ?? '';
-    final stageLabel = item['stage_label']?.toString() ?? 'Defense';
-    final dateStr = item['date']?.toString() ?? '';
-    final timeStr = item['start_time']?.toString() ?? '';
-    final room = item['room']?.toString() ?? 'TBD';
-    final panelistCount = item['panelist_count']?.toString() ?? '0';
-
-    return InkWell(
-      onTap: () => widget.onNavigate(DefensysAdminSection.scheduling),
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: _surfaceColor,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: _borderColor),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: _isDark ? const Color(0xFF28272D) : const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: _borderColor),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    _formatMonth(dateStr),
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      color: _isDark ? const Color(0xFFF87171) : _maroon,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  Text(
-                    _formatDay(dateStr),
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      color: _inkColor,
-                      height: 1.0,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          teamName,
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w800,
-                            color: _inkColor,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _isDark
-                              ? const Color(0xFF1E3A8A).withValues(alpha: 0.25)
-                              : const Color(0xFFEFF6FF),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(
-                            color: _isDark
-                                ? const Color(0xFF1D4ED8).withValues(alpha: 0.5)
-                                : const Color(0xFFBFDBFE),
-                          ),
-                        ),
-                        child: Text(
-                          stageLabel,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: _isDark
-                                ? const Color(0xFF93C5FD)
-                                : const Color(0xFF1D4ED8),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (projectTitle.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      projectTitle,
-                      style: TextStyle(fontSize: 12, color: _mutedColor),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                  const SizedBox(height: 5),
-                  Row(
-                    children: [
-                      if (timeStr.isNotEmpty) ...[
-                        Icon(
-                          Icons.schedule_rounded,
-                          size: 13,
-                          color: _mutedColor,
-                        ),
-                        const SizedBox(width: 3),
-                        Text(
-                          timeStr,
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            color: _mutedColor,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                      ],
-                      Icon(
-                        Icons.meeting_room_outlined,
-                        size: 13,
-                        color: _mutedColor,
-                      ),
-                      const SizedBox(width: 3),
-                      Text(
-                        room,
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: _mutedColor,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const Spacer(),
-                      Icon(
-                        Icons.group_outlined,
-                        size: 13,
-                        color: _mutedColor,
-                      ),
-                      const SizedBox(width: 3),
-                      Text(
-                        '$panelistCount Panelists',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          color: _mutedColor,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
             ),
           ],
         ),
@@ -1741,7 +1454,7 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
               ],
             ),
           ),
-          Expanded(child: child),
+          if (height == null) child else Expanded(child: child),
         ],
       ),
     );
@@ -1815,40 +1528,6 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
         ),
       ),
     );
-  }
-
-  String _formatMonth(String dateStr) {
-    if (dateStr.isEmpty) return 'TBD';
-    try {
-      final dt = DateTime.parse(dateStr);
-      const months = [
-        'JAN',
-        'FEB',
-        'MAR',
-        'APR',
-        'MAY',
-        'JUN',
-        'JUL',
-        'AUG',
-        'SEP',
-        'OCT',
-        'NOV',
-        'DEC',
-      ];
-      return months[dt.month - 1];
-    } catch (_) {
-      return 'DEF';
-    }
-  }
-
-  String _formatDay(String dateStr) {
-    if (dateStr.isEmpty) return '--';
-    try {
-      final dt = DateTime.parse(dateStr);
-      return '${dt.day}';
-    } catch (_) {
-      return '--';
-    }
   }
 
   String _timeAgo(String isoTimestamp) {
@@ -1939,15 +1618,6 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
       default:
         return DefensysAdminSection.overview;
     }
-  }
-
-  List<Map<String, dynamic>> _upcomingDefensesFrom(DashboardState dashState) {
-    final raw = dashState.data?['upcoming_defenses_list'];
-    if (raw is! List) return const [];
-    return raw
-        .whereType<Map>()
-        .map((item) => item.map((k, v) => MapEntry(k.toString(), v)))
-        .toList();
   }
 
   String _resolveActiveSemesterLabel(

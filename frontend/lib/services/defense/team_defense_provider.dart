@@ -22,9 +22,16 @@ final teamDefenseProvider =
       TeamDefenseNotifier.new,
     );
 
+final pitInstructorDefenseProvider =
+    NotifierProvider<PitInstructorDefenseNotifier, TeamDefenseState>(
+      PitInstructorDefenseNotifier.new,
+    );
+
 /// The board scopes access on the server. Each workspace additionally filters
 /// by its team, so multi-role users only see that team's defense records.
 class TeamDefenseNotifier extends Notifier<TeamDefenseState> {
+  String get scope => 'capstone';
+
   @override
   TeamDefenseState build() => const TeamDefenseState();
 
@@ -34,7 +41,7 @@ class TeamDefenseNotifier extends Notifier<TeamDefenseState> {
     try {
       final uri = Uri.parse(
         ApiConfig.defenseBoardUrl,
-      ).replace(queryParameters: {'scope': 'capstone'});
+      ).replace(queryParameters: {'scope': scope});
       final response = await ref.read(authenticatedHttpClientProvider).get(uri);
       if (!ref.mounted) return;
       if (response.statusCode != 200) {
@@ -64,4 +71,9 @@ class TeamDefenseNotifier extends Notifier<TeamDefenseState> {
       );
     }
   }
+}
+
+class PitInstructorDefenseNotifier extends TeamDefenseNotifier {
+  @override
+  String get scope => 'pit';
 }

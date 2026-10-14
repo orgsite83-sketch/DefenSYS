@@ -143,6 +143,7 @@ class TeamData {
       (serverGradingAvailable ?? true);
   bool get canIssueVerdict =>
       !isCompleted &&
+      isCapstone &&
       isChair &&
       !isLockedByDate &&
       scheduleStatus == 'scheduled' &&

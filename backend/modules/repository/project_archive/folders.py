@@ -1,0 +1,119 @@
+"""Read-only folder projections for the project archive browser."""
+
+import base64
+import json
+
+
+GROUP_BY_CHOICES = {'team', 'stage', 'deliverable'}
+
+
+def _encode_path(path):
+    raw = json.dumps(path, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
+    return base64.urlsafe_b64encode(raw).decode('ascii').rstrip('=')
+
+
+def _decode_path(value):
+    if not value:
+        return []
+    try:
+        raw = base64.urlsafe_b64decode(value + '=' * (-len(value) % 4))
+        path = json.loads(raw)
+        if isinstance(path, list) and 1 <= len(path) <= 2 and all(isinstance(item, str) for item in path):
+            return path
+    except (ValueError, UnicodeDecodeError, TypeError):
+        pass
+    return None
+
+
+def _file_entries(entries):
+    return [entry for entry in entries if entry.get('has_file') and not entry.get('is_missing')]
+
+
+def _segments(entry, group_by):
+    track = entry.get('type') or 'capstone'
+    year = entry.get('academic_year') or 'Unknown academic year'
+    semester = entry.get('semester') or 'Unknown semester'
+    year_level = entry.get('year_level') or 'Unknown year level'
+    stage = entry.get('stage') or entry.get('course_code') or 'Unassigned stage/event'
+    event_id = entry.get('pit_event_config_id')
+    stage_id = f'event:{event_id}' if track == 'pit' and event_id else f'label:{stage}'
+    team_id = entry.get('team_id')
+    team_name = entry.get('team_name') or 'Unmatched records'
+    team_key = f'id:{team_id}' if team_id else f'name:{team_name}'
+    term_key = [year, semester, track, year_level]
+    term_label = f'{year} · {semester} · {year_level} {track.upper() if track == "pit" else "Capstone"}'
+
+    if group_by == 'team':
+        return [
+            (json.dumps(term_key + ['team', team_key]), team_name, term_label),
+            (json.dumps(['stage', stage_id]), stage, 'Stage' if track == 'capstone' else 'PIT event'),
+        ]
+    if group_by == 'stage':
+        return [
+            (json.dumps(term_key + ['stage', stage_id]), stage, term_label),
+            (json.dumps(['team', team_key]), team_name, year_level),
+        ]
+    deliverable_id = entry.get('deliverable_id') or 'archive-files'
+    deliverable_label = entry.get('deliverable_label') or 'Archive files'
+    if deliverable_id == 'archive-files':
+        deliverable_label = 'Archive files'
+    return [
+        (json.dumps(term_key + ['deliverable', stage_id, deliverable_id]),
+         deliverable_label, f'{stage} · {term_label}'),
+    ]
+
+
+def archive_folder_payload(entries, group_by='team', folder_key=''):
+    group_by = group_by if group_by in GROUP_BY_CHOICES else 'team'
+    selected_path = _decode_path(folder_key)
+    if selected_path is None:
+        selected_path = []
+    candidates = entries if group_by == 'deliverable' else _file_entries(entries)
+    indexed = [(entry, _segments(entry, group_by)) for entry in candidates]
+    matching = [
+        (entry, segments) for entry, segments in indexed
+        if [segment[0] for segment in segments[:len(selected_path)]] == selected_path
+    ]
+    depth = len(selected_path)
+    breadcrumbs = []
+    if matching:
+        for index in range(depth):
+            segments = matching[0][1]
+            breadcrumbs.append({
+                'title': segments[index][1],
+                'key': _encode_path(selected_path[:index + 1]),
+            })
+    is_leaf = bool(matching) and depth >= len(matching[0][1])
+    folders = {}
+    if not is_leaf:
+        for entry, segments in matching:
+            if depth >= len(segments):
+                continue
+            key, title, subtitle = segments[depth]
+            folder = folders.setdefault(key, {
+                'key': _encode_path(selected_path + [key]),
+                'title': title,
+                'subtitle': subtitle,
+                'file_count': 0,
+                'missing_count': 0,
+                'approved_count': 0,
+                'needs_revision_count': 0,
+            })
+            if entry.get('has_file') and not entry.get('is_missing'):
+                folder['file_count'] += 1
+            elif entry.get('is_missing') or not entry.get('has_file'):
+                folder['missing_count'] += 1
+            if entry.get('status') == 'Approved':
+                folder['approved_count'] += 1
+            elif entry.get('status') == 'Needs Revision':
+                folder['needs_revision_count'] += 1
+    return {
+        'group_by': group_by,
+        'folder_key': _encode_path(selected_path) if selected_path else '',
+        'breadcrumbs': breadcrumbs,
+        'folders': sorted(folders.values(), key=lambda item: item['title'].casefold()),
+        'is_leaf': is_leaf,
+        'entries': [entry for entry, _ in matching] if is_leaf else [],
+        'file_count': sum(1 for entry, _ in matching if entry.get('has_file') and not entry.get('is_missing')),
+        'missing_count': sum(1 for entry, _ in matching if entry.get('is_missing') or not entry.get('has_file')),
+    }

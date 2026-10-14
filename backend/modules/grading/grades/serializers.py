@@ -212,6 +212,27 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             'peer_score_is_override',
         ]
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.scope == TeamGrade.SCOPE_PIT:
+            # Keep historical values in storage without presenting them as PIT decisions.
+            data.update({
+                'verdict': '',
+                'verdict_remarks': '',
+                'verdict_by_name': None,
+                'verdict_at': None,
+                'revision_deadline': None,
+            })
+            for attempt in data['attempt_history']:
+                attempt.update({
+                    'verdict': '',
+                    'verdict_remarks': '',
+                    'verdict_by_name': None,
+                    'verdict_at': None,
+                    'revision_deadline': None,
+                })
+        return data
+
     def get_members(self, obj):
         if not obj.team_id:
             return []
@@ -307,6 +328,8 @@ class TeamGradeSerializer(serializers.ModelSerializer):
         return obj.project_title_snapshot or obj.team.project_title
 
     def get_workflow(self, obj):
+        if obj.scope == TeamGrade.SCOPE_PIT:
+            return {}
         from .defense_workflow import workflow_payload
         return workflow_payload(obj)
 

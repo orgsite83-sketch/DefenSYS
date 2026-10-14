@@ -1,7 +1,9 @@
 import 'package:defensys/screens/web/faculty/pit_lead/pit_lead_dashboard_content.dart';
+import 'package:defensys/services/network/authenticated_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/pump_app.dart';
+import '../helpers/fake_planner_client.dart';
 
 void main() {
   for (final width in [320.0, 390.0, 500.0, 768.0, 1024.0, 1200.0, 1400.0]) {
@@ -73,12 +75,14 @@ void main() {
             },
             onOpenStudentTeams: () {},
             onOpenScheduler: () => openedScheduler = true,
+            onOpenDefenseBoard: () {},
             onOpenGradeCenter: () {},
             onOpenRubrics: () {},
             onOpenCohort: () {},
             onOpenPitEvents: () {},
             onOpenAuditCompliance: () {},
           ),
+          overrides: [authenticatedHttpClientProvider.overrideWithValue(FakePlannerClient())],
         );
         expect(
           tester.takeException(),
@@ -89,6 +93,9 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text('Schedule PIT Event'));
         expect(openedScheduler, isTrue);
+        await tester.ensureVisible(find.text('Month'));
+        await tester.tap(find.text('Month'));
+        await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
       });
     }

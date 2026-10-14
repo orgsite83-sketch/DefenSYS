@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../services/capstone_deliverables_provider.dart';
+import '../../../../services/defense/team_defense_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../admin/widgets/defensys_admin_shell.dart';
 import '../../shared/team_deliverables/deliverables_view_types.dart';
+import '../dashboard_widgets.dart';
 
 class PitInstructorDashboardContent extends ConsumerStatefulWidget {
   final Map<String, dynamic>? data;
@@ -32,6 +34,7 @@ class PitInstructorDashboardContent extends ConsumerStatefulWidget {
 class _PitInstructorDashboardContentState
     extends ConsumerState<PitInstructorDashboardContent> {
   static int? _id(dynamic value) => int.tryParse(value?.toString() ?? '');
+  int _teamPage = 0;
 
   @override
   void initState() {
@@ -46,22 +49,26 @@ class _PitInstructorDashboardContentState
     super.didUpdateWidget(oldWidget);
     if (oldWidget.yearLevel != widget.yearLevel ||
         oldWidget.section != widget.section) {
+      _teamPage = 0;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _refresh();
       });
     }
   }
 
-  void _refresh() => ref
-      .read(capstoneDeliverablesProvider.notifier)
-      .fetchDeliverables(
-        scope: 'pit',
-        search: '',
-        status: '',
-        selectedStage: '',
-        yearLevel: widget.yearLevel ?? '',
-        section: widget.section ?? '',
-      );
+  void _refresh() {
+    ref
+        .read(capstoneDeliverablesProvider.notifier)
+        .fetchDeliverables(
+          scope: 'pit',
+          search: '',
+          status: '',
+          selectedStage: '',
+          yearLevel: widget.yearLevel ?? '',
+          section: widget.section ?? '',
+        );
+    ref.read(pitInstructorDefenseProvider.notifier).fetch();
+  }
 
   Widget _surface(Widget child) => Container(
     decoration: BoxDecoration(
@@ -190,7 +197,28 @@ class _PitInstructorDashboardContentState
         .map((team) => _id(team['id']))
         .whereType<int>()
         .toSet();
+    final lastTeamPage = teams.isEmpty ? 0 : (teams.length - 1) ~/ 4;
+    final visibleTeamPage = _teamPage > lastTeamPage ? lastTeamPage : _teamPage;
+    final teamNames = <int, String>{
+      for (final team in teams)
+        if (_id(team['id']) != null)
+          _id(team['id'])!: team['name']?.toString() ?? 'Team',
+    };
     final state = ref.watch(capstoneDeliverablesProvider);
+    final defense = ref.watch(pitInstructorDefenseProvider);
+    final today = DateTime.now();
+    final upcoming = defense.schedules.where((schedule) {
+      if (schedule['scope'] != 'pit' ||
+          schedule['status'] != 'scheduled' ||
+          !teamIds.contains(_id(schedule['team_id']))) {
+        return false;
+      }
+      final date = DateTime.tryParse(
+        schedule['scheduled_date']?.toString() ?? '',
+      );
+      return date != null &&
+          !date.isBefore(DateTime(today.year, today.month, today.day));
+    }).toList();
     final details = state.scope == 'pit'
         ? {
             for (final team in state.teams)
@@ -202,7 +230,6 @@ class _PitInstructorDashboardContentState
     var awaitingMaterials = 0;
     var readyToSchedule = 0;
     final actions = <Widget>[];
-    final progress = <Widget>[];
     for (final team in teams) {
       final id = _id(team['id']);
       if (id == null) continue;
@@ -250,26 +277,9 @@ class _PitInstructorDashboardContentState
           _action(
             team['name']?.toString() ?? 'Team',
             total > submitted
-                ? 'Scheduling checks clear; $submitted/$total defense files uploaded'
+                ? 'Ready for endorsement; $submitted/$total defense files uploaded (due later)'
                 : 'Scheduling checks clear; ready for endorsement',
             () => widget.onOpenDeliverables(id),
-          ),
-        );
-      }
-      if (total > 0) {
-        progress.add(
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(
-              team['name']?.toString() ?? 'Team',
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-            ),
-            subtitle: Text(
-              '$submitted/$total defense materials uploaded',
-              style: const TextStyle(fontSize: 12),
-            ),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () => widget.onOpenDeliverables(id),
           ),
         );
       }
@@ -285,7 +295,7 @@ class _PitInstructorDashboardContentState
       _stat('$readyToSchedule', 'Ready to schedule', Icons.verified_outlined),
       _stat(
         '$awaitingMaterials',
-        'Defense files pending',
+        'Defense files to upload',
         Icons.upload_file_outlined,
       ),
     ];
@@ -326,109 +336,96 @@ class _PitInstructorDashboardContentState
                 ),
         ),
         const SizedBox(height: 18),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final myActions = _panel(
-              'My actions',
-              'Submission reviews and teams with scheduling clearance.',
-              state.isLoading && details.isEmpty
-                  ? const Center(child: CircularProgressIndicator())
-                  : state.error != null && details.isEmpty
-                  ? const Text(
-                      'Unable to check team actions. Refresh to try again.',
-                    )
-                  : actions.isEmpty
-                  ? const Text('No submissions need review right now.')
-                  : Column(children: actions),
-            );
-            final materials = _panel(
-              'Defense materials',
-              'Required files due before the scheduled defense.',
-              progress.isEmpty
-                  ? const Text(
-                      'No defense material uploads are configured for these teams.',
-                    )
-                  : Column(children: progress),
-            );
-            if (constraints.maxWidth < 1000) {
-              return Column(
-                children: [myActions, const SizedBox(height: 16), materials],
-              );
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        FacultyDashboardColumns(
+          topRight: DefenseScheduleCalendar(
+            title: 'Defense schedule & materials',
+            subtitle: 'Select a date to see team defenses and file progress.',
+            schedules: upcoming,
+            teamNames: teamNames,
+            loading: defense.isLoading,
+            hasError: defense.error != null,
+            onOpenDefense: (teamId, _) => widget.onOpenDeliverables(teamId),
+          ),
+          left: _panel(
+            'My teams',
+            'Assigned teams in this PIT section.',
+            Column(
               children: [
-                Expanded(flex: 3, child: myActions),
-                const SizedBox(width: 16),
-                Expanded(flex: 2, child: materials),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 18),
-        _panel(
-          'My teams',
-          'Assigned teams in this PIT section.',
-          Column(
-            children: [
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => widget.onOpenDeliverables(null),
-                  child: const Text('Open PIT Teams'),
-                ),
-              ),
-              if (teams.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 20),
-                  child: Text(
-                    'No PIT teams are assigned to you for this term.',
-                  ),
-                ),
-              for (final team in teams) ...[
-                const Divider(height: 1),
-                ListTile(
-                  contentPadding: const EdgeInsets.symmetric(vertical: 4),
-                  title: Text(
-                    team['name']?.toString() ?? 'Team',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
+                if (teams.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: Text(
+                      'No PIT teams are assigned to you for this term.',
                     ),
                   ),
-                  subtitle: Text(
-                    team['projectTitle']?.toString() ?? 'No project title',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => widget.onOpenDeliverables(_id(team['id'])),
-                ),
-                if (details[_id(team['id'])] case final detail?)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Text(
-                      DeliverablesTriageHelper.hasPendingReview(detail)
-                          ? '${DeliverablesTriageHelper.pendingReviewCount(detail)} submission(s) awaiting review'
-                          : 'No submission review pending',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: DefensysTokens.textSecondaryOf(context),
+                for (final team in teams.skip(visibleTeamPage * 4).take(4)) ...[
+                  const Divider(height: 1),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                    title: Text(
+                      team['name']?.toString() ?? 'Team',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
                       ),
                     ),
+                    subtitle: Text(
+                      team['projectTitle']?.toString() ?? 'No project title',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TeamRequirementBadge(team: details[_id(team['id'])]),
+                        FacultyTeamMenu(
+                          teamName: team['name']?.toString() ?? 'Team',
+                          actions: [
+                            FacultyTeamAction(
+                              label: 'Open deliverables',
+                              icon: Icons.folder_open_outlined,
+                              onTap: () =>
+                                  widget.onOpenDeliverables(_id(team['id'])),
+                            ),
+                            FacultyTeamAction(
+                              label: 'View grades',
+                              icon: Icons.fact_check_outlined,
+                              onTap: () =>
+                                  widget.onOpenGrading(_id(team['id'])),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    onTap: () => widget.onOpenDeliverables(_id(team['id'])),
                   ),
+                ],
+                FacultyTeamPager(
+                  total: teams.length,
+                  page: visibleTeamPage,
+                  viewAllLabel: teams.length > 4
+                      ? 'View all ${teams.length} PIT teams'
+                      : 'Open PIT Teams',
+                  onPrevious: () =>
+                      setState(() => _teamPage = visibleTeamPage - 1),
+                  onNext: () => setState(() => _teamPage = visibleTeamPage + 1),
+                  onViewAll: () => widget.onOpenDeliverables(null),
+                ),
               ],
-            ],
+            ),
           ),
-        ),
-        Align(
-          alignment: Alignment.centerRight,
-          child: TextButton.icon(
-            onPressed: teams.isEmpty
-                ? null
-                : () => widget.onOpenGrading(_id(teams.first['id'])),
-            icon: const Icon(Icons.rate_review_outlined),
-            label: const Text('View PIT grades'),
+          bottomRight: _panel(
+            'My actions',
+            'Submission reviews and teams with scheduling clearance.',
+            state.isLoading && details.isEmpty
+                ? const Center(child: CircularProgressIndicator())
+                : state.error != null && details.isEmpty
+                ? const Text(
+                    'Unable to check team actions. Refresh to try again.',
+                  )
+                : actions.isEmpty
+                ? const Text('No submissions need review right now.')
+                : Column(children: actions),
           ),
         ),
       ],

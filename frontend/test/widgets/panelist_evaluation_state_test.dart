@@ -4,9 +4,11 @@ import 'package:defensys/screens/app/panelist/assignments_tab.dart';
 import 'package:defensys/screens/app/panelist/grade_sheet_tab.dart';
 import 'package:defensys/screens/app/panelist/panelist_models.dart';
 import 'package:defensys/screens/app/panelist/widgets/evaluation_score_picker.dart';
+import 'package:defensys/screens/app/panelist/widgets/team_grade_chooser.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -34,6 +36,7 @@ TeamData _team({
   DateTime? date,
   String target = 'team',
   String id = '20',
+  bool isCapstone = true,
   bool longNames = false,
   List<Map<String, dynamic>> drafts = const [],
   List<Map<String, dynamic>> materials = const [],
@@ -47,8 +50,8 @@ TeamData _team({
   defenseDate: 'Concept Proposal',
   teamId: id,
   scheduleId: id,
-  scope: 'capstone',
-  isCapstone: true,
+  scope: isCapstone ? 'capstone' : 'pit',
+  isCapstone: isCapstone,
   stageName: 'Concept Proposal',
   scheduledDate: date ?? TeamData.manilaToday,
   startTime: '23:30',
@@ -365,11 +368,46 @@ void main() {
       expect(team.isPosted, isTrue);
       expect(team.evaluationProgress.complete, isTrue);
       expect(find.byType(EvaluationScorePicker), findsNothing);
-      expect(find.textContaining('Submitted · Locked'), findsOneWidget);
+      expect(find.textContaining('Submitted · Locked'), findsNothing);
+      expect(find.textContaining('Submitted'), findsWidgets);
       await tester.pump(const Duration(seconds: 4));
       expect(tester.takeException(), isNull);
     },
   );
+  testWidgets('Submitted team has a compact green chooser indicator', (
+    tester,
+  ) async {
+    final team = _team()..isPosted = true;
+    await pumpDefensysWidget(
+      tester,
+      TeamGradeChooser(
+        teams: [team],
+        current: team,
+        onConfirm: (_) async => null,
+      ),
+    );
+    final submittedBadge = find.byKey(const ValueKey('submitted-status-20-20'));
+    expect(submittedBadge, findsOneWidget);
+    expect(find.text('Submitted'), findsOneWidget);
+    expect(find.textContaining('Submitted · Locked'), findsNothing);
+    expect(
+      (tester.widget<Container>(submittedBadge).decoration as BoxDecoration)
+          .color,
+      DefensysTokens.successBg,
+    );
+  });
+  testWidgets('Submitted PIT scores describe the numeric event result', (
+    tester,
+  ) async {
+    final team = _team(isCapstone: false)..isPosted = true;
+    await _showSheet(tester, [team], start: false);
+    expect(
+      find.textContaining('PIT event result follows the final numeric grade'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('official stage verdict'), findsNothing);
+    expect(find.text('Panel Chair Official Verdict'), findsNothing);
+  });
   testWidgets(
     'Draft hydration restores zero without filling unanswered scores',
     (tester) async {

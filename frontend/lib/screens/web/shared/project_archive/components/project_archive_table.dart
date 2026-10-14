@@ -35,7 +35,8 @@ class ProjectArchiveTable extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<ProjectArchiveTable> createState() => _ProjectArchiveTableState();
+  ConsumerState<ProjectArchiveTable> createState() =>
+      _ProjectArchiveTableState();
 }
 
 class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
@@ -44,14 +45,12 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
 
-  String _mainViewMode = 'team';
+  bool _folderListView = false;
   final Set<String> _expandedTeamIds = {};
   bool _hasManuallyToggledExpansion = false;
 
   String _scopeKey(RepositoryAuditState state) =>
       state.scope['scope']?.toString() ?? 'admin';
-
-
 
   List<Map<String, dynamic>> _mapList(dynamic value) {
     if (value is! List) return [];
@@ -71,10 +70,6 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   bool _isCapstoneEntry(Map<String, dynamic> entry) {
     final type = entry['type']?.toString();
     return type == null || type.isEmpty || type == 'capstone';
-  }
-
-  bool _isAdminBrowseLayout(RepositoryAuditState state) {
-    return _scopeKey(state) == 'admin';
   }
 
   String _teamTrack(Map<String, dynamic> team) {
@@ -103,11 +98,11 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   }) {
     return state.entries.where((entry) {
       if (entry['team_id']?.toString() != state.teamId) return false;
-      if (entry['has_file'] != true || entry['is_missing'] == true) return false;
+      if (entry['has_file'] != true || entry['is_missing'] == true)
+        return false;
       return track == 'pit' ? _isPitEntry(entry) : _isCapstoneEntry(entry);
     }).toList();
   }
-
 
   String _prettyDate(dynamic value) {
     final text = value?.toString() ?? '';
@@ -146,9 +141,13 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: _isDark ? DefensysTokens.mistSurface : Colors.white,
-        borderRadius: BorderRadius.circular(DefensysTableTokens.cardBorderRadius),
+        borderRadius: BorderRadius.circular(
+          DefensysTableTokens.cardBorderRadius,
+        ),
         border: Border.all(
-          color: _isDark ? DefensysTokens.mistBorder : DefensysTableTokens.cardBorder,
+          color: _isDark
+              ? DefensysTokens.mistBorder
+              : DefensysTableTokens.cardBorder,
         ),
         boxShadow: [
           BoxShadow(
@@ -178,14 +177,17 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                 Text(
                   'Project Archive Records',
                   style: TextStyle(
-                    color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
+                    color: _isDark
+                        ? DefensysTokens.textPrimaryDark
+                        : const Color(0xFF0F172A),
                     fontSize: 16,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.2,
                   ),
                 ),
                 const Spacer(),
-                _buildViewModeToggle(),
+                if (_scopeKey(state) == 'pit_lead')
+                  _yearBadge(state.scope['pit_year_level']?.toString() ?? ''),
               ],
             ),
           ),
@@ -258,7 +260,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                         value: state.submissionKind,
                         label: 'All Kinds',
                         items: _mapList(
-                            state.options['submission_kind_options']),
+                          state.options['submission_kind_options'],
+                        ),
                         onChanged: (value) => ref
                             .read(repositoryAuditProvider.notifier)
                             .fetchEntries(submissionKind: value ?? ''),
@@ -281,6 +284,25 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                           ),
                     ),
                   ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _filterFromStrings(
+                      value: state.yearLevel,
+                      label: 'All Year Levels',
+                      items: _stringList(state.options['year_levels']),
+                      onChanged: (value) => ref
+                          .read(repositoryAuditProvider.notifier)
+                          .fetchEntries(yearLevel: value ?? ''),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(child: _groupByFilter(state)),
+                  const SizedBox(width: 14),
+                  const Spacer(),
                 ],
               ),
             ] else ...[
@@ -320,6 +342,54 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _filterFromStrings(
+                      value: state.academicYear,
+                      label: 'All Years',
+                      items: _stringList(state.options['academic_years']),
+                      onChanged: (value) => ref
+                          .read(repositoryAuditProvider.notifier)
+                          .fetchEntries(academicYear: value ?? ''),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: _filterFromStrings(
+                      value: state.semester,
+                      label: 'All Semesters',
+                      items: _stringList(state.options['semesters']),
+                      onChanged: (value) => ref
+                          .read(repositoryAuditProvider.notifier)
+                          .fetchEntries(semester: value ?? ''),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: _filterFromMaps(
+                      value: state.deliverableId,
+                      label: 'All Deliverables',
+                      items: _mapList(state.options['deliverable_options']),
+                      onChanged: (value) => ref
+                          .read(repositoryAuditProvider.notifier)
+                          .fetchEntries(
+                            deliverableId: value ?? '',
+                            clearDeliverable: (value ?? '').isEmpty,
+                          ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(child: _groupByFilter(state)),
+                  const SizedBox(width: 14),
+                  const Spacer(flex: 2),
+                ],
+              ),
             ],
           ],
           const SizedBox(height: 18),
@@ -332,17 +402,21 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           const SizedBox(height: 18),
           Container(
             height: 1,
-            color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
+            color: _isDark
+                ? DefensysTokens.mistBorder
+                : const Color(0xFFE5E7EB),
           ),
           const SizedBox(height: 14),
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              state.deliverableId.isNotEmpty
-                  ? 'Showing ${state.entries.length} teams for ${state.deliverableSummary['label'] ?? state.deliverableId}'
+              state.folderBrowser.isNotEmpty
+                  ? '${state.folderBrowser['file_count'] ?? 0} files · ${state.folderBrowser['missing_count'] ?? 0} missing or not uploaded'
                   : 'Showing ${state.entries.length} records',
               style: TextStyle(
-                color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF5D6678),
+                color: _isDark
+                    ? DefensysTokens.textSecondaryDark
+                    : const Color(0xFF5D6678),
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -353,79 +427,33 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     );
   }
 
-  Widget _buildViewModeToggle() {
-    Widget modeBtn(String label, IconData icon, String mode) {
-      final selected = _mainViewMode == mode;
-      return InkWell(
-        onTap: () {
-          setState(() {
-            _mainViewMode = mode;
-          });
-        },
-        borderRadius: BorderRadius.circular(8),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-          decoration: BoxDecoration(
-            color: selected
-                ? (_isDark ? DefensysTokens.mistSurface : Colors.white)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: _isDark
-                          ? Colors.black.withValues(alpha: 0.25)
-                          : Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 4,
-                      offset: const Offset(0, 1),
-                    ),
-                  ]
-                : null,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 14,
-                color: selected
-                    ? (_isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A))
-                    : (_isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B)),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                  color: selected
-                      ? (_isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A))
-                      : (_isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B)),
-                ),
-              ),
-            ],
-          ),
+  Widget _groupByFilter(RepositoryAuditState state) {
+    return _filterShell(
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          key: const ValueKey('archiveGroupBy'),
+          value: state.groupBy,
+          isExpanded: true,
+          dropdownColor: _isDark ? DefensysTokens.mistSurface : Colors.white,
+          items: const [
+            DropdownMenuItem(value: 'team', child: Text('Group by Team')),
+            DropdownMenuItem(
+              value: 'stage',
+              child: Text('Group by Stage / Event'),
+            ),
+            DropdownMenuItem(
+              value: 'deliverable',
+              child: Text('Group by Deliverable'),
+            ),
+          ],
+          onChanged: (value) {
+            if (value != null) {
+              ref
+                  .read(repositoryAuditProvider.notifier)
+                  .fetchEntries(groupBy: value);
+            }
+          },
         ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          modeBtn('By Team', Icons.groups_rounded, 'team'),
-          const SizedBox(width: 2),
-          modeBtn('By Stage', Icons.style_rounded, 'stage'),
-        ],
       ),
     );
   }
@@ -447,13 +475,17 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           Icon(
             Icons.groups_rounded,
             size: 11,
-            color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
+            color: _isDark
+                ? DefensysTokens.textSecondaryDark
+                : const Color(0xFF64748B),
           ),
           const SizedBox(width: 4),
           Text(
             teamName,
             style: TextStyle(
-              color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF334155),
+              color: _isDark
+                  ? DefensysTokens.textPrimaryDark
+                  : const Color(0xFF334155),
               fontSize: 10,
               fontWeight: FontWeight.w700,
             ),
@@ -476,23 +508,30 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           size: 15,
           color: widget.showAdvancedFilters
               ? activeColor
-              : (_isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569)),
+              : (_isDark
+                    ? DefensysTokens.textSecondaryDark
+                    : const Color(0xFF475569)),
         ),
         label: Text(widget.showAdvancedFilters ? 'Hide Filters' : 'Filters'),
         style: OutlinedButton.styleFrom(
           foregroundColor: widget.showAdvancedFilters
               ? activeColor
-              : (_isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A)),
+              : (_isDark
+                    ? DefensysTokens.textPrimaryDark
+                    : const Color(0xFF0F172A)),
           side: BorderSide(
             color: widget.showAdvancedFilters
                 ? activeColor
-                : (_isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
+                : (_isDark
+                      ? DefensysTokens.mistBorder
+                      : const Color(0xFFE2E8F0)),
           ),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          textStyle:
-              const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+          textStyle: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
     );
@@ -506,7 +545,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         enabled: !state.isSaving,
         style: TextStyle(
           fontSize: 13,
-          color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
+          color: _isDark
+              ? DefensysTokens.textPrimaryDark
+              : const Color(0xFF0F172A),
         ),
         decoration: InputDecoration(
           prefixIcon: Icon(
@@ -520,7 +561,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             fontSize: 13,
           ),
           filled: true,
-          fillColor: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
+          fillColor: _isDark
+              ? DefensysTokens.mistInputFill
+              : const Color(0xFFF8FAFC),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 14,
             vertical: 10,
@@ -528,13 +571,17 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide(
-              color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+              color: _isDark
+                  ? DefensysTokens.mistBorder
+                  : const Color(0xFFE2E8F0),
             ),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide(
-              color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+              color: _isDark
+                  ? DefensysTokens.mistBorder
+                  : const Color(0xFFE2E8F0),
             ),
           ),
           focusedBorder: OutlineInputBorder(
@@ -560,7 +607,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       child: OutlinedButton.icon(
         onPressed: () {
           widget.searchController.clear();
-          ref.read(repositoryAuditProvider.notifier).fetchEntries(
+          ref
+              .read(repositoryAuditProvider.notifier)
+              .fetchEntries(
                 search: '',
                 type: '',
                 yearLevel: '',
@@ -572,6 +621,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                 deliverableId: '',
                 submissionKind: '',
                 viewMode: '',
+                groupBy: 'team',
+                folderKey: '',
                 clearDeliverable: true,
                 clearTeam: true,
               );
@@ -579,15 +630,20 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         icon: const Icon(Icons.refresh_rounded, size: 15),
         label: const Text('Clear Filters'),
         style: OutlinedButton.styleFrom(
-          foregroundColor: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
+          foregroundColor: _isDark
+              ? DefensysTokens.textSecondaryDark
+              : const Color(0xFF475569),
           side: BorderSide(
-            color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+            color: _isDark
+                ? DefensysTokens.mistBorder
+                : const Color(0xFFE2E8F0),
           ),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          textStyle:
-              const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+          textStyle: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
     );
@@ -610,8 +666,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             ),
           ];
 
-    final values =
-        options.map((item) => item['value']?.toString() ?? '').toSet();
+    final values = options
+        .map((item) => item['value']?.toString() ?? '')
+        .toSet();
     final selected = values.contains(value) ? value : '';
 
     return _filterShell(
@@ -623,10 +680,14 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           icon: Icon(
             Icons.keyboard_arrow_down_rounded,
             size: 18,
-            color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
+            color: _isDark
+                ? DefensysTokens.textSecondaryDark
+                : const Color(0xFF64748B),
           ),
           style: TextStyle(
-            color: _isDark ? DefensysTokens.textPrimaryDark : AppColors.textPrimary,
+            color: _isDark
+                ? DefensysTokens.textPrimaryDark
+                : AppColors.textPrimary,
             fontSize: 12.5,
             fontWeight: FontWeight.w500,
           ),
@@ -640,7 +701,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w500,
-                      color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
+                      color: _isDark
+                          ? DefensysTokens.textPrimaryDark
+                          : const Color(0xFF0F172A),
                     ),
                   ),
                 ),
@@ -658,10 +721,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     required List<String> items,
     required ValueChanged<String?> onChanged,
   }) {
-    final options = [
-      label,
-      ...items.where((item) => item.isNotEmpty),
-    ];
+    final options = [label, ...items.where((item) => item.isNotEmpty)];
     final selected = items.contains(value) ? value : label;
 
     return _filterShell(
@@ -673,10 +733,14 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           icon: Icon(
             Icons.keyboard_arrow_down_rounded,
             size: 18,
-            color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
+            color: _isDark
+                ? DefensysTokens.textSecondaryDark
+                : const Color(0xFF64748B),
           ),
           style: TextStyle(
-            color: _isDark ? DefensysTokens.textPrimaryDark : AppColors.textPrimary,
+            color: _isDark
+                ? DefensysTokens.textPrimaryDark
+                : AppColors.textPrimary,
             fontSize: 12.5,
             fontWeight: FontWeight.w500,
           ),
@@ -690,7 +754,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w500,
-                      color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
+                      color: _isDark
+                          ? DefensysTokens.textPrimaryDark
+                          : const Color(0xFF0F172A),
                     ),
                   ),
                 ),
@@ -730,8 +796,11 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       child: Text(
         'Scroll horizontally for more columns',
         style: TextStyle(
-          color: (_isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary)
-              .withValues(alpha: 0.85),
+          color:
+              (_isDark
+                      ? DefensysTokens.textSecondaryDark
+                      : AppColors.textSecondary)
+                  .withValues(alpha: 0.85),
           fontSize: 11.5,
           fontWeight: FontWeight.w600,
         ),
@@ -761,10 +830,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            content,
-            if (needsHorizontalScroll) _tableScrollHint(),
-          ],
+          children: [content, if (needsHorizontalScroll) _tableScrollHint()],
         );
       },
     );
@@ -793,7 +859,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       decoration: BoxDecoration(
         color: DefensysTableTokens.headerBackgroundOf(context),
         border: Border(
-          bottom: BorderSide(color: DefensysTableTokens.headerBorderOf(context)),
+          bottom: BorderSide(
+            color: DefensysTableTokens.headerBorderOf(context),
+          ),
         ),
       ),
       child: Row(
@@ -806,7 +874,11 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           _tableHeaderCell('Semester', flex: compactColumns ? 1.1 : 0.95),
           _tableHeaderCell('Status', flex: 1.0),
           _tableHeaderCell('Uploaded', flex: 0.85),
-          _tableHeaderCell('Actions', flex: 1.1, alignment: Alignment.centerRight),
+          _tableHeaderCell(
+            'Actions',
+            flex: 1.1,
+            alignment: Alignment.centerRight,
+          ),
         ],
       ),
     );
@@ -826,7 +898,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
               color: _isDark ? DefensysTokens.mistSurface : Colors.white,
               border: Border(
                 bottom: BorderSide(
-                  color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB),
+                  color: _isDark
+                      ? DefensysTokens.mistBorder
+                      : const Color(0xFFE5E7EB),
                 ),
               ),
             ),
@@ -836,20 +910,26 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
+                    color: _isDark
+                        ? DefensysTokens.mistInputFill
+                        : const Color(0xFFF1F5F9),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
                     Icons.folder_open_outlined,
                     size: 32,
-                    color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
+                    color: _isDark
+                        ? DefensysTokens.textSecondaryDark
+                        : const Color(0xFF64748B),
                   ),
                 ),
                 const SizedBox(height: 12),
                 Text(
                   'No archive records found',
                   style: TextStyle(
-                    color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF1E293B),
+                    color: _isDark
+                        ? DefensysTokens.textPrimaryDark
+                        : const Color(0xFF1E293B),
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
@@ -858,7 +938,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                 Text(
                   'Try searching or adjusting your filter settings',
                   style: TextStyle(
-                    color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
+                    color: _isDark
+                        ? DefensysTokens.textSecondaryDark
+                        : const Color(0xFF64748B),
                     fontSize: 12.5,
                     fontWeight: FontWeight.w500,
                   ),
@@ -882,17 +964,22 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     final title = isPit
         ? entry['file_name']?.toString() ?? ''
         : entry['deliverable_label']?.toString() ??
-            entry['file_name']?.toString() ??
-            '';
+              entry['file_name']?.toString() ??
+              '';
     final uploadedBy = entry['uploaded_by']?.toString() ?? 'System';
     final deliverableId = entry['deliverable_id']?.toString() ?? '';
-    final teamName = entry['team_name']?.toString() ?? entry['team']?.toString() ?? '';
+    final teamName =
+        entry['team_name']?.toString() ?? entry['team']?.toString() ?? '';
 
     return Container(
-      constraints: const BoxConstraints(minHeight: DefensysTableTokens.rowHeightMultiline),
+      constraints: const BoxConstraints(
+        minHeight: DefensysTableTokens.rowHeightMultiline,
+      ),
       decoration: BoxDecoration(
         color: _isDark ? DefensysTokens.mistPanel : Colors.white,
-        border: Border(bottom: BorderSide(color: DefensysTableTokens.rowBorderOf(context))),
+        border: Border(
+          bottom: BorderSide(color: DefensysTableTokens.rowBorderOf(context)),
+        ),
       ),
       child: Row(
         children: [
@@ -915,7 +1002,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                   ),
                   child: Icon(
                     Icons.picture_as_pdf_rounded,
-                    color: _isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
+                    color: _isDark
+                        ? const Color(0xFFF87171)
+                        : const Color(0xFFDC2626),
                     size: 15,
                   ),
                 ),
@@ -925,7 +1014,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (showTeamBadge && widget.state.teamId.isEmpty && teamName.isNotEmpty) ...[
+                      if (showTeamBadge &&
+                          widget.state.teamId.isEmpty &&
+                          teamName.isNotEmpty) ...[
                         _teamBadge(teamName),
                         const SizedBox(height: 3),
                       ],
@@ -936,7 +1027,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
+                          color: _isDark
+                              ? DefensysTokens.textPrimaryDark
+                              : const Color(0xFF0F172A),
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
                         ),
@@ -945,14 +1038,16 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                       Text(
                         isMissing
                             ? (entry['archive_note']?.toString().isNotEmpty ==
-                                    true
-                                ? entry['archive_note'].toString()
-                                : 'No file uploaded yet')
+                                      true
+                                  ? entry['archive_note'].toString()
+                                  : 'No file uploaded yet')
                             : 'By $uploadedBy',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
+                          color: _isDark
+                              ? DefensysTokens.textSecondaryDark
+                              : const Color(0xFF64748B),
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
                         ),
@@ -982,10 +1077,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             _statusBadge(entry['status']?.toString() ?? ''),
             flex: 1.0,
           ),
-          _tableCell(
-            _bodyText(_prettyDate(entry['uploaded_at'])),
-            flex: 0.85,
-          ),
+          _tableCell(_bodyText(_prettyDate(entry['uploaded_at'])), flex: 0.85),
           _tableCell(
             hasFile ? _rowActions(entry) : const SizedBox.shrink(),
             flex: 1.1,
@@ -1061,7 +1153,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
+          color: _isDark
+              ? DefensysTokens.textSecondaryDark
+              : const Color(0xFF475569),
           fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
@@ -1089,33 +1183,40 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     return StatusBadge.inactive(label: s.isEmpty ? 'Approved' : s);
   }
 
-
   Widget _rowActions(Map<String, dynamic> entry) {
     final fileUrl = entry['file_url']?.toString() ?? '';
     final fileName = entry['file_name']?.toString() ?? '';
     final status = entry['status']?.toString() ?? '';
 
     final isPendingResubmission =
-        status == 'Needs Revision' || status == 'Rejected' || status == 'Needs Re-upload';
-    final isReplacementUnlocked = status == 'Approved' &&
+        status == 'Needs Revision' ||
+        status == 'Rejected' ||
+        status == 'Needs Re-upload';
+    final isReplacementUnlocked =
+        status == 'Approved' &&
         entry['deliverable_type'] == 'pre' &&
         entry['file_replacement_unlocked'] == true;
 
     final actionIconData = isPendingResubmission
         ? Icons.hourglass_top_rounded
-        : (isReplacementUnlocked ? Icons.lock_open_rounded : Icons.published_with_changes_rounded);
+        : (isReplacementUnlocked
+              ? Icons.lock_open_rounded
+              : Icons.published_with_changes_rounded);
 
     final actionIconColor = isPendingResubmission
         ? const Color(0xFFD97706)
-        : (isReplacementUnlocked ? const Color(0xFF0D9488) : const Color(0xFF475569));
+        : (isReplacementUnlocked
+              ? const Color(0xFF0D9488)
+              : const Color(0xFF475569));
 
-    final actionLabel = entry['deliverable_type'] == 'post' && status == 'Approved'
+    final actionLabel =
+        entry['deliverable_type'] == 'post' && status == 'Approved'
         ? 'Reopen for Revision'
         : isPendingResubmission
         ? 'Review Re-upload'
         : (isReplacementUnlocked
-            ? 'Manage File Access'
-            : 'Request Resubmission / Replace');
+              ? 'Manage File Access'
+              : 'Request Resubmission / Replace');
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1123,7 +1224,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         _actionIcon(
           tooltip: 'View PDF',
           icon: Icons.visibility_outlined,
-          color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
+          color: _isDark
+              ? DefensysTokens.textSecondaryDark
+              : const Color(0xFF475569),
           onTap: () => widget.onViewPdf(fileUrl, fileName),
         ),
         const SizedBox(width: 4),
@@ -1133,7 +1236,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(8),
             side: BorderSide(
-              color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+              color: _isDark
+                  ? DefensysTokens.mistBorder
+                  : const Color(0xFFE2E8F0),
             ),
           ),
           color: _isDark ? DefensysTokens.mistSurface : Colors.white,
@@ -1142,15 +1247,21 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           icon: Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
+              color: _isDark
+                  ? DefensysTokens.mistInputFill
+                  : const Color(0xFFF8FAFC),
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
-                color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+                color: _isDark
+                    ? DefensysTokens.mistBorder
+                    : const Color(0xFFE2E8F0),
               ),
             ),
             child: Icon(
               Icons.more_vert_rounded,
-              color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
+              color: _isDark
+                  ? DefensysTokens.textSecondaryDark
+                  : const Color(0xFF475569),
               size: 15,
             ),
           ),
@@ -1176,7 +1287,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                   Icon(
                     Icons.download_rounded,
                     size: 15,
-                    color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
+                    color: _isDark
+                        ? DefensysTokens.textSecondaryDark
+                        : const Color(0xFF475569),
                   ),
                   const SizedBox(width: 9),
                   Text(
@@ -1184,7 +1297,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                     style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w600,
-                      color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
+                      color: _isDark
+                          ? DefensysTokens.textPrimaryDark
+                          : const Color(0xFF0F172A),
                     ),
                   ),
                 ],
@@ -1231,10 +1346,14 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         child: Container(
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-            color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
+            color: _isDark
+                ? DefensysTokens.mistInputFill
+                : const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
-              color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+              color: _isDark
+                  ? DefensysTokens.mistBorder
+                  : const Color(0xFFE2E8F0),
             ),
           ),
           child: Icon(icon, color: color, size: 15),
@@ -1252,7 +1371,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       child: Text(
         'Pick a deliverable to compare all teams, or explore teams and their submitted archive records below.',
         style: TextStyle(
-          color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
+          color: _isDark
+              ? DefensysTokens.textSecondaryDark
+              : const Color(0xFF64748B),
           fontSize: 12,
           fontWeight: FontWeight.w500,
         ),
@@ -1261,58 +1382,280 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   }
 
   Widget _buildEntriesBody(RepositoryAuditState state) {
-    if (!_isAdminBrowseLayout(state)) {
-      return _repositoryTable(state);
-    }
-    if (state.deliverableId.isNotEmpty) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [_browseModeTip(state), _repositoryDeliverableTable(state)],
-      );
-    }
-    if (state.teamId.isNotEmpty) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              OutlinedButton.icon(
-                onPressed: () {
-                  ref
-                      .read(repositoryAuditProvider.notifier)
-                      .fetchEntries(clearTeam: true);
-                },
-                icon: const Icon(Icons.arrow_back_rounded, size: 15),
-                label: const Text('Back to all teams'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
-                  side: BorderSide(
-                    color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1),
-                  ),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  textStyle:
-                      const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _buildTeamDetailPanel(state),
-        ],
-      );
-    }
+    if (state.folderBrowser.isEmpty) return _repositoryTable(state);
+    return _buildFolderBrowser(state);
+  }
+
+  Widget _buildFolderBrowser(RepositoryAuditState state) {
+    final browser = state.folderBrowser;
+    final folders = _mapList(browser['folders']);
+    final breadcrumbs = _mapList(browser['breadcrumbs']);
+    final isLeaf = browser['is_leaf'] == true;
+    final fileCount = browser['file_count'] ?? 0;
+    final missingCount = browser['missing_count'] ?? 0;
+    final rootLabel = _scopeKey(state) == 'pit_lead'
+        ? '${state.scope['pit_year_level'] ?? ''} PIT Archive'
+        : 'Project Archive';
+    final parentKey = breadcrumbs.length > 1
+        ? breadcrumbs[breadcrumbs.length - 2]['key']?.toString() ?? ''
+        : '';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _browseModeTip(state),
-        _buildAllTeamsBrowsePanel(state),
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            if (state.folderKey.isNotEmpty)
+              OutlinedButton.icon(
+                onPressed: () => ref
+                    .read(repositoryAuditProvider.notifier)
+                    .fetchEntries(folderKey: parentKey),
+                icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                label: const Text('Back'),
+              ),
+            TextButton(
+              onPressed: state.folderKey.isEmpty
+                  ? null
+                  : () => ref
+                        .read(repositoryAuditProvider.notifier)
+                        .fetchEntries(folderKey: ''),
+              child: Text(rootLabel),
+            ),
+            for (final crumb in breadcrumbs) ...[
+              const Icon(Icons.chevron_right_rounded, size: 16),
+              TextButton(
+                onPressed: crumb['key']?.toString() == state.folderKey
+                    ? null
+                    : () => ref
+                          .read(repositoryAuditProvider.notifier)
+                          .fetchEntries(
+                            folderKey: crumb['key']?.toString() ?? '',
+                          ),
+                child: Text(crumb['title']?.toString() ?? ''),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                isLeaf
+                    ? '$fileCount ${fileCount == 1 ? 'file' : 'files'}${missingCount == 0 ? '' : ' · $missingCount missing'}'
+                    : '${folders.length} ${folders.length == 1 ? 'folder' : 'folders'} · $fileCount files${missingCount == 0 ? '' : ' · $missingCount missing'}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: _isDark
+                      ? DefensysTokens.textSecondaryDark
+                      : const Color(0xFF64748B),
+                ),
+              ),
+            ),
+            if (!isLeaf) ...[
+              IconButton(
+                tooltip: 'List view',
+                onPressed: () => setState(() => _folderListView = true),
+                icon: Icon(
+                  Icons.view_list_rounded,
+                  color: _folderListView ? AppColors.maroon : null,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Grid view',
+                onPressed: () => setState(() => _folderListView = false),
+                icon: Icon(
+                  Icons.grid_view_rounded,
+                  color: !_folderListView ? AppColors.maroon : null,
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (isLeaf) ...[
+          if (state.groupBy == 'deliverable')
+            _wrapWithHorizontalScroll(
+              minWidth: _kDeliverableMinTableWidth,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _deliverableTableHeaderData(),
+                  ...state.entries.map(_repositoryDeliverableRowData),
+                ],
+              ),
+            )
+          else
+            _repositoryTable(state),
+          _folderPager(state),
+        ] else if (folders.isEmpty)
+          _emptyRepositoryTable()
+        else if (_folderListView)
+          Column(
+            children: [
+              for (final folder in folders) _folderCard(folder, list: true),
+            ],
+          )
+        else
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = constraints.maxWidth >= 1080
+                  ? 4
+                  : constraints.maxWidth >= 720
+                  ? 3
+                  : constraints.maxWidth >= 470
+                  ? 2
+                  : 1;
+              const gap = 12.0;
+              final cardWidth =
+                  (constraints.maxWidth - gap * (columns - 1)) / columns;
+              return Wrap(
+                spacing: gap,
+                runSpacing: gap,
+                children: [
+                  for (final folder in folders)
+                    SizedBox(width: cardWidth, child: _folderCard(folder)),
+                ],
+              );
+            },
+          ),
       ],
     );
-    }
+  }
+
+  Widget _folderCard(Map<String, dynamic> folder, {bool list = false}) {
+    final title = folder['title']?.toString() ?? 'Folder';
+    final subtitle = folder['subtitle']?.toString() ?? '';
+    final count = folder['file_count'] ?? 0;
+    final missing = folder['missing_count'] ?? 0;
+    final countLabel = '$count ${count == 1 ? 'file' : 'files'}${missing == 0 ? '' : ' · $missing missing'}';
+    return Padding(
+      padding: EdgeInsets.only(bottom: list ? 8 : 0),
+      child: Material(
+        color: _isDark ? DefensysTokens.mistPanel : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          key: ValueKey('archiveFolder_${folder['key']}'),
+          onTap: () => ref
+              .read(repositoryAuditProvider.notifier)
+              .fetchEntries(folderKey: folder['key']?.toString() ?? ''),
+          borderRadius: BorderRadius.circular(10),
+          child: Container(
+            width: double.infinity,
+            constraints: BoxConstraints(minHeight: list ? 72 : 148),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: _isDark
+                    ? DefensysTokens.mistBorder
+                    : const Color(0xFFE2E8F0),
+              ),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: list
+                ? Row(
+                    children: [
+                      const Icon(
+                        Icons.folder_rounded,
+                        color: Color(0xFFE8AA12),
+                        size: 30,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(child: _folderLabels(title, subtitle)),
+                      Text(countLabel),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.chevron_right_rounded, size: 18),
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.folder_rounded,
+                        color: Color(0xFFE8AA12),
+                        size: 34,
+                      ),
+                      const SizedBox(height: 18),
+                      _folderLabels(title, subtitle),
+                      const SizedBox(height: 6),
+                      Text(
+                        countLabel,
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                    ],
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _folderLabels(String title, String subtitle) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        title,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+      ),
+      if (subtitle.isNotEmpty) ...[
+        const SizedBox(height: 3),
+        Text(
+          subtitle,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 11,
+            color: _isDark
+                ? DefensysTokens.textSecondaryDark
+                : const Color(0xFF64748B),
+          ),
+        ),
+      ],
+    ],
+  );
+
+  Widget _folderPager(RepositoryAuditState state) {
+    final total =
+        (state.pagination['total'] as num?)?.toInt() ?? state.entries.length;
+    final limit = (state.pagination['limit'] as num?)?.toInt() ?? 100;
+    if (total <= limit) return const SizedBox.shrink();
+    final offset = state.pageOffset;
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Text('${offset + 1}-${(offset + limit).clamp(0, total)} of $total'),
+          const SizedBox(width: 12),
+          OutlinedButton(
+            onPressed: offset == 0
+                ? null
+                : () => ref
+                      .read(repositoryAuditProvider.notifier)
+                      .fetchEntries(
+                        pageOffset: (offset - limit).clamp(0, total),
+                      ),
+            child: const Text('Previous'),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton(
+            onPressed: offset + limit >= total
+                ? null
+                : () => ref
+                      .read(repositoryAuditProvider.notifier)
+                      .fetchEntries(pageOffset: offset + limit),
+            child: const Text('Next'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _trackBadge(String track) {
     final isPit = track == 'pit';
@@ -1322,22 +1665,24 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         color: isPit
             ? (_isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9))
             : (_isDark
-                ? DefensysTokens.mistMaroon.withValues(alpha: 0.18)
-                : AppColors.maroon.withValues(alpha: 0.08)),
+                  ? DefensysTokens.mistMaroon.withValues(alpha: 0.18)
+                  : AppColors.maroon.withValues(alpha: 0.08)),
         borderRadius: BorderRadius.circular(5),
         border: Border.all(
           color: isPit
               ? (_isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0))
               : (_isDark
-                  ? DefensysTokens.mistMaroon.withValues(alpha: 0.45)
-                  : AppColors.maroon.withValues(alpha: 0.2)),
+                    ? DefensysTokens.mistMaroon.withValues(alpha: 0.45)
+                    : AppColors.maroon.withValues(alpha: 0.2)),
         ),
       ),
       child: Text(
         isPit ? 'PIT' : 'Capstone',
         style: TextStyle(
           color: isPit
-              ? (_isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569))
+              ? (_isDark
+                    ? DefensysTokens.textSecondaryDark
+                    : const Color(0xFF475569))
               : (_isDark ? const Color(0xFFF87171) : AppColors.maroon),
           fontSize: 10,
           fontWeight: FontWeight.w700,
@@ -1395,12 +1740,16 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
+                    color: _isDark
+                        ? DefensysTokens.mistInputFill
+                        : const Color(0xFFF1F5F9),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
                     Icons.groups_rounded,
-                    color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
+                    color: _isDark
+                        ? DefensysTokens.textSecondaryDark
+                        : const Color(0xFF475569),
                     size: 20,
                   ),
                 ),
@@ -1419,7 +1768,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                               style: TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 15,
-                                color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
+                                color: _isDark
+                                    ? DefensysTokens.textPrimaryDark
+                                    : const Color(0xFF0F172A),
                                 letterSpacing: -0.2,
                               ),
                             ),
@@ -1439,7 +1790,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
+                            color: _isDark
+                                ? DefensysTokens.textSecondaryDark
+                                : const Color(0xFF475569),
                             fontWeight: FontWeight.w600,
                             fontSize: 12.5,
                           ),
@@ -1449,7 +1802,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                       Text(
                         'Showing archive records for this team.',
                         style: TextStyle(
-                          color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
+                          color: _isDark
+                              ? DefensysTokens.textSecondaryDark
+                              : const Color(0xFF64748B),
                           fontSize: 11.5,
                           fontWeight: FontWeight.w500,
                         ),
@@ -1461,9 +1816,11 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             ),
           ),
           const SizedBox(width: 12),
-          if ((_scopeKey(state) == 'admin' || _scopeKey(state) == 'pit_lead') && teamId > 0) ...[
+          if ((_scopeKey(state) == 'admin' || _scopeKey(state) == 'pit_lead') &&
+              teamId > 0) ...[
             Tooltip(
-              message: 'Manually grant or revoke student file upload permissions for this team',
+              message:
+                  'Manually grant or revoke student file upload permissions for this team',
               child: OutlinedButton.icon(
                 onPressed: () {
                   StageAccessManagementDialog.show(
@@ -1477,12 +1834,21 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                 icon: const Icon(Icons.lock_open_rounded, size: 14),
                 label: const Text('Manage Access'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
+                  foregroundColor: _isDark
+                      ? DefensysTokens.textPrimaryDark
+                      : const Color(0xFF0F172A),
                   side: BorderSide(
-                    color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFCBD5E1),
+                    color: _isDark
+                        ? DefensysTokens.mistBorder
+                        : const Color(0xFFCBD5E1),
                   ),
-                  backgroundColor: _isDark ? DefensysTokens.mistInputFill : Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  backgroundColor: _isDark
+                      ? DefensysTokens.mistInputFill
+                      : Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -1529,23 +1895,27 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       return _emptyRepositoryTable();
     }
 
-    final capstoneTeams = teams.where((t) => _teamTrack(t) == 'capstone').toList();
+    final capstoneTeams = teams
+        .where((t) => _teamTrack(t) == 'capstone')
+        .toList();
     final pitTeams = teams.where((t) => _teamTrack(t) == 'pit').toList();
     final showCapstone = state.type.isEmpty || state.type == 'capstone';
     final showPit = state.type.isEmpty || state.type == 'pit';
 
-    final allVisibleTeams = [
-      if (showCapstone) ...capstoneTeams,
-      if (showPit) ...pitTeams,
-    ].where((team) {
-      final teamId = team['id']?.toString() ?? '';
-      final track = _teamTrack(team);
-      return state.entries.any((entry) =>
-          entry['team_id']?.toString() == teamId &&
-          entry['has_file'] == true &&
-          entry['is_missing'] != true &&
-          (track == 'pit' ? _isPitEntry(entry) : _isCapstoneEntry(entry)));
-    }).toList();
+    final allVisibleTeams =
+        [if (showCapstone) ...capstoneTeams, if (showPit) ...pitTeams].where((
+          team,
+        ) {
+          final teamId = team['id']?.toString() ?? '';
+          final track = _teamTrack(team);
+          return state.entries.any(
+            (entry) =>
+                entry['team_id']?.toString() == teamId &&
+                entry['has_file'] == true &&
+                entry['is_missing'] != true &&
+                (track == 'pit' ? _isPitEntry(entry) : _isCapstoneEntry(entry)),
+          );
+        }).toList();
 
     if (!_hasManuallyToggledExpansion &&
         _expandedTeamIds.isEmpty &&
@@ -1555,9 +1925,11 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
     Widget expandCollapseBar() {
       if (allVisibleTeams.isEmpty) return const SizedBox.shrink();
-      final allVisibleIds =
-          allVisibleTeams.map((t) => t['id']?.toString() ?? '').toSet();
-      final isAllExpanded = _expandedTeamIds.length >= allVisibleIds.length &&
+      final allVisibleIds = allVisibleTeams
+          .map((t) => t['id']?.toString() ?? '')
+          .toSet();
+      final isAllExpanded =
+          _expandedTeamIds.length >= allVisibleIds.length &&
           allVisibleIds.isNotEmpty;
 
       return Padding(
@@ -1570,7 +1942,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
+                color: _isDark
+                    ? DefensysTokens.textSecondaryDark
+                    : const Color(0xFF64748B),
               ),
             ),
             InkWell(
@@ -1595,7 +1969,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                           ? Icons.unfold_less_rounded
                           : Icons.unfold_more_rounded,
                       size: 15,
-                      color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
+                      color: _isDark
+                          ? DefensysTokens.textSecondaryDark
+                          : const Color(0xFF475569),
                     ),
                     const SizedBox(width: 4),
                     Text(
@@ -1603,7 +1979,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
+                        color: _isDark
+                            ? DefensysTokens.textSecondaryDark
+                            : const Color(0xFF475569),
                       ),
                     ),
                   ],
@@ -1624,7 +2002,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
       final teamEntries = state.entries.where((entry) {
         if (entry['team_id']?.toString() != teamId) return false;
-        if (entry['has_file'] != true || entry['is_missing'] == true) return false;
+        if (entry['has_file'] != true || entry['is_missing'] == true)
+          return false;
         return track == 'pit' ? _isPitEntry(entry) : _isCapstoneEntry(entry);
       }).toList();
 
@@ -1640,7 +2019,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           border: Border.all(
             color: isExpanded
                 ? (_isDark ? const Color(0xFF4B5563) : const Color(0xFFCBD5E1))
-                : (_isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
+                : (_isDark
+                      ? DefensysTokens.mistBorder
+                      : const Color(0xFFE2E8F0)),
             width: isExpanded ? 1.2 : 1.0,
           ),
           boxShadow: [
@@ -1672,10 +2053,15 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                 bottom: Radius.circular(isExpanded ? 0 : 10),
               ),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: isExpanded
-                      ? (_isDark ? const Color(0xFF28272D) : const Color(0xFFF8FAFC))
+                      ? (_isDark
+                            ? const Color(0xFF28272D)
+                            : const Color(0xFFF8FAFC))
                       : (_isDark ? DefensysTokens.mistPanel : Colors.white),
                   borderRadius: BorderRadius.vertical(
                     top: const Radius.circular(10),
@@ -1684,7 +2070,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                   border: isExpanded
                       ? Border(
                           bottom: BorderSide(
-                            color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+                            color: _isDark
+                                ? DefensysTokens.mistBorder
+                                : const Color(0xFFE2E8F0),
                           ),
                         )
                       : null,
@@ -1696,20 +2084,26 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                           ? Icons.keyboard_arrow_down_rounded
                           : Icons.keyboard_arrow_right_rounded,
                       size: 20,
-                      color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
+                      color: _isDark
+                          ? DefensysTokens.textSecondaryDark
+                          : const Color(0xFF64748B),
                     ),
                     const SizedBox(width: 8),
                     Container(
                       width: 32,
                       height: 32,
                       decoration: BoxDecoration(
-                        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
+                        color: _isDark
+                            ? DefensysTokens.mistInputFill
+                            : const Color(0xFFF1F5F9),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(
                         Icons.groups_rounded,
                         size: 16,
-                        color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
+                        color: _isDark
+                            ? DefensysTokens.textSecondaryDark
+                            : const Color(0xFF475569),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -1724,7 +2118,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                                 style: TextStyle(
                                   fontWeight: FontWeight.w700,
                                   fontSize: 14,
-                                  color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
+                                  color: _isDark
+                                      ? DefensysTokens.textPrimaryDark
+                                      : const Color(0xFF0F172A),
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -1743,7 +2139,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 12,
-                                color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
+                                color: _isDark
+                                    ? DefensysTokens.textSecondaryDark
+                                    : const Color(0xFF64748B),
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -1753,13 +2151,19 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                     ),
                     const SizedBox(width: 12),
                     Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 9,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
-                        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF1F5F9),
+                        color: _isDark
+                            ? DefensysTokens.mistInputFill
+                            : const Color(0xFFF1F5F9),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+                          color: _isDark
+                              ? DefensysTokens.mistBorder
+                              : const Color(0xFFE2E8F0),
                         ),
                       ),
                       child: Text(
@@ -1767,7 +2171,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF475569),
+                          color: _isDark
+                              ? DefensysTokens.textSecondaryDark
+                              : const Color(0xFF475569),
                         ),
                       ),
                     ),
@@ -1806,7 +2212,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         ],
         if (showPit && pitTeams.isNotEmpty) ...[
           _trackSectionTitle(
-              'PIT TEAMS & DELIVERABLES', const Color(0xFF475569)),
+            'PIT TEAMS & DELIVERABLES',
+            const Color(0xFF475569),
+          ),
           ...pitTeams.map(teamCardGroup),
         ],
       ],
@@ -1814,7 +2222,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   }
 
   Widget _buildAllTeamsBrowsePanel(RepositoryAuditState state) {
-    if (_mainViewMode == 'team') {
+    if (state.groupBy == 'team') {
       return _buildTeamCentricGroupedPanel(state);
     }
     if (state.type == 'capstone') {
@@ -1848,8 +2256,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     final effectiveAccent = _isDark && accentColor == AppColors.maroon
         ? const Color(0xFFF87171)
         : (_isDark && accentColor == const Color(0xFF475569)
-            ? const Color(0xFFA1A1AA)
-            : accentColor);
+              ? const Color(0xFFA1A1AA)
+              : accentColor);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12, top: 8),
       child: Row(
@@ -1868,7 +2276,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             style: TextStyle(
               fontSize: 12.5,
               fontWeight: FontWeight.w800,
-              color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
+              color: _isDark
+                  ? DefensysTokens.textPrimaryDark
+                  : const Color(0xFF0F172A),
               letterSpacing: 0.4,
             ),
           ),
@@ -1915,7 +2325,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
               child: Text(
                 'No Capstone files found.',
                 style: TextStyle(
-                  color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF98A2B3),
+                  color: _isDark
+                      ? DefensysTokens.textSecondaryDark
+                      : const Color(0xFF98A2B3),
                   fontSize: 13,
                 ),
               ),
@@ -1943,12 +2355,12 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
     for (final group in groups) {
       final stage = group['stage']?.toString() ?? '';
-      final preRows = _mapList(group['pre_defense'])
-          .where((r) => r['has_file'] == true && r['is_missing'] != true)
-          .toList();
-      final postRows = _mapList(group['post'] ?? group['vault'])
-          .where((r) => r['has_file'] == true && r['is_missing'] != true)
-          .toList();
+      final preRows = _mapList(
+        group['pre_defense'],
+      ).where((r) => r['has_file'] == true && r['is_missing'] != true).toList();
+      final postRows = _mapList(
+        group['post'] ?? group['vault'],
+      ).where((r) => r['has_file'] == true && r['is_missing'] != true).toList();
       if (preRows.isEmpty && postRows.isEmpty) {
         continue;
       }
@@ -1956,10 +2368,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
       dataChildren.add(_stageTitle(stage));
 
-      void addSubsection(
-        String title,
-        List<Map<String, dynamic>> rows,
-      ) {
+      void addSubsection(String title, List<Map<String, dynamic>> rows) {
         if (rows.isEmpty) return;
         dataChildren.add(_subsectionHeader(title));
         for (final row in rows) {
@@ -1988,7 +2397,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             child: Text(
               'No Capstone files found.',
               style: TextStyle(
-                color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF98A2B3),
+                color: _isDark
+                    ? DefensysTokens.textSecondaryDark
+                    : const Color(0xFF98A2B3),
                 fontSize: 13,
               ),
             ),
@@ -2022,7 +2433,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           child: Text(
             'No PIT archive files found.',
             style: TextStyle(
-              color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF98A2B3),
+              color: _isDark
+                  ? DefensysTokens.textSecondaryDark
+                  : const Color(0xFF98A2B3),
               fontSize: 13,
             ),
           ),
@@ -2041,17 +2454,18 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
       dataChildren.add(_stageTitle(course, color: const Color(0xFF475569)));
 
-      final preRows =
-          rows.where((row) => row['submission_kind'] == 'pre').toList();
+      final preRows = rows
+          .where((row) => row['submission_kind'] == 'pre')
+          .toList();
       final postRows = rows
-          .where((row) =>
-              row['submission_kind'] == 'post' || row['submission_kind'] == 'pit')
+          .where(
+            (row) =>
+                row['submission_kind'] == 'post' ||
+                row['submission_kind'] == 'pit',
+          )
           .toList();
 
-      void addSubsection(
-        String title,
-        List<Map<String, dynamic>> subRows,
-      ) {
+      void addSubsection(String title, List<Map<String, dynamic>> subRows) {
         if (subRows.isEmpty) return;
         dataChildren.add(_subsectionHeader(title));
         for (final row in subRows) {
@@ -2094,8 +2508,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     final effectiveColor = _isDark && color == AppColors.maroon
         ? const Color(0xFFF87171)
         : (_isDark && color == const Color(0xFF475569)
-            ? const Color(0xFFA1A1AA)
-            : color);
+              ? const Color(0xFFA1A1AA)
+              : color);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8, top: 12, left: 14),
       child: Row(
@@ -2114,7 +2528,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w800,
-              color: _isDark ? DefensysTokens.textPrimaryDark : const Color(0xFF0F172A),
+              color: _isDark
+                  ? DefensysTokens.textPrimaryDark
+                  : const Color(0xFF0F172A),
               letterSpacing: 0.5,
             ),
           ),
@@ -2127,16 +2543,18 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     List<Map<String, dynamic>> entries, {
     bool capstoneOnly = false,
   }) {
-    final scoped =
-        capstoneOnly ? entries.where(_isCapstoneEntry).toList() : entries;
+    final scoped = capstoneOnly
+        ? entries.where(_isCapstoneEntry).toList()
+        : entries;
     final stages = <String>{};
     for (final entry in scoped) {
       final stage = entry['stage']?.toString() ?? '';
       if (stage.isNotEmpty) stages.add(stage);
     }
     return stages.map((stage) {
-      final stageEntries =
-          scoped.where((entry) => entry['stage'] == stage).toList();
+      final stageEntries = scoped
+          .where((entry) => entry['stage'] == stage)
+          .toList();
       return {
         'stage': stage,
         'pre_defense': stageEntries
@@ -2178,7 +2596,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           Icon(
             isPre ? Icons.file_present_rounded : Icons.inventory_2_outlined,
             size: 14,
-            color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
+            color: _isDark
+                ? DefensysTokens.textSecondaryDark
+                : const Color(0xFF64748B),
           ),
           const SizedBox(width: 6),
           Text(
@@ -2187,14 +2607,18 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
               fontSize: 10.5,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.8,
-              color: _isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF64748B),
+              color: _isDark
+                  ? DefensysTokens.textSecondaryDark
+                  : const Color(0xFF64748B),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Container(
               height: 1,
-              color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+              color: _isDark
+                  ? DefensysTokens.mistBorder
+                  : const Color(0xFFE2E8F0),
             ),
           ),
         ],
@@ -2246,7 +2670,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           Text(
             'One row per Capstone team for this deliverable. Use Stage to narrow by defense phase.',
             style: TextStyle(
-              color: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
+              color: _isDark
+                  ? DefensysTokens.textSecondaryDark
+                  : AppColors.textSecondary,
               fontSize: 12,
             ),
           ),
@@ -2274,7 +2700,11 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           _tableHeaderCell('File', flex: 1.6),
           _tableHeaderCell('Status', flex: 0.9),
           _tableHeaderCell('Uploaded', flex: 0.8),
-          _tableHeaderCell('Actions', flex: 1.1, alignment: Alignment.centerRight),
+          _tableHeaderCell(
+            'Actions',
+            flex: 1.1,
+            alignment: Alignment.centerRight,
+          ),
         ],
       ),
     );
@@ -2283,13 +2713,13 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   Widget _repositoryDeliverableRowData(Map<String, dynamic> entry) {
     final hasFile = entry['has_file'] == true;
     return Container(
-      constraints: const BoxConstraints(minHeight: DefensysTableTokens.rowHeightStandard),
+      constraints: const BoxConstraints(
+        minHeight: DefensysTableTokens.rowHeightStandard,
+      ),
       decoration: BoxDecoration(
         color: _isDark ? DefensysTokens.mistPanel : Colors.white,
         border: Border(
-          bottom: BorderSide(
-            color: DefensysTableTokens.rowBorderOf(context),
-          ),
+          bottom: BorderSide(color: DefensysTableTokens.rowBorderOf(context)),
         ),
       ),
       child: Row(

@@ -216,7 +216,7 @@ class TeamGrade(models.Model):
 
     @property
     def result(self):
-        if self.verdict:
+        if self.is_capstone and self.verdict:
             if self.verdict in (self.VERDICT_FAILED, self.VERDICT_PROJECT_REJECTED):
                 return 'failed'
             if self.verdict == self.VERDICT_APPROVED_WITH_REVISIONS and not self.revisions_cleared_at:

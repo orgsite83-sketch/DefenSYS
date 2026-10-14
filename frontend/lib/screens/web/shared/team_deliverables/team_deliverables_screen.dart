@@ -4,10 +4,12 @@ import 'package:defensys/services/adviser_grading_provider.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/services/weekly_progress_provider.dart';
 import 'package:defensys/services/defense/adviser_defense_provider.dart';
+import 'package:defensys/services/defense/team_defense_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'components/deliverables_filter_bar.dart';
 import 'components/deliverables_table.dart';
+import 'components/faculty_teams_overview_export.dart';
 import 'components/cohort_submissions_matrix.dart';
 import 'deliverables_view_types.dart';
 
@@ -62,6 +64,7 @@ bool _stageNotConfigured(CapstoneDeliverablesState state) {
 class TeamDeliverablesScreen extends ConsumerStatefulWidget {
   final String? initialScope;
   final bool isAdviser;
+  final bool isPitInstructor;
   final String? pitYearLevel;
   final String? pitSection;
   final int? initialTeamId;
@@ -72,6 +75,7 @@ class TeamDeliverablesScreen extends ConsumerStatefulWidget {
     super.key,
     this.initialScope,
     this.isAdviser = false,
+    this.isPitInstructor = false,
     this.pitYearLevel,
     this.pitSection,
     this.initialTeamId,
@@ -113,6 +117,8 @@ class _TeamDeliverablesScreenState
       ref.read(weeklyProgressProvider.notifier).fetchReports();
       if (widget.isAdviser) {
         ref.read(adviserDefenseProvider.notifier).fetch();
+      } else if (widget.isPitInstructor) {
+        ref.read(pitInstructorDefenseProvider.notifier).fetch();
       }
     });
   }
@@ -234,7 +240,18 @@ class _TeamDeliverablesScreenState
                   ),
                 )
               : (_viewMode == DeliverablesViewMode.matrix
-                  ? CohortSubmissionsMatrix(
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (widget.isAdviser || widget.isPitInstructor) ...[
+                          FacultyTeamsOverviewExport(
+                            teams: filteredTeams,
+                            workspace: widget.isAdviser ? 'adviser' : 'pit_instructor',
+                            selectedStage: state.selectedStage,
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        CohortSubmissionsMatrix(
                       teams: filteredTeams,
                       state: state,
                       isAdviser: widget.isAdviser,
@@ -245,9 +262,12 @@ class _TeamDeliverablesScreenState
                         });
                       },
                     )
+                      ],
+                    )
                   : DeliverablesTablePane(
                       state: state,
                       isAdviser: widget.isAdviser,
+                      isPitInstructor: widget.isPitInstructor,
                       key: ValueKey(_activeTeamId),
                       initialTeamId: _activeTeamId ?? widget.initialTeamId,
                       initialTab: widget.initialTab,

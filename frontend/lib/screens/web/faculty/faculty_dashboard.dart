@@ -375,7 +375,6 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           'dashboard',
           'deliverables',
           'student_teams',
-          'audit_compliance',
           'uploader',
         }.contains(section);
       case FacultyWorkspace.documenter:
@@ -1371,16 +1370,6 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                   () => _goToSection('deliverables'),
                 ),
               ),
-              _FacultyNavEntry(
-                section: 'audit_compliance',
-                icon: Icons.summarize_rounded,
-                label: 'Reports',
-                isActive: _activeSection == 'audit_compliance',
-                onTap: () => _afterSidebarAction(
-                  isWide,
-                  () => _goToSection('audit_compliance'),
-                ),
-              ),
             ],
           ),
         ];
@@ -1481,9 +1470,15 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     if (!_isSectionSupportedByWorkspace(activeSection, workspaceOption.type)) {
       return workspaceOption.type == FacultyWorkspace.faculty
           ? const RepositoryTab()
-          : Container(
-              color: DefensysTokens.backgroundOf(context),
-              child: const ProjectArchiveScreen(),
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: _buildWorkspaceDashboard(
+                workspace: workspaceOption.type,
+                dashState: dashState,
+                facultyName: facultyName,
+                yearLevel: workspaceOption.yearLevel,
+                section: workspaceOption.section,
+              ),
             );
     }
 
@@ -1511,6 +1506,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           key: ValueKey('deliverables_${initialTeamId ?? 'all'}_${initialTab ?? 'default'}_${initialStage ?? 'default'}'),
           initialScope: initialScope,
           isAdviser: ws.type == FacultyWorkspace.adviser,
+          isPitInstructor: ws.type == FacultyWorkspace.pitInstructor,
           pitYearLevel: (ws.type == FacultyWorkspace.pitLead || ws.type == FacultyWorkspace.pitInstructor) ? ws.yearLevel : null,
           pitSection: ws.type == FacultyWorkspace.pitInstructor ? ws.section : null,
           initialTeamId: initialTeamId,
@@ -1697,6 +1693,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           facultyName: facultyName,
           onOpenStudentTeams: () => _goToSection('student_teams'),
           onOpenScheduler: () => _goToSection('defense_scheduler'),
+          onOpenDefenseBoard: () => _goToSection('defense_board'),
           onOpenGradeCenter: () => _goToSection('grade_center'),
           onOpenRubrics: () => _goToSection('rubrics'),
           onOpenCohort: () => _goToSection('cohort'),

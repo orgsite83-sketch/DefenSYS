@@ -23,9 +23,14 @@ Map<String, dynamic> _readiness({bool overdue = false}) => {
 };
 
 class _MaterialsNotifier extends CapstoneDeliverablesNotifier {
-  _MaterialsNotifier({this.closed = false, this.pitAutoEligible = false});
+  _MaterialsNotifier({
+    this.closed = false,
+    this.pitAutoEligible = false,
+    this.awaitingSchedule = false,
+  });
   final bool closed;
   final bool pitAutoEligible;
+  final bool awaitingSchedule;
 
   @override
   CapstoneDeliverablesState build() {
@@ -55,9 +60,10 @@ class _MaterialsNotifier extends CapstoneDeliverablesNotifier {
         'can_upload': !closed,
         'locked': closed,
         'requirement_timing': 'defense',
-        'due_at': '2030-11-19T09:00:00+08:00',
+        'due_at': awaitingSchedule ? null : '2030-11-19T09:00:00+08:00',
         'file_format': 'presentation',
         'materials_submitted': false,
+        'materials_status': awaitingSchedule ? 'awaiting_schedule' : 'pending',
         'upload_lock_reason': closed
             ? 'The submission deadline has passed. Ask an administrator to extend it.'
             : '',
@@ -75,7 +81,16 @@ class _MaterialsNotifier extends CapstoneDeliverablesNotifier {
       'pre': visiblePre,
       'deliverables': visiblePre,
       'post': [],
-      'materials_readiness': _readiness(overdue: closed),
+      'materials_readiness': awaitingSchedule
+          ? {
+              'required_total': 1,
+              'submitted_total': 0,
+              'status': 'awaiting_schedule',
+              'items': [
+                {'id': 'DECK', 'label': 'Pitch deck', 'due_at': null},
+              ],
+            }
+          : _readiness(overdue: closed),
     };
     return CapstoneDeliverablesState(
       selectedStage: 'Concept Proposal',
@@ -146,6 +161,12 @@ void main() {
       expect(find.text('Before endorsement'), findsOneWidget);
       expect(find.text('Before scheduled defense'), findsOneWidget);
       expect(find.text('Submission deadline'), findsNothing);
+      expect(
+        find.byTooltip(
+          'Panelists can view this uploaded file during oral grading. This choice does not change the submission deadline.',
+        ),
+        findsOneWidget,
+      );
       await tester.tap(find.text('Defense material for panelists'));
       await tester.pumpAndSettle();
       expect(material, true);
@@ -287,7 +308,7 @@ void main() {
           theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
         );
         expect(
-          find.text('Defense materials · Overdue · 0/1 submitted'),
+          find.text('Defense files · 0/1 uploaded · Deadline passed'),
           findsOneWidget,
         );
         expect(
@@ -343,6 +364,54 @@ void main() {
   }
 
   testWidgets(
+    'unscheduled defense file is due later and does not block endorsement',
+    (tester) async {
+      expect(
+        StudentTaskBadgeHelper.isDeliverablePending({
+          'type': 'pre',
+          'required': true,
+          'requirement_timing': 'defense',
+          'materials_status': 'awaiting_schedule',
+          'materials_submitted': false,
+        }),
+        isFalse,
+      );
+      tester.view.physicalSize = const Size(440, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await pumpDefensysWidget(
+        tester,
+        const StudentDeliverablesTab(
+          isCapstone: true,
+          studentData: null,
+          hideHeader: true,
+        ),
+        overrides: [
+          capstoneDeliverablesProvider.overrideWith(
+            () => _MaterialsNotifier(awaitingSchedule: true),
+          ),
+        ],
+      );
+
+      expect(find.text('Before endorsement'), findsOneWidget);
+      expect(find.text('Before Your Defense'), findsOneWidget);
+      expect(find.text('Due later'), findsOneWidget);
+      expect(find.text('Action Required'), findsNothing);
+      expect(
+        find.textContaining('do not block endorsement or scheduling'),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Deadline set when your defense is scheduled'),
+        findsOneWidget,
+      );
+      expect(find.text('Upload Pitch deck'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'PIT student can see pending defense files without an endorsement gate',
     (tester) async {
       tester.view.physicalSize = const Size(440, 1400);
@@ -351,10 +420,7 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       await pumpDefensysWidget(
         tester,
-        const StudentDeliverablesTab(
-          isCapstone: false,
-          studentData: null,
-        ),
+        const StudentDeliverablesTab(isCapstone: false, studentData: null),
         overrides: [
           capstoneDeliverablesProvider.overrideWith(
             () => _MaterialsNotifier(pitAutoEligible: true),

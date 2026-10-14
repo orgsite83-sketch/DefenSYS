@@ -12,6 +12,20 @@ def _submission_kind_for_deliverable(submission):
     return 'pre'
 
 
+def _submission_archive_context(submission):
+    team = submission.team
+    semester = submission.archive_semester or (team.semester if team else None)
+    return {
+        'team_name': submission.archive_team_name or (team.name if team else ''),
+        'project_title': submission.archive_project_title or (team.project_title if team else ''),
+        'year_level': submission.archive_year_level or (team.year_level if team else ''),
+        'level': submission.archive_team_level or (team.level if team else ''),
+        'academic_year': semester.school_year.label if semester else '',
+        'semester': semester.label if semester else '',
+        'pit_event_config_id': submission.pit_event_config_id,
+    }
+
+
 def _missing_capstone_entry(team, stage_label, definition, request=None):
     is_post = definition['type'] == DeliverableSubmission.TYPE_POST
     locked = is_post and not archive_unlocked(team, stage_label)
@@ -76,6 +90,7 @@ def capstone_archive_entry_payload(entry, request=None, *, include_ml=False, inc
         'academic_year': entry.academic_year,
         'semester': entry.semester_label,
         'stage': entry.stage_label,
+        'pit_event_config_id': None,
         'course_code': entry.course_code,
         'status': entry.status,
         'uploaded_by': entry.uploaded_by_name or display_name(entry.uploaded_by) or 'Admin',
@@ -117,6 +132,7 @@ def pit_entry_payload(entry, request=None, *, include_ml=False, include_audit_tr
         'academic_year': entry.academic_year,
         'semester': entry.semester_label,
         'stage': entry.stage_label or entry.course_code,
+        'pit_event_config_id': entry.pit_event_config_id,
         'course_code': entry.course_code,
         'status': entry.status,
         'uploaded_by': entry.uploaded_by_name or display_name(entry.uploaded_by) or 'PIT Lead',
@@ -140,10 +156,11 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
     from defensys_backend.file_urls import resolve_uploaded_file_url
 
     team = submission.team
+    archive_context = _submission_archive_context(submission)
     is_post = submission.deliverable_type == DeliverableSubmission.TYPE_POST
     kind = _submission_kind_for_deliverable(submission)
 
-    is_pit = team.is_pit if team else False
+    is_pit = 'PIT' in archive_context['level']
     entry_type = ArchiveEntry.TYPE_PIT if is_pit else ArchiveEntry.TYPE_CAPSTONE
 
     is_restricted_archive = False
@@ -152,7 +169,7 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
             from defense.scheduler.models import PitEventDeliverable
             is_restricted_archive = PitEventDeliverable.objects.filter(
                 deliverable_id=submission.deliverable_id,
-                pit_event_config__semester=team.semester,
+                pit_event_config__semester=submission.archive_semester or team.semester,
                 pit_event_config__event_name__iexact=submission.stage_label.strip(),
                 is_restricted=True
             ).exists()
@@ -188,12 +205,7 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
             'deliverable_id': submission.deliverable_id,
             'deliverable_label': submission.label,
             'team_id': team.id if team else None,
-            'team_name': team.name if team else '',
-            'project_title': team.project_title if team else '',
-            'year_level': team.year_level if team else '',
-            'level': team.level if team else '',
-            'academic_year': team.semester.school_year.label if team and team.semester else '',
-            'semester': team.semester.label if team and team.semester else '',
+            **archive_context,
             'stage': submission.stage_label,
             'course_code': '',
             'status': status_display,
@@ -238,7 +250,7 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
                 '',
                 team,
                 submission.stage_label,
-                team.semester.label if team.semester else '1st Semester',
+                (submission.archive_semester or team.semester).label if (submission.archive_semester or team.semester) else '1st Semester',
                 deliverable_label=submission.label,
             )
 
@@ -255,12 +267,7 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
             'deliverable_id': submission.deliverable_id,
             'deliverable_label': submission.label,
             'team_id': team.id if team else None,
-            'team_name': team.name if team else '',
-            'project_title': team.project_title if team else '',
-            'year_level': team.year_level if team else '',
-            'level': team.level if team else '',
-            'academic_year': team.semester.school_year.label if team and team.semester else '',
-            'semester': team.semester.label if team and team.semester else '',
+            **archive_context,
             'stage': submission.stage_label,
             'course_code': '',
             'status': status_display,

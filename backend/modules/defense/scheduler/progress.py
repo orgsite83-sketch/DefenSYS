@@ -16,13 +16,15 @@ def schedule_progress(schedule):
     if grade is None:
         grade = TeamGrade.all_objects.filter(schedule=schedule).select_related('team', 'semester', 'schedule').first()
     history = None if grade else GradeAttemptHistory.objects.filter(schedule=schedule).order_by('-id').first()
-    verdict = grade.verdict if grade else history.verdict if history else ''
+    verdict = ''
+    if schedule.scope == 'capstone':
+        verdict = grade.verdict if grade else history.verdict if history else ''
     evidence = grade or history
     result = {'verdict': verdict, 'attempt_count': grade.attempt_count if grade else history.attempt_number if history else 1,
               'panel_evaluators_submitted': 0, 'panel_evaluators_required': 0,
-              'revisions_cleared_at': str(evidence.revisions_cleared_at) if evidence and evidence.revisions_cleared_at else None,
-              'revision_deadline': str(evidence.revision_deadline) if evidence and evidence.revision_deadline else None,
-              'verdict_remarks': evidence.verdict_remarks if evidence else '',
+              'revisions_cleared_at': str(evidence.revisions_cleared_at) if verdict and evidence.revisions_cleared_at else None,
+              'revision_deadline': str(evidence.revision_deadline) if verdict and evidence.revision_deadline else None,
+              'verdict_remarks': evidence.verdict_remarks if verdict else '',
               # These fields belong to this schedule, unlike the board's legacy
               # grade_status lookup which can fall back to another stage attempt.
               'grade_status': grade.status if grade else None,
@@ -34,7 +36,7 @@ def schedule_progress(schedule):
     elif schedule.operation_state != 'normal' and schedule.status == 'scheduled':
         display = schedule.operation_state
     elif grade:
-        if grade.verdict and schedule.status == 'scheduled':
+        if verdict and schedule.status == 'scheduled':
             from defense.scheduler.models import DefenseSchedule
             DefenseSchedule.objects.filter(pk=schedule.pk, status='scheduled').update(status=DefenseSchedule.STATUS_DONE)
             schedule.status = DefenseSchedule.STATUS_DONE

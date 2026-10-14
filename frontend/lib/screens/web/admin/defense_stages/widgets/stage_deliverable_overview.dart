@@ -146,7 +146,7 @@ class StageDeliverableOverview extends StatelessWidget {
       children: [
         for (final (title, groupItems) in groups) ...[
           Padding(
-            padding: const EdgeInsets.fromLTRB(2, 4, 2, 8),
+            padding: const EdgeInsets.fromLTRB(2, 4, 2, 4),
             child: Text(
               '$title (${groupItems.length})',
               style: theme.textTheme.labelMedium?.copyWith(
@@ -155,6 +155,18 @@ class StageDeliverableOverview extends StatelessWidget {
               ),
             ),
           ),
+          if (!isPost && groupItems.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(2, 0, 2, 8),
+              child: Text(
+                title == 'Before scheduled defense'
+                    ? 'These files can be submitted after endorsement. They do not block scheduling.'
+                    : 'Required files here must be cleared before endorsement and scheduling.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: const Color(0xFF64748B),
+                ),
+              ),
+            ),
           if (groupItems.isEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 2, 12, 12),

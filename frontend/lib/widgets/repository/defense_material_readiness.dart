@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 String materialDeadlineLabel(dynamic value) {
   final date = DateTime.tryParse(value?.toString() ?? '');
   return date == null
-      ? 'After scheduling'
+      ? 'Deadline set when scheduled'
       : DateFormat('MMM d, y · h:mm a').format(date.toLocal());
 }
 
@@ -24,14 +24,17 @@ class DefenseMaterialReadiness extends StatelessWidget {
     final submitted = readiness['submitted_total'] as num? ?? 0;
     final status = readiness['status']?.toString();
     final label = switch (status) {
-      'ready' => 'Ready',
-      'overdue' => 'Overdue',
-      'awaiting_schedule' => 'Awaiting schedule',
-      _ => 'Pending',
+      'ready' => 'Uploaded',
+      'overdue' => 'Deadline passed',
+      'awaiting_schedule' => 'No defense date yet',
+      _ => 'Due before defense',
     };
     final overdue = status == 'overdue';
+    final awaitingSchedule = status == 'awaiting_schedule';
     final color = overdue
         ? Theme.of(context).colorScheme.error
+        : awaitingSchedule
+        ? Theme.of(context).colorScheme.onSurfaceVariant
         : Theme.of(context).colorScheme.primary;
     final items = (readiness['items'] as List? ?? []).whereType<Map>();
     final deadlineText = items
@@ -40,7 +43,7 @@ class DefenseMaterialReadiness extends StatelessWidget {
               '${item['label']}: ${materialDeadlineLabel(item['due_at'])}',
         )
         .join('\n');
-    final heading = 'Defense materials · $label · $submitted/$total submitted';
+    final heading = 'Defense files · $submitted/$total uploaded · $label';
     if (compact) {
       return Tooltip(
         message: deadlineText,
@@ -58,12 +61,18 @@ class DefenseMaterialReadiness extends StatelessWidget {
       liveRegion: true,
       child: Container(
         width: double.infinity,
-        margin: const EdgeInsets.symmetric(vertical: 12),
-        padding: const EdgeInsets.all(14),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: .06),
-          border: Border.all(color: color.withValues(alpha: .2)),
-          borderRadius: BorderRadius.circular(10),
+          color: awaitingSchedule
+              ? Theme.of(context).colorScheme.surfaceContainerLowest
+              : color.withValues(alpha: .06),
+          border: Border.all(
+            color: awaitingSchedule
+                ? Theme.of(context).dividerColor
+                : color.withValues(alpha: .2),
+          ),
+          borderRadius: BorderRadius.circular(8),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -73,9 +82,9 @@ class DefenseMaterialReadiness extends StatelessWidget {
               style: TextStyle(color: color, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 6),
-            if (status == 'awaiting_schedule')
+            if (awaitingSchedule)
               const Text(
-                'Your deadline appears when the defense is scheduled. You can prepare and upload early.',
+                'These files do not block endorsement or scheduling. Students can upload now or after endorsement; the deadline appears when the defense is scheduled.',
               )
             else if (deadlineText.isNotEmpty)
               Text(deadlineText),

@@ -486,7 +486,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               else ...[
                 Builder(
                   builder: (context) {
-                    final hasPendingPre = StudentTaskBadgeHelper.hasPendingPreDeliverables(selectedStage);
+                    final hasPendingScheduling = pre
+                        .where((item) => item['requirement_timing'] != 'defense')
+                        .any(StudentTaskBadgeHelper.isDeliverablePending);
                     final hasPendingPost = StudentTaskBadgeHelper.hasPendingPostDeliverables(selectedStage);
                     final stageGrade = (selectedStage['grade'] as Map<String, dynamic>?) ??
                         (selectedStage['grade'] is Map ? Map<String, dynamic>.from(selectedStage['grade'] as Map) : null);
@@ -495,13 +497,16 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                       children: [
                         _buildRequiredProgressBlock(pre.where((item) => item['requirement_timing'] != 'defense').toList()),
                         const SizedBox(height: 16),
-                        _sectionTitle('Scheduling Requirements', showRedDot: hasPendingPre),
+                        _sectionTitle(
+                          noEndorsementNeeded ? 'Before scheduling' : 'Before endorsement',
+                          showRedDot: hasPendingScheduling,
+                        ),
                         const SizedBox(height: 8),
-                        if (pre.isEmpty)
+                        if (!pre.any((item) => item['requirement_timing'] != 'defense'))
                           const Padding(
                             padding: EdgeInsets.symmetric(vertical: 8),
                             child: Text(
-                              'No pre-defense requirements configured.',
+                              'No files are required before endorsement or scheduling.',
                               style: TextStyle(
                                 color: Colors.grey,
                                 fontStyle: FontStyle.italic,
@@ -510,13 +515,25 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                             ),
                           )
                         else
-                          ...pre.where((item) => item['requirement_timing'] != 'defense')
-                              .map((item) => _deliverableRow(team, state.selectedStage, item, endorsed, stageGrade)),
+                          ...[
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: Text(
+                                noEndorsementNeeded
+                                    ? 'Required files here must be cleared before your team can be scheduled.'
+                                    : 'Required files here must be cleared before your team can be endorsed.',
+                                style: const TextStyle(fontSize: 12, color: DefensysTokens.textSecondary),
+                              ),
+                            ),
+                            ...pre.where((item) => item['requirement_timing'] != 'defense')
+                                .map((item) => _deliverableRow(team, state.selectedStage, item, endorsed, stageGrade)),
+                          ],
                         if (pre.any((item) => item['requirement_timing'] == 'defense')) ...[
-                          DefenseMaterialReadiness(readiness: Map<String, dynamic>.from(
-                              selectedStage['materials_readiness'] as Map? ?? const {})),
+                          const SizedBox(height: 10),
                           _sectionTitle('Before Your Defense'),
                           const SizedBox(height: 8),
+                          DefenseMaterialReadiness(readiness: Map<String, dynamic>.from(
+                              selectedStage['materials_readiness'] as Map? ?? const {})),
                           ...pre.where((item) => item['requirement_timing'] == 'defense')
                               .map((item) => _deliverableRow(team, state.selectedStage, item, endorsed, stageGrade)),
                         ],
@@ -978,6 +995,8 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final uploadedBy = (submission['uploaded_by_name'] ?? 'Team Member').toString();
     final uploadedAt = (submission['uploaded_at'] ?? submission['date'] ?? '').toString();
     final isRequired = item['required'] == true && !isWaived;
+    final dueAfterScheduling = item['requirement_timing'] == 'defense' &&
+        item['materials_status'] == 'awaiting_schedule';
 
     final Color cardBorderColor = (isWaived || isAccepted)
         ? const Color(0xFF86EFAC)
@@ -985,7 +1004,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
             ? const Color(0xFFFECACA)
             : (uploaded
                 ? const Color(0xFFFDE68A)
-                : (isRequired ? const Color(0xFFFECDD3) : const Color(0xFFE2E8F0))));
+                : (isRequired && !dueAfterScheduling ? const Color(0xFFFECDD3) : const Color(0xFFE2E8F0))));
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1032,6 +1051,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   uploaded: uploaded,
                   isRequired: isRequired,
                   isDefenseTimed: item['requirement_timing'] == 'defense',
+                  dueAfterScheduling: dueAfterScheduling,
                 ),
               ],
             ),
@@ -1057,7 +1077,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
             ],
             if (item['requirement_timing'] == 'defense') ...[
               const SizedBox(height: 6),
-              Text('Due: ${materialDeadlineLabel(item['due_at'])}',
+              Text(item['due_at'] == null
+                  ? 'Deadline set when your defense is scheduled'
+                  : 'Due: ${materialDeadlineLabel(item['due_at'])}',
                   style: const TextStyle(fontSize: 12, color: DefensysTokens.textSecondary)),
               if (item['upload_lock_reason']?.toString().isNotEmpty == true)
                 Text(item['upload_lock_reason'].toString(), style: Theme.of(context).textTheme.bodySmall),
@@ -1443,6 +1465,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     required bool uploaded,
     required bool isRequired,
     bool isDefenseTimed = false,
+    bool dueAfterScheduling = false,
   }) {
     if (isWaived || isAccepted) {
       return Container(
@@ -1510,9 +1533,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: isRequired ? const Color(0xFFFFF1F2) : const Color(0xFFF1F5F9),
+          color: isRequired && !dueAfterScheduling ? const Color(0xFFFFF1F2) : const Color(0xFFF1F5F9),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: isRequired ? const Color(0xFFFECDD3) : const Color(0xFFE2E8F0)),
+          border: Border.all(color: isRequired && !dueAfterScheduling ? const Color(0xFFFECDD3) : const Color(0xFFE2E8F0)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1521,17 +1544,17 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               width: 5,
               height: 5,
               decoration: BoxDecoration(
-                color: isRequired ? const Color(0xFFE11D48) : const Color(0xFF94A3B8),
+                color: isRequired && !dueAfterScheduling ? const Color(0xFFE11D48) : const Color(0xFF94A3B8),
                 shape: BoxShape.circle,
               ),
             ),
             const SizedBox(width: 4),
             Text(
-              isRequired ? 'Action Required' : 'Optional',
+              dueAfterScheduling ? 'Due later' : isRequired ? 'Action Required' : 'Optional',
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
-                color: isRequired ? const Color(0xFFBE123C) : const Color(0xFF64748B),
+                color: isRequired && !dueAfterScheduling ? const Color(0xFFBE123C) : const Color(0xFF64748B),
               ),
             ),
           ],

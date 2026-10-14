@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../../../../theme/app_theme.dart';
 import 'stage_deliverable_presets.dart';
 
 class StageDeliverablePresetsBar extends StatefulWidget {
@@ -7,6 +6,9 @@ class StageDeliverablePresetsBar extends StatefulWidget {
   final List<Map<String, dynamic>> currentDeliverables;
   final ValueChanged<List<Map<String, dynamic>>> onApplyDeliverables;
   final bool enabled;
+  final DeliverablePresetScope scope;
+  final String? yearLevel;
+  final Object? currentSourceId;
 
   const StageDeliverablePresetsBar({
     super.key,
@@ -14,6 +16,9 @@ class StageDeliverablePresetsBar extends StatefulWidget {
     required this.currentDeliverables,
     required this.onApplyDeliverables,
     this.enabled = true,
+    this.scope = DeliverablePresetScope.capstone,
+    this.yearLevel,
+    this.currentSourceId,
   });
 
   @override
@@ -30,10 +35,45 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
     _loadCustomPresets();
   }
 
+  @override
+  void didUpdateWidget(covariant StageDeliverablePresetsBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scope != widget.scope ||
+        oldWidget.yearLevel != widget.yearLevel) {
+      _loadCustomPresets();
+    }
+  }
+
+  bool get _isPit => widget.scope == DeliverablePresetScope.pit;
+  bool get _hasPresetScope => !_isPit || widget.yearLevel?.trim().isNotEmpty == true;
+  String get _sourceLabel => _isPit ? 'Event' : 'Stage';
+
+  List<Map<String, dynamic>> get _scopedSources => widget.existingStages.where((s) {
+    if (_isPit) {
+      return s['scope'] == 'pit' &&
+          StageDeliverablePresetManager.pitEventMatchesYearLevel(
+            s['label']?.toString() ?? '',
+            widget.yearLevel ?? '',
+          );
+    }
+    return s['scope'] != 'pit';
+  }).toList();
+
   Future<void> _loadCustomPresets() async {
     setState(() => _loadingCustom = true);
-    final list = await StageDeliverablePresetManager.loadCustomPresets();
-    if (mounted) {
+    final scope = widget.scope;
+    final yearLevel = widget.yearLevel;
+    if (scope == DeliverablePresetScope.pit && yearLevel != null) {
+      await StageDeliverablePresetManager.adoptMatchingLegacyPitPresets(
+        yearLevel,
+        _scopedSources,
+      );
+    }
+    final list = await StageDeliverablePresetManager.loadCustomPresets(
+      scope: scope,
+      yearLevel: yearLevel,
+    );
+    if (mounted && widget.scope == scope && widget.yearLevel == yearLevel) {
       setState(() {
         _customPresets = list;
         _loadingCustom = false;
@@ -101,7 +141,9 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
   Future<void> _handleSaveAsPreset() async {
     if (widget.currentDeliverables.isEmpty) return;
 
-    final nameController = TextEditingController(text: 'My Stage Checklist');
+    final nameController = TextEditingController(
+      text: _isPit ? 'My Event Checklist' : 'My Stage Checklist',
+    );
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
@@ -117,16 +159,18 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Save your ${widget.currentDeliverables.length} configured deliverables as a reusable preset for future stages:',
+              'Save your ${widget.currentDeliverables.length} configured deliverables as a reusable preset for future ${_isPit ? '${widget.yearLevel ?? 'this year'} PIT events' : 'stages'}:',
               style: const TextStyle(fontSize: 13),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: nameController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Preset Name',
-                hintText: 'e.g. BSIT Capstone 1 Checklist',
-                border: OutlineInputBorder(),
+                hintText: _isPit
+                    ? 'e.g. PIT Showcase Checklist'
+                    : 'e.g. BSIT Capstone 1 Checklist',
+                border: const OutlineInputBorder(),
               ),
               autofocus: true,
             ),
@@ -149,6 +193,8 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
       await StageDeliverablePresetManager.saveCustomPreset(
         nameController.text.trim(),
         widget.currentDeliverables,
+        scope: widget.scope,
+        yearLevel: widget.yearLevel,
       );
       await _loadCustomPresets();
       if (mounted) {
@@ -164,9 +210,12 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
 
   @override
   Widget build(BuildContext context) {
-    final stagesWithDeliverables = widget.existingStages.where((s) {
+    final sourcesWithDeliverables = _scopedSources.where((s) {
       final d = s['deliverables'];
-      return d is List && d.isNotEmpty;
+      return d is List &&
+          d.isNotEmpty &&
+          (widget.currentSourceId == null ||
+              s['id']?.toString() != widget.currentSourceId.toString());
     }).toList();
 
     return Container(
@@ -209,6 +258,13 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
                   color: Color(0xFF1E293B),
                 ),
               ),
+              const SizedBox(width: 7),
+              Text(
+                _isPit
+                    ? 'PIT · ${_hasPresetScope ? widget.yearLevel : 'Unassigned year'}'
+                    : 'Capstone',
+                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+              ),
             ],
           ),
 
@@ -220,8 +276,10 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
               splashColor: Colors.transparent,
             ),
             child: PopupMenuButton<StageDeliverablePreset>(
-              enabled: widget.enabled,
-              tooltip: 'Load standard or saved checklist preset',
+              enabled: widget.enabled && _hasPresetScope,
+              tooltip: _isPit
+                  ? 'Load saved PIT event checklist preset'
+                  : 'Load standard or saved checklist preset',
               offset: const Offset(0, 38),
               color: Colors.white,
               surfaceTintColor: Colors.transparent,
@@ -234,9 +292,9 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
               itemBuilder: (context) {
                 final items = <PopupMenuEntry<StageDeliverablePreset>>[];
 
-                // Built-in section
-                items.add(
-                  const PopupMenuItem<StageDeliverablePreset>(
+                // Capstone templates are not valid for PIT event checklists.
+                if (!_isPit) {
+                  items.add(const PopupMenuItem<StageDeliverablePreset>(
                     enabled: false,
                     height: 28,
                     child: Text(
@@ -248,10 +306,12 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
                         color: Color(0xFF64748B),
                       ),
                     ),
-                  ),
-                );
+                  ));
+                }
 
-                for (final preset in StageDeliverablePresetManager.builtInPresets) {
+                for (final preset in _isPit
+                    ? <StageDeliverablePreset>[]
+                    : StageDeliverablePresetManager.builtInPresets) {
                   items.add(
                     PopupMenuItem<StageDeliverablePreset>(
                       value: preset,
@@ -289,13 +349,15 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
 
                 // Custom user-saved presets
                 if (_customPresets.isNotEmpty) {
-                  items.add(const PopupMenuDivider(height: 1));
+                  if (!_isPit) {
+                    items.add(const PopupMenuDivider(height: 1));
+                  }
                   items.add(
-                    const PopupMenuItem<StageDeliverablePreset>(
+                    PopupMenuItem<StageDeliverablePreset>(
                       enabled: false,
                       height: 28,
                       child: Text(
-                        'SAVED CUSTOM PRESETS',
+                        _isPit ? 'SAVED ${widget.yearLevel?.toUpperCase() ?? 'PIT'} PIT PRESETS' : 'SAVED CUSTOM PRESETS',
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
@@ -329,6 +391,18 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
                       ),
                     );
                   }
+                }
+
+                if (_isPit && _customPresets.isEmpty) {
+                  items.add(PopupMenuItem<StageDeliverablePreset>(
+                    enabled: false,
+                    child: Text(
+                      _loadingCustom
+                          ? 'Loading saved presets...'
+                          : 'No saved presets for ${widget.yearLevel ?? 'this PIT year'} yet',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    ),
+                  ));
                 }
 
                 return items;
@@ -365,8 +439,8 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
             ),
           ),
 
-          // 2. Copy from Existing Stage (Clean Shadcn White)
-          if (stagesWithDeliverables.isNotEmpty)
+          // 2. Copy from an existing source in the same scope.
+          if (sourcesWithDeliverables.isNotEmpty)
             Theme(
               data: Theme.of(context).copyWith(
                 hoverColor: const Color(0xFFF4F4F5),
@@ -375,7 +449,7 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
               ),
               child: PopupMenuButton<Map<String, dynamic>>(
                 enabled: widget.enabled,
-                tooltip: 'Copy checklist from another defense stage',
+                tooltip: 'Copy checklist from another ${_sourceLabel.toLowerCase()}',
                 offset: const Offset(0, 38),
                 color: Colors.white,
                 surfaceTintColor: Colors.transparent,
@@ -387,11 +461,11 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
                 constraints: const BoxConstraints(minWidth: 220, maxWidth: 300),
                 itemBuilder: (context) {
                   return [
-                    const PopupMenuItem<Map<String, dynamic>>(
+                    PopupMenuItem<Map<String, dynamic>>(
                       enabled: false,
                       height: 28,
                       child: Text(
-                        'EXISTING STAGES',
+                        _isPit ? 'EXISTING PIT EVENTS' : 'EXISTING STAGES',
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
@@ -400,7 +474,7 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
                         ),
                       ),
                     ),
-                    for (final stage in stagesWithDeliverables)
+                    for (final stage in sourcesWithDeliverables)
                       PopupMenuItem<Map<String, dynamic>>(
                         value: stage,
                         child: Row(
@@ -423,8 +497,8 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
                   ];
                 },
                 onSelected: (stage) {
-                  final delivs = StageDeliverablePresetManager.copyFromStage(stage);
-                  _handlePresetSelected(delivs, stage['label']?.toString() ?? 'Stage');
+                  final delivs = StageDeliverablePresetManager.copyFromSource(stage);
+                  _handlePresetSelected(delivs, stage['label']?.toString() ?? _sourceLabel);
                 },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
@@ -440,17 +514,17 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
                       ),
                     ],
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.content_copy_rounded, size: 14, color: Color(0xFF334155)),
-                      SizedBox(width: 5),
+                      const Icon(Icons.content_copy_rounded, size: 14, color: Color(0xFF334155)),
+                      const SizedBox(width: 5),
                       Text(
-                        'Copy from Stage',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                        'Copy from $_sourceLabel',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
                       ),
-                      SizedBox(width: 4),
-                      Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: Color(0xFF64748B)),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: Color(0xFF64748B)),
                     ],
                   ),
                 ),
@@ -458,7 +532,7 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
             ),
 
           // 3. Save as Preset Button (Clean Shadcn White)
-          if (widget.currentDeliverables.isNotEmpty)
+          if (widget.currentDeliverables.isNotEmpty && _hasPresetScope)
             InkWell(
               onTap: widget.enabled ? _handleSaveAsPreset : null,
               borderRadius: BorderRadius.circular(6),

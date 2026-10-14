@@ -74,10 +74,47 @@ class _TeamGradeChooserState extends State<TeamGradeChooser> {
   }
 
   Widget _status(TeamData team) {
+    if (team.isPosted) {
+      final dark = DefensysTokens.isDark(context);
+      return Container(
+        key: ValueKey('submitted-status-${team.scheduleId}-${team.teamId}'),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+        decoration: BoxDecoration(
+          color: dark
+              ? DefensysTokens.success.withValues(alpha: .16)
+              : DefensysTokens.successBg,
+          border: Border.all(
+            color: dark
+                ? DefensysTokens.success.withValues(alpha: .45)
+                : DefensysTokens.successBorder,
+          ),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.check_circle,
+              size: 12,
+              color: dark ? DefensysTokens.success : DefensysTokens.successText,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              'Submitted',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: dark
+                    ? DefensysTokens.success
+                    : DefensysTokens.successText,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     final progress = team.evaluationProgress;
-    final label = team.isPosted
-        ? 'Submitted · Locked'
-        : !team.gradingAvailable
+    final label = !team.gradingAvailable
         ? team.evaluationStatus
         : progress.entered > 0
         ? 'Draft · ${progress.label}'

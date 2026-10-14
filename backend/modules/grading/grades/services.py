@@ -197,15 +197,15 @@ def panelist_result_payload(team_grade, panelist_key):
             'peer': peer_w,
             **({'adviser': team_grade.adviser_weight} if team_grade.is_capstone and team_grade.adviser_weight else {}),
         },
-        'verdict': team_grade.verdict or '',
-        'verdict_remarks': team_grade.verdict_remarks or '',
+        'verdict': (team_grade.verdict or '') if team_grade.is_capstone else '',
+        'verdict_remarks': (team_grade.verdict_remarks or '') if team_grade.is_capstone else '',
         'verdict_by_name': (
             f"{team_grade.verdict_by.first_name} {team_grade.verdict_by.last_name}".strip()
             or team_grade.verdict_by.username
-        ) if team_grade.verdict_by else '',
+        ) if team_grade.is_capstone and team_grade.verdict_by else '',
         'revision_deadline': (
             team_grade.revision_deadline.isoformat()
-            if team_grade.revision_deadline
+            if team_grade.is_capstone and team_grade.revision_deadline
             else None
         ),
         'attempt_count': team_grade.attempt_count or 1,
@@ -1434,7 +1434,7 @@ class GradeContextService:
             raise ValidationError({'status': 'Only complete grades can be finalized for archive.'})
         if not team_grading_readiness(grade, grade.semester, grade.scope)['ready']:
             raise ValidationError('Complete every required evaluator before finalizing this defense.')
-        verdict = getattr(grade, 'verdict', '')
+        verdict = grade.verdict if grade.scope == TeamGrade.SCOPE_CAPSTONE else ''
         from .defense_workflow import passed_and_cleared
         if grade.scope == TeamGrade.SCOPE_CAPSTONE and not passed_and_cleared(grade):
             raise ValidationError({'status': 'Defense approval and required revision clearance are needed before archiving.'})
@@ -2319,7 +2319,7 @@ def _auto_finalize_passed_grades_in_queryset(grades, user=None):
         if not grade.is_complete:
             skipped_incomplete += 1
             continue
-        verdict = getattr(grade, 'verdict', '')
+        verdict = grade.verdict if grade.scope == TeamGrade.SCOPE_CAPSTONE else ''
         from .defense_workflow import passed_and_cleared
         if grade.scope == TeamGrade.SCOPE_CAPSTONE and not passed_and_cleared(grade):
             _apply_team_result_from_grade(grade)
@@ -2391,7 +2391,7 @@ def maybe_auto_finalize_passed_grade(grade, user=None):
     grade.recalculate()
     if grade.status in TeamGrade.LOCKED_STATUSES:
         return grade
-    verdict = getattr(grade, 'verdict', '')
+    verdict = grade.verdict if grade.scope == TeamGrade.SCOPE_CAPSTONE else ''
     from .defense_workflow import passed_and_cleared
     if grade.scope == TeamGrade.SCOPE_CAPSTONE and not passed_and_cleared(grade):
         return grade

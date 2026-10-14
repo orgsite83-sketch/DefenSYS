@@ -123,6 +123,75 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertIn('Team_Cipher_Source_Code.zip', file_names)
         self.assertEqual(response.data['scope']['scope'], 'admin')
 
+    def test_folder_counts_use_all_filtered_files_before_pagination(self):
+        self.client.force_authenticate(user=self.admin)
+        root = self.client.get('/api/repository/audit/', {'group_by': 'team', 'limit': 1})
+        self.assertEqual(root.status_code, 200)
+        self.assertEqual(len(root.data['entries']), 1)
+        folders = root.data['folder_browser']['folders']
+        self.assertEqual(sum(folder['file_count'] for folder in folders), 4)
+
+        team_folder = next(folder for folder in folders if folder['title'] == 'Team Cipher')
+        stages = self.client.get('/api/repository/audit/', {
+            'group_by': 'team', 'folder_key': team_folder['key'], 'limit': 1,
+        })
+        self.assertEqual(stages.data['folder_browser']['file_count'], 2)
+        self.assertEqual(len(stages.data['folder_browser']['folders']), 2)
+        stage_folder = stages.data['folder_browser']['folders'][0]
+        leaf = self.client.get('/api/repository/audit/', {
+            'group_by': 'team', 'folder_key': stage_folder['key'], 'limit': 1,
+        })
+        self.assertTrue(leaf.data['folder_browser']['is_leaf'])
+        self.assertEqual(leaf.data['pagination']['total'], 1)
+        self.assertEqual(len(leaf.data['entries']), 1)
+
+    def test_deliverable_folders_keep_stages_separate(self):
+        DeliverableSubmission.objects.create(
+            team=self.capstone_team, stage_label='Final Defense',
+            deliverable_id='D1', label='D1 - Final document',
+            deliverable_type=DeliverableSubmission.TYPE_POST,
+            file_name='Team_Cipher_Final_D1.pdf', uploaded_by=self.admin,
+        )
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get('/api/repository/audit/', {
+            'group_by': 'deliverable', 'type': 'capstone',
+        })
+        d1_folders = [f for f in response.data['folder_browser']['folders']
+                      if f['title'].startswith('D1 -')]
+        self.assertEqual(len(d1_folders), 2)
+        self.assertNotEqual(d1_folders[0]['key'], d1_folders[1]['key'])
+
+    def test_submission_keeps_its_period_and_pit_year_after_team_moves(self):
+        event = PitEventGradingConfig.objects.create(
+            semester=self.semester, event_name='3rd Year Expo',
+        )
+        submission = DeliverableSubmission.objects.create(
+            team=self.pit_team, stage_label=event.event_name,
+            deliverable_id='PIT_D1', label='Pitch deck',
+            deliverable_type=DeliverableSubmission.TYPE_PRE,
+            file_name='Pitch.pdf', uploaded_by=self.student,
+        )
+        self.assertEqual(submission.pit_event_config_id, event.id)
+        next_year = SchoolYear.objects.create(label='2027-2028')
+        next_semester = Semester.objects.create(
+            school_year=next_year, label=Semester.FIRST,
+        )
+        self.pit_team.semester = next_semester
+        self.pit_team.year_level = '2nd Year'
+        self.pit_team.save(update_fields=['semester', 'year_level'])
+
+        self.client.force_authenticate(user=self.pit_lead)
+        response = self.client.get('/api/repository/audit/', {
+            'group_by': 'stage',
+        })
+        entry = next(e for e in response.data['entries']
+                     if e['file_name'] == 'Pitch.pdf')
+        self.assertEqual(entry['academic_year'], '2026-2027')
+        self.assertEqual(entry['year_level'], '3rd Year')
+        self.assertEqual(entry['pit_event_config_id'], event.id)
+        self.assertTrue(any(f['title'] == event.event_name
+                            for f in response.data['folder_browser']['folders']))
+
     def test_admin_can_view_pit_but_not_upload(self):
         self.client.force_authenticate(user=self.admin)
 

@@ -18,11 +18,13 @@ def is_chair(grade, user):
 
 
 def passed_and_cleared(grade):
+    if grade.scope == TeamGrade.SCOPE_PIT:
+        return grade.result == 'passed'
     if grade.verdict == TeamGrade.VERDICT_APPROVED:
         return True
     if grade.verdict == TeamGrade.VERDICT_APPROVED_WITH_REVISIONS:
         return bool(grade.revisions_cleared_at)
-    return grade.scope == TeamGrade.SCOPE_PIT and grade.result == 'passed'
+    return False
 
 
 def recovery_for(team, stage):
@@ -60,6 +62,8 @@ def record_verdict(grade, *, actor, verdict, remarks='', deadline=None, verifica
         DefenseSchedule.objects.select_for_update().get(pk=grade.schedule_id)
     grade = TeamGrade.objects.select_for_update(of=('self',)).select_related('team', 'schedule', 'semester').get(pk=grade.pk)
     require_current(grade)
+    if grade.scope != TeamGrade.SCOPE_CAPSTONE:
+        raise ValidationError('PIT events do not use official defense verdicts.')
     if not (is_admin(actor) or is_chair(grade, actor)):
         raise PermissionError('Only the panel chair or an administrator can record a verdict.')
     if verdict not in dict(TeamGrade.VERDICT_CHOICES):

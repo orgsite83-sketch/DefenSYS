@@ -40,6 +40,7 @@ from .grouping import (
     team_counts_payload,
     track_from_entry_type,
 )
+from .folders import archive_folder_payload
 from .payloads import (
     capstone_entry_payload,
     capstone_archive_entry_payload,
@@ -807,6 +808,9 @@ def capstone_deliverable_queryset_for_scope(scope):
             'team',
             'team__semester',
             'team__semester__school_year',
+            'archive_semester',
+            'archive_semester__school_year',
+            'pit_event_config',
             'uploaded_by',
         )
         .prefetch_related('files')
@@ -823,6 +827,9 @@ def pit_deliverable_queryset_for_scope(scope):
             'team',
             'team__semester',
             'team__semester__school_year',
+            'archive_semester',
+            'archive_semester__school_year',
+            'pit_event_config',
             'uploaded_by',
         )
         .prefetch_related('files')
@@ -830,7 +837,10 @@ def pit_deliverable_queryset_for_scope(scope):
         .order_by('-uploaded_at', 'file_name')
     )
     if scope['scope'] == 'pit_lead' and scope.get('pit_year_level'):
-        queryset = queryset.filter(team__year_level=scope['pit_year_level'])
+        queryset = queryset.filter(
+            Q(archive_year_level=scope['pit_year_level'])
+            | Q(archive_year_level='', team__year_level=scope['pit_year_level'])
+        )
     return queryset
 
 
@@ -955,8 +965,10 @@ def repository_audit_payload(request):
     view_mode = (query_params.get('view') or '').strip()
     team_id = (query_params.get('team_id') or '').strip()
 
-    if deliverable_id and scope.get('scope') == 'admin':
-        entries = augment_deliverable_missing_rows(entries, deliverable_id, stage_filter)
+    if (deliverable_id or query_params.get('group_by') == 'deliverable') and scope.get('scope') in ('admin', 'pit_lead'):
+        entries = augment_deliverable_missing_rows(
+            entries, deliverable_id, stage_filter, scope=scope,
+        )
 
     filtered, suggestions = filter_and_rank_entries(entries, query_params)
     for entry in filtered:
@@ -1005,9 +1017,16 @@ def repository_audit_payload(request):
             stage_filter=stage_filter,
         )
 
+    folder_browser = archive_folder_payload(
+        filtered,
+        group_by=query_params.get('group_by') or 'team',
+        folder_key=query_params.get('folder_key') or '',
+    )
+
     limit, offset = _parse_pagination(request)
-    total_filtered = len(filtered)
-    page_entries = filtered[offset:offset + limit]
+    visible_entries = folder_browser['entries'] if folder_browser['is_leaf'] else filtered
+    total_filtered = len(visible_entries)
+    page_entries = visible_entries[offset:offset + limit]
 
     year_for_window = scope.get('pit_year_level') or ''
     upload_window = upload_window_payload(year_for_window) if year_for_window else {
@@ -1031,6 +1050,7 @@ def repository_audit_payload(request):
         'upload_window': upload_window,
         'capstone_upload_window': capstone_upload_window_payload(),
         'grouped_by_stage': grouped_by_stage,
+        'folder_browser': {key: value for key, value in folder_browser.items() if key != 'entries'},
         'deliverable_summary': deliverable_summary,
         'team_view_error': team_view_error,
         'filters': {
@@ -1045,6 +1065,8 @@ def repository_audit_payload(request):
             'deliverable_id': deliverable_id,
             'submission_kind': query_params.get('submission_kind', ''),
             'view': view_mode,
+            'group_by': folder_browser['group_by'],
+            'folder_key': folder_browser['folder_key'],
         },
     }
 

@@ -279,7 +279,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
         # Do not reuse the previous attempt's outcome for that new defense.
         return {
             grade.stage_label: grade.verdict
-            for grade in TeamGrade.objects.filter(team=obj, semester=obj.semester)
+            for grade in TeamGrade.objects.filter(team=obj, semester=obj.semester, scope=TeamGrade.SCOPE_CAPSTONE)
             if grade.verdict and grade.stage_label
         }
 

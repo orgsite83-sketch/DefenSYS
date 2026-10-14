@@ -272,8 +272,16 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   }
 
   double _panelSubmissionPercentage(List<Criterion> criteria) {
-    return rubricPercentage(criteria.map((criterion) =>
-        RubricScore(criterion.score ?? 0, criterion.maxScore, criterion.weight))) ?? 0;
+    return rubricPercentage(
+          criteria.map(
+            (criterion) => RubricScore(
+              criterion.score ?? 0,
+              criterion.maxScore,
+              criterion.weight,
+            ),
+          ),
+        ) ??
+        0;
   }
 
   List<Map<String, dynamic>> _evaluationSubmissions(TeamData team) {
@@ -726,18 +734,26 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     final required = _requiredCriteria(team);
     final entered = required.where((criterion) => criterion.isScored).length;
     final complete = _isComplete(team);
-    final panelPct = !complete ? null : team.targetType == 'team'
+    final panelPct = !complete
+        ? null
+        : team.targetType == 'team'
         ? _panelSubmissionPercentage(_criteria)
-        : team.memberDetails.map((member) => _panelSubmissionPercentage([
-            ..._criteria, ...?_studentCriteria[member.id],
-          ])).reduce((a, b) => a + b) / team.memberDetails.length;
+        : team.memberDetails
+                  .map(
+                    (member) => _panelSubmissionPercentage([
+                      ..._criteria,
+                      ...?_studentCriteria[member.id],
+                    ]),
+                  )
+                  .reduce((a, b) => a + b) /
+              team.memberDetails.length;
     final busy =
         _isSubmittingGrades ||
         _isReviewingGrades ||
         _isChoosingTeam ||
         _isSubmittingVerdict;
     final saveLabel = team.isPosted
-        ? 'Submitted · Locked'
+        ? 'Submitted'
         : _draftSaveError != null
         ? 'Couldn’t save draft. Your changes are still here.'
         : _isSavingDraft
@@ -792,7 +808,11 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 11,
-                              color: DefensysTokens.textSecondaryOf(context),
+                              color: team.isPosted
+                                  ? (DefensysTokens.isDark(context)
+                                        ? DefensysTokens.success
+                                        : DefensysTokens.successText)
+                                  : DefensysTokens.textSecondaryOf(context),
                             ),
                           ),
                         ),
@@ -940,7 +960,9 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     final message = upcoming
         ? 'Grading opens on ${DateFormat('MMMM d, yyyy').format(team.scheduledDate!)}. Review the materials and rubric below to prepare.'
         : team.isPosted
-        ? 'Your scores are saved and locked. The official verdict is shown separately.'
+        ? team.isCapstone
+              ? 'Your scores are saved and locked. The official stage verdict is shown separately.'
+              : 'Your scores are saved and locked. The PIT event result follows the final numeric grade.'
         : team.gradingAvailable
         ? 'Evaluate when this team presents. The allotted time does not limit grading.'
         : team.gradingUnavailableReason.isNotEmpty
