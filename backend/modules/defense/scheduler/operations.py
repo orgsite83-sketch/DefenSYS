@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import APIException, PermissionDenied, ValidationError
 
@@ -86,6 +87,8 @@ def check_revisions(items, expected):
 
 def deletion_preview(items):
     from grading.grades.corrections import protected_grade
+    from repository.deliverables.timing import load_material_permissions
+    load_material_permissions(items)
     entries = []
     for schedule in items:
         blockers = deletion_blockers(schedule)
@@ -93,6 +96,8 @@ def deletion_preview(items):
         submitted = schedule.panelist_grade_submissions.filter(is_void=False)
         guest_ids = set(submitted.exclude(guest_code_id=None).values_list('guest_code_id', flat=True))
         panels = list(schedule.panel_assignments.select_related('panelist').order_by('order', 'pk'))
+        from repository.deliverables.timing import materials_readiness as get_readiness, defense_starts_at
+        readiness = get_readiness(schedule)
         entries.append({'id': schedule.pk, 'team_name': schedule.team.name, 'date': str(schedule.scheduled_date),
                         'start_time': str(schedule.start_time), 'status': schedule.status,
                         'room': schedule.room, 'operation_state': schedule.operation_state, 'session_id': str(schedule.session_id),
@@ -115,6 +120,16 @@ def deletion_preview(items):
                         'submitted_external_evaluator_ids': [i.evaluator_id for i in schedule.guest_invitations.all() if str(i.pk) in guest_ids and i.evaluator_id],
                         'minutes_status': getattr(minutes, 'status', None),
                         'minutes_requires_amendment': bool(minutes and (minutes.status != 'draft' or minutes.pdf_file)),
+                        'materials_readiness': readiness,
+                        'materials_deadline_override': schedule.materials_deadline_override.isoformat() if schedule.materials_deadline_override else None,
+                        'materials_late_upload_until': schedule.materials_late_upload_until.isoformat() if schedule.materials_late_upload_until else None,
+                        'materials_deadline_reason': schedule.materials_deadline_reason,
+                        'defense_starts_at': defense_starts_at(schedule).isoformat(),
+                        'is_past_defense': readiness['is_past_defense'],
+                        'has_evaluations': readiness['has_evaluations'],
+                        'can_extend_deadline': readiness['can_extend_deadline'],
+                        'can_open_late_window': readiness['can_open_late_window'],
+                        'is_locked_historical': readiness['is_locked_historical'],
                         'blockers': blockers, 'can_delete': not blockers})
     return {'entries': entries, 'total': len(entries), 'empty': sum(e['can_delete'] for e in entries),
             'protected': sum(not e['can_delete'] for e in entries),
@@ -144,13 +159,16 @@ def operation_values(schedule):
         panelist_ids=list(schedule.panel_assignments.order_by('order').values_list('panelist_id', flat=True)),
         chair_panelist_id=schedule.panel_assignments.filter(is_chair=True).values_list('panelist_id', flat=True).first(),
         documenter_id=schedule.documenter_id,
-        external_evaluator_ids=list(schedule.guest_invitations.filter(is_active=True, evaluator_id__isnull=False).values_list('evaluator_id', flat=True)))
+        external_evaluator_ids=list(schedule.guest_invitations.filter(is_active=True, evaluator_id__isnull=False).values_list('evaluator_id', flat=True)),
+        materials_deadline_override=schedule.materials_deadline_override.isoformat() if schedule.materials_deadline_override else None,
+        materials_late_upload_until=schedule.materials_late_upload_until.isoformat() if schedule.materials_late_upload_until else None)
 
 
 CHANGE_LABELS = {'panelist_ids': 'Faculty panel', 'chair_panelist_id': 'Panel chair',
     'external_evaluator_ids': 'External evaluators', 'documenter_id': 'Documenter',
     'scheduled_date': 'Date', 'start_time': 'Start time', 'slot_duration': 'Duration',
-    'room': 'Room', 'status': 'Status', 'operation_state': 'Defense activity'}
+    'room': 'Room', 'status': 'Status', 'operation_state': 'Defense activity',
+    'materials_deadline_override': 'Submission deadline', 'materials_late_upload_until': 'Late upload window'}
 
 
 def change_details(before, after):
@@ -172,6 +190,12 @@ def change_details(before, after):
                 else:
                     names.append(person.get_full_name() or person.username)
             return ', '.join(names) or 'Unassigned'
+        if field in ('materials_deadline_override', 'materials_late_upload_until') and value:
+            try:
+                dt = datetime.fromisoformat(value)
+                return timezone.localtime(dt).strftime('%b %d, %Y %I:%M %p')
+            except Exception:
+                return str(value)
         return str(value or '').replace('_', ' ').capitalize() if field in ('status', 'operation_state') else str(value or '')
     return [{'field': field, 'label': label, 'before': display(field, before.get(field)),
              'after': display(field, after.get(field)),
@@ -287,7 +311,7 @@ def execute_operation(actor, data, request=None):
     for schedule in items:
         schedule.team = teams[schedule.team_id]
     changes = data.get('changes') or {}
-    allowed = {'panelist_ids', 'chair_panelist_id', 'panel_change', 'external_change', 'documenter_id', 'external_evaluator_ids', 'scheduled_date', 'start_time', 'shift_minutes', 'slot_duration', 'room', 'operation_state', 'status', 'acknowledge_minutes_amendment'}
+    allowed = {'panelist_ids', 'chair_panelist_id', 'panel_change', 'external_change', 'documenter_id', 'external_evaluator_ids', 'scheduled_date', 'start_time', 'shift_minutes', 'slot_duration', 'room', 'operation_state', 'status', 'acknowledge_minutes_amendment', 'materials_deadline', 'materials_deadline_mode', 'materials_deadline_at_start', 'materials_deadline_offset_hours', 'materials_late_upload_until'}
     if not (set(changes) - {'acknowledge_minutes_amendment'}) or set(changes) - allowed:
         raise ValidationError('Select supported assignment, timetable, or operation changes.')
     for name in ('panelist_ids', 'external_evaluator_ids'):
@@ -338,11 +362,16 @@ def execute_operation(actor, data, request=None):
         panels = panel_objects.get(schedule.pk)
         external = external_objects.get(schedule.pk)
         pids, eids, chair = panel_map[schedule.pk], external_map[schedule.pk], chairs[schedule.pk]
+        has_deadline_change = any(k in changes for k in ('materials_deadline', 'materials_deadline_mode', 'materials_deadline_at_start', 'materials_deadline_offset_hours', 'materials_late_upload_until'))
+        other_changes = set(changes) - {'materials_deadline', 'materials_deadline_mode', 'materials_deadline_at_start', 'materials_deadline_offset_hours', 'materials_late_upload_until', 'acknowledge_minutes_amendment'}
+        is_deadline_only = has_deadline_change and not other_changes and not panel_intent and not external_intent and global_panels is None and global_external is None
         if schedule.status in ('done', 'archived'):
-            raise ValidationError('Completed or archived defenses require an amendment; operational edits are closed.')
+            if not (schedule.status == 'done' and is_deadline_only):
+                raise ValidationError('Completed or archived defenses require an amendment; operational edits are closed.')
         from grading.grades.corrections import protected_grade
         if any(protected_grade(grade) for grade in schedule.grade_records.all()):
-            raise ValidationError('Published or officially completed defenses require a grade amendment; operational edits are closed.')
+            if not is_deadline_only:
+                raise ValidationError('Published or officially completed defenses require a grade amendment; operational edits are closed.')
         doc_id = changes.get('documenter_id', schedule.documenter_id)
         if doc_id is not None:
             doc = get_user_model().objects.filter(pk=doc_id, is_active=True, role__in=['faculty', 'admin']).first()
@@ -380,6 +409,9 @@ def execute_operation(actor, data, request=None):
             offset = serializers.IntegerField(min_value=-1440, max_value=1440).run_validation(changes['shift_minutes'])
             shifted = datetime.combine(schedule.scheduled_date, schedule.start_time) + timedelta(minutes=offset)
             schedule.scheduled_date, schedule.start_time = shifted.date(), shifted.time()
+        if (str(schedule.scheduled_date) != old_values[schedule.pk]['scheduled_date'] or
+                str(schedule.start_time) != old_values[schedule.pk]['start_time']):
+            schedule.clear_material_deadlines()
         schedule.slot_duration = serializers.IntegerField(min_value=15, max_value=480).run_validation(schedule.slot_duration)
         schedule.room = serializers.CharField(max_length=120).run_validation(schedule.room)
         if 'operation_state' in changes:
@@ -399,6 +431,49 @@ def execute_operation(actor, data, request=None):
                     raise ValidationError('Submit all required panel evaluations and the verdict before marking this defense assessed.')
             schedule.status = new_status
         schedule.documenter_id = doc_id
+        has_deadline_change = any(k in changes for k in ('materials_deadline', 'materials_deadline_mode', 'materials_deadline_at_start', 'materials_deadline_offset_hours', 'materials_late_upload_until'))
+        if has_deadline_change:
+            from repository.deliverables.timing import defense_starts_at, materials_readiness
+            readiness = materials_readiness(schedule)
+            if not readiness['can_extend_deadline'] and not readiness['can_open_late_window']:
+                raise ValidationError(f'{schedule.team.name}: this defense cannot receive a submission deadline change.')
+            now = timezone.now()
+            start = defense_starts_at(schedule)
+            mode = changes.get('materials_deadline_mode')
+            if not mode or (mode == 'extend' and (now >= start or schedule.status == 'done' or schedule.panelist_grade_submissions.filter(is_void=False).exists())):
+                mode = 'late_upload'
+            mode = serializers.ChoiceField(choices=['extend', 'late_upload']).run_validation(mode)
+            if mode == 'late_upload':
+                if schedule.status == 'archived':
+                    raise ValidationError(f'{schedule.team.name}: archived defense records cannot receive a late-upload window.')
+                from grading.grades.models import TeamGrade
+                if TeamGrade.objects.filter(schedule=schedule, status__in=TeamGrade.LOCKED_STATUSES).exists():
+                    raise ValidationError(f'{schedule.team.name}: presentation materials for finalized grades are locked.')
+                raw_late = changes.get('materials_late_upload_until') or changes.get('materials_deadline')
+                if not raw_late:
+                    raise ValidationError('A future late-upload deadline is required.')
+                late_deadline = serializers.DateTimeField().run_validation(raw_late)
+                if late_deadline <= now:
+                    raise ValidationError(f'{schedule.team.name}: choose a future date and time for the late-upload window.')
+                schedule.materials_late_upload_until = late_deadline
+                schedule.materials_deadline_reason = data['reason']
+                schedule.materials_notice_key = ''
+            elif mode == 'extend':
+                if schedule.status != 'scheduled' or now >= start or schedule.panelist_grade_submissions.filter(is_void=False).exists():
+                    raise ValidationError(f'{schedule.team.name}: defense has started or evaluation began; open a late-upload window instead.')
+                if changes.get('materials_deadline_at_start'):
+                    new_deadline = start
+                elif 'materials_deadline_offset_hours' in changes and changes['materials_deadline_offset_hours'] is not None:
+                    offset = serializers.IntegerField(min_value=0, max_value=720).run_validation(changes['materials_deadline_offset_hours'])
+                    new_deadline = start - timedelta(hours=offset)
+                else:
+                    new_deadline = serializers.DateTimeField().run_validation(changes['materials_deadline'])
+                if new_deadline <= now or new_deadline > start:
+                    raise ValidationError(f'{schedule.team.name}: choose a deadline in the future, at or before defense start ({start.strftime("%b %d %I:%M %p")}).')
+                schedule.materials_deadline_override = new_deadline
+                schedule.materials_late_upload_until = None
+                schedule.materials_deadline_reason = data['reason']
+                schedule.materials_notice_key = ''
         after_values[schedule.pk] = {**operation_values(schedule), 'panelist_ids': pids,
             'chair_panelist_id': chair, 'external_evaluator_ids': eids}
         diffs[schedule.pk] = change_details(old_values[schedule.pk], after_values[schedule.pk])
@@ -455,7 +530,9 @@ def execute_operation(actor, data, request=None):
             schedule.panel_assignments.filter(panelist_id=changes['chair_panelist_id']).update(is_chair=True)
         # New documenter cannot destroy earlier signatures or PDFs.
         schedule.revision += 1
-        schedule.save()
+        schedule.save(material_deadlines_revalidated=any(k in changes for k in (
+            'materials_deadline', 'materials_deadline_mode', 'materials_deadline_at_start',
+            'materials_deadline_offset_hours', 'materials_late_upload_until')))
         minutes = DefenseMinutes.objects.filter(schedule=schedule, status='draft').first()
         if minutes:
             minutes.documenter_name = schedule.documenter.get_full_name() if schedule.documenter else ''
@@ -502,6 +579,7 @@ def execute_operation(actor, data, request=None):
         ) if pk}
         targets |= {(pk, 'student') for pk in student_ids(schedule.team)}
         deadlines = deadline_summary(schedule) if schedule.status == 'scheduled' else ''
+        late_info = f' Late-upload window open until {timezone.localtime(schedule.materials_late_upload_until).strftime("%b %d %I:%M %p")}.' if schedule.materials_late_upload_until else ''
         users = {u.pk: u for u in get_user_model().objects.filter(pk__in={pk for pk, _ in targets})}
         delivered = set()
         for recipient, workspace in sorted(targets):
@@ -519,7 +597,8 @@ def execute_operation(actor, data, request=None):
                 route = '/documenter'
             Notification.objects.create(recipient=person, sender=actor, title='Defense schedule updated',
                 message=f'{schedule.team.name}: {schedule.stage_label}, {schedule.scheduled_date} {schedule.start_time}, {schedule.room}. Reason: {data["reason"]}'
-                        + (f' Upload deadlines: {deadlines}.' if workspace == 'student' and deadlines else ''),
+                        + (f' Upload deadlines: {deadlines}.' if workspace == 'student' and deadlines else '')
+                        + (f'{late_info}' if workspace == 'student' and late_info else ''),
                 category=NotificationCategory.DEFENSE, workspace=workspace, priority='HIGH', action_route=route,
                 action_payload={'schedule_id': schedule.pk, 'team_id': schedule.team_id})
         log_high_impact_action(category=SystemAuditLog.CATEGORY_SCHEDULING, action='schedule.operational_change', target=schedule,

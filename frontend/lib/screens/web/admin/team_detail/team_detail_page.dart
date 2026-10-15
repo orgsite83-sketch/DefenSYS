@@ -1,3 +1,4 @@
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -41,9 +42,9 @@ class TeamDetailPage extends ConsumerStatefulWidget {
 }
 
 class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
+
   static const _ink = DefensysUi.textDark;
   static const _muted = DefensysUi.steelGrey;
-  static const _maroon = DefensysUi.primaryMaroon;
   static const _gold = DefensysUi.accentGold;
   static const _red = Color(0xFFDC2626);
   static const _line = Color(0xFFE5E7EB);
@@ -123,7 +124,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
     final team = detailState.team;
 
     if (detailState.isLoading && team == null) {
-      return const Center(child: CircularProgressIndicator(color: _maroon));
+      return Center(child: CircularProgressIndicator(color: DefensysTokens.maroonOf(context)));
     }
 
     if (team == null) {
@@ -200,9 +201,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
             ],
             const SizedBox(height: 16),
             TabBar(
-              labelColor: _maroon,
+              labelColor: DefensysTokens.maroonOf(context),
               unselectedLabelColor: _muted,
-              indicatorColor: _maroon,
+              indicatorColor: DefensysTokens.maroonOf(context),
               isScrollable: true,
               tabs: [
                 const Tab(text: 'Overview'),
@@ -247,7 +248,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
         IconButton(
           tooltip: 'Back to teams',
           onPressed: widget.onBack,
-          icon: const Icon(Icons.arrow_back_rounded, color: _maroon),
+          icon: Icon(Icons.arrow_back_rounded, color: DefensysTokens.maroonTextOf(context)),
         ),
         Expanded(
           child: Column(
@@ -270,8 +271,8 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
             icon: const Icon(Icons.edit_outlined, size: 18),
             label: const Text('Edit team'),
             style: OutlinedButton.styleFrom(
-              foregroundColor: _maroon,
-              side: const BorderSide(color: _maroon),
+              foregroundColor: DefensysTokens.maroonOf(context),
+              side: BorderSide(color: DefensysTokens.maroonOf(context)),
             ),
           ),
         if (widget.canManage && _isEditing) ...[
@@ -544,9 +545,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.badge_outlined, size: 18, color: _maroon),
+                  Icon(Icons.badge_outlined, size: 18, color: DefensysTokens.maroonTextOf(context)),
                   SizedBox(width: 8),
                   Text(
                     'CLASSROOM DETAILS',
@@ -661,7 +662,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.people_alt_outlined, size: 18, color: _maroon),
+                  Icon(Icons.people_alt_outlined, size: 18, color: DefensysTokens.maroonTextOf(context)),
                   const SizedBox(width: 8),
                   Text(
                     'TEAM ROSTER (${members.length}/4)',
@@ -703,11 +704,11 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                       children: [
                         CircleAvatar(
                           radius: 18,
-                          backgroundColor: isLeader ? _gold.withValues(alpha: 0.2) : _maroon.withValues(alpha: 0.1),
+                          backgroundColor: isLeader ? _gold.withValues(alpha: 0.2) : DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
                           child: Text(
                             initials,
                             style: TextStyle(
-                              color: isLeader ? const Color(0xFFB45309) : _maroon,
+                              color: isLeader ? const Color(0xFFB45309) : DefensysTokens.maroonTextOf(context),
                               fontWeight: FontWeight.bold,
                               fontSize: 12,
                             ),
@@ -799,9 +800,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Row(
+                Row(
                   children: [
-                    Icon(Icons.workspace_premium_outlined, size: 18, color: _maroon),
+                    Icon(Icons.workspace_premium_outlined, size: 18, color: DefensysTokens.maroonTextOf(context)),
                     SizedBox(width: 8),
                     Text(
                       'PROJECT ADVISER',
@@ -1042,7 +1043,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                       color: _ink,
                     ),
                   ),
-                  const Icon(Icons.person_add_alt_1_outlined, size: 18, color: _maroon),
+                  Icon(Icons.person_add_alt_1_outlined, size: 18, color: DefensysTokens.maroonTextOf(context)),
                 ],
               ),
               const SizedBox(height: 16),
@@ -1105,7 +1106,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                           color: Colors.transparent,
                           child: CheckboxListTile(
                             value: selected,
-                            activeColor: _maroon,
+                            activeColor: DefensysTokens.maroonOf(context),
                             onChanged: (value) {
                               setState(() {
                                 if (value == true) {
@@ -1130,10 +1131,10 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                               style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
                             ),
                             subtitle: _leaderId == studentId
-                                ? const Text(
+                                ? Text(
                                     'Team Leader',
                                     style: TextStyle(
-                                      color: _maroon,
+                                      color: DefensysTokens.maroonTextOf(context),
                                       fontSize: 11,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -1288,7 +1289,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
               icon: const Icon(Icons.picture_as_pdf_outlined),
               label: const Text('View report file'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: _maroon,
+                backgroundColor: DefensysTokens.maroonOf(context),
                 foregroundColor: _gold,
               ),
             )
@@ -1307,33 +1308,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
     Map<String, dynamic>? team,
     bool isCapstone,
   ) {
-    if (isCapstone || team == null || options.isEmpty) {
-      return options;
-    }
-    final yearLevel = (team['year_level'] ?? team['level'] ?? '')
-        .toString()
-        .toLowerCase();
-    if (yearLevel.isEmpty) {
-      return options;
-    }
-    const otherYearHints = {
-      '1st': ['2nd', 'second', '3rd', 'third', '4th', 'fourth'],
-      '2nd': ['1st', 'first', '3rd', 'third', '4th', 'fourth'],
-      '3rd': ['1st', 'first', '2nd', 'second', '4th', 'fourth'],
-      '4th': ['1st', 'first', '2nd', 'second', '3rd', 'third'],
-    };
-    final matchedKey = otherYearHints.keys.firstWhere(
-      (k) => yearLevel.contains(k),
-      orElse: () => '',
-    );
-    if (matchedKey.isEmpty) {
-      return options;
-    }
-    final toExclude = otherYearHints[matchedKey]!;
-    return options.where((opt) {
-      final lower = opt.toLowerCase();
-      return !toExclude.any((hint) => lower.contains(hint));
-    }).toList();
+    // The team-scoped API supplies only this cohort's configured events.
+    // Event labels are descriptive text and never determine ownership.
+    return options;
   }
 
   Widget _buildDeliverablesTab(
@@ -1391,7 +1368,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
           children: [
             Row(
               children: [
-                const Icon(Icons.touch_app_outlined, size: 15, color: _maroon),
+                Icon(Icons.touch_app_outlined, size: 15, color: DefensysTokens.maroonTextOf(context)),
                 const SizedBox(width: 6),
                 Text(
                   isCapstone ? 'Defense Stage Overview' : 'PIT Event Overview',
@@ -1441,16 +1418,16 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                         duration: const Duration(milliseconds: 150),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                         decoration: BoxDecoration(
-                          color: active ? _maroon : const Color(0xFFF8FAFC),
+                          color: active ? DefensysTokens.maroonOf(context) : const Color(0xFFF8FAFC),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: active ? _maroon : const Color(0xFFCBD5E1),
+                            color: active ? DefensysTokens.maroonOf(context) : const Color(0xFFCBD5E1),
                             width: active ? 1.5 : 1.0,
                           ),
                           boxShadow: active
                               ? [
                                   BoxShadow(
-                                    color: _maroon.withValues(alpha: 0.25),
+                                    color: DefensysTokens.maroonOf(context).withValues(alpha: 0.25),
                                     blurRadius: 4,
                                     offset: const Offset(0, 2),
                                   )
@@ -1479,7 +1456,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                                 decoration: BoxDecoration(
                                   color: active
                                       ? Colors.white.withValues(alpha: 0.25)
-                                      : _maroon.withValues(alpha: 0.1),
+                                      : DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
@@ -1487,7 +1464,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                                   style: TextStyle(
                                     fontSize: 9,
                                     fontWeight: FontWeight.bold,
-                                    color: active ? Colors.white : _maroon,
+                                    color: active ? Colors.white : DefensysTokens.maroonTextOf(context),
                                   ),
                                 ),
                               ),
@@ -1743,7 +1720,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                       onPressed: id == null
                           ? null
                           : () => _downloadTeamDocument(id),
-                      icon: const Icon(Icons.download_outlined, color: _maroon),
+                      icon: Icon(Icons.download_outlined, color: DefensysTokens.maroonTextOf(context)),
                     ),
                   ],
                 ),
@@ -1847,10 +1824,10 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                                 ),
                               ),
                               if (isCurrent)
-                                const Text(
+                                Text(
                                   'Current',
                                   style: TextStyle(
-                                    color: _maroon,
+                                    color: DefensysTokens.maroonTextOf(context),
                                     fontSize: 10.5,
                                     fontWeight: FontWeight.w800,
                                   ),
@@ -2197,10 +2174,10 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                       children: [
                         Text(
                           grade['stage_label']?.toString() ?? 'Grade Evaluation',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
-                            color: _maroon,
+                            color: DefensysTokens.maroonTextOf(context),
                           ),
                         ),
                         const SizedBox(height: 4),

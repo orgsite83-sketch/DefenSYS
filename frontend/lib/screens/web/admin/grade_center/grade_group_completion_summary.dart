@@ -32,8 +32,7 @@ class GradeGroupCompletionSummary extends StatelessWidget {
         if (redefense.isNotEmpty) ...[
           _CompletionOutcomeNotice(
             key: const ValueKey('redefense-completion-warning'),
-            title:
-                '${_teamCount(redefense.length)} still require re-defense.',
+            title: '${_teamCount(redefense.length)} still require re-defense.',
             message:
                 'Resolve their panel grades and verdict in a new attempt. '
                 'This $target cannot be completed while re-defense is pending. '
@@ -48,7 +47,9 @@ class GradeGroupCompletionSummary extends StatelessWidget {
             title:
                 '${_teamCount(failing.length)} '
                 '${failing.length == 1 ? 'has' : 'have'} failing grades.',
-            message: 'These teams will not qualify for project archiving.',
+            message: isPit
+                ? 'Pass/fail marks indicate event scores only. These teams can still finalize this event, submit post-event files, and join later events.'
+                : 'These teams will not qualify for project archiving.',
             teamNames: _teamNames(failing),
           ),
           const SizedBox(height: 12),
@@ -184,4 +185,3 @@ class _CompletionOutcomeNotice extends StatelessWidget {
     );
   }
 }
-

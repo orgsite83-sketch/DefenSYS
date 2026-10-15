@@ -31,6 +31,7 @@ class StageFlightDeckScreen extends ConsumerStatefulWidget {
 }
 
 class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
+
   late String _currentStageLabel;
 
   @override
@@ -154,7 +155,7 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
     final adviserName = team?['adviserName']?.toString() ?? 'Assigned Adviser';
 
     final flightDeckBody = RefreshIndicator(
-      color: DefensysTokens.maroon,
+      color: DefensysTokens.maroonOf(context),
       onRefresh: () async {
         await widget.onRefresh?.call();
       },
@@ -178,23 +179,23 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                          color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: DefensysTokens.maroon.withValues(alpha: 0.25),
+                            color: DefensysTokens.maroonOf(context).withValues(alpha: 0.25),
                           ),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.arrow_back_rounded,
-                                size: 15, color: DefensysTokens.maroon),
+                                size: 15, color: DefensysTokens.maroonTextOf(context)),
                             SizedBox(width: 6),
                             Flexible(
                               child: Text(
                                 'Back to Defense Journey',
                                 style: TextStyle(
-                                  color: DefensysTokens.maroon,
+                                  color: DefensysTokens.maroonTextOf(context),
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -294,7 +295,7 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
 
     if (widget.isEmbedded) {
       return Container(
-        color: const Color(0xFFF8FAFC),
+        color: DefensysTokens.surfaceHigherOf(context),
         child: flightDeckBody,
       );
     }
@@ -302,7 +303,7 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        backgroundColor: DefensysTokens.maroon,
+        backgroundColor: DefensysTokens.maroonOf(context),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
@@ -409,13 +410,13 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
 
           Color pillBg = Colors.white;
           Color pillBorder = const Color(0xFFE2E8F0);
-          Color textColor = DefensysTokens.textSecondary;
+          Color textColor = DefensysTokens.textSecondaryOf(context);
           IconData icon = Icons.circle_outlined;
-          Color iconColor = DefensysTokens.textSecondary;
+          Color iconColor = DefensysTokens.textSecondaryOf(context);
 
           if (isSelected) {
-            pillBg = DefensysTokens.maroon;
-            pillBorder = DefensysTokens.maroon;
+            pillBg = DefensysTokens.maroonOf(context);
+            pillBorder = DefensysTokens.maroonOf(context);
             textColor = Colors.white;
             icon = isCleared
                 ? Icons.check_circle_rounded
@@ -430,9 +431,9 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
           } else if (isActive) {
             pillBg = const Color(0xFFFFF1F2);
             pillBorder = const Color(0xFFFECDD3);
-            textColor = DefensysTokens.maroon;
+            textColor = DefensysTokens.maroonOf(context);
             icon = Icons.radar_rounded;
-            iconColor = DefensysTokens.maroon;
+            iconColor = DefensysTokens.maroonOf(context);
           }
 
           return Padding(
@@ -455,7 +456,7 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                   boxShadow: isSelected
                       ? [
                           BoxShadow(
-                            color: DefensysTokens.maroon.withValues(alpha: 0.2),
+                            color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2),
                             blurRadius: 8,
                             offset: const Offset(0, 2),
                           ),
@@ -525,23 +526,23 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
       );
     } else if (isActiveStage) {
       headerBg = Colors.white;
-      borderColor = DefensysTokens.maroon.withValues(alpha: 0.3);
+      borderColor = DefensysTokens.maroonOf(context).withValues(alpha: 0.3);
       statusChip = Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          color: DefensysTokens.maroon.withValues(alpha: 0.1),
+          color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.3)),
+          border: Border.all(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.3)),
         ),
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.radar_rounded, size: 12, color: DefensysTokens.maroon),
+            Icon(Icons.radar_rounded, size: 12, color: DefensysTokens.maroonTextOf(context)),
             SizedBox(width: 4),
             Text(
               'ACTIVE MISSION',
               style: TextStyle(
-                color: DefensysTokens.maroon,
+                color: DefensysTokens.maroonTextOf(context),
                 fontSize: 11,
                 fontWeight: FontWeight.bold,
               ),
@@ -558,10 +559,10 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
           color: const Color(0xFF64748B).withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(12),
         ),
-        child: const Text(
+        child: Text(
           'UPCOMING STAGE • LOCKED',
           style: TextStyle(
-            color: Color(0xFF475569),
+            color: DefensysTokens.textSecondaryOf(context),
             fontSize: 11,
             fontWeight: FontWeight.bold,
           ),
@@ -599,7 +600,7 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                   color: isOfficiallyComplete
                       ? const Color(0xFF16A34A)
                       : (isActiveStage
-                          ? DefensysTokens.maroon
+                          ? DefensysTokens.maroonOf(context)
                           : const Color(0xFF64748B)),
                 ),
               ),
@@ -610,24 +611,24 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
           const SizedBox(height: 8),
           Text(
             projectTitle,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w800,
-              color: DefensysTokens.textPrimary,
+              color: DefensysTokens.textPrimaryOf(context),
               height: 1.2,
             ),
           ),
           const SizedBox(height: 4),
           Row(
             children: [
-              const Icon(Icons.school_outlined,
-                  size: 14, color: DefensysTokens.textSecondary),
+              Icon(Icons.school_outlined,
+                  size: 14, color: DefensysTokens.textSecondaryOf(context)),
               const SizedBox(width: 6),
               Text(
                 'Adviser: $adviserName',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: DefensysTokens.textSecondary,
+                  color: DefensysTokens.textSecondaryOf(context),
                 ),
               ),
             ],
@@ -669,7 +670,7 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                 icon: Icons.pie_chart_outline_rounded,
                 iconColor: isOfficiallyComplete
                     ? const Color(0xFF16A34A)
-                    : DefensysTokens.maroon,
+                    : DefensysTokens.maroonOf(context),
                 child: Column(
                   children: [
                     const SizedBox(height: 6),
@@ -686,7 +687,7 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                             valueColor: AlwaysStoppedAnimation<Color>(
                               isOfficiallyComplete
                                   ? const Color(0xFF16A34A)
-                                  : DefensysTokens.maroon,
+                                  : DefensysTokens.maroonOf(context),
                             ),
                           ),
                         ),
@@ -695,17 +696,17 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                           children: [
                             Text(
                               '${(clearancePercent * 100).toInt()}%',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w900,
-                                color: DefensysTokens.textPrimary,
+                                color: DefensysTokens.textPrimaryOf(context),
                               ),
                             ),
                             Text(
                               isOfficiallyComplete ? 'Cleared' : 'Ready',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 10,
-                                color: DefensysTokens.textSecondary,
+                                color: DefensysTokens.textSecondaryOf(context),
                               ),
                             ),
                           ],
@@ -718,10 +719,10 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                           ? 'All requirements archived'
                           : '$preUploaded of $preTotal Deliverables Submitted',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: DefensysTokens.textSecondary,
+                        color: DefensysTokens.textSecondaryOf(context),
                       ),
                     ),
                   ],
@@ -746,12 +747,12 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                       decoration: BoxDecoration(
                         color: hasSchedule
                             ? const Color(0xFFEFF6FF)
-                            : const Color(0xFFF8FAFC),
+                            : DefensysTokens.surfaceHigherOf(context),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
                           color: hasSchedule
                               ? const Color(0xFFBFDBFE)
-                              : const Color(0xFFE2E8F0),
+                              : DefensysTokens.borderOf(context),
                         ),
                       ),
                       child: Row(
@@ -763,7 +764,7 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                             size: 13,
                             color: hasSchedule
                                 ? const Color(0xFF2563EB)
-                                : DefensysTokens.textSecondary,
+                                : DefensysTokens.textSecondaryOf(context),
                           ),
                           const SizedBox(width: 5),
                           Expanded(
@@ -774,7 +775,7 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                                 fontWeight: FontWeight.bold,
                                 color: hasSchedule
                                     ? const Color(0xFF1D4ED8)
-                                    : DefensysTokens.textSecondary,
+                                    : DefensysTokens.textSecondaryOf(context),
                               ),
                             ),
                           ),
@@ -788,25 +789,25 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                               ? '$scheduleDate\n$scheduleTime'
                               : scheduleDate!)
                           : 'Assignment Pending',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
-                        color: DefensysTokens.textPrimary,
+                        color: DefensysTokens.textPrimaryOf(context),
                         height: 1.3,
                       ),
                     ),
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        const Icon(Icons.meeting_room_outlined,
-                            size: 13, color: DefensysTokens.textSecondary),
+                        Icon(Icons.meeting_room_outlined,
+                            size: 13, color: DefensysTokens.textSecondaryOf(context)),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
                             roomStr.isNotEmpty ? roomStr : 'Venue TBA',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
-                              color: DefensysTokens.textSecondary,
+                              color: DefensysTokens.textSecondaryOf(context),
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -836,12 +837,12 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'OFFICIAL GRADE',
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
-                            color: DefensysTokens.textSecondary,
+                            color: DefensysTokens.textSecondaryOf(context),
                           ),
                         ),
                         Text(
@@ -890,8 +891,8 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                   icon: const Icon(Icons.folder_zip_outlined, size: 16),
                   label: const Text('Access Archived Manuscripts & Files'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: DefensysTokens.maroon,
-                    side: const BorderSide(color: DefensysTokens.maroon),
+                    foregroundColor: DefensysTokens.maroonOf(context),
+                    side: BorderSide(color: DefensysTokens.maroonOf(context)),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -909,11 +910,11 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'This defense stage is locked until your team clears the preceding academic stage.',
                   style: TextStyle(
                     fontSize: 12.5,
-                    color: DefensysTokens.textSecondary,
+                    color: DefensysTokens.textSecondaryOf(context),
                     height: 1.4,
                   ),
                 ),
@@ -921,13 +922,13 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
+                    color: DefensysTokens.surfaceHigherOf(context),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
                       Icon(Icons.info_outline_rounded,
-                          size: 16, color: Color(0xFF475569)),
+                          size: 16, color: DefensysTokens.textSecondaryOf(context)),
                       SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -935,7 +936,7 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF334155),
+                            color: DefensysTokens.textPrimaryOf(context),
                           ),
                         ),
                       ),
@@ -951,7 +952,7 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
           _buildBentoCard(
             title: 'Required Pre-Defense Deliverables',
             icon: Icons.checklist_rounded,
-            iconColor: DefensysTokens.maroon,
+            iconColor: DefensysTokens.maroonOf(context),
             trailing: TextButton(
               onPressed: () => widget.onSelectTab?.call(1),
               child: const Text('Manage Files →',
@@ -968,7 +969,7 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                       final isNeedsRevision = status == 'needs_revision' || status == 'rejected';
 
                       Color chipBg = const Color(0xFFF1F5F9);
-                      Color chipText = DefensysTokens.textSecondary;
+                      Color chipText = DefensysTokens.textSecondaryOf(context);
                       String statusText = 'Missing';
                       IconData chipIcon = Icons.circle_outlined;
 
@@ -998,10 +999,10 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                             Expanded(
                               child: Text(
                                 label,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
-                                  color: DefensysTokens.textPrimary,
+                                  color: DefensysTokens.textPrimaryOf(context),
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -1027,9 +1028,9 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                       );
                     }).toList(),
                   )
-                : const Text(
+                : Text(
                     'Pre-defense document definitions will load from curriculum rules.',
-                    style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondary),
+                    style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
                   ),
           ),
           const SizedBox(height: 12),
@@ -1039,7 +1040,7 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
         _buildBentoCard(
           title: 'Team Squad & Peer Review Hub',
           icon: Icons.groups_rounded,
-          iconColor: DefensysTokens.maroon,
+          iconColor: DefensysTokens.maroonOf(context),
           child: Column(
             children: members.map((member) {
               final name = member['name']?.toString() ?? 'Teammate';
@@ -1053,13 +1054,13 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                     CircleAvatar(
                       radius: 14,
                       backgroundColor:
-                          DefensysTokens.maroon.withValues(alpha: 0.1),
+                          DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
                       child: Text(
                         name.isNotEmpty ? name[0] : 'S',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
-                          color: DefensysTokens.maroon,
+                          color: DefensysTokens.maroonTextOf(context),
                         ),
                       ),
                     ),
@@ -1073,10 +1074,10 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                               Flexible(
                                 child: Text(
                                   name,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12.5,
                                     fontWeight: FontWeight.bold,
-                                    color: DefensysTokens.textPrimary,
+                                    color: DefensysTokens.textPrimaryOf(context),
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -1105,9 +1106,9 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                           if (username.isNotEmpty)
                             Text(
                               username,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 10.5,
-                                color: DefensysTokens.textSecondary,
+                                color: DefensysTokens.textSecondaryOf(context),
                               ),
                             ),
                         ],
@@ -1117,7 +1118,7 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                       ElevatedButton(
                         onPressed: () => widget.onSelectTab?.call(1),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: DefensysTokens.maroon,
+                          backgroundColor: DefensysTokens.maroonOf(context),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 6),
@@ -1155,9 +1156,9 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.02),
@@ -1180,10 +1181,10 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
                     Flexible(
                       child: Text(
                         title,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
-                          color: DefensysTokens.textPrimary,
+                          color: DefensysTokens.textPrimaryOf(context),
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),

@@ -1,6 +1,14 @@
+from ipaddress import IPv4Address, IPv4Network
+from urllib.parse import urlsplit
+
 from asgiref.sync import iscoroutinefunction, markcoroutinefunction
 from django.conf import settings
 from django.http import HttpResponse
+
+
+LAN_NETWORKS = tuple(IPv4Network(value) for value in (
+    '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16',
+))
 
 
 class LocalCorsMiddleware:
@@ -61,17 +69,24 @@ def _is_allowed_origin(origin):
 
 
 def _is_local_origin(origin):
-    is_loopback = (
-        origin.startswith('http://localhost')
-        or origin.startswith('http://127.0.0.1')
-    )
-    if is_loopback:
+    # Parse the origin so lookalike hostnames cannot pass a prefix check.
+    try:
+        parsed = urlsplit(origin)
+        if (parsed.scheme != 'http' or not parsed.hostname
+                or parsed.username is not None or parsed.password is not None
+                or parsed.path or parsed.query or parsed.fragment):
+            return False
+        if parsed.port is not None and parsed.port == 0:
+            return False
+        if parsed.hostname == 'localhost':
+            return True
+        address = IPv4Address(parsed.hostname)
+    except ValueError:
+        return False
+    if address == IPv4Address('127.0.0.1'):
         return True
-    # LAN origins (192.168.*, 10.*) require explicit opt-in via settings
+    # All RFC1918 ranges, including 172.16/12 hotspots, require opt-in
     # to prevent accidental exposure if DEBUG=True leaks to production.
     if getattr(settings, 'CORS_ALLOW_LAN', False):
-        return (
-            origin.startswith('http://192.168.')
-            or origin.startswith('http://10.')
-        )
+        return any(address in network for network in LAN_NETWORKS)
     return False

@@ -116,16 +116,10 @@ def options_payload(team_id=None, team_level=None, user=None, include_roster_opt
     pit_events = []
     if active:
         from defense.scheduler.models import PitEventGradingConfig
-        from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
-        pit_configs = PitEventGradingConfig.objects.filter(semester=active).order_by('event_name')
-        pit_events = []
+        from defense.scheduler.event_scope import pit_events_for_user
+        pit_configs = pit_events_for_user(user, semester=active).order_by('event_name') if user else PitEventGradingConfig.objects.none()
         for cfg in pit_configs:
-            ev_year = None
-            ev_name_lower = (cfg.event_name or '').lower()
-            for yl, hints in PIT_YEAR_EVENT_HINTS.items():
-                if any(h.lower() in ev_name_lower for h in hints):
-                    ev_year = yl
-                    break
+            ev_year = cfg.year_level
             pit_events.append({
                 'event_name': cfg.event_name,
                 'event_code': cfg.event_code,
@@ -284,12 +278,11 @@ class StudentTeamListCreateView(APIView):
 
         event_name = request.query_params.get('event_name', '').strip()
         if event_name:
-            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
-            event_year = None
-            for y, hints in PIT_YEAR_EVENT_HINTS.items():
-                if any(h in event_name.lower() for h in hints):
-                    event_year = y
-                    break
+            from defense.scheduler.event_scope import pit_events_for_user
+            event_config = pit_events_for_user(request.user, semester=active_semester()).filter(event_name__iexact=event_name).first()
+            event_year = event_config.year_level if event_config else None
+            if event_config is None:
+                queryset = queryset.none()
 
             event_filter = (
                 Q(current_defense_stage=event_name)

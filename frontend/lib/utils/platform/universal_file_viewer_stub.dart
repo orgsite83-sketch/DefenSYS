@@ -119,7 +119,7 @@ class _UniversalMobileFileViewerDialogState
   String? _loadError;
   final TransformationController _imageTransformCtrl =
       TransformationController();
-  double _imageRotation = 0.0;
+  final double _imageRotation = 0.0;
 
   @override
   void initState() {
@@ -162,20 +162,9 @@ class _UniversalMobileFileViewerDialogState
     super.dispose();
   }
 
-  void _rotateImage() {
-    setState(() {
-      _imageRotation += 1.57079632679; // 90 degrees in radians
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final layout = FileViewerDialogLayout.of(context);
-    final isPdf = _category == FileCategory.pdf;
-    final toolbarForeground = isPdf
-        ? DefensysTokens.textPrimaryOf(context)
-        : Colors.white;
-
     final catColor = FileViewerMetadata.getCategoryColor(_category);
     final catIcon = FileViewerMetadata.getCategoryIcon(_category);
     final catLabel = FileViewerMetadata.getCategoryLabel(
@@ -211,14 +200,15 @@ class _UniversalMobileFileViewerDialogState
         ),
         child: Column(
           children: [
-            // Header Toolbar
+            // Header Toolbar (Unified Image 2 Aesthetic)
             Container(
               height: 52,
               padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
-                color: isPdf
-                    ? DefensysTokens.surfaceOf(context)
-                    : DefensysTokens.maroon,
+                color: DefensysTokens.surfaceOf(context),
+                border: Border(
+                  bottom: BorderSide(color: DefensysTokens.borderOf(context)),
+                ),
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(12),
                   topRight: Radius.circular(12),
@@ -232,12 +222,10 @@ class _UniversalMobileFileViewerDialogState
                       vertical: 3,
                     ),
                     decoration: BoxDecoration(
-                      color: isPdf
-                          ? DefensysTokens.surfaceHigherOf(context)
-                          : Colors.black.withValues(alpha: 0.25),
+                      color: catColor.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(
-                        color: catColor.withValues(alpha: 0.7),
+                        color: catColor.withValues(alpha: 0.5),
                       ),
                     ),
                     child: Row(
@@ -248,7 +236,7 @@ class _UniversalMobileFileViewerDialogState
                         Text(
                           catLabel,
                           style: TextStyle(
-                            color: toolbarForeground,
+                            color: catColor,
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
                           ),
@@ -261,7 +249,7 @@ class _UniversalMobileFileViewerDialogState
                     child: Text(
                       widget.fileName,
                       style: TextStyle(
-                        color: toolbarForeground,
+                        color: DefensysTokens.textPrimaryOf(context),
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
                       ),
@@ -276,34 +264,21 @@ class _UniversalMobileFileViewerDialogState
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: isPdf
-                          ? DefensysTokens.surfaceHigherOf(context)
-                          : Colors.white.withValues(alpha: 0.15),
+                      color: DefensysTokens.surfaceHigherOf(context),
                       borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                        color: DefensysTokens.borderOf(context),
+                      ),
                     ),
                     child: Text(
                       formattedSize,
                       style: TextStyle(
-                        color: isPdf
-                            ? DefensysTokens.textSecondaryOf(context)
-                            : Colors.white70,
+                        color: DefensysTokens.textSecondaryOf(context),
                         fontSize: 10.5,
                         fontFamily: 'monospace',
                       ),
                     ),
                   ),
-                  if (_category == FileCategory.image) ...[
-                    IconButton(
-                      icon: const Icon(
-                        Icons.rotate_right,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                      tooltip: 'Rotate',
-                      onPressed: _rotateImage,
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ],
                   if (!_isLoading && _pdfBytes != null) ...[
                     Tooltip(
                       message: 'Download File',
@@ -316,22 +291,28 @@ class _UniversalMobileFileViewerDialogState
                         },
                         icon: Icon(
                           Icons.download,
-                          color: toolbarForeground,
+                          color: DefensysTokens.textPrimaryOf(context),
                           size: 15,
                         ),
                         label: Text(
-                          isPdf ? 'Download PDF' : 'Download',
+                          _category == FileCategory.pdf
+                              ? 'Download PDF'
+                              : (_category == FileCategory.officePresentation
+                                  ? 'Download Presentation'
+                                  : (_category == FileCategory.officeDoc
+                                      ? 'Download Document'
+                                      : (_category == FileCategory.spreadsheet
+                                          ? 'Download Spreadsheet'
+                                          : 'Download'))),
                           style: TextStyle(
-                            color: toolbarForeground,
+                            color: DefensysTokens.textPrimaryOf(context),
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                         style: OutlinedButton.styleFrom(
                           side: BorderSide(
-                            color: isPdf
-                                ? DefensysTokens.borderOf(context)
-                                : Colors.white38,
+                            color: DefensysTokens.borderOf(context),
                           ),
                           padding: const EdgeInsets.symmetric(
                             horizontal: 10,
@@ -349,7 +330,8 @@ class _UniversalMobileFileViewerDialogState
                   ],
                   const SizedBox(width: 4),
                   IconButton(
-                    icon: Icon(Icons.close, color: toolbarForeground, size: 20),
+                    icon: Icon(Icons.close,
+                        color: DefensysTokens.textPrimaryOf(context), size: 20),
                     tooltip: 'Close',
                     onPressed: () => Navigator.of(context).pop(),
                     visualDensity: VisualDensity.compact,
@@ -599,13 +581,37 @@ class _UniversalMobileFileViewerDialogState
           bytes: _pdfBytes!,
           fileName: widget.fileName,
         );
-      case FileCategory.officeDoc:
       case FileCategory.officePresentation:
+        return UniversalPresentationViewer(
+          bytes: _pdfBytes!,
+          fileName: widget.fileName,
+          onDownload: () {
+            downloadBytesFile(bytes: _pdfBytes!, fileName: widget.fileName);
+          },
+          onOpenInNewTab: () {},
+        );
+      case FileCategory.officeDoc:
+        return UniversalDocxViewer(
+          bytes: _pdfBytes!,
+          fileName: widget.fileName,
+          onDownload: () {
+            downloadBytesFile(bytes: _pdfBytes!, fileName: widget.fileName);
+          },
+          onOpenInNewTab: () {},
+        );
       case FileCategory.archive:
+        return UniversalArchiveViewer(
+          bytes: _pdfBytes!,
+          fileName: widget.fileName,
+          onDownload: () {
+            downloadBytesFile(bytes: _pdfBytes!, fileName: widget.fileName);
+          },
+          onOpenInNewTab: () {},
+        );
       case FileCategory.video:
       case FileCategory.audio:
       case FileCategory.other:
-        return UniversalOfficeInspectorCard(
+        return UniversalDeliverableCard(
           fileName: widget.fileName,
           fileSizeBytes: _pdfBytes!.length,
           category: _category,

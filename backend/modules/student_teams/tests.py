@@ -2241,13 +2241,13 @@ class StudentTeamApiTests(APITestCase):
             status='published',
             semester=self.first_semester,
         )
-        PitEventGradingConfig.objects.create(
+        PitEventGradingConfig.objects.create(year_level='1st Year',
             semester=self.first_semester,
             event_name='1st Year Concept Pitch',
             panel_rubric=panel_rubric,
             peer_rubric=peer_rubric,
         )
-        PitEventGradingConfig.objects.create(
+        PitEventGradingConfig.objects.create(year_level='1st Year',
             semester=self.first_semester,
             event_name='1st Year Expo',
             panel_rubric=panel_rubric,

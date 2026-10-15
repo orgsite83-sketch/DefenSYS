@@ -85,7 +85,7 @@ class _PitInstructorDashboardContentState
         padding: const EdgeInsets.all(18),
         child: Row(
           children: [
-            Icon(icon, color: DefensysTokens.maroonOf(context), size: 24),
+            Icon(icon, color: DefensysTokens.maroonTextOf(context), size: 24),
             const SizedBox(width: 14),
             Expanded(
               child: Column(
@@ -153,7 +153,7 @@ class _PitInstructorDashboardContentState
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
         leading: Icon(
           Icons.rate_review_outlined,
-          color: DefensysTokens.maroonOf(context),
+          color: DefensysTokens.maroonTextOf(context),
         ),
         title: Text(
           title,
@@ -304,6 +304,7 @@ class _PitInstructorDashboardContentState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         DefensysPageHeader(
+          programScope: 'pit',
           icon: Icons.school_outlined,
           title: 'Welcome, ${widget.facultyName}',
           subtitle:

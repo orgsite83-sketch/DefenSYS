@@ -233,8 +233,8 @@ void main() {
         },
       ],
     );
-    expect(find.text('16:00\n–17:00'), findsOneWidget);
-    expect(find.text('09:15\n–10:00'), findsOneWidget);
+    expect(find.text('16:00–17:00'), findsOneWidget);
+    expect(find.text('09:15–10:00'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

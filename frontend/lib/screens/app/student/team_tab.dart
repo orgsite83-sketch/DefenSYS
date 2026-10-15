@@ -1,9 +1,11 @@
+import 'package:defensys/theme/program_colors.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../services/capstone_deliverables_provider.dart';
 import '../../../theme/defensys_tokens.dart';
+import '../../../widgets/program_badge.dart';
 
 /// Screen 1: Academic Defense Overview & Student Team Workspace.
 /// Features clean, professional white surfaces, crisp hairline borders,
@@ -27,6 +29,7 @@ class TeamTab extends ConsumerStatefulWidget {
 }
 
 class _TeamTabState extends ConsumerState<TeamTab> {
+
   @override
   void initState() {
     super.initState();
@@ -89,31 +92,31 @@ class _TeamTabState extends ConsumerState<TeamTab> {
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.group_off_rounded,
                   size: 48,
-                  color: DefensysTokens.maroon,
+                  color: DefensysTokens.maroonTextOf(context),
                 ),
               ),
               const SizedBox(height: 16),
-              const Text(
+              Text(
                 'No Team Assigned Yet',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: DefensysTokens.textPrimary,
+                  color: DefensysTokens.textPrimaryOf(context),
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 'You will see your project details, defense timeline, and teammate roster once an instructor or administrator assigns you to a team.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
-                  color: DefensysTokens.textSecondary,
+                  color: DefensysTokens.textSecondaryOf(context),
                   height: 1.4,
                 ),
               ),
@@ -124,8 +127,8 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                   icon: const Icon(Icons.refresh_rounded, size: 18),
                   label: const Text('Refresh Status'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: DefensysTokens.maroon,
-                    side: const BorderSide(color: DefensysTokens.maroon),
+                    foregroundColor: DefensysTokens.maroonOf(context),
+                    side: BorderSide(color: DefensysTokens.maroonOf(context)),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
@@ -139,7 +142,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
       if (onRefresh == null) return emptyContent;
 
       return RefreshIndicator(
-        color: DefensysTokens.maroon,
+        color: DefensysTokens.maroonOf(context),
         onRefresh: onRefresh,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -311,7 +314,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     }
 
     return RefreshIndicator(
-      color: DefensysTokens.maroon,
+      color: DefensysTokens.maroonOf(context),
       onRefresh: onRefresh,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -346,9 +349,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
@@ -367,19 +370,19 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                  color: ProgramColors.of(context, data: widget.studentData?['team'] as Map?).accent.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: DefensysTokens.maroon.withValues(alpha: 0.2),
+                    color: ProgramColors.of(context, data: widget.studentData?['team'] as Map?).accent.withValues(alpha: 0.2),
                   ),
                 ),
                 child: Center(
                   child: Text(
                     monogram,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
-                      color: DefensysTokens.maroon,
+                      color: ProgramColors.of(context, data: widget.studentData?['team'] as Map?).text,
                       letterSpacing: 0.5,
                     ),
                   ),
@@ -392,10 +395,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                   children: [
                     Text(
                       teamName,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: DefensysTokens.textPrimary,
+                        color: DefensysTokens.textPrimaryOf(context),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -403,10 +406,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                     const SizedBox(height: 2),
                     Text(
                       projectTitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
-                        color: DefensysTokens.textSecondary,
+                        color: DefensysTokens.textSecondaryOf(context),
                         height: 1.25,
                       ),
                       maxLines: 2,
@@ -416,29 +419,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                 ),
               ),
               const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                decoration: BoxDecoration(
-                  color: isCapstone
-                      ? const Color(0xFFDCFCE7)
-                      : const Color(0xFFFEF3C7),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: isCapstone
-                        ? const Color(0xFF86EFAC)
-                        : const Color(0xFFFDE68A),
-                  ),
-                ),
-                child: Text(
-                  scopeLabel,
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.bold,
-                    color: isCapstone
-                        ? const Color(0xFF15803D)
-                        : const Color(0xFFB45309),
-                  ),
-                ),
+              ProgramBadge(
+                scope: isCapstone ? 'capstone' : 'pit',
+                label: scopeLabel,
               ),
             ],
           ),
@@ -460,9 +443,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                     Expanded(
                       child: Text(
                         '${section.isNotEmpty ? '$section · ' : ''}$termText',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
-                          color: DefensysTokens.textSecondary,
+                          color: DefensysTokens.textSecondaryOf(context),
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -484,10 +467,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                     adviserName != 'N/A' && adviserName != 'Unassigned'
                         ? 'Adviser: $adviserName'
                         : (isCapstone ? 'Adviser: Unassigned' : 'PIT Faculty Lead'),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
-                      color: DefensysTokens.textSecondary,
+                      color: DefensysTokens.textSecondaryOf(context),
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -517,9 +500,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: DefensysTokens.surfaceOf(context),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: DefensysTokens.borderOf(context)),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.02),
@@ -547,20 +530,20 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Repository',
                           style: TextStyle(
                             fontSize: 12.5,
                             fontWeight: FontWeight.bold,
-                            color: DefensysTokens.textPrimary,
+                            color: DefensysTokens.textPrimaryOf(context),
                           ),
                         ),
                         const SizedBox(height: 1),
                         Text(
                           fileCount > 0 ? '$fileCount Files' : 'Deliverables',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 10.5,
-                            color: DefensysTokens.textSecondary,
+                            color: DefensysTokens.textSecondaryOf(context),
                           ),
                         ),
                       ],
@@ -584,9 +567,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: DefensysTokens.surfaceOf(context),
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: DefensysTokens.borderOf(context)),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.02),
@@ -603,13 +586,13 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFEF2F2),
+                          color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.rate_review_outlined,
                           size: 18,
-                          color: DefensysTokens.maroon,
+                          color: DefensysTokens.maroonTextOf(context),
                         ),
                       ),
                       if (hasPendingPeer)
@@ -635,12 +618,12 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                       children: [
                         Row(
                           children: [
-                            const Text(
+                            Text(
                               'Peer Eval',
                               style: TextStyle(
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.bold,
-                                color: DefensysTokens.textPrimary,
+                                color: DefensysTokens.textPrimaryOf(context),
                               ),
                             ),
                             if (hasPendingPeer) ...[
@@ -661,7 +644,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                           peerEvalComplete ? 'Completed ✓' : 'Review Peers',
                           style: TextStyle(
                             fontSize: 10.5,
-                            color: peerEvalComplete ? const Color(0xFF15803D) : DefensysTokens.maroon,
+                            color: peerEvalComplete ? const Color(0xFF15803D) : DefensysTokens.maroonTextOf(context),
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -696,28 +679,28 @@ class _TeamTabState extends ConsumerState<TeamTab> {
         width: double.infinity,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: DefensysTokens.surfaceOf(context),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: DefensysTokens.borderOf(context)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               isCapstone ? 'Current Defense Stage' : 'Upcoming PIT Event',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12.5,
                 fontWeight: FontWeight.bold,
-                color: DefensysTokens.textPrimary,
+                color: DefensysTokens.textPrimaryOf(context),
               ),
             ),
             const SizedBox(height: 12),
             Text(
               isCapstone ? 'No defense stages configured yet' : 'No PIT events configured yet',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14.5,
                 fontWeight: FontWeight.bold,
-                color: DefensysTokens.textPrimary,
+                color: DefensysTokens.textPrimaryOf(context),
               ),
             ),
             const SizedBox(height: 4),
@@ -725,7 +708,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
               isCapstone
                   ? 'Your schedule and defense status will appear after an administrator adds a stage.'
                   : 'Your event and schedule will appear after an administrator adds a PIT event.',
-              style: const TextStyle(fontSize: 11.5, color: DefensysTokens.textSecondary),
+              style: TextStyle(fontSize: 11.5, color: DefensysTokens.textSecondaryOf(context)),
             ),
           ],
         ),
@@ -772,9 +755,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
         width: double.infinity,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: DefensysTokens.surfaceOf(context),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(color: DefensysTokens.borderOf(context)),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.03),
@@ -792,10 +775,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                 Expanded(
                   child: Text(
                     cardTitle,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.bold,
-                      color: DefensysTokens.textPrimary,
+                      color: DefensysTokens.textPrimaryOf(context),
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -803,20 +786,20 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                 const SizedBox(width: 8),
                 Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: const [
+                  children: [
                     Text(
                       'View Details',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: DefensysTokens.maroon,
+                        color: DefensysTokens.maroonTextOf(context),
                       ),
                     ),
                     SizedBox(width: 2),
                     Icon(
                       Icons.arrow_forward_rounded,
                       size: 12,
-                      color: DefensysTokens.maroon,
+                      color: DefensysTokens.maroonTextOf(context),
                     ),
                   ],
                 ),
@@ -832,9 +815,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                     height: 52,
                     margin: const EdgeInsets.only(right: 12),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: DefensysTokens.surfaceOf(context),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: DefensysTokens.borderOf(context)),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.03),
@@ -848,8 +831,8 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(vertical: 2.5),
-                          decoration: const BoxDecoration(
-                            color: DefensysTokens.maroon,
+                          decoration: BoxDecoration(
+                            color: DefensysTokens.maroonOf(context),
                             borderRadius: BorderRadius.vertical(top: Radius.circular(9)),
                           ),
                           child: Text(
@@ -867,10 +850,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                           child: Center(
                             child: Text(
                               dayLabel,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w900,
-                                color: DefensysTokens.textPrimary,
+                                color: DefensysTokens.textPrimaryOf(context),
                                 height: 1.1,
                               ),
                             ),
@@ -885,7 +868,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                     height: 46,
                     margin: const EdgeInsets.only(right: 12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
+                      color: DefensysTokens.surfaceHigherOf(context),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Icon(
@@ -900,10 +883,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                     children: [
                       Text(
                         activeStageName,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14.5,
                           fontWeight: FontWeight.bold,
-                          color: DefensysTokens.textPrimary,
+                          color: DefensysTokens.textPrimaryOf(context),
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -928,20 +911,20 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                       else if (hasSchedule)
                         Text(
                           '${startTime?.isNotEmpty == true ? '$startTime · ' : ''}${room?.isNotEmpty == true ? room : 'Room TBA'}${panelChair != null ? ' · Chair: $panelChair' : ''}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11.5,
-                            color: DefensysTokens.textSecondary,
+                            color: DefensysTokens.textSecondaryOf(context),
                             fontWeight: FontWeight.w500,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         )
                       else
-                        const Text(
+                        Text(
                           'Preparation Phase · Awaiting schedule assignment',
                           style: TextStyle(
                             fontSize: 11,
-                            color: DefensysTokens.textSecondary,
+                            color: DefensysTokens.textSecondaryOf(context),
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -967,9 +950,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                     isCapstone
                         ? 'Evaluation: Panel Deliberation, Adviser Endorsement & Peer Reviews'
                         : 'Evaluation Formula: 80% Panel Deliberation · 20% Peer Review',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 10.5,
-                      color: DefensysTokens.textSecondary,
+                      color: DefensysTokens.textSecondaryOf(context),
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -995,9 +978,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
@@ -1015,19 +998,19 @@ class _TeamTabState extends ConsumerState<TeamTab> {
               Expanded(
                 child: Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.group_outlined,
                       size: 16,
-                      color: DefensysTokens.maroon,
+                      color: DefensysTokens.maroonTextOf(context),
                     ),
                     const SizedBox(width: 8),
                     Flexible(
                       child: Text(
                         'Team Members (${members.length})',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
-                          color: DefensysTokens.textPrimary,
+                          color: DefensysTokens.textPrimaryOf(context),
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1048,7 +1031,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                   style: TextStyle(
                     fontSize: 9.5,
                     fontWeight: FontWeight.w600,
-                    color: peerEvalComplete ? const Color(0xFF15803D) : DefensysTokens.maroon,
+                    color: peerEvalComplete ? const Color(0xFF15803D) : DefensysTokens.dangerText,
                   ),
                 ),
               ),
@@ -1056,11 +1039,11 @@ class _TeamTabState extends ConsumerState<TeamTab> {
           ),
           const SizedBox(height: 10),
           if (members.isEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
               child: Text(
                 'No teammates listed yet.',
-                style: TextStyle(fontSize: 11, color: DefensysTokens.textSecondary),
+                style: TextStyle(fontSize: 11, color: DefensysTokens.textSecondaryOf(context)),
               ),
             )
           else
@@ -1098,13 +1081,13 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                       radius: 14,
                       backgroundColor: isLeader
                           ? const Color(0xFF7F1D1D)
-                          : DefensysTokens.maroon.withValues(alpha: 0.1),
+                          : DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
                       child: Text(
                         initials,
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: isLeader ? Colors.white : DefensysTokens.maroon,
+                          color: isLeader ? Colors.white : DefensysTokens.maroonTextOf(context),
                         ),
                       ),
                     ),
@@ -1118,10 +1101,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                               Flexible(
                                 child: Text(
                                   name,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
-                                    color: DefensysTokens.textPrimary,
+                                    color: DefensysTokens.textPrimaryOf(context),
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -1159,9 +1142,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                           const SizedBox(height: 1),
                           Text(
                             'ID: $username',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 10,
-                              color: DefensysTokens.textSecondary,
+                              color: DefensysTokens.textSecondaryOf(context),
                             ),
                           ),
                         ],
@@ -1171,15 +1154,15 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
+                          color: DefensysTokens.surfaceHigherOf(context),
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: const Text(
+                        child: Text(
                           'Self',
                           style: TextStyle(
                             fontSize: 9.5,
                             fontWeight: FontWeight.w500,
-                            color: DefensysTokens.textSecondary,
+                            color: DefensysTokens.textSecondaryOf(context),
                           ),
                         ),
                       )
@@ -1224,19 +1207,19 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
                           decoration: BoxDecoration(
-                            color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                            color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(6),
                             border: Border.all(
-                              color: DefensysTokens.maroon.withValues(alpha: 0.2),
+                              color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2),
                             ),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
-                            children: const [
+                            children: [
                               Icon(
                                 Icons.edit_note_rounded,
                                 size: 12,
-                                color: DefensysTokens.maroon,
+                                color: DefensysTokens.maroonTextOf(context),
                               ),
                               SizedBox(width: 3),
                               Text(
@@ -1244,7 +1227,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
-                                  color: DefensysTokens.maroon,
+                                  color: DefensysTokens.maroonTextOf(context),
                                 ),
                               ),
                             ],

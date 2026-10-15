@@ -250,7 +250,7 @@ class AcademicPeriodApiTests(APITestCase):
         team = self._team(current, name='PIT Team', level=StudentTeam.LEVEL_3_PIT)
         panel = self._pit_rubric(current, Rubric.EVAL_PANEL, 'PIT Panel')
         peer = self._pit_rubric(current, Rubric.EVAL_PEER, 'PIT Peer')
-        PitEventGradingConfig.objects.create(
+        PitEventGradingConfig.objects.create(year_level='3rd Year',
             semester=current,
             event_name='3rd Year Expo',
             panel_rubric=panel,

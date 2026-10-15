@@ -998,7 +998,7 @@ class DefenseSchedulerApiTests(APITestCase):
             status=Rubric.STATUS_PUBLISHED,
             created_by=self.admin,
         )
-        PitEventGradingConfig.objects.create(
+        PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester,
             event_name='2nd Year PIT Expo',
             panel_rubric=pit_panel_rubric,
@@ -1467,6 +1467,7 @@ class PitEventGradingConfigTests(APITestCase):
         payload = {
             'scope': DefenseSchedule.SCOPE_PIT,
             'semester_id': self.semester.id,
+            'year_level': '2nd Year',
             'event_name': '2nd Year PIT Expo',
             'rubric_id': self.panel_rubric.id,
             'peer_rubric_id': self.peer_rubric.id,
@@ -1479,6 +1480,11 @@ class PitEventGradingConfigTests(APITestCase):
             'panelist_ids': [self.panelist.id],
         }
         payload.update(overrides)
+        # Scheduling consumes setup; preview/confirm must never create or edit it.
+        if not PitEventGradingConfig.objects.filter(semester=self.semester, event_name=payload['event_name']).exists():
+            PitEventGradingConfig.objects.create(semester=self.semester, year_level='2nd Year',
+                event_name=payload['event_name'], panel_rubric=self.panel_rubric, peer_rubric=self.peer_rubric,
+                panel_weight=75, peer_weight=25)
         return payload
 
     def test_list_includes_peer_rubrics(self):
@@ -1488,7 +1494,7 @@ class PitEventGradingConfigTests(APITestCase):
         peer_ids = [item['id'] for item in response.data['peer_rubrics']]
         self.assertIn(self.peer_rubric.id, peer_ids)
 
-    def test_confirm_plan_upserts_pit_event_config_and_grade_weights(self):
+    def test_confirm_plan_uses_pit_event_config_and_grade_weights(self):
         response = self.client.post(
             '/api/defense/schedules/confirm-plan/',
             {
@@ -1512,7 +1518,7 @@ class PitEventGradingConfigTests(APITestCase):
         self.assertEqual(grade.stage_label, '2nd Year PIT Expo')
 
     def test_pit_event_config_lookup_prefills_existing_event(self):
-        PitEventGradingConfig.objects.create(
+        PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester,
             event_name='2nd Year PIT Expo',
             panel_rubric=self.panel_rubric,
@@ -1532,6 +1538,7 @@ class PitEventGradingConfigTests(APITestCase):
 
     def test_pit_event_config_save_creates_or_updates_config(self):
         payload = {
+            'year_level': '2nd Year',
             'event_name': 'New PIT Expo',
             'semester_id': self.semester.id,
             'panel_rubric_id': self.panel_rubric.id,
@@ -1571,6 +1578,7 @@ class PitEventGradingConfigTests(APITestCase):
     def test_pit_event_peer_grading_smart_default_and_toggle(self):
         # 1. Creation without explicit peer_grading_enabled defaults to True when rubric and weight > 0
         payload = {
+            'year_level': '2nd Year',
             'event_name': 'Smart Default PIT Expo',
             'semester_id': self.semester.id,
             'panel_rubric_id': self.panel_rubric.id,
@@ -1619,7 +1627,7 @@ class PitEventGradingConfigTests(APITestCase):
 
     def test_pit_lead_can_only_access_their_own_year_level_event_configs(self):
         # Create a 1st Year PIT configuration and a 2nd Year PIT configuration
-        config_1st = PitEventGradingConfig.objects.create(
+        config_1st = PitEventGradingConfig.objects.create(year_level='1st Year',
             semester=self.semester,
             event_name='1st Year PIT Expo',
             panel_rubric=self.panel_rubric,
@@ -1627,7 +1635,7 @@ class PitEventGradingConfigTests(APITestCase):
             panel_weight=80,
             peer_weight=20,
         )
-        config_2nd = PitEventGradingConfig.objects.create(
+        config_2nd = PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester,
             event_name='2nd Year PIT Expo',
             panel_rubric=self.panel_rubric,
@@ -1672,6 +1680,7 @@ class PitEventGradingConfigTests(APITestCase):
         response_post_1st = self.client.post(
             '/api/defense/schedules/pit-event-config/',
             {
+                'year_level': '1st Year',
                 'event_name': '1st Year New Expo',
                 'semester_id': self.semester.id,
                 'panel_rubric_id': self.panel_rubric.id,
@@ -2042,7 +2051,7 @@ class PitEventGradingConfigTests(APITestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_pit_suggested_filename_uses_config_template(self):
-        config = PitEventGradingConfig.objects.create(
+        config = PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester,
             event_name='2nd Year PIT Expo',
             panel_rubric=self.panel_rubric,
@@ -2066,7 +2075,7 @@ class PitEventGradingConfigTests(APITestCase):
         )
 
     def test_delete_pit_event_config(self):
-        config = PitEventGradingConfig.objects.create(
+        config = PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester,
             event_name='2nd Year PIT Expo Delete',
             panel_rubric=self.panel_rubric,
@@ -2082,7 +2091,7 @@ class PitEventGradingConfigTests(APITestCase):
 
     def test_scheduling_gated_by_pre_defense_deliverables(self):
         from repository.deliverables.services import stage_payload
-        config = PitEventGradingConfig.objects.create(
+        config = PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester,
             event_name='2nd Year PIT Expo Gated',
             panel_rubric=self.panel_rubric,
@@ -2123,7 +2132,7 @@ class PitEventGradingConfigTests(APITestCase):
         self.assertEqual(response.status_code, 201)
 
     def test_scheduling_allowed_if_no_pre_defense_deliverables(self):
-        PitEventGradingConfig.objects.create(
+        PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester,
             event_name='2nd Year PIT Expo Open',
             panel_rubric=self.panel_rubric,
@@ -2143,7 +2152,7 @@ class PitEventGradingConfigTests(APITestCase):
         from repository.deliverables.services import stage_payload
 
         event_name = '2nd Year PIT Expo Auto Eligible'
-        config = PitEventGradingConfig.objects.create(
+        config = PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester,
             event_name=event_name,
             panel_rubric=self.panel_rubric,
@@ -2179,7 +2188,7 @@ class PitEventGradingConfigTests(APITestCase):
         from .models import PitEventDeliverable
 
         event_name = '2nd Year PIT Expo Plan Eligible'
-        config = PitEventGradingConfig.objects.create(
+        config = PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester,
             event_name=event_name,
             panel_rubric=self.panel_rubric,
@@ -2251,7 +2260,7 @@ class PitEventGradingConfigTests(APITestCase):
         )
 
         # Create the PitEventGradingConfig with different weights
-        config = PitEventGradingConfig.objects.create(
+        config = PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester,
             event_name='PIT Test Event',
             panel_rubric=self.panel_rubric,
@@ -2386,6 +2395,7 @@ class PitEventGradingConfigTests(APITestCase):
 
         self.client.force_authenticate(user=lead_2nd)
         response = self.client.post('/api/defense/schedules/pit-event-config/', {
+            'year_level': '2nd Year',
             'event_name': '2nd Year Expo',
             'panel_rubric_id': rubric_1st_panel.id,
             'peer_rubric_id': rubric_2nd_peer.id,
@@ -2412,6 +2422,7 @@ class PitEventGradingConfigTests(APITestCase):
 
         # 3. Test saving PIT event config with deliverables having is_defense_material
         config_payload = {
+            'year_level': '2nd Year',
             'event_name': '1st Year Concept Pitch',
             'semester_id': self.semester.id,
             'panel_weight': 80,

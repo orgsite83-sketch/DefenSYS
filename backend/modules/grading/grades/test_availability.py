@@ -21,6 +21,9 @@ class EvaluationAvailabilityTests(APITestCase):
 
     def setUp(self):
         fixtures.GradeCenterApiTests.setUp(self)
+        from django.contrib.auth import get_user_model
+        self.second_panelist = get_user_model().objects.create_user(
+            username='availability-second-panelist', role='faculty', is_panelist=True)
         self.grade = GradeContextService.get_or_create_for_schedule(self.capstone_schedule)[0]
 
     def panel(self, panelist=None):
@@ -81,11 +84,11 @@ class EvaluationAvailabilityTests(APITestCase):
         self.assertEqual(self.submit_adviser().status_code, 200)
 
     def test_partial_panel_score_does_not_open_peer(self):
-        SchedulePanelist.objects.create(schedule=self.capstone_schedule, panelist=self.adviser)
+        SchedulePanelist.objects.create(schedule=self.capstone_schedule, panelist=self.second_panelist)
         self.panel()
         self.assertIsNotNone(self.grade.panel_score)
         self.assertEqual(self.peer().status_code, 400)
-        self.panel(self.adviser)
+        self.panel(self.second_panelist)
         self.assertEqual(self.peer().status_code, 200)
 
     def test_missing_external_panelist_keeps_peer_locked(self):
@@ -117,13 +120,13 @@ class EvaluationAvailabilityTests(APITestCase):
         self.assertEqual(payload['peer_eval_unavailable_reason'], '')
 
     def test_peer_open_refresh_is_sent_only_after_commit_and_last_panel(self):
-        SchedulePanelist.objects.create(schedule=self.capstone_schedule, panelist=self.adviser)
+        SchedulePanelist.objects.create(schedule=self.capstone_schedule, panelist=self.second_panelist)
         with patch('realtime.broadcast.notify_team_peer_open') as notify:
             with self.captureOnCommitCallbacks(execute=True):
                 self.panel()
             notify.assert_not_called()
             with self.captureOnCommitCallbacks(execute=True):
-                self.panel(self.adviser)
+                self.panel(self.second_panelist)
             notify.assert_called_once()
             self.assertEqual(set(notify.call_args.kwargs['student_ids']), {self.student.pk, self.second_student.pk})
 

@@ -1,3 +1,4 @@
+import 'package:defensys/theme/program_colors.dart';
 import 'grade_correction_dialog.dart';
 import 'grade_group_completion_summary.dart';
 import 'incomplete_grading_dialog.dart';
@@ -1971,6 +1972,8 @@ Widget gradeCenterHeroSummaryCard({required Map<String, dynamic> grade}) {
                         '${panelistsList.length} Panelists Assigned',
                       ),
                     _metaIconLabel(Icons.flag_outlined, 'Passing Mark: 75.00%'),
+                    if (isPit)
+                      _metaIconLabel(Icons.info_outline, 'Event score indicator only'),
                   ],
                 ),
               ],
@@ -2322,7 +2325,7 @@ Widget _formulaPill({
 }
 
 Color gradeScopeAccentColor(String scope) {
-  return scope == 'pit' ? const Color(0xFF2563EB) : DefensysUi.primaryMaroon;
+  return ProgramColors.resolve(dark: false, track: programTrack(scope: scope)).accent;
 }
 
 /// KPI stat card aligned with Rubrics evaluation cards.

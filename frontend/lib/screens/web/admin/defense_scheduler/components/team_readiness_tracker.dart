@@ -39,6 +39,7 @@ class TeamReadinessTracker extends StatefulWidget {
 }
 
 class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
+
   final TextEditingController _trackerSearchController = TextEditingController();
   final Map<String, String?> _selectedSectionAdviserFilter = {};
   String? _selectedPitYearLevel;
@@ -128,6 +129,10 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
   @override
   Widget build(BuildContext context) {
     final activeStageOrEventName = widget.activeStageOrEventName;
+    final activeEvent = widget.state.pitEvents.firstWhere(
+      (event) => event['event_name'] == activeStageOrEventName,
+      orElse: () => <String, dynamic>{},
+    );
 
     final pitYearLevels = widget.scope == 'pit'
         ? (teamsForScope(widget.state, 'pit')
@@ -143,6 +148,11 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
       widget.scope,
       yearLevel: widget.scope == 'pit' ? _selectedPitYearLevel : null,
     ).where((team) {
+      if (widget.scope == 'pit' &&
+          (activeEvent['year_level'] == null ||
+              team['year_level'] != activeEvent['year_level'])) {
+        return false;
+      }
       final query = _trackerSearchController.text.toLowerCase().trim();
       if (query.isEmpty) return true;
       final name = (team['name']?.toString() ?? '').toLowerCase();
@@ -161,12 +171,12 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                 decoration: BoxDecoration(
                   color: _isDark
                       ? DefensysTokens.mistMaroon.withValues(alpha: 0.18)
-                      : AppColors.maroon.withValues(alpha: 0.08),
+                      : DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
                   Icons.checklist_rtl_rounded,
-                  color: _isDark ? DefensysTokens.mistMaroonText : AppColors.maroon,
+                  color: DefensysTokens.maroonTextOf(context),
                   size: 20,
                 ),
               ),
@@ -396,18 +406,18 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                         child: ExpansionTile(
                           initiallyExpanded: false,
                           collapsedIconColor: _isDark ? DefensysTokens.textSecondaryDark : AppColors.textSecondary,
-                          iconColor: _isDark ? DefensysTokens.mistMaroonText : AppColors.maroon,
+                          iconColor: DefensysTokens.maroonTextOf(context),
                           leading: Container(
                             padding: const EdgeInsets.all(6),
                             decoration: BoxDecoration(
                               color: _isDark
                                   ? DefensysTokens.mistMaroon.withValues(alpha: 0.16)
-                                  : AppColors.maroon.withValues(alpha: 0.08),
+                                  : DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Icon(
                               Icons.class_rounded,
-                              color: _isDark ? DefensysTokens.mistMaroonText : AppColors.maroon,
+                              color: DefensysTokens.maroonTextOf(context),
                               size: 18,
                             ),
                           ),
@@ -571,12 +581,12 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                                   decoration: BoxDecoration(
                                                     color: isAllSelected
-                                                        ? (_isDark ? DefensysTokens.mistMaroon : AppColors.maroon)
+                                                        ? (DefensysTokens.maroonOf(context))
                                                         : (_isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6)),
                                                     borderRadius: BorderRadius.circular(6),
                                                     border: Border.all(
                                                       color: isAllSelected
-                                                          ? (_isDark ? DefensysTokens.mistMaroon : AppColors.maroon)
+                                                          ? (DefensysTokens.maroonOf(context))
                                                           : (_isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
                                                     ),
                                                   ),
@@ -604,8 +614,8 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                               Color countColor;
 
                                               if (isSelected) {
-                                                bgColor = _isDark ? DefensysTokens.mistMaroon : AppColors.maroon;
-                                                borderColor = _isDark ? DefensysTokens.mistMaroon : AppColors.maroon;
+                                                bgColor = DefensysTokens.maroonOf(context);
+                                                borderColor = DefensysTokens.maroonOf(context);
                                                 textColor = Colors.white;
                                                 countColor = Colors.white.withValues(alpha: 0.85);
                                               } else if (isOverloaded) {
@@ -940,7 +950,7 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                 icon: const Icon(Icons.folder_open_rounded, size: 16),
                                                 label: const Text('Review Files'),
                                                 style: TextButton.styleFrom(
-                                                  foregroundColor: _isDark ? DefensysTokens.mistMaroonText : AppColors.maroon,
+                                                  foregroundColor: DefensysTokens.maroonTextOf(context),
                                                   disabledForegroundColor: _isDark ? DefensysTokens.textSecondaryDark.withValues(alpha: 0.4) : null,
                                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                                   textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),

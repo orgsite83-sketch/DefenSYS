@@ -1,3 +1,4 @@
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'dart:convert';
 import 'dart:ui';
 import 'package:file_picker/file_picker.dart';
@@ -8,7 +9,6 @@ import 'package:http/http.dart' as http;
 import 'package:defensys/config/api_config.dart';
 import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
-import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/progress_upload.dart';
 import 'package:defensys/utils/universal_file_viewer.dart';
 
@@ -99,6 +99,7 @@ Future<void> showUploadDialog({
   required String stageLabel,
   required Map<String, dynamic> item,
   int? fileId,
+  String? programScope,
 }) async {
   String? selectedFileName;
   String? selectedFileSize;
@@ -125,10 +126,10 @@ Future<void> showUploadDialog({
             Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(Icons.cloud_upload_rounded, size: 20, color: DefensysTokens.maroon),
+              child: Icon(Icons.cloud_upload_rounded, size: 20, color: DefensysTokens.maroonOf(context)),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -225,13 +226,13 @@ Future<void> showUploadDialog({
                             width: 50,
                             height: 50,
                             decoration: BoxDecoration(
-                              color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                              color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.cloud_upload_rounded,
                               size: 28,
-                              color: DefensysTokens.maroon,
+                              color: DefensysTokens.maroonOf(context),
                             ),
                           ),
                           const SizedBox(height: 12),
@@ -376,15 +377,15 @@ Future<void> showUploadDialog({
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
-                                children: const [
-                                  Icon(Icons.copy_rounded, size: 13, color: DefensysTokens.maroon),
+                                children: [
+                                  Icon(Icons.copy_rounded, size: 13, color: DefensysTokens.maroonOf(context)),
                                   SizedBox(width: 4),
                                   Text(
                                     'Copy',
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w700,
-                                      color: DefensysTokens.maroon,
+                                      color: DefensysTokens.maroonOf(context),
                                     ),
                                   ),
                                 ],
@@ -396,11 +397,11 @@ Future<void> showUploadDialog({
                       const SizedBox(height: 4),
                       SelectableText(
                         suggestedName,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11.5,
                           fontFamily: 'monospace',
                           fontWeight: FontWeight.w700,
-                          color: DefensysTokens.maroon,
+                          color: DefensysTokens.maroonOf(context),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -431,10 +432,10 @@ Future<void> showUploadDialog({
                     children: [
                       Row(
                         children: [
-                          const SizedBox(
+                          SizedBox(
                             width: 16,
                             height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: DefensysTokens.maroon),
+                            child: CircularProgressIndicator(strokeWidth: 2, color: DefensysTokens.maroonOf(context)),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -447,7 +448,7 @@ Future<void> showUploadDialog({
                           ),
                           Text(
                             '${(uploadProgress * 100).toStringAsFixed(0)}%',
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: DefensysTokens.maroon, fontSize: 13),
+                            style: TextStyle(fontWeight: FontWeight.bold, color: DefensysTokens.maroonOf(context), fontSize: 13),
                           ),
                         ],
                       ),
@@ -456,8 +457,8 @@ Future<void> showUploadDialog({
                         borderRadius: BorderRadius.circular(999),
                         child: LinearProgressIndicator(
                           value: uploadProgress,
-                          color: DefensysTokens.maroon,
-                          backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.15),
+                          color: DefensysTokens.maroonOf(context),
+                          backgroundColor: DefensysTokens.maroonOf(context).withValues(alpha: 0.15),
                           minHeight: 8,
                         ),
                       ),
@@ -614,18 +615,18 @@ Future<void> showUploadDialog({
                                     width: double.infinity,
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                     decoration: BoxDecoration(
-                                      color: DefensysTokens.maroon.withValues(alpha: 0.06),
+                                      color: DefensysTokens.maroonOf(context).withValues(alpha: 0.06),
                                       borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.2)),
+                                      border: Border.all(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2)),
                                     ),
                                     child: Row(
                                       children: [
-                                        Icon(Icons.inventory_2_outlined, size: 15, color: DefensysTokens.maroon),
+                                        Icon(Icons.inventory_2_outlined, size: 15, color: DefensysTokens.maroonOf(context)),
                                         const SizedBox(width: 8),
                                         Expanded(
                                           child: Text(
                                             targetRepoName,
-                                            style: const TextStyle(fontSize: 12, fontFamily: 'monospace', fontWeight: FontWeight.w700, color: DefensysTokens.maroon),
+                                            style: TextStyle(fontSize: 12, fontFamily: 'monospace', fontWeight: FontWeight.w700, color: DefensysTokens.maroonOf(context)),
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
@@ -665,7 +666,7 @@ Future<void> showUploadDialog({
                               ElevatedButton(
                                 onPressed: () => Navigator.pop(confirmCtx, true),
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: DefensysTokens.maroon,
+                                  backgroundColor: DefensysTokens.maroonOf(context),
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -766,7 +767,7 @@ Future<void> showUploadDialog({
                 : const Icon(Icons.cloud_upload_rounded, size: 16),
             label: Text(isUploading ? 'Uploading...' : 'Submit Deliverable'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: DefensysTokens.maroon,
+              backgroundColor: DefensysTokens.maroonOf(context),
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

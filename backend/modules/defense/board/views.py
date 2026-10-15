@@ -156,7 +156,7 @@ def latest_schedule_changes(queryset):
     from django.conf import settings
     queryset = queryset.annotate(_audit_key=Cast('pk', CharField()))
     latest = SystemAuditLog.objects.filter(target_type='DefenseSchedule', target_id=OuterRef('_audit_key'),
-        action__in=['schedule.operational_change', 'schedule.material_deadline_extended']).order_by('-created_at', '-pk')
+        action__in=['schedule.operational_change', 'schedule.material_deadline_extended', 'schedule.late_upload_opened']).order_by('-created_at', '-pk')
     if settings.DEBUG:
         from datetime import datetime, timezone
         from django.db.models import DateTimeField, Value
@@ -179,7 +179,8 @@ def board_payload(request, queryset=None):
     current = queryset if queryset is not None else base
     from grading.grades.models import TeamGrade
     # Assessment fields reuse the same fully loaded grade rows for this request.
-    current = current.select_related('documenter', 'minutes').prefetch_related(
+    from repository.deliverables.timing import with_material_permissions
+    current = with_material_permissions(current).select_related('documenter', 'minutes').prefetch_related(
         'guest_invitations', 'guest_panelist_codes',
         Prefetch('grade_records', queryset=TeamGrade.objects.with_relations()),
     )
@@ -221,7 +222,7 @@ class DefenseBoardOperationsView(APIView):
             schedules = board_queryset_for_user(request.user).filter(session_id=schedule.session_id, semester_id=schedule.semester_id, scope=schedule.scope) if request.query_params.get('session') == '1' else board_queryset_for_user(request.user).filter(pk=schedule.pk)
             names = {str(s.pk): s.team.name for s in schedules}
             logs = SystemAuditLog.objects.filter(target_type='DefenseSchedule', target_id__in=names,
-                action__in=['schedule.operational_change', 'schedule.material_deadline_extended']).select_related('actor')[:100]
+                action__in=['schedule.operational_change', 'schedule.material_deadline_extended', 'schedule.late_upload_opened']).select_related('actor')[:100]
             return Response({'history': [{**schedule_change_payload(log), 'schedule_id': int(log.target_id), 'team_name': names[log.target_id]} for log in logs]})
         payload = schedule_options_payload(user=request.user)
         if request.query_params.get('management') == '1':

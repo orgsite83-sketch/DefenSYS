@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:excel/excel.dart' as xl;
+import 'package:defensys/utils/excel_safe_decode.dart';
 
 import '../../../../navigation/admin_route_paths.dart';
 import '../../../../services/dashboard_provider.dart';
@@ -61,6 +62,7 @@ class _PitStudentImportScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           DefensysPageHeader(
+            programScope: 'pit',
             icon: Icons.person_add_alt_outlined,
             title: 'Import PIT Students',
             subtitle: 'Create student accounts for $year only.',
@@ -614,7 +616,7 @@ class _PitStudentImportScreenState
   }
 
   _OfficialClassListParseResult _parseOfficialClassListXlsx(List<int> bytes) {
-    final workbook = xl.Excel.decodeBytes(bytes);
+    final workbook = safeDecodeExcel(bytes);
     if (workbook.tables.isEmpty) {
       return const _OfficialClassListParseResult(metadata: {}, students: []);
     }

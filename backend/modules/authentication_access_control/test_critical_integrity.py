@@ -134,6 +134,50 @@ class CriticalIntegrityTests(APITestCase):
         self.definition.save()
         self.assertEqual(self.fetch(panelist).status_code, 404)
 
+    def test_pit_archive_downloads_follow_the_captured_year_after_team_moves(self):
+        users = get_user_model().objects
+        original_lead = users.create_user(username='archive-original-lead', role='faculty',
+            is_pit_lead=True, pit_lead_year='3rd Year')
+        current_lead = users.create_user(username='archive-current-lead', role='faculty',
+            is_pit_lead=True, pit_lead_year='2nd Year')
+        unassigned = users.create_user(username='archive-unassigned-lead', role='faculty', is_pit_lead=True)
+        self.team.level = StudentTeam.LEVEL_3_PIT
+        self.team.adviser = None
+        self.team.save()
+        submission = DeliverableSubmission.objects.create(team=self.team,
+            stage_label='Historic PIT Event', deliverable_id='HIST', label='Private PIT draft',
+            deliverable_type='pre')
+        stored = DeliverableSubmissionFile.objects.create(submission=submission,
+            file_name='historic.txt', extracted_text='fixture',
+            file=ContentFile(b'historical private work', name='historic.txt'))
+        self.team.level = StudentTeam.LEVEL_2_PIT
+        self.team.year_level = '2nd Year'
+        self.team.save()
+        for user, visible in ((original_lead, True), (current_lead, False), (unassigned, False)):
+            with self.subTest(user=user.username):
+                self.client.force_authenticate(user)
+                listing = self.client.get(reverse('project_archive'))
+                if user == unassigned:
+                    self.assertEqual(listing.status_code, 403)
+                else:
+                    self.assertEqual(listing.status_code, 200)
+                    self.assertEqual(any(row['deliverable_id'] == 'HIST'
+                        for row in listing.data['entries']), visible)
+                for legacy in (False, True):
+                    self.assertEqual(self.fetch(user, stored.file.name, legacy=legacy).status_code,
+                        200 if visible else 404)
+        self.assertEqual(self.fetch(self.owner, stored.file.name).status_code, 200)
+        self.assertEqual(self.fetch(self.admin, stored.file.name).status_code, 200)
+
+    def test_missing_pit_year_does_not_hide_an_independent_adviser_assignment(self):
+        self.adviser.is_pit_lead = True
+        self.adviser.pit_lead_year = ''
+        self.adviser.save(update_fields=['is_pit_lead', 'pit_lead_year'])
+        self.assertEqual(self.fetch(self.adviser).status_code, 200)
+        from repository.deliverables.services import team_queryset_for_user
+        other = self.make_team('Unassigned PIT cohort', pit=True)
+        self.assertFalse(team_queryset_for_user(self.adviser).filter(pk=other.pk).exists())
+
     def test_archive_and_deliverable_gets_preserve_all_stored_files(self):
         second = DeliverableSubmissionFile.objects.create(
             submission=self.submission, file_name='newer.txt', extracted_text='fixture',

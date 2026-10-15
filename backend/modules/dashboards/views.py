@@ -1575,16 +1575,8 @@ class StudentDashboardView(APIView):
             else:
                 from defense.scheduler.models import PitEventGradingConfig
                 from repository.deliverables.services import stage_payload
-                from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
-                configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester)
-                if team.year_level:
-                    exclude_filter = Q()
-                    for y, hints in PIT_YEAR_EVENT_HINTS.items():
-                        if y != team.year_level:
-                            for hint in hints:
-                                exclude_filter |= Q(event_name__icontains=hint)
-                    if exclude_filter:
-                        configs_qs = configs_qs.exclude(exclude_filter)
+                from defense.scheduler.event_scope import pit_events_for_team
+                configs_qs = pit_events_for_team(team)
                 stage_options = list(
                     configs_qs.order_by('event_name').values_list('event_name', flat=True)
                 )

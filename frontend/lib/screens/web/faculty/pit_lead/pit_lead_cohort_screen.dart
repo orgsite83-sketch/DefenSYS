@@ -1,3 +1,4 @@
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -31,7 +32,7 @@ class PitLeadCohortScreen extends ConsumerStatefulWidget {
 }
 
 class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
-  static const _maroon = DefensysUi.primaryMaroon;
+  static const _brandAccent = DefensysTokens.maroon;
   static const _blue = DefensysUi.techBlue;
   static const _ink = DefensysUi.textDark;
   static const _muted = DefensysUi.steelGrey;
@@ -302,6 +303,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
         children: [
           // Screen Header
           DefensysPageHeader(
+            programScope: 'pit',
             icon: Icons.school_outlined,
             title: 'User Management',
             subtitle: '$pitYear · $semester',
@@ -379,7 +381,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
       icon: const Icon(Icons.person_add_alt_1_rounded, size: 16),
       label: const Text('Assign Section Instructor'),
       style: ElevatedButton.styleFrom(
-        backgroundColor: _maroon,
+        backgroundColor: _brandAccent,
         foregroundColor: Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
@@ -461,7 +463,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
                 value: '$totalCount',
                 subtitle: 'Total academic records',
                 icon: Icons.badge_outlined,
-                iconColor: _maroon,
+                iconColor: _brandAccent,
                 iconBg: const Color(0xFFFDF2F2),
               ),
             ),
@@ -541,7 +543,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(color: _maroon),
+                            borderSide: const BorderSide(color: _brandAccent),
                           ),
                         ),
                         onChanged: (_) => _applyStudentFilters(),
@@ -939,7 +941,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
                 value: '$distinctInstructors',
                 subtitle: 'Assigned section instructors',
                 icon: Icons.assignment_ind_outlined,
-                iconColor: _maroon,
+                iconColor: _brandAccent,
                 iconBg: const Color(0xFFFDF2F2),
               ),
             ),
@@ -1019,7 +1021,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
-                            borderSide: const BorderSide(color: _maroon),
+                            borderSide: const BorderSide(color: _brandAccent),
                           ),
                         ),
                         onChanged: (_) => setState(() => _instructorPage = 0),
@@ -1559,7 +1561,7 @@ class _AssignSectionInstructorDialogState
   final _sectionCtrl = TextEditingController();
   String? _error;
 
-  static const _maroon = DefensysUi.primaryMaroon;
+  static const _brandAccent = DefensysTokens.maroon;
   static const _ink = DefensysUi.textDark;
   static const _muted = DefensysUi.steelGrey;
   static const _line = Color(0xFFE5E7EB);
@@ -1612,7 +1614,7 @@ class _AssignSectionInstructorDialogState
                       color: const Color(0xFFFDF2F2),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(Icons.assignment_ind_outlined, color: _maroon, size: 22),
+                    child: const Icon(Icons.assignment_ind_outlined, color: _brandAccent, size: 22),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -1743,7 +1745,7 @@ class _AssignSectionInstructorDialogState
                       });
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _maroon,
+                      backgroundColor: _brandAccent,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     ),
@@ -1781,7 +1783,7 @@ class _PitRolloverPreviewDialog extends StatefulWidget {
 class _PitRolloverPreviewDialogState extends State<_PitRolloverPreviewDialog> {
   var _isConfirming = false;
 
-  static const _maroon = DefensysUi.primaryMaroon;
+  static const _brandAccent = DefensysTokens.maroon;
   static const _ink = DefensysUi.textDark;
   static const _muted = Color(0xFF6B7280);
   static const _line = Color(0xFFE5E7EB);
@@ -1825,7 +1827,7 @@ class _PitRolloverPreviewDialogState extends State<_PitRolloverPreviewDialog> {
                     ),
                     child: const Icon(
                       Icons.update_rounded,
-                      color: _maroon,
+                      color: _brandAccent,
                       size: 20,
                     ),
                   ),
@@ -1954,7 +1956,7 @@ class _PitRolloverPreviewDialogState extends State<_PitRolloverPreviewDialog> {
                           }
                         : null,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _maroon,
+                      backgroundColor: _brandAccent,
                       foregroundColor: Colors.white,
                     ),
                     child: Text(_isConfirming ? 'Processing...' : 'Confirm Rollover'),

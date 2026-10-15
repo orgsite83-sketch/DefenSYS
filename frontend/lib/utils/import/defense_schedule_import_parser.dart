@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:excel/excel.dart';
+import 'package:defensys/utils/excel_safe_decode.dart';
 import 'package:defensys/utils/string_matching_utils.dart';
 
 // Use the same schema for header detection and column extraction. Only known
@@ -295,7 +296,7 @@ ParsedScheduleImport parseScheduleImportFile({
     );
   }
 
-  final workbook = Excel.decodeBytes(bytes);
+  final workbook = safeDecodeExcel(bytes);
   final allRows = <ParsedScheduleImportRow>[];
   String? detectedStage;
   String? detectedDate;

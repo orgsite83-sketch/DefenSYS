@@ -5,7 +5,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.test import APITestCase
 
 from academic_period_management.models import SchoolYear, Semester
-from defense.scheduler.models import DefenseSchedule
+from defense.scheduler.models import DefenseSchedule, PitEventGradingConfig
 from defense.scheduler.serializers import DefenseScheduleWriteSerializer
 from grading.rubrics.models import Rubric
 from notifications.models import Notification
@@ -30,6 +30,8 @@ class PanelistEligibilityTests(APITestCase):
         cls.team = StudentTeam.objects.create(name='Eligibility Team', project_title='Prototype', level=StudentTeam.LEVEL_1_PIT, year_level='1st Year', semester=cls.semester, leader=cls.student)
         cls.panel = Rubric.objects.create(name='PIT eligibility panel', scope=Rubric.SCOPE_PIT, semester=cls.semester, evaluation_type=Rubric.EVAL_PANEL, status=Rubric.STATUS_PUBLISHED, created_by=cls.lead)
         cls.peer = Rubric.objects.create(name='PIT eligibility peer', scope=Rubric.SCOPE_PIT, semester=cls.semester, evaluation_type=Rubric.EVAL_PEER, status=Rubric.STATUS_PUBLISHED, created_by=cls.lead)
+        PitEventGradingConfig.objects.create(semester=cls.semester, year_level='1st Year',
+            event_name='PIT 1 Presentation', panel_rubric=cls.panel, peer_rubric=cls.peer)
 
     def payload(self, **changes):
         data = {'scope': 'pit', 'team_id': self.team.pk, 'semester_id': self.semester.pk, 'event_name': 'PIT 1 Presentation', 'rubric_id': self.panel.pk, 'peer_rubric_id': self.peer.pk, 'scheduled_date': '2026-10-20', 'start_time': '08:00', 'slot_duration': 60, 'room': 'Lab 1', 'panelist_ids': [self.faculty.pk]}

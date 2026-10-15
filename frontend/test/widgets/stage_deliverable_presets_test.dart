@@ -119,13 +119,13 @@ void main() {
           .map((p) => p.name), ['Concept Proposal']);
     });
 
-    test('recognizes an explicitly named PIT year without treating others as matching', () {
+    test('matches explicit PIT ownership and rejects unclassified events', () {
       expect(StageDeliverablePresetManager.pitEventMatchesYearLevel(
-        '1st Year PIT Expo', '1st Year'), isTrue);
+        '1st Year', '1st Year'), isTrue);
       expect(StageDeliverablePresetManager.pitEventMatchesYearLevel(
-        '2nd Year PIT Expo', '1st Year'), isFalse);
+        '2nd Year', '1st Year'), isFalse);
       expect(StageDeliverablePresetManager.pitEventMatchesYearLevel(
-        'System Concept Pitching', '1st Year'), isTrue);
+        '', '1st Year'), isFalse);
     });
   });
 
@@ -198,9 +198,9 @@ void main() {
           yearLevel: '1st Year',
           currentSourceId: 1,
           existingStages: [
-            {'id': 1, 'scope': 'pit', 'label': '1st Year PIT Current', 'deliverables': [{'label': 'Current'}]},
-            {'id': 2, 'scope': 'pit', 'label': '1st Year PIT Expo', 'deliverables': [{'label': 'Expo'}]},
-            {'id': 3, 'scope': 'pit', 'label': '2nd Year PIT Expo', 'deliverables': [{'label': 'Wrong Year'}]},
+            {'id': 1, 'scope': 'pit', 'year_level': '1st Year', 'label': '1st Year PIT Current', 'deliverables': [{'label': 'Current'}]},
+            {'id': 2, 'scope': 'pit', 'year_level': '1st Year', 'label': '1st Year PIT Expo', 'deliverables': [{'label': 'Expo'}]},
+            {'id': 3, 'scope': 'pit', 'year_level': '2nd Year', 'label': '2nd Year PIT Expo', 'deliverables': [{'label': 'Wrong Year'}]},
             {'id': 4, 'label': 'Concept Proposal', 'deliverables': [{'label': 'Capstone'}]},
           ],
           currentDeliverables: const [],

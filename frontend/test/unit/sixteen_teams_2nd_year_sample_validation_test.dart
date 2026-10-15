@@ -4,6 +4,7 @@ import 'package:defensys/screens/web/admin/user_management/bulk_import/official_
 import 'package:defensys/utils/import/team_bulk_import_csv.dart';
 import 'package:defensys/utils/defense_schedule_import_parser.dart';
 import 'package:excel/excel.dart' as xl;
+import 'package:defensys/utils/excel_safe_decode.dart';
 
 void main() {
   const baseDir = '../sample_file/16_Teams_2nd_Year/1st Sem';
@@ -50,7 +51,7 @@ void main() {
       expect(file.existsSync(), isTrue);
 
       final bytes = file.readAsBytesSync();
-      final excel = xl.Excel.decodeBytes(bytes);
+      final excel = safeDecodeExcel(bytes);
       final sheet = excel.tables.values.first;
 
       // Expand spanned items as student_teams_screen.dart does

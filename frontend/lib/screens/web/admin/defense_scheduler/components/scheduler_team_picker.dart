@@ -200,6 +200,7 @@ class _SchedulerTeamPickerState extends State<SchedulerTeamPicker> {
                             final assigned = widget.assignedElsewhere[id];
                             return CheckboxListTile(
                               key: ValueKey('session-team-$id'),
+                              activeColor: DefensysTokens.maroonOf(context),
                               dense: true,
                               contentPadding: EdgeInsets.zero,
                               controlAffinity: ListTileControlAffinity.leading,

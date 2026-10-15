@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import F, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -39,6 +40,7 @@ from .panelist_evaluation import (
 from academic_period_management.models import Semester
 
 from .pit_config import check_pit_event_locked, get_pit_event_config, pit_event_config_payload, upsert_pit_event_config
+from .event_scope import pit_events_for_user, require_event_management, require_pit_year
 from .serializers import (
     ConfirmSchedulePlanSerializer,
     DefenseScheduleSerializer,
@@ -173,43 +175,22 @@ class PitEventConfigLookupView(APIView):
         from authentication_access_control.scopes import is_pit_lead_only, _pit_year
         pit_lead = is_pit_lead_only(request.user)
         pit_year = _pit_year(request.user) if pit_lead else None
+        if pit_lead and not pit_year:
+            return Response({'detail': 'Your account is not assigned to a PIT year level.'}, status=403)
 
         event_name = request.query_params.get('event_name', '').strip()
         if not event_name:
-            configs = PitEventGradingConfig.objects.filter(semester=semester).prefetch_related('deliverables').order_by('event_name')
-            if pit_lead:
-                if pit_year:
-                    from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
-                    exclude_filter = Q()
-                    for y, hints in PIT_YEAR_EVENT_HINTS.items():
-                        if y != pit_year:
-                            for hint in hints:
-                                exclude_filter |= Q(event_name__icontains=hint)
-                    if exclude_filter:
-                        configs = configs.exclude(exclude_filter)
-                else:
-                    configs = configs.none()
+            configs = pit_events_for_user(request.user, semester=semester).prefetch_related('deliverables').order_by('event_name')
             return Response({'configs': [pit_event_config_payload(c) for c in configs]})
 
-        if pit_lead and pit_year:
-            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
-            is_forbidden = False
-            for y, hints in PIT_YEAR_EVENT_HINTS.items():
-                if y != pit_year:
-                    if any(hint in event_name.lower() for hint in hints):
-                        is_forbidden = True
-                        break
-            if is_forbidden:
-                return Response(
-                    {'detail': f'You are not authorized to view event configuration for "{event_name}" as your PIT scope is {pit_year}.'},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-
         config = get_pit_event_config(semester, event_name)
+        if config:
+            require_event_management(request.user, config)
         if config is None:
             default_config = {
                 'id': None,
                 'event_name': event_name,
+                'year_level': pit_year or '',
                 'panel_rubric_id': None,
                 'peer_rubric_id': None,
                 'panel_weight': 80,
@@ -222,6 +203,7 @@ class PitEventConfigLookupView(APIView):
             return Response({'config': default_config})
         return Response({'config': pit_event_config_payload(config)})
 
+    @transaction.atomic
     def delete(self, request):
         config_id = request.query_params.get('config_id')
         if not config_id:
@@ -229,29 +211,8 @@ class PitEventConfigLookupView(APIView):
                 {'detail': 'config_id query parameter is required.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        config = get_object_or_404(PitEventGradingConfig, pk=config_id)
-
-        from authentication_access_control.scopes import is_pit_lead_only, _pit_year
-        pit_lead = is_pit_lead_only(request.user)
-        if pit_lead:
-            pit_year = _pit_year(request.user)
-            if not pit_year:
-                return Response(
-                    {'detail': 'Your account is not assigned to a PIT year level.'},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
-            is_forbidden = False
-            for y, hints in PIT_YEAR_EVENT_HINTS.items():
-                if y != pit_year:
-                    if any(hint in config.event_name.lower() for hint in hints):
-                        is_forbidden = True
-                        break
-            if is_forbidden:
-                return Response(
-                    {'detail': f'Cannot delete configuration. Event name does not correspond to your assigned PIT year level ({pit_year}).'},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
+        config = get_object_or_404(PitEventGradingConfig.objects.select_for_update(), pk=config_id)
+        require_event_management(request.user, config)
 
         is_locked, lock_reason = check_pit_event_locked(config)
         if is_locked:
@@ -260,6 +221,11 @@ class PitEventConfigLookupView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
+        from .pit_config import pit_event_audit_values
+        log_high_impact_action(category=SystemAuditLog.CATEGORY_SCHEDULING,
+            action='pit_event.delete', target=config, old_values=pit_event_audit_values(config),
+            new_values={'scope': 'pit', 'year_level': config.year_level, 'deleted': True},
+            request=request, strict=True)
         config.delete()
         return Response({'success': True}, status=status.HTTP_200_OK)
 
@@ -280,18 +246,13 @@ class PitEventConfigLookupView(APIView):
                     {'detail': 'Your account is not assigned to a PIT year level.'},
                     status=status.HTTP_403_FORBIDDEN,
                 )
-            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
-            is_forbidden = False
-            for y, hints in PIT_YEAR_EVENT_HINTS.items():
-                if y != pit_year:
-                    if any(hint in event_name.lower() for hint in hints):
-                        is_forbidden = True
-                        break
-            if is_forbidden:
+            if request.data.get('year_level') and request.data['year_level'] != pit_year:
                 return Response(
-                    {'detail': f'Cannot save configuration. Event name must correspond to your assigned PIT year level ({pit_year}).'},
+                    {'detail': 'PIT Leads can manage only their assigned year level.'},
                     status=status.HTTP_403_FORBIDDEN,
                 )
+        else:
+            pit_year = request.data.get('year_level', '')
 
         semester_id = request.data.get('semester_id')
         if semester_id:
@@ -352,9 +313,16 @@ class PitEventConfigLookupView(APIView):
                 peer_grading_enabled = bool(peer_grading_enabled)
 
         try:
+            require_pit_year(pit_year)
+            existing = get_pit_event_config(semester, event_name)
+            if existing:
+                require_event_management(request.user, existing)
             config = upsert_pit_event_config(
                 semester=semester,
                 event_name=event_name,
+                year_level=pit_year,
+                user=request.user,
+                request=request,
                 event_code=event_code,
                 panel_rubric=panel_rubric,
                 peer_rubric=peer_rubric,

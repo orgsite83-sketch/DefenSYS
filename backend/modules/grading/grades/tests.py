@@ -981,12 +981,13 @@ class GradeCenterApiTests(APITestCase):
             year_level='3rd Year', semester=self.semester,
             leader=self.second_student,
         )
+        other_config = self._ensure_pit_event_config('Independent Third Year Event', self.semester, year_level='3rd Year')
         TeamGrade.objects.create(
             team=other_team,
             semester=self.semester,
             scope=TeamGrade.SCOPE_PIT,
-            pit_event_config=config,
-            stage_label='PIT Expo',
+            pit_event_config=other_config,
+            stage_label=other_config.event_name,
             panel_weight=80,
             adviser_weight=0,
             peer_weight=20,
@@ -1067,7 +1068,7 @@ class GradeCenterApiTests(APITestCase):
             status=Rubric.STATUS_PUBLISHED,
             created_by=self.admin,
         )
-        config = PitEventGradingConfig.objects.create(
+        config = PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester,
             event_name='2nd Year Expo',
             panel_rubric=pit_panel,
@@ -1106,7 +1107,7 @@ class GradeCenterApiTests(APITestCase):
             max_score=5,
             display_order=0,
         )
-        PitEventGradingConfig.objects.create(
+        PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester,
             event_name='PIT Expo',
             panel_rubric=pit_panel,
@@ -1127,7 +1128,7 @@ class GradeCenterApiTests(APITestCase):
         key = 'pit|PIT Expo'
         self.assertTrue(response.data['group_settings'][key]['peer_grading_enabled'])
 
-    def _ensure_pit_event_config(self, event_name='PIT Expo', semester=None):
+    def _ensure_pit_event_config(self, event_name='PIT Expo', semester=None, year_level='2nd Year'):
         semester = semester or self.semester
         existing = PitEventGradingConfig.objects.filter(
             semester=semester,
@@ -1151,7 +1152,7 @@ class GradeCenterApiTests(APITestCase):
             status=Rubric.STATUS_PUBLISHED,
             created_by=self.admin,
         )
-        return PitEventGradingConfig.objects.create(
+        return PitEventGradingConfig.objects.create(year_level=year_level,
             semester=semester,
             event_name=event_name,
             panel_rubric=pit_panel,
@@ -1240,7 +1241,7 @@ class GradeCenterApiTests(APITestCase):
         config.refresh_from_db()
         self.assertFalse(config.is_officially_complete)
 
-    def test_pit_official_complete_skips_failed_grade(self):
+    def test_pit_official_complete_finalizes_failed_indicator_without_restricting_next_event(self):
         self._ensure_pit_event_config(event_name='PIT Expo Fail', semester=self.semester)
         failed_team = StudentTeam.objects.create(
             name='Team Fail',
@@ -1282,10 +1283,101 @@ class GradeCenterApiTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['auto_publish']['published_count'], 0)
-        self.assertGreaterEqual(response.data['auto_publish']['skipped_below_threshold'], 1)
+        self.assertEqual(response.data['auto_publish']['published_count'], 1)
+        self.assertEqual(response.data['auto_publish']['skipped_below_threshold'], 0)
         grade.refresh_from_db()
-        self.assertNotEqual(grade.status, TeamGrade.STATUS_PUBLISHED)
+        self.assertEqual(grade.status, TeamGrade.STATUS_PUBLISHED)
+        self.assertEqual(grade.result, 'failed')
+        self.assertEqual(grade.final_grade, Decimal('50.00'))
+        failed_team.refresh_from_db()
+        self.assertEqual(failed_team.status, StudentTeam.STATUS_FAILED)
+        from defense.scheduler.progress import schedule_progress
+        from defense.scheduler.serializers import ScheduleTeamSerializer
+        from .services import GradeContextService
+        from repository.project_archive.services import pit_archive_upload_queue
+        self.assertTrue(schedule_progress(grade.schedule)['is_completed'])
+        self.assertEqual(schedule_progress(grade.schedule)['published_result'], 'failed')
+        self.assertIn('PIT Expo Fail', ScheduleTeamSerializer(failed_team).data['completed_stages'])
+        self.assertEqual(GradeContextService.grade_ready_for_archive(
+            failed_team, scope='pit', semester=self.semester, stage_label='PIT Expo Fail'), grade)
+        self.assertIn(failed_team.id, [item['team_id'] for item in pit_archive_upload_queue(
+            '2nd Year', semester=self.semester)])
+
+        next_config = self._ensure_pit_event_config(event_name='PIT Next Event', semester=self.semester)
+        next_schedule = self.client.post('/api/defense/schedules/', {
+            'scope': 'pit', 'semester_id': self.semester.id, 'team_id': failed_team.id,
+            'event_name': next_config.event_name, 'rubric_id': next_config.panel_rubric_id,
+            'peer_rubric_id': next_config.peer_rubric_id,
+            'scheduled_date': '2026-05-18', 'start_time': '10:00', 'slot_duration': 45,
+            'room': 'Lab 3', 'panelist_ids': [self.panelist.id],
+        }, format='json')
+        self.assertEqual(next_schedule.status_code, 201, next_schedule.data)
+        grade.refresh_from_db()
+        self.assertEqual(grade.final_grade, Decimal('50.00'))
+        self.assertEqual(grade.result, 'failed')
+
+        plan_config = self._ensure_pit_event_config(event_name='PIT Later Showcase', semester=self.semester)
+        plan_payload = {
+            'scope': 'pit', 'semester_id': self.semester.id,
+            'event_name': plan_config.event_name, 'rubric_id': plan_config.panel_rubric_id,
+            'peer_rubric_id': plan_config.peer_rubric_id,
+            'scheduled_date': '2026-05-19', 'start_time': '10:00', 'slot_duration': 45,
+            'room': 'Lab 3', 'panelist_ids': [self.panelist.id],
+            'selected_team_ids': [failed_team.id],
+        }
+        preview = self.client.post('/api/defense/schedules/generate-plan/', plan_payload, format='json')
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(preview.data['slots'][0]['team_id'], failed_team.id)
+        confirmed = self.client.post('/api/defense/schedules/confirm-plan/', {
+            **plan_payload, 'slots': [{'team_id': failed_team.id}],
+        }, format='json')
+        self.assertEqual(confirmed.status_code, 201, confirmed.data)
+
+    def test_pit_zero_score_pending_in_completed_event_can_finalize(self):
+        from .services import repair_pending_passed_grades_in_queryset
+        config = self._ensure_pit_event_config(semester=self.first_semester)
+        grade = TeamGrade.objects.create(
+            team=self.pit_team, schedule=self.pit_schedule, semester=self.first_semester,
+            scope='pit', pit_event_config=config, panel_weight=80, peer_weight=20,
+            panel_score=Decimal('0'), peer_score=Decimal('0'),
+        )
+        self._record_panel_evaluations(grade)
+        config.is_officially_complete = True
+        config.save(update_fields=['is_officially_complete'])
+        repair_pending_passed_grades_in_queryset(TeamGrade.objects.filter(pk=grade.pk), user=self.admin)
+        grade.refresh_from_db()
+        self.assertEqual(grade.status, TeamGrade.STATUS_PUBLISHED)
+        self.assertEqual(grade.final_grade, Decimal('0.00'))
+        self.assertEqual(grade.result, 'failed')
+
+    def test_pit_published_amendment_can_cross_indicator_threshold_with_approval(self):
+        config = self._ensure_pit_event_config(semester=self.first_semester)
+        grade = TeamGrade.objects.create(
+            team=self.pit_team, schedule=self.pit_schedule, semester=self.first_semester,
+            scope='pit', pit_event_config=config, panel_weight=80, peer_weight=20,
+            panel_score=Decimal('70'), peer_score=Decimal('100'), status='published',
+        )
+        self.assertEqual(grade.result, 'passed')
+        url = f'/api/grading/grades/{grade.pk}/corrections/'
+        data = {'reason': 'Correcting the recorded event peer score.',
+                'expected_updated_at': grade.updated_at.isoformat(),
+                'changes': {'aggregate': {'peer_score': '0'}}}
+        preview = self.client.post(url, {**data, 'preview': True}, format='json')
+        self.assertEqual(preview.status_code, 200, preview.data)
+        grade.refresh_from_db()
+        self.assertEqual(grade.final_grade, Decimal('76'))
+        amendment = self.client.post(url, data, format='json')
+        self.assertEqual(amendment.status_code, 200, amendment.data)
+        self.assertEqual(amendment.data['status'], 'pending')
+        approval = self.client.post(url, {
+            'action': 'approve', 'correction_id': amendment.data['id'],
+            'acknowledge_published_change': True, 'reason': 'Verified the original peer score record.',
+        }, format='json')
+        self.assertEqual(approval.status_code, 200, approval.data)
+        grade.refresh_from_db()
+        self.assertEqual(grade.status, TeamGrade.STATUS_PUBLISHED)
+        self.assertEqual(grade.final_grade, Decimal('56'))
+        self.assertEqual(grade.result, 'failed')
 
     def test_capstone_official_complete_auto_finalizes_passed_grades(self):
         grade = self._capstone_grade()
@@ -1338,11 +1430,12 @@ class GradeCenterApiTests(APITestCase):
             leader=third_student,
         )
         TeamMembership.objects.create(team=third_team, student=third_student, is_leader=True)
+        self._ensure_pit_event_config('Independent Third Year Event', self.semester, year_level='3rd Year')
         third_schedule = DefenseSchedule.objects.create(
             scope=DefenseSchedule.SCOPE_PIT,
             semester=self.semester,
             team=third_team,
-            event_name='PIT Expo',
+            event_name='Independent Third Year Event',
             scheduled_date='2026-05-17',
             start_time='10:00',
             slot_duration=45,
@@ -1386,7 +1479,7 @@ class GradeCenterApiTests(APITestCase):
         self.assertFalse(repository_scope(self.pit_lead)['can_upload_pit'])
 
     def test_pit_lead_completion_without_assigned_year_grades_is_blocked(self):
-        self._ensure_pit_event_config(event_name='PIT Expo Other Year', semester=self.semester)
+        self._ensure_pit_event_config(event_name='PIT Expo Other Year', semester=self.semester, year_level='3rd Year')
         third_student = User.objects.create_user(
             username='2025-0004',
             password='pass12345',
@@ -1724,7 +1817,7 @@ class GradeCenterApiTests(APITestCase):
         self.assertIn('incomplete_teams', blocked.data)
 
     def test_pit_lead_group_settings_year_level_scope(self):
-        self._ensure_pit_event_config(event_name='1st Year Expo', semester=self.semester)
+        self._ensure_pit_event_config(event_name='1st Year Expo', semester=self.semester, year_level='1st Year')
         self._ensure_pit_event_config(event_name='2nd Year Expo', semester=self.semester)
         pit_lead_2nd = User.objects.create_user(
             username='pit-lead-2nd-year',

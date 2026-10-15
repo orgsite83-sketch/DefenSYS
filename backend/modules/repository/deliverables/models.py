@@ -51,6 +51,7 @@ class DeliverableSubmission(models.Model):
     label = models.CharField(max_length=180)
     deliverable_type = models.CharField(max_length=20, choices=TYPE_CHOICES)
     required = models.BooleanField(default=False)
+    is_late = models.BooleanField(default=False, help_text='True if uploaded after defense start under an authorized late-upload window.')
     
     status = models.CharField(
         max_length=20,
@@ -171,7 +172,7 @@ class DeliverableSubmission(models.Model):
             if self.team.is_pit and not self.pit_event_config_id:
                 from defense.scheduler.models import PitEventGradingConfig
                 self.pit_event_config = PitEventGradingConfig.objects.filter(
-                    semester=self.archive_semester,
+                    semester=self.archive_semester, year_level=self.archive_year_level,
                     event_name__iexact=self.stage_label.strip(),
                 ).first()
         self.full_clean()

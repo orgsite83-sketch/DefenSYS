@@ -11,6 +11,7 @@ from .serializers import (
     DeliverableActionSerializer,
     DeliverableUploadSerializer,
     DeliverableReviewSerializer,
+    ReviewEndorseSerializer,
     StageAccessScopeSerializer,
     StageAccessChangeSerializer,
 )
@@ -67,7 +68,7 @@ def check_deliverable_write_permission(user, team):
         if getattr(user, 'is_pit_lead', False) and team.is_pit:
             from student_teams.team_levels import normalize_year_level
             pit_year = (getattr(user, 'pit_lead_year', None) or '').strip()
-            if not pit_year or normalize_year_level(team.year_level) == normalize_year_level(pit_year):
+            if pit_year and normalize_year_level(team.year_level) == normalize_year_level(pit_year):
                 return True
                 
         # Section Instructors can manage deliverables for PIT teams in their section
@@ -124,16 +125,10 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
             elif getattr(request.user, 'role', None) == 'student':
                 requested_year = current.first().year_level or ''
 
-        configs_qs = PitEventGradingConfig.objects.filter(semester=semester)
+        from defense.scheduler.event_scope import pit_events_for_user
+        configs_qs = pit_events_for_user(request.user, semester=semester) if semester else PitEventGradingConfig.objects.none()
         if requested_year:
-            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
-            exclude_filter = Q()
-            for y, hints in PIT_YEAR_EVENT_HINTS.items():
-                if y != requested_year:
-                    for hint in hints:
-                        exclude_filter |= Q(event_name__icontains=hint)
-            if exclude_filter:
-                configs_qs = configs_qs.exclude(exclude_filter)
+            configs_qs = configs_qs.filter(year_level=requested_year)
 
         stage_options = list(
             configs_qs.order_by('event_name')
@@ -269,6 +264,29 @@ class CapstoneDeliverableEndorseView(APIView):
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'), status=status.HTTP_200_OK)
+
+
+class ReviewEndorseView(APIView):
+    permission_classes = [CanManageDeliverables]
+
+    def post(self, request):
+        if request.user.role == 'student':
+            return Response({'detail': 'Students cannot review and endorse teams.'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = ReviewEndorseSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        attrs = serializer.validated_data
+        team = get_allowed_team(request, attrs['team_id'])
+        from .endorsement import review_and_endorse, StaleEndorsementReview
+        try:
+            review_and_endorse(team, attrs['stage_label'], actor=request.user, review_token=attrs['review_token'])
+        except StaleEndorsementReview as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_409_CONFLICT)
+        except PermissionError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except (ValueError, ValidationError) as exc:
+            return deliverable_error_response(exc)
+        return Response(deliverables_payload(request, selected_stage=attrs['stage_label'],
+                                             scope='pit' if team.is_pit else 'capstone'))
 
 
 class CapstoneDeliverableUnendorseView(APIView):

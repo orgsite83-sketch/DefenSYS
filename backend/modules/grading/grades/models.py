@@ -237,6 +237,10 @@ class TeamGrade(models.Model):
                 errors[field] = 'Score must be between 0 and 100.'
 
         if self.scope == self.SCOPE_PIT:
+            if not self.pk and self.pit_event_config_id:
+                if (self.pit_event_config.semester_id != self.semester_id
+                        or self.pit_event_config.year_level != self.team.year_level):
+                    errors['pit_event_config'] = 'PIT event must match the team year level and semester.'
             if self.panel_weight + self.peer_weight != 100:
                 errors['weights'] = 'Panel and peer weights must total 100%.'
         elif self.panel_weight + self.adviser_weight + self.peer_weight != 100:

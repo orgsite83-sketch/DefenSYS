@@ -23,6 +23,7 @@ class MaterialDeadlineSerializer(serializers.Serializer):
     deadline = serializers.DateTimeField()
     reason = serializers.CharField(min_length=5, max_length=2000, allow_blank=False)
     revision = serializers.IntegerField(min_value=1)
+    mode = serializers.ChoiceField(choices=['extend', 'late_upload'], required=False)
 
 
 def student_ids(team):
@@ -37,18 +38,19 @@ def deadline_summary(schedule):
                     for item in readiness['items'])
 
 
-def notify_deadline(schedule, actor=None, *, extended=False):
+def notify_deadline(schedule, actor=None, *, extended=False, is_late_upload=False):
     from notifications.models import Notification
 
     deadlines = deadline_summary(schedule)
-    if not deadlines:
+    if not deadlines and not is_late_upload:
         return
-    title = 'Defense material deadline extended' if extended else 'Defense materials due'
-    reason = f' Reason: {schedule.materials_deadline_reason}' if extended else ''
+    title = 'Late upload window opened' if is_late_upload else 'Defense material deadline extended' if extended else 'Defense materials due'
+    reason = f' Reason: {schedule.materials_deadline_reason}' if (extended or is_late_upload) else ''
+    late_info = f' Missing materials can be uploaded until {timezone.localtime(schedule.materials_late_upload_until).strftime("%b %d, %Y %I:%M %p")}.' if is_late_upload and schedule.materials_late_upload_until else ''
     Notification.objects.bulk_create([
         Notification(recipient_id=pk, sender=actor, workspace='student', category='DEFENSE',
                      title=title, message=f'{schedule.team.name}: {schedule.stage_label}, {schedule.scheduled_date} '
-                     f'{schedule.start_time}, {schedule.room}. Upload deadlines: {deadlines}.{reason}',
+                     f'{schedule.start_time}, {schedule.room}.{late_info} Upload deadlines: {deadlines}.{reason}',
                      action_payload={'team_id': schedule.team_id, 'stage_label': schedule.stage_label,
                                      'schedule_id': schedule.pk, 'deliverable_task': 'materials'})
         for pk in student_ids(schedule.team)
@@ -67,19 +69,50 @@ def extend_material_deadline(actor, schedule_id, data, *, request=None):
     if schedule.revision != data['revision']:
         raise StaleOperation()
     now = timezone.now()
+    deadline = data['deadline']
+    mode = data.get('mode')
+    if not mode:
+        mode = 'late_upload' if (now >= defense_starts_at(schedule) or schedule.panelist_grade_submissions.filter(is_void=False).exists()) else 'extend'
+
+    from grading.grades.models import TeamGrade
+    if TeamGrade.objects.filter(schedule=schedule, status__in=TeamGrade.LOCKED_STATUSES).exists():
+        raise ValidationError('Presentation materials for finalized grades are locked.')
+    if schedule.status == 'archived':
+        raise ValidationError('Archived defenses cannot receive a late-upload window.')
+
+    readiness = materials_readiness(schedule)
+    if not readiness['required_total']:
+        raise ValidationError('This defense has no required materials with defense deadlines.')
+    if not readiness['can_extend_deadline'] and not readiness['can_open_late_window']:
+        raise ValidationError('Only a current-project, current-term defense can receive a submission deadline change.')
+
+    if mode == 'late_upload':
+        if deadline <= now:
+            raise ValidationError({'deadline': 'Choose a future date and time for the late-upload window.'})
+        context = {**audit_scope_metadata(scope=schedule.scope, team=schedule.team),
+                   'stage_label': schedule.stage_label, 'semester_id': schedule.semester_id, 'project_version': schedule.project_version}
+        old = {**context, 'late_upload_until': schedule.materials_late_upload_until.isoformat() if schedule.materials_late_upload_until else None,
+               'reason': schedule.materials_deadline_reason, 'revision': schedule.revision}
+        schedule.materials_late_upload_until = deadline
+        schedule.materials_deadline_reason = data['reason']
+        schedule.materials_notice_key = ''
+        schedule.revision += 1
+        schedule.save(update_fields=['materials_late_upload_until', 'materials_deadline_reason',
+                                    'materials_notice_key', 'revision', 'updated_at'])
+        log_high_impact_action(category=SystemAuditLog.CATEGORY_SCHEDULING, action='schedule.late_upload_opened',
+            target=schedule, old_values=old, new_values={**context, 'late_upload_until': deadline.isoformat(), 'revision': schedule.revision,
+                'change_details': [{'field': 'materials_late_upload_until', 'label': 'Late-upload window',
+                                    'before': old['late_upload_until'] or 'None', 'after': deadline.isoformat()}]},
+            reason=data['reason'], actor=actor, request=request, strict=True)
+        notify_deadline(schedule, actor, is_late_upload=True)
+        return schedule
+
     if (schedule.status != 'scheduled' or schedule.project_version != schedule.team.project_version or
             schedule.semester_id != schedule.team.semester_id or now >= defense_starts_at(schedule)):
         raise ValidationError('Only an upcoming current-project defense can receive a grace deadline.')
     if schedule.panelist_grade_submissions.filter(is_void=False).exists():
-        raise ValidationError('Presentation materials are locked after evaluation begins.')
-    from grading.grades.models import TeamGrade
-    if TeamGrade.objects.filter(schedule=schedule, status__in=TeamGrade.LOCKED_STATUSES).exists():
-        raise ValidationError('Presentation materials for finalized grades are locked.')
-    readiness = materials_readiness(schedule)
-    if not readiness['required_total']:
-        raise ValidationError('This defense has no required materials with defense deadlines.')
-    deadline = data['deadline']
-    earliest = min(datetime.fromisoformat(item['due_at']) for item in readiness['items'])
+        raise ValidationError('Presentation materials are locked after evaluation begins. Open a late-upload window instead.')
+    earliest = min(datetime.fromisoformat(item['original_due_at']) for item in readiness['items'])
     if deadline <= now or deadline <= earliest or deadline > defense_starts_at(schedule):
         raise ValidationError({'deadline': 'Choose a later deadline in the future, at or before the defense starts.'})
     context = {**audit_scope_metadata(scope=schedule.scope, team=schedule.team),
@@ -88,10 +121,11 @@ def extend_material_deadline(actor, schedule_id, data, *, request=None):
     old = {**context, 'deadline': schedule.materials_deadline_override.isoformat() if schedule.materials_deadline_override else None,
            'reason': schedule.materials_deadline_reason, 'revision': schedule.revision}
     schedule.materials_deadline_override = deadline
+    schedule.materials_late_upload_until = None
     schedule.materials_deadline_reason = data['reason']
     schedule.materials_notice_key = ''
     schedule.revision += 1
-    schedule.save(update_fields=['materials_deadline_override', 'materials_deadline_reason',
+    schedule.save(update_fields=['materials_deadline_override', 'materials_late_upload_until', 'materials_deadline_reason',
                                 'materials_notice_key', 'revision', 'updated_at'])
     log_high_impact_action(category=SystemAuditLog.CATEGORY_SCHEDULING, action='schedule.material_deadline_extended',
         target=schedule, old_values=old, new_values={**context, 'deadline': deadline.isoformat(), 'revision': schedule.revision,

@@ -323,7 +323,7 @@ class CurriculumExplorer:
                 key = f'stage:{stage.pk}'
                 contexts.setdefault(key, {'id': key, 'label': stage.label, 'order': stage.display_order})
         else:
-            for config in PitEventGradingConfig.objects.filter(semester_id__in=semester_ids).select_related('semester'):
+            for config in PitEventGradingConfig.objects.filter(semester_id__in=semester_ids, year_level=YEAR_LEVELS[self.year_level]).select_related('semester'):
                 key = f'event:{config.pk}'
                 contexts[key] = {'id': key, 'label': config.event_name, 'order': config.pk,
                                  'semester_id': str(config.semester_id), 'semester_label': config.semester.label}

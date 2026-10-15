@@ -1,3 +1,4 @@
+import 'package:defensys/theme/program_colors.dart';
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -295,9 +296,7 @@ class _BookDetailsSheetState extends ConsumerState<_BookDetailsSheet> {
                               entry.outputLabel,
                               style: TextStyle(
                                 fontSize: 9.5,
-                                color: isCapstone
-                                    ? DefensysTokens.maroon
-                                    : const Color(0xFF1E3A8A),
+                                color: ProgramColors.of(context, isCapstone: isCapstone).text,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 0.4,
                               ),
@@ -473,7 +472,7 @@ class _BookDetailsSheetState extends ConsumerState<_BookDetailsSheet> {
                                     vertical: 2.5,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.white,
+                                    color: DefensysTokens.surfaceOf(context),
                                     borderRadius: BorderRadius.circular(4),
                                     border: Border.all(
                                       color: DefensysTokens.borderOf(context),

@@ -1,3 +1,4 @@
+import 'package:defensys/theme/program_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -445,7 +446,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                 _scopeFilterChip(
                   'PIT Expos',
                   'pit',
-                  color: const Color(0xFF006666),
+                  color: ProgramColors.pit,
                 ),
               ],
             ),
@@ -472,7 +473,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
     final isCapstone = firstTeam.scope == 'capstone';
     final accentColor = isCapstone
         ? DefensysTokens.maroon
-        : const Color(0xFF006666);
+        : ProgramColors.pit;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -803,7 +804,7 @@ class _AssignmentsTabState extends State<AssignmentsTab> {
                         radius: 16,
                         backgroundColor: t.scope == 'capstone'
                             ? DefensysTokens.maroon
-                            : const Color(0xFF006666),
+                            : ProgramColors.pit,
                         child: Text(
                           t.name.split(' ').last[0],
                           style: const TextStyle(

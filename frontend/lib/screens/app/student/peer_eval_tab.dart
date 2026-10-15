@@ -48,6 +48,7 @@ class PeerEvalTab extends ConsumerStatefulWidget {
 }
 
 class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
+
   late Map<String, Map<String, double>> _scores;
   late Map<String, bool> _posted;
   late Map<String, bool> _submitting;
@@ -176,7 +177,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       return LayoutBuilder(
         builder: (context, constraints) {
           return RefreshIndicator(
-            color: DefensysTokens.maroon,
+            color: DefensysTokens.maroonOf(context),
             onRefresh: widget.onRefresh!,
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -200,9 +201,9 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
               children: [
                 Icon(Icons.history_toggle_off_rounded, size: 56, color: Colors.grey.shade400),
                 const SizedBox(height: 16),
-                const Text(
+                Text(
                   'Peer Evaluation Archived',
-                  style: TextStyle(color: DefensysTokens.textPrimary, fontSize: 15, fontWeight: FontWeight.bold),
+                  style: TextStyle(color: DefensysTokens.textPrimaryOf(context), fontSize: 15, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 const Text(
@@ -244,10 +245,10 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                       children: [
                         Text(
                           'Peer evaluation is locked for this $scopeName.',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 13.5,
-                            color: DefensysTokens.textPrimary,
+                            color: DefensysTokens.textPrimaryOf(context),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -357,7 +358,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
 
     if (widget.onRefresh == null) return mainContent;
     return RefreshIndicator(
-      color: DefensysTokens.maroon,
+      color: DefensysTokens.maroonOf(context),
       onRefresh: widget.onRefresh!,
       child: mainContent,
     );
@@ -371,9 +372,9 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: DefensysTokens.surfaceHigherOf(context),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFF1F5F9)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -381,12 +382,12 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Required Peer Evaluation Check',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: DefensysTokens.textPrimary,
+                  color: DefensysTokens.textPrimaryOf(context),
                 ),
               ),
               Text(
@@ -434,9 +435,9 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
@@ -457,11 +458,11 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                   child: Row(
                     children: [
                       CircleAvatar(
-                        backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.1),
+                        backgroundColor: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
                         child: Text(
                           name.isNotEmpty ? name[0].toUpperCase() : '?',
-                          style: const TextStyle(
-                            color: DefensysTokens.maroon,
+                          style: TextStyle(
+                            color: DefensysTokens.maroonTextOf(context),
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -470,10 +471,10 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                       Expanded(
                         child: Text(
                           name,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
-                            color: DefensysTokens.textPrimary,
+                            color: DefensysTokens.textPrimaryOf(context),
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -494,13 +495,13 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                 margin: const EdgeInsets.only(top: 10),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
+                  color: DefensysTokens.surfaceHigherOf(context),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                  border: Border.all(color: DefensysTokens.borderOf(context)),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(Icons.lock_rounded, size: 14, color: Color(0xFF475569)),
+                    Icon(Icons.lock_rounded, size: 14, color: DefensysTokens.textSecondaryOf(context)),
                     SizedBox(width: 6),
                     Expanded(
                       child: Text(
@@ -508,7 +509,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                         style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFF334155),
+                          color: DefensysTokens.textPrimaryOf(context),
                         ),
                       ),
                     ),
@@ -654,10 +655,10 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
               Expanded(
                 child: Text(
                   criterion,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13.5,
                     fontWeight: FontWeight.w700,
-                    color: DefensysTokens.textPrimary,
+                    color: DefensysTokens.textPrimaryOf(context),
                   ),
                 ),
               ),
@@ -666,13 +667,13 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: isRated
-                      ? DefensysTokens.maroon.withValues(alpha: 0.08)
-                      : const Color(0xFFF1F5F9),
+                      ? DefensysTokens.maroonOf(context).withValues(alpha: 0.08)
+                      : DefensysTokens.surfaceHigherOf(context),
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(
                     color: isRated
-                        ? DefensysTokens.maroon.withValues(alpha: 0.25)
-                        : const Color(0xFFCBD5E1),
+                        ? DefensysTokens.maroonOf(context).withValues(alpha: 0.25)
+                        : DefensysTokens.borderOf(context),
                   ),
                 ),
                 child: Text(
@@ -680,7 +681,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: isRated ? DefensysTokens.maroon : const Color(0xFF64748B),
+                    color: isRated ? DefensysTokens.maroonTextOf(context) : DefensysTokens.textSecondaryOf(context),
                   ),
                 ),
               ),
@@ -710,12 +711,12 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                         height: 34,
                         decoration: BoxDecoration(
                           color: isSelected
-                              ? (locked ? const Color(0xFF64748B) : DefensysTokens.maroon)
+                              ? (locked ? const Color(0xFF64748B) : DefensysTokens.maroonOf(context))
                               : (locked ? const Color(0xFFF8FAFC) : Colors.white),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
                             color: isSelected
-                                ? (locked ? const Color(0xFF64748B) : DefensysTokens.maroon)
+                                ? (locked ? const Color(0xFF64748B) : DefensysTokens.maroonOf(context))
                                 : (locked ? const Color(0xFFE2E8F0) : const Color(0xFFCBD5E1)),
                             width: isSelected ? 1.5 : 1.0,
                           ),
@@ -744,7 +745,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
               children: [
                 IconButton(
                   icon: const Icon(Icons.remove_circle_outline, size: 20),
-                  color: DefensysTokens.maroon,
+                  color: DefensysTokens.maroonOf(context),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                   onPressed: (locked || value <= 1)
@@ -754,9 +755,9 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                 Expanded(
                   child: SliderTheme(
                     data: SliderTheme.of(context).copyWith(
-                      activeTrackColor: DefensysTokens.maroon,
-                      thumbColor: DefensysTokens.maroon,
-                      overlayColor: DefensysTokens.maroon.withValues(alpha: 0.15),
+                      activeTrackColor: DefensysTokens.maroonOf(context),
+                      thumbColor: DefensysTokens.maroonOf(context),
+                      overlayColor: DefensysTokens.maroonOf(context).withValues(alpha: 0.15),
                       inactiveTrackColor: const Color(0xFFE2E8F0),
                       trackHeight: 4,
                       thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
@@ -774,7 +775,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                 ),
                 IconButton(
                   icon: const Icon(Icons.add_circle_outline, size: 20),
-                  color: DefensysTokens.maroon,
+                  color: DefensysTokens.maroonOf(context),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                   onPressed: (locked || value >= maxScore)
@@ -797,27 +798,27 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
+            Text(
               'Evaluation Average',
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
-                color: DefensysTokens.textPrimary,
+                color: DefensysTokens.textPrimaryOf(context),
               ),
             ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.2)),
+                border: Border.all(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2)),
               ),
               child: Text(
                 'Average: ${avg.toStringAsFixed(1)} / ${maxScore.toStringAsFixed(0)}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 12,
-                  color: DefensysTokens.maroon,
+                  color: DefensysTokens.maroonTextOf(context),
                 ),
               ),
             ),
@@ -830,7 +831,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
             value: pct,
             minHeight: 6,
             backgroundColor: const Color(0xFFE2E8F0),
-            valueColor: const AlwaysStoppedAnimation<Color>(DefensysTokens.maroon),
+            valueColor: AlwaysStoppedAnimation<Color>(DefensysTokens.maroonOf(context)),
           ),
         ),
       ],
@@ -844,17 +845,17 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
           width: 4,
           height: 20,
           decoration: BoxDecoration(
-            color: DefensysTokens.maroon,
+            color: DefensysTokens.maroonOf(context),
             borderRadius: BorderRadius.circular(2),
           ),
         ),
         const SizedBox(width: 8),
         Text(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
-            color: DefensysTokens.maroon,
+            color: DefensysTokens.maroonTextOf(context),
           ),
         ),
         if (showRedDot) ...[

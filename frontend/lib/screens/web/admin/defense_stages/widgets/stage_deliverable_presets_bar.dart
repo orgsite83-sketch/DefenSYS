@@ -52,7 +52,7 @@ class _StageDeliverablePresetsBarState extends State<StageDeliverablePresetsBar>
     if (_isPit) {
       return s['scope'] == 'pit' &&
           StageDeliverablePresetManager.pitEventMatchesYearLevel(
-            s['label']?.toString() ?? '',
+            s['year_level']?.toString() ?? '',
             widget.yearLevel ?? '',
           );
     }

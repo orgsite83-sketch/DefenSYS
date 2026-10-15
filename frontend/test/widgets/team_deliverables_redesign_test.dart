@@ -215,6 +215,75 @@ void main() {
 
       expect(selectedTeamId, equals(101));
     });
+
+    testWidgets('expands accordion inline on tap, showing deliverables and collapsing on Hide tap', (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final dummyState = CapstoneDeliverablesState(
+        teams: mockTeams,
+        stageOptions: ['Concept Proposal'],
+        selectedStage: 'Concept Proposal',
+      );
+
+      await pumpDefensysWidget(
+        tester,
+        CohortSubmissionsMatrix(
+          teams: mockTeams,
+          state: dummyState,
+          isAdviser: false,
+        ),
+      );
+
+      // Initially, deliverables checklist is not visible
+      expect(find.text('Project Charter'), findsNothing);
+      expect(find.text('Literature Review'), findsNothing);
+
+      // Tap Team Alpha's Review button to expand inline accordion
+      await tester.tap(find.text('Review').first);
+      await tester.pumpAndSettle();
+
+      // Team Alpha's accordion is now expanded
+      expect(find.text('Team Alpha · Concept Proposal Deliverables'), findsOneWidget);
+      expect(find.text('Project Charter'), findsOneWidget);
+      expect(find.text('Literature Review'), findsOneWidget);
+      expect(find.text('Hide'), findsWidgets);
+
+      // Tap Hide button to collapse accordion
+      await tester.tap(find.text('Hide').first);
+      await tester.pumpAndSettle();
+
+      // Checklist is hidden again
+      expect(find.text('Project Charter'), findsNothing);
+    });
+
+    testWidgets('supports initialExpandedTeamId to render accordion pre-expanded', (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final dummyState = CapstoneDeliverablesState(
+        teams: mockTeams,
+        stageOptions: ['Concept Proposal'],
+        selectedStage: 'Concept Proposal',
+      );
+
+      await pumpDefensysWidget(
+        tester,
+        CohortSubmissionsMatrix(
+          teams: mockTeams,
+          state: dummyState,
+          isAdviser: false,
+          initialExpandedTeamId: 102, // Team Beta
+        ),
+      );
+
+      // Team Beta's deliverables start pre-expanded
+      expect(find.text('Team Beta · Concept Proposal Deliverables'), findsOneWidget);
+      expect(find.text('Proposal Deck'), findsOneWidget);
+      expect(find.text('Problem Statement'), findsOneWidget);
+    });
   });
 
   group('DeliverablesTablePane Consolidated Header & Filter Tests', () {
@@ -243,8 +312,8 @@ void main() {
       expect(find.text('Team Beta'), findsWidgets);
       expect(find.text('Team Alpha'), findsNothing);
 
-      // Verify consolidated header details for Team Beta (found in left card and detail header)
-      expect(find.text('Automated Grading Assistance'), findsNWidgets(2));
+      // Project details belong in the dossier; the compact list shows team names.
+      expect(find.text('Automated Grading Assistance'), findsOneWidget);
       expect(find.textContaining('Adv: Dr. Ada Lovelace'), findsOneWidget);
       expect(find.text('1 Member'), findsOneWidget);
     });

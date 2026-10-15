@@ -253,7 +253,7 @@ class CurriculumExplorerTests(APITestCase):
     def test_pit_source_documents_also_use_only_the_latest_revision(self):
         from defense.scheduler.models import PitEventDeliverable
         team = self.team('PIT-source', StudentTeam.LEVEL_1_PIT, '1st Year')
-        event = PitEventGradingConfig.objects.create(semester=self.sem, event_name='Programming Expo')
+        event = PitEventGradingConfig.objects.create(year_level='1st Year', semester=self.sem, event_name='Programming Expo')
         PitEventDeliverable.objects.create(pit_event_config=event, deliverable_id='D1',
             label='Project documentation', is_defense_material=True)
         parent = DeliverableSubmission.objects.create(team=team, stage_label=event.event_name,
@@ -310,9 +310,9 @@ class CurriculumExplorerTests(APITestCase):
         pit_rubric = Rubric.objects.create(name='PIT code rubric', scope='pit', semester=self.sem,
                                             evaluation_type='panel', status='published')
         RubricCriterion.objects.create(rubric=pit_rubric, name='Code fundamentals')
-        event = PitEventGradingConfig.objects.create(semester=self.sem, event_name='Programming Expo',
+        event = PitEventGradingConfig.objects.create(year_level='1st Year', semester=self.sem, event_name='Programming Expo',
                                                       panel_rubric=pit_rubric)
-        PitEventGradingConfig.objects.create(semester=self.second, event_name='End of year showcase')
+        PitEventGradingConfig.objects.create(year_level='1st Year', semester=self.second, event_name='End of year showcase')
         TeamGrade.objects.create(team=first, semester=self.sem, scope='pit', pit_event_config=event,
                                   panel_weight=80, peer_weight=20)
         response = self.get(scope='pit', year_level='1', academic_year='2026-2027', semester=self.sem.pk)

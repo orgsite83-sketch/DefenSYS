@@ -239,6 +239,11 @@ bool isPitTeamReadyToSchedule(
   String eventName,
   Map<String, dynamic> event,
 ) {
+  final eventYear = event['year_level']?.toString().trim() ?? '';
+  if (eventYear.isEmpty || eventYear != team['year_level']?.toString().trim()) {
+    return false;
+  }
+  if (event['is_officially_complete'] == true) return false;
   if (pitEventRequiresEndorsement(event)) {
     return isTeamStageReady(team, eventName);
   }
@@ -976,7 +981,14 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
                 eventName.toLowerCase(),
             orElse: () => <String, dynamic>{},
           );
-          if (pitEventRequiresEndorsement(pitConfig) &&
+          final eventYear = pitConfig['year_level']?.toString().trim() ?? '';
+          if (eventYear.isEmpty || eventYear != team['year_level']?.toString().trim()) {
+            rowType = ScheduleImportRowType.notEndorsed;
+            teamIssues.add('$teamName is outside this PIT event year level.');
+          } else if (pitConfig['is_officially_complete'] == true) {
+            rowType = ScheduleImportRowType.alreadyPassed;
+            teamIssues.add('This PIT event is officially complete.');
+          } else if (pitEventRequiresEndorsement(pitConfig) &&
               readyFor != eventName.toLowerCase()) {
             rowType = ScheduleImportRowType.notEndorsed;
             teamIssues.add('$teamName is not endorsed for "$eventName".');

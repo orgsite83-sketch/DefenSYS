@@ -44,7 +44,7 @@ def schedule_progress(schedule):
         readiness = team_grading_readiness(grade, grade.semester, grade.scope)
         result.update(panel_evaluators_submitted=readiness['panel_evaluators_submitted'],
                       panel_evaluators_required=readiness['panel_evaluators_required'])
-        if grade.status == 'published' and grade.result == 'passed':
+        if grade.status == 'published' and (grade.scope == TeamGrade.SCOPE_PIT or grade.result == 'passed'):
             display = 'completed'
         elif grade.status == 'published' and grade.result == 'failed':
             display = 'failed'
@@ -69,6 +69,7 @@ def schedule_progress(schedule):
     result['display_status'] = display
     # Preserve an explicitly completed defense when its schedule is archived.
     # A submitted score or assessed attempt is not completion.
-    result['is_completed'] = bool(grade and grade.status == TeamGrade.STATUS_PUBLISHED and grade.result == 'passed')
+    result['is_completed'] = bool(grade and grade.status == TeamGrade.STATUS_PUBLISHED
+                                  and (grade.scope == TeamGrade.SCOPE_PIT or grade.result == 'passed'))
     schedule._workflow_progress = result
     return result

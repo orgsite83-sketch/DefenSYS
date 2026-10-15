@@ -495,7 +495,7 @@ void main() {
           faculty: _faculty,
           panelists: _faculty,
           pitEvents: [
-            {'event_name': 'Design Expo', 'deliverables': []},
+            {'event_name': 'Design Expo', 'year_level': '1st Year', 'deliverables': []},
           ],
           rubrics: [
             {'id': 10, 'scope': 'pit'},
@@ -508,10 +508,11 @@ void main() {
               'id': 1,
               'name': 'PIT Ready',
               'level': 'PIT',
+              'year_level': '1st Year',
               'ready_for_stage': '',
             },
-            {'id': 2, 'name': 'PIT Done', 'level': 'PIT', 'completed_stages': ['Design Expo']},
-            {'id': 3, 'name': 'PIT Scheduled', 'level': 'PIT'},
+            {'id': 2, 'name': 'PIT Done', 'level': 'PIT', 'year_level': '1st Year', 'completed_stages': ['Design Expo']},
+            {'id': 3, 'name': 'PIT Scheduled', 'level': 'PIT', 'year_level': '1st Year'},
             {'id': 4, 'name': 'Capstone Team', 'level': 'Capstone'},
           ],
           schedules: [

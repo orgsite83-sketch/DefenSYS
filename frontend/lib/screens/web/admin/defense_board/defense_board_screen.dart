@@ -1,3 +1,4 @@
+import 'package:defensys/theme/program_colors.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../../../widgets/shadcn/defensys_action_menu.dart';
@@ -1960,7 +1961,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   Widget _buildSessionHeader(_SessionGroup group, bool isCollapsed) {
     final isPit = group.scope == 'pit';
-    final accentColor = isPit ? const Color(0xFF0284C7) : DefensysTokens.maroon;
+    final accentColor = isPit ? ProgramColors.pit : ProgramColors.capstone;
     final isDocUnassigned = group.documenterName.isEmpty;
 
     return Material(
@@ -1988,7 +1989,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 // Left Accent Bar (solid colored indicator)
                 Container(
                   width: 4,
-                  color: accentColor,
+                  color: ProgramColors.of(context, isCapstone: !isPit).text,
                 ),
                 // Main Header Content
                 Expanded(
@@ -2015,7 +2016,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                                   fontSize: 10,
                                   fontWeight: FontWeight.w800,
                                   letterSpacing: 0.8,
-                                  color: accentColor,
+                                  color: ProgramColors.of(context, isCapstone: !isPit).text,
                                 ),
                               ),
                             ),
@@ -2103,7 +2104,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                                     width: 6,
                                     height: 6,
                                     decoration: BoxDecoration(
-                                      color: accentColor,
+                                      color: ProgramColors.of(context, isCapstone: !isPit).text,
                                       shape: BoxShape.circle,
                                     ),
                                   ),
@@ -2270,7 +2271,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           ),
           child: Row(
             children: [
-              const _HeaderCell('TIME SLOT', flex: 1),
+              const _HeaderCell('TIME SLOT', flex: 2),
               _HeaderCell('TEAM & PROJECT TITLE', flex: isPit ? 5 : 4),
               if (!isPit) const _HeaderCell('MINUTES', flex: 2),
               const _HeaderCell('EVALUATION', flex: 2),
@@ -2297,9 +2298,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               child: Row(
                 children: [
                   _BodyCell(
-                    flex: 1,
+                    flex: 2,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: _panelBgColor,
                         borderRadius: BorderRadius.circular(6),
@@ -2308,8 +2309,8 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                       child: Tooltip(
                         message: _slotTimeRange(schedule),
                         child: Text(
-                          _slotTimeRange(schedule).replaceFirst('–', '\n–'),
-                          maxLines: 2,
+                          _slotTimeRange(schedule),
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontFamily: DefensysTokens.fontFamilyInter,
@@ -2415,11 +2416,6 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _statusChip(schedule['display_status']?.toString() ?? schedule['status']?.toString() ?? ''),
-                        if (((schedule['materials_readiness'] as Map?)?['required_total'] as num? ?? 0) > 0) ...[
-                          const SizedBox(height: 4),
-                          DefenseMaterialReadiness(compact: true, readiness: Map<String, dynamic>.from(
-                              schedule['materials_readiness'] as Map? ?? const {})),
-                        ],
                       ],
                     ),
                   ),
@@ -2657,8 +2653,6 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                       ),
                       if (!isPit) _minutesStatusChip(schedule),
                       _evaluationChip(schedule),
-                      DefenseMaterialReadiness(compact: true, readiness: Map<String, dynamic>.from(
-                          schedule['materials_readiness'] as Map? ?? const {})),
                     ],
                   ),
                 ],
@@ -2694,6 +2688,20 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       enabled: !state.isSaving,
       items: [
         DefensysMenuItem(label: 'View details', icon: LucideIcons.info, onPressed: () => _showDefenseDetailsDialog(schedule, group)),
+        DefensysMenuItem(
+          label: 'Review deliverables',
+          icon: LucideIcons.folderCheck,
+          onPressed: () => TeamDeliverablesReviewDialog.show(
+            context,
+            ref,
+            team: {
+              'id': schedule['team_id'] ?? schedule['id'],
+              'name': schedule['team_name'] ?? 'Team',
+            },
+            stageLabel: group.stageLabel,
+            scope: schedule['scope']?.toString() ?? (isSchedulePit ? 'pit' : 'capstone'),
+          ),
+        ),
         DefensysMenuItem(label: 'Evaluation & grades', icon: LucideIcons.clipboardList, onPressed: () => _openEvaluationAndGrades(schedule)),
         if (isAdmin && gradeId != null)
           DefensysMenuItem(label: 'Correct a score', icon: LucideIcons.pencil, onPressed: () => showGradeCorrectionDialog(context, gradeId)),
@@ -2705,12 +2713,24 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           if (!isSchedulePit) DefensysMenuItem(label: 'Change documenter', icon: LucideIcons.filePenLine, onPressed: editable ? () => edit('documenter') : null),
           DefensysMenuItem(label: 'Change room', icon: LucideIcons.mapPin, hint: canReschedule ? null : 'Recorded evaluations keep their original room and time.', onPressed: canReschedule ? () => edit('room') : null),
           DefensysMenuItem(label: 'Reschedule defense', icon: LucideIcons.calendarClock, hint: canReschedule ? null : 'Recorded evaluations keep their original room and time.', onPressed: canReschedule ? () => edit('time') : null),
-          if (schedule['status'] == 'scheduled' &&
-              ((schedule['materials_readiness'] as Map?)?['required_total'] as num? ?? 0) > 0 &&
-              (DateTime.tryParse((schedule['materials_readiness'] as Map?)?['defense_starts_at']?.toString() ?? '')
-                  ?.isAfter(DateTime.now()) ?? false))
-            DefensysMenuItem(label: 'Extend material deadline', icon: LucideIcons.clock,
-              onPressed: editable ? () => showMaterialDeadlineDialog(context, schedule) : null),
+          if (((schedule['materials_readiness'] as Map?)?['required_total'] as num? ?? 0) > 0 &&
+              schedule['status'] != 'archived')
+            DefensysMenuItem(
+              label: (DateTime.tryParse((schedule['materials_readiness'] as Map?)?['defense_starts_at']?.toString() ?? '')?.isAfter(DateTime.now()) ?? false) &&
+                      (schedule['materials_readiness'] as Map?)?['has_evaluations'] != true
+                  ? 'Extend material deadline'
+                  : 'Open late-upload window',
+              icon: LucideIcons.clock,
+              hint: (schedule['materials_readiness'] as Map?)?['is_locked_historical'] == true
+                  ? 'Finalized grades protect this schedule.'
+                  : null,
+              onPressed: canManage &&
+                      (editable ||
+                          (schedule['materials_readiness'] as Map?)?['can_open_late_window'] == true) &&
+                      (schedule['materials_readiness'] as Map?)?['is_locked_historical'] != true
+                  ? () => showMaterialDeadlineDialog(context, schedule)
+                  : null,
+            ),
           const Divider(height: 9),
           DefensysMenuItem(
             label: schedule['operation_state'] != null && schedule['operation_state'] != 'normal' || schedule['status'] == 'cancelled' ? 'Resume defense' : 'Pause defense',
@@ -2748,7 +2768,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   void _showDefenseDetailsDialog(Map<String, dynamic> schedule, _SessionGroup group) {
     final isPit = group.scope == 'pit';
-    final accentColor = isPit ? const Color(0xFF0284C7) : DefensysTokens.maroon;
+    final accentColor = isPit ? ProgramColors.pit : ProgramColors.capstone;
     final teamName = schedule['team_name']?.toString() ?? 'Unnamed Team';
     final projectTitle = schedule['project_title']?.toString() ?? 'No title provided';
     final teamLevel = schedule['team_level']?.toString() ?? '';
@@ -2780,7 +2800,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   color: _surfaceColor,
                   border: Border(
                     bottom: BorderSide(color: _borderColor),
-                    left: BorderSide(color: accentColor, width: 4),
+                    left: BorderSide(color: ProgramColors.of(context, isCapstone: !isPit).text, width: 4),
                   ),
                 ),
                 child: Row(
@@ -2797,7 +2817,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                           fontSize: 10,
                           fontWeight: FontWeight.w800,
                           letterSpacing: 0.8,
-                          color: accentColor,
+                          color: ProgramColors.of(context, isCapstone: !isPit).text,
                         ),
                       ),
                     ),
@@ -3490,13 +3510,17 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           children: [
             Icon(icon, size: 13, color: fg),
             const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: DefensysTokens.fontFamilyInter,
-                color: fg,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamilyInter,
+                  color: fg,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
             const SizedBox(width: 3),

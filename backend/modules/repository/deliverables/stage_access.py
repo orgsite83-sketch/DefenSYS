@@ -23,15 +23,13 @@ def deliverable_override(team, stage_label, deliverable_id):
     return True if key in keys else None
 
 
-def _pit_stage_matches(stage, year):
-    from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
-    matches = [candidate for candidate, hints in PIT_YEAR_EVENT_HINTS.items()
-               if any(hint in stage.lower() for hint in hints)]
-    return not matches or normalize_year_level(year) in matches
-
-
 def _stage_teams(teams, stage, program_scope):
-    return [team for team in teams if program_scope != 'pit' or _pit_stage_matches(stage, team.year_level)]
+    if program_scope != 'pit':
+        return teams
+    from defense.scheduler.models import PitEventGradingConfig
+    return [team for team in teams if PitEventGradingConfig.objects.filter(
+        semester=team.semester, year_level=team.year_level, event_name=stage,
+    ).exists()]
 
 
 def _scope(user, *, scope='global', team=None, program_scope='capstone', year_level=None):
@@ -72,9 +70,10 @@ def _scope(user, *, scope='global', team=None, program_scope='capstone', year_le
         stages = list(DefenseStage.objects.filter(is_active=True).order_by('display_order').values_list('label', flat=True))
     else:
         from defense.scheduler.models import PitEventGradingConfig
-        stages = list(PitEventGradingConfig.objects.filter(semester=semester).order_by('event_name').values_list('event_name', flat=True))
+        events = PitEventGradingConfig.objects.filter(semester=semester).exclude(year_level='')
         if year_level:
-            stages = [stage for stage in stages if _pit_stage_matches(stage, year_level)]
+            events = events.filter(year_level=year_level)
+        stages = list(events.order_by('event_name').values_list('event_name', flat=True))
     return teams, stages, semester, program_scope, year_level
 
 

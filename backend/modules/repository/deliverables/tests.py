@@ -932,7 +932,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
         )
         
         # Configure PIT event
-        config = PitEventGradingConfig.objects.create(
+        config = PitEventGradingConfig.objects.create(year_level='3rd Year',
             semester=self.semester,
             event_name='PIT Expo 2026',
             panel_rubric=panel_rubric,
@@ -1139,13 +1139,13 @@ class CapstoneDeliverablesApiTests(APITestCase):
             status='published',
             semester=self.semester,
         )
-        PitEventGradingConfig.objects.create(
+        PitEventGradingConfig.objects.create(year_level='1st Year',
             semester=self.semester,
             event_name='1st Year Expo',
             panel_rubric=panel_rubric,
             peer_rubric=peer_rubric,
         )
-        PitEventGradingConfig.objects.create(
+        PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester,
             event_name='2nd Year Expo',
             panel_rubric=panel_rubric,
@@ -1173,13 +1173,13 @@ class CapstoneDeliverablesApiTests(APITestCase):
             status='published',
             semester=self.semester,
         )
-        PitEventGradingConfig.objects.create(
+        PitEventGradingConfig.objects.create(year_level='1st Year',
             semester=self.semester,
             event_name='1st year Expo',
             panel_rubric=panel_rubric,
             peer_rubric=peer_rubric,
         )
-        PitEventGradingConfig.objects.create(
+        PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester,
             event_name='2nd Year Expo',
             panel_rubric=panel_rubric,
@@ -1223,13 +1223,13 @@ class CapstoneDeliverablesApiTests(APITestCase):
             status='published',
             semester=self.semester,
         )
-        PitEventGradingConfig.objects.create(
+        PitEventGradingConfig.objects.create(year_level='1st Year',
             semester=self.semester,
             event_name='1st Year Concept Pitch',
             panel_rubric=panel_rubric,
             peer_rubric=peer_rubric,
         )
-        PitEventGradingConfig.objects.create(
+        PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester,
             event_name='2nd Year Architecture Pitch',
             panel_rubric=panel_rubric,
@@ -1683,7 +1683,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
             status=Rubric.STATUS_PUBLISHED,
             semester=self.semester,
         )
-        pit_cfg = PitEventGradingConfig.objects.create(
+        pit_cfg = PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester,
             event_name='2nd Year PIT Showcase',
             panel_rubric=panel_rubric,
@@ -1747,7 +1747,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
         )
         self.assertEqual(res_upload.status_code, 200)
 
-        # 4. If team grade result is recorded as failed (< 75%), post-deliverables lock
+        # 4. A failed PIT score remains an indicator and cannot lock post-event files.
         from decimal import Decimal
         team_grade = TeamGrade.objects.create(
             team=pit_team,
@@ -1764,7 +1764,9 @@ class CapstoneDeliverablesApiTests(APITestCase):
             status=TeamGrade.STATUS_PUBLISHED,
         )
         self.assertEqual(team_grade.result, 'failed')
-        self.assertFalse(archive_unlocked(pit_team, '2nd Year PIT Showcase', deliverable_type='post'))
+        self.assertTrue(archive_unlocked(pit_team, '2nd Year PIT Showcase', deliverable_type='post'))
+        from repository.deliverables.services import is_stage_defense_done
+        self.assertTrue(is_stage_defense_done(pit_team, '2nd Year PIT Showcase'))
 
     def test_post_deliverables_unlock_when_verdict_approved_even_if_grade_under_75(self):
         from decimal import Decimal

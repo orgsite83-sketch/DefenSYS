@@ -258,6 +258,9 @@ class _UniversalFileViewerDialogState
             event.logicalKey == LogicalKeyboardKey.numpad0) {
           _resetImageZoom();
           return KeyEventResult.handled;
+        } else if (event.logicalKey == LogicalKeyboardKey.keyR) {
+          _rotateImage();
+          return KeyEventResult.handled;
         }
       }
     }
@@ -269,16 +272,9 @@ class _UniversalFileViewerDialogState
     final screenSize = MediaQuery.of(context).size;
     final layout = FileViewerDialogLayout.of(context);
     final compact = screenSize.width < 600;
-    final isPdf = _category == FileCategory.pdf;
-    final toolbarColor = isPdf
-        ? DefensysTokens.surfaceOf(context)
-        : DefensysTokens.maroon;
-    final toolbarForeground = isPdf
-        ? DefensysTokens.textPrimaryOf(context)
-        : Colors.white;
-    final toolbarSecondary = isPdf
-        ? DefensysTokens.textSecondaryOf(context)
-        : Colors.white70;
+    final toolbarColor = DefensysTokens.surfaceOf(context);
+    final toolbarForeground = DefensysTokens.textPrimaryOf(context);
+    final toolbarSecondary = DefensysTokens.textSecondaryOf(context);
 
     final catColor = FileViewerMetadata.getCategoryColor(_category);
     final catIcon = FileViewerMetadata.getCategoryIcon(_category);
@@ -289,6 +285,24 @@ class _UniversalFileViewerDialogState
     final formattedSize = _fileBytes != null
         ? FileViewerMetadata.formatBytes(_fileBytes!.length)
         : (_isLoading ? 'Loading...' : '');
+
+    final String downloadLabel;
+    switch (_category) {
+      case FileCategory.pdf:
+        downloadLabel = 'Download PDF';
+        break;
+      case FileCategory.officePresentation:
+        downloadLabel = 'Download Presentation';
+        break;
+      case FileCategory.officeDoc:
+        downloadLabel = 'Download Document';
+        break;
+      case FileCategory.spreadsheet:
+        downloadLabel = 'Download Spreadsheet';
+        break;
+      default:
+        downloadLabel = 'Download File';
+    }
 
     return Focus(
       focusNode: _focusNode,
@@ -321,13 +335,16 @@ class _UniversalFileViewerDialogState
           child: Column(
             children: [
               // ----------------------------------------------------
-              // Header Toolbar
+              // Header Toolbar (Unified Image 2 Aesthetic)
               // ----------------------------------------------------
               Container(
                 height: 56,
                 padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 16),
                 decoration: BoxDecoration(
                   color: toolbarColor,
+                  border: Border(
+                    bottom: BorderSide(color: DefensysTokens.borderOf(context)),
+                  ),
                   borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(10),
                     topRight: Radius.circular(10),
@@ -342,12 +359,10 @@ class _UniversalFileViewerDialogState
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: isPdf
-                            ? DefensysTokens.surfaceHigherOf(context)
-                            : Colors.black.withValues(alpha: 0.3),
+                        color: catColor.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color: catColor.withValues(alpha: 0.7),
+                          color: catColor.withValues(alpha: 0.5),
                         ),
                       ),
                       child: Row(
@@ -359,7 +374,7 @@ class _UniversalFileViewerDialogState
                             Text(
                               catLabel,
                               style: TextStyle(
-                                color: toolbarForeground,
+                                color: catColor,
                                 fontSize: 10,
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 0.5,
@@ -397,10 +412,11 @@ class _UniversalFileViewerDialogState
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: isPdf
-                                    ? DefensysTokens.surfaceHigherOf(context)
-                                    : Colors.white.withValues(alpha: 0.15),
+                                color: DefensysTokens.surfaceHigherOf(context),
                                 borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: DefensysTokens.borderOf(context),
+                                ),
                               ),
                               child: Text(
                                 formattedSize,
@@ -415,62 +431,12 @@ class _UniversalFileViewerDialogState
                       ),
                     ),
 
-                    // Contextual Controls for Image
-                    if (_category == FileCategory.image) ...[
-                      IconButton(
-                        icon: const Icon(
-                          Icons.zoom_in,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                        tooltip: 'Zoom In (+)',
-                        onPressed: () => _zoomImage(1.25),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.zoom_out,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                        tooltip: 'Zoom Out (-)',
-                        onPressed: () => _zoomImage(0.8),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.restart_alt,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                        tooltip: 'Reset Zoom (0)',
-                        onPressed: _resetImageZoom,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.rotate_right,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                        tooltip: 'Rotate 90°',
-                        onPressed: _rotateImage,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      Container(
-                        height: 20,
-                        width: 1,
-                        color: Colors.white24,
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                      ),
-                    ],
-
                     if (!_isLoading && _fileBytes != null) ...[
                       // Open in New Tab
                       IconButton(
                         icon: Icon(
                           Icons.open_in_new,
-                          color: toolbarForeground,
+                          color: toolbarSecondary,
                           size: 18,
                         ),
                         tooltip: 'Open in New Tab',
@@ -490,7 +456,7 @@ class _UniversalFileViewerDialogState
                               size: 15,
                             ),
                             label: Text(
-                              isPdf ? 'Download PDF' : 'Download',
+                              downloadLabel,
                               style: TextStyle(
                                 color: toolbarForeground,
                                 fontSize: 12,
@@ -499,9 +465,7 @@ class _UniversalFileViewerDialogState
                             ),
                             style: OutlinedButton.styleFrom(
                               side: BorderSide(
-                                color: isPdf
-                                    ? DefensysTokens.borderOf(context)
-                                    : Colors.white38,
+                                color: DefensysTokens.borderOf(context),
                               ),
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -532,9 +496,7 @@ class _UniversalFileViewerDialogState
                       Container(
                         height: 20,
                         width: 1,
-                        color: isPdf
-                            ? DefensysTokens.borderOf(context)
-                            : Colors.white24,
+                        color: DefensysTokens.borderOf(context),
                         margin: const EdgeInsets.symmetric(horizontal: 4),
                       ),
                     ],
@@ -813,11 +775,32 @@ class _UniversalFileViewerDialogState
           fileName: widget.fileName,
         );
 
-      case FileCategory.officeDoc:
       case FileCategory.officePresentation:
+        return UniversalPresentationViewer(
+          bytes: _fileBytes!,
+          fileName: widget.fileName,
+          onDownload: _downloadFile,
+          onOpenInNewTab: _openInNewTab,
+        );
+
+      case FileCategory.officeDoc:
+        return UniversalDocxViewer(
+          bytes: _fileBytes!,
+          fileName: widget.fileName,
+          onDownload: _downloadFile,
+          onOpenInNewTab: _openInNewTab,
+        );
+
       case FileCategory.archive:
+        return UniversalArchiveViewer(
+          bytes: _fileBytes!,
+          fileName: widget.fileName,
+          onDownload: _downloadFile,
+          onOpenInNewTab: _openInNewTab,
+        );
+
       case FileCategory.other:
-        return UniversalOfficeInspectorCard(
+        return UniversalDeliverableCard(
           fileName: widget.fileName,
           fileSizeBytes: _fileBytes!.length,
           category: _category,

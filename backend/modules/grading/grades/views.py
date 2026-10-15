@@ -144,13 +144,12 @@ def grade_center_payload(request, queryset=None, sync_info=None):
         'grades': TeamGradeSerializer(current, many=True).data,
         'counts': counts_payload(base, current),
         'active_semester': SemesterSerializer(semester).data if semester else None,
-        'group_settings': build_group_settings_map(current, semester),
+        'group_settings': build_group_settings_map(current, semester, user=request.user),
         **options_payload(base),
     }
     if CanManageModule().has_permission(request, None):
-        active_stages = list(
-            DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label')
-        )
+        from authentication_access_control.scopes import is_admin_user
+        active_stages = list(DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label')) if is_admin_user(request.user) else []
         payload['capstone_stages'] = DefenseStageSerializer(
             active_stages,
             many=True,
@@ -164,19 +163,8 @@ def grade_center_payload(request, queryset=None, sync_info=None):
             pit_lead = is_pit_lead_only(request.user)
             pit_year = _pit_year(request.user) if pit_lead else None
 
-            configs = PitEventGradingConfig.objects.filter(semester=semester).prefetch_related('deliverables').order_by('event_name')
-            if pit_lead:
-                if pit_year:
-                    from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
-                    exclude_filter = Q()
-                    for y, hints in PIT_YEAR_EVENT_HINTS.items():
-                        if y != pit_year:
-                            for hint in hints:
-                                exclude_filter |= Q(event_name__icontains=hint)
-                    if exclude_filter:
-                        configs = configs.exclude(exclude_filter)
-                else:
-                    configs = configs.none()
+            from defense.scheduler.event_scope import pit_events_for_user
+            configs = pit_events_for_user(request.user, semester=semester).prefetch_related('deliverables').order_by('event_name')
             payload['pit_events'] = [pit_event_config_payload(c) for c in configs]
         else:
             payload['pit_events'] = []

@@ -100,26 +100,18 @@ CAPSTONE_FILENAME_RE = re.compile(
     re.IGNORECASE,
 )
 
-PIT_YEAR_EVENT_HINTS = {
-    '1st Year': ('1st', 'first'),
-    '2nd Year': ('2nd', 'second'),
-    '3rd Year': ('3rd', 'third'),
-    '4th Year': ('4th', 'fourth'),
-}
-
 def is_admin(user):
     return getattr(user, 'role', None) == 'admin' or getattr(user, 'is_superuser', False)
 
 
 
-def pit_event_matches_year_level(event_name, year_level):
-    if not year_level:
-        return True
-    name = (event_name or '').lower()
-    hints = PIT_YEAR_EVENT_HINTS.get(year_level, ())
-    if not hints:
-        return True
-    return any(hint in name for hint in hints)
+def pit_event_matches_year_level(event_name, year_level, semester=None):
+    from defense.scheduler.event_scope import pit_year
+    year = pit_year(year_level)
+    semester = semester or get_active_semester()
+    return bool(year and semester and PitEventGradingConfig.objects.filter(
+        semester=semester, event_name__iexact=(event_name or '').strip(), year_level=year,
+    ).exists())
 
 
 def completed_pit_events(semester=None, year_level=None):
@@ -128,17 +120,11 @@ def completed_pit_events(semester=None, year_level=None):
     if semester:
         queryset = queryset.filter(semester=semester)
     if year_level:
-        event_filter = Q()
-        for hint in PIT_YEAR_EVENT_HINTS.get(year_level, ()):
-            event_filter |= Q(event_name__icontains=hint)
-        if event_filter:
-            queryset = queryset.filter(event_filter)
-        else:
-            queryset = queryset.none()
+        queryset = queryset.filter(year_level=year_level)
     return queryset
 
 
-def all_completed_pit_event_ids(semester=None):
+def all_completed_pit_event_ids(semester=None, year_level=None):
     semester = semester or get_active_semester()
     if not semester:
         return []
@@ -146,11 +132,12 @@ def all_completed_pit_event_ids(semester=None):
         PitEventGradingConfig.objects.filter(
             semester=semester,
             is_officially_complete=True,
+            **({'year_level': year_level} if year_level else {}),
         ).values_list('id', flat=True)
     )
 
 
-def all_completed_pit_event_names(semester=None):
+def all_completed_pit_event_names(semester=None, year_level=None):
     semester = semester or get_active_semester()
     if not semester:
         return []
@@ -158,6 +145,7 @@ def all_completed_pit_event_names(semester=None):
         PitEventGradingConfig.objects.filter(
             semester=semester,
             is_officially_complete=True,
+            **({'year_level': year_level} if year_level else {}),
         ).values_list('event_name', flat=True)
     )
 
@@ -167,14 +155,15 @@ def pit_archive_queue_statuses():
 
 
 def _complete_passing_grades(scope):
+    """Archive eligibility: complete PIT scores, or passing Capstone grades."""
     grades = TeamGrade.objects.filter(
         scope=scope,
         panel_score__isnull=False,
         peer_score__isnull=False,
-        final_grade__gte=PASS_GRADE_THRESHOLD,
+        final_grade__isnull=False,
     )
     if scope == TeamGrade.SCOPE_CAPSTONE:
-        grades = grades.filter(status=TeamGrade.STATUS_PUBLISHED).filter(
+        grades = grades.filter(final_grade__gte=PASS_GRADE_THRESHOLD, status=TeamGrade.STATUS_PUBLISHED).filter(
             Q(verdict=TeamGrade.VERDICT_APPROVED) | Q(
                 verdict=TeamGrade.VERDICT_APPROVED_WITH_REVISIONS, revisions_cleared_at__isnull=False)
         ).filter(Q(adviser_weight=0) | Q(adviser_score__isnull=False))
@@ -188,8 +177,8 @@ def pit_upload_window_open(year_level, semester=None):
     if queue:
         return True
     semester = semester or get_active_semester()
-    event_names = all_completed_pit_event_names(semester=semester)
-    event_ids = all_completed_pit_event_ids(semester=semester)
+    event_names = all_completed_pit_event_names(semester=semester, year_level=year_level)
+    event_ids = all_completed_pit_event_ids(semester=semester, year_level=year_level)
     if not event_names and not event_ids:
         return False
     return _complete_passing_grades(TeamGrade.SCOPE_PIT).filter(
@@ -231,7 +220,7 @@ def suggested_pit_file_name(team, year_level, semester_label='1st Semester', eve
         semester_obj = team.semester if team else Semester.objects.filter(is_active=True).first()
         if semester_obj:
             config = PitEventGradingConfig.objects.filter(
-                semester=semester_obj,
+                semester=semester_obj, year_level=year_level,
                 event_name__iexact=event_name.strip(),
             ).first()
             if config:
@@ -257,8 +246,8 @@ def pit_archive_upload_queue(year_level, semester=None):
         return []
 
     semester = semester or get_active_semester()
-    event_names = all_completed_pit_event_names(semester=semester)
-    event_ids = all_completed_pit_event_ids(semester=semester)
+    event_names = all_completed_pit_event_names(semester=semester, year_level=year_level)
+    event_ids = all_completed_pit_event_ids(semester=semester, year_level=year_level)
     if not event_names and not event_ids:
         return []
 
@@ -329,7 +318,7 @@ def pit_upload_diagnostics(year_level, semester=None):
     if not year_level or not semester:
         return {}
 
-    all_completed = all_completed_pit_event_names(semester=semester)
+    all_completed = all_completed_pit_event_names(semester=semester, year_level=year_level)
     pit_grades = TeamGrade.objects.filter(
         semester=semester,
         scope=TeamGrade.SCOPE_PIT,
@@ -341,7 +330,7 @@ def pit_upload_diagnostics(year_level, semester=None):
             for label in pit_grades.filter(
                 status__in=pit_archive_queue_statuses(),
             ).filter(
-                Q(pit_event_config_id__in=all_completed_pit_event_ids(semester=semester))
+                Q(pit_event_config_id__in=all_completed_pit_event_ids(semester=semester, year_level=year_level))
                 | Q(pit_event_config__isnull=True, stage_label__in=all_completed)
             ).values_list('stage_label', flat=True)
             if label
@@ -705,6 +694,8 @@ def repository_scope(user):
         }
     if getattr(user, 'role', None) == 'faculty' and getattr(user, 'is_pit_lead', False):
         pit_year = user.pit_lead_year or ''
+        if not pit_year:
+            raise PermissionDenied('A PIT year assignment is required to browse the project archive.')
         return {
             'scope': 'pit_lead',
             'label': 'PIT lead repository audit',
@@ -796,7 +787,6 @@ def capstone_archive_queryset_for_scope(scope):
     return (
         ArchiveEntry.objects.select_related('team', 'uploaded_by')
         .filter(entry_type=ArchiveEntry.TYPE_CAPSTONE)
-        .filter(Q(team__isnull=True) | Q(team__level__icontains='Capstone'))
     )
 
 
@@ -814,7 +804,10 @@ def capstone_deliverable_queryset_for_scope(scope):
             'uploaded_by',
         )
         .prefetch_related('files')
-        .filter(team__level__icontains='Capstone')
+        .filter(
+            Q(archive_team_level__icontains='Capstone')
+            | Q(archive_team_level='', team__level__icontains='Capstone')
+        )
         .order_by('-uploaded_at', 'file_name')
     )
 
@@ -833,7 +826,10 @@ def pit_deliverable_queryset_for_scope(scope):
             'uploaded_by',
         )
         .prefetch_related('files')
-        .filter(team__level__icontains='PIT')
+        .filter(
+            Q(archive_team_level__icontains='PIT')
+            | Q(archive_team_level='', team__level__icontains='PIT')
+        )
         .order_by('-uploaded_at', 'file_name')
     )
     if scope['scope'] == 'pit_lead' and scope.get('pit_year_level'):
@@ -903,32 +899,33 @@ def filter_entries(entries, query_params):
 
 
 def counts_payload(entries, filtered_entries):
+    actual_entries = [entry for entry in filtered_entries if not entry.get('is_missing')]
     return {
-        'total': len(filtered_entries),
-        'filtered': len(filtered_entries),
-        'pit': sum(1 for entry in filtered_entries if entry.get('submission_kind') == 'pit'),
+        'total': len(actual_entries),
+        'filtered': len(actual_entries),
+        'pit': sum(1 for entry in actual_entries if entry.get('submission_kind') == 'pit'),
         'capstone': sum(
             1
-            for entry in filtered_entries
+            for entry in actual_entries
             if entry.get('type') == ArchiveEntry.TYPE_CAPSTONE
             and entry.get('submission_kind') != 'pit'
         ),
         'approved': sum(
             1
-            for entry in filtered_entries
+            for entry in actual_entries
             if entry['status'] in [ArchiveEntry.STATUS_APPROVED, 'Post-Defense']
         ),
         'needs_revision': sum(
-            1 for entry in filtered_entries if entry['status'] == ArchiveEntry.STATUS_NEEDS_REVISION
+            1 for entry in actual_entries if entry['status'] == ArchiveEntry.STATUS_NEEDS_REVISION
         ),
-        'pre_defense': sum(1 for entry in filtered_entries if entry.get('submission_kind') == 'pre'),
+        'pre_defense': sum(1 for entry in actual_entries if entry.get('submission_kind') == 'pre'),
         'archive_submissions': sum(
-            1 for entry in filtered_entries if entry.get('submission_kind') == 'post'
+            1 for entry in actual_entries if entry.get('submission_kind') == 'post'
         ),
         'missing_required': sum(1 for entry in filtered_entries if entry.get('is_missing')),
         'uploaded': sum(
             1
-            for entry in filtered_entries
+            for entry in actual_entries
             if entry.get('has_file') and not entry.get('is_missing')
         ),
     }
@@ -958,7 +955,7 @@ def repository_audit_payload(request):
         include_audit_trail=include_audit_trail,
     )
     query_params = request.query_params.copy()
-    if scope.get('scope') != 'admin' and query_params.get('type') == ArchiveEntry.TYPE_CAPSTONE:
+    if scope.get('scope') != 'admin':
         query_params['type'] = ArchiveEntry.TYPE_PIT
     deliverable_id = (query_params.get('deliverable_id') or '').strip()
     stage_filter = (query_params.get('stage') or '').strip()

@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from repository.archive.models import ArchiveEntry
+from .folders import entries_in_folder
 from .services import (
     augment_deliverable_missing_rows,
     cancel_archive_file_replacement,
@@ -177,13 +178,17 @@ class ProjectArchiveExportView(APIView):
     def get(self, request):
         entries, scope = scoped_entries(request.user, request=request)
         query_params = request.query_params.copy()
-        if scope.get('scope') != 'admin' and query_params.get('type') == ArchiveEntry.TYPE_CAPSTONE:
+        if scope.get('scope') != 'admin':
             query_params['type'] = ArchiveEntry.TYPE_PIT
         deliverable_id = (query_params.get('deliverable_id') or '').strip()
         stage_filter = (query_params.get('stage') or '').strip()
-        if deliverable_id and scope.get('scope') == 'admin':
-            entries = augment_deliverable_missing_rows(entries, deliverable_id, stage_filter)
+        group_by = query_params.get('group_by') or 'team'
+        if (deliverable_id or group_by == 'deliverable') and scope.get('scope') in ('admin', 'pit_lead'):
+            entries = augment_deliverable_missing_rows(
+                entries, deliverable_id, stage_filter, scope=scope,
+            )
         filtered = filter_entries(entries, query_params)
+        filtered = entries_in_folder(filtered, group_by, query_params.get('folder_key') or '')
         response = HttpResponse(repository_csv(filtered), content_type='text/csv; charset=utf-8')
         response['Content-Disposition'] = 'attachment; filename="project_archive_records.csv"'
         return response

@@ -56,6 +56,7 @@ void main() {
 
   final sampleConfig = <String, dynamic>{
     'id': 1,
+    'year_level': '1st Year',
     'event_name': 'System Concept Pitching',
     'event_code': 'system-concept-pitching',
     'panel_weight': 80,

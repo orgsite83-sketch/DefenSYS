@@ -195,7 +195,7 @@ def grade_records_for(user, *, include_previous_projects=False):
                 scope=TeamGrade.SCOPE_PIT,
                 team__level__icontains='PIT',
                 team__year_level=pit_year,
-            )
+            ).filter(Q(pit_event_config__year_level=pit_year) | Q(pit_event_config__isnull=True))
             .exclude(team__year_level='3rd Year', semester__label='2nd Semester')
         )
     if getattr(user, 'role', None) == 'faculty':

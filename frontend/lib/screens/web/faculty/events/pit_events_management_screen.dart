@@ -145,14 +145,14 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(64.0),
-          child: CircularProgressIndicator(color: DefensysTokens.maroonOf(context)),
+          child: CircularProgressIndicator(color: DefensysTokens.maroonTextOf(context)),
         ),
       );
     }
 
     return DefensysShadcnScope(
       child: RefreshIndicator(
-        color: DefensysTokens.maroonOf(context),
+        color: DefensysTokens.maroonTextOf(context),
         onRefresh: _loadData,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -192,15 +192,15 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                 Container(
                   padding: const EdgeInsets.all(7),
                   decoration: BoxDecoration(
-                    color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
+                    color: DefensysTokens.maroonTextOf(context).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
-                      color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2),
+                      color: DefensysTokens.maroonTextOf(context).withValues(alpha: 0.2),
                     ),
                   ),
                   child: Icon(
                     LucideIcons.calendarCheck2,
-                    color: DefensysTokens.maroonOf(context),
+                    color: DefensysTokens.maroonTextOf(context),
                     size: 18,
                   ),
                 ),
@@ -248,8 +248,8 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
             ),
             ShadButton(
               enabled: !isSaving,
-              backgroundColor: DefensysTokens.maroonOf(context),
-              hoverBackgroundColor: DefensysTokens.maroonDark,
+              backgroundColor: DefensysTokens.maroonTextOf(context),
+              hoverBackgroundColor: const Color(0xFF1D4ED8),
               foregroundColor: Colors.white,
               leading: const Icon(LucideIcons.plus, size: 16),
               onPressed: () => _showEventDialog(),
@@ -671,14 +671,14 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                         children: [
                           Row(
                             children: [
-                              Container(width: 6, height: 6, decoration: BoxDecoration(color: DefensysTokens.maroonOf(context), shape: BoxShape.circle)),
+                              Container(width: 6, height: 6, decoration: BoxDecoration(color: DefensysTokens.maroonTextOf(context), shape: BoxShape.circle)),
                               const SizedBox(width: 5),
                               Text(
                                 'Panel: $panelWeight%',
                                 style: TextStyle(
                                   fontSize: 11.5,
                                   fontWeight: FontWeight.w600,
-                                  color: DefensysTokens.maroonOf(context),
+                                  color: DefensysTokens.maroonTextOf(context),
                                   fontFamily: DefensysTokens.fontFamilyInter,
                                   fontFeatures: const [FontFeature.tabularFigures()],
                                 ),
@@ -713,7 +713,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                               if (panelWeight > 0)
                                 Expanded(
                                   flex: panelWeight,
-                                  child: Container(color: DefensysTokens.maroonOf(context)),
+                                  child: Container(color: DefensysTokens.maroonTextOf(context)),
                                 ),
                               if (peerWeight > 0)
                                 Expanded(
@@ -735,7 +735,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                           icon: LucideIcons.fileCheck,
                           label: 'Panel Rubric',
                           value: rubricName(config['panel_rubric_id']),
-                          accentColor: DefensysTokens.maroonOf(context),
+                          accentColor: DefensysTokens.maroonTextOf(context),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -884,16 +884,16 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                                             margin: const EdgeInsets.only(left: 4),
                                             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                                             decoration: BoxDecoration(
-                                              color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
+                                              color: DefensysTokens.maroonTextOf(context).withValues(alpha: 0.1),
                                               borderRadius: BorderRadius.circular(4),
-                                              border: Border.all(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2)),
+                                              border: Border.all(color: DefensysTokens.maroonTextOf(context).withValues(alpha: 0.2)),
                                             ),
                                             child: Text(
                                               'Req',
                                               style: TextStyle(
                                                 fontSize: 9.5,
                                                 fontWeight: FontWeight.w600,
-                                                color: DefensysTokens.maroonOf(context),
+                                                color: DefensysTokens.maroonTextOf(context),
                                                 fontFamily: DefensysTokens.fontFamilyInter,
                                               ),
                                             ),
@@ -1548,6 +1548,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
 
     final payload = {
       'semester_id': semesterId,
+      'year_level': widget.config?['year_level'] ?? ref.read(dashboardProvider('faculty')).data?['pit_lead_year'],
       'event_name': eventName,
       'event_code': _eventCodeController.text.trim(),
       'panel_rubric_id': _panelRubricId,
@@ -1613,7 +1614,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
+        borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
@@ -1621,7 +1622,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
+        borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.5),
       ),
     );
   }
@@ -1717,12 +1718,12 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 8),
           decoration: BoxDecoration(
-            color: isSelected ? AppColors.maroon : Colors.transparent,
+            color: isSelected ? DefensysTokens.maroon : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
             boxShadow: isSelected
                 ? [
                     BoxShadow(
-                      color: AppColors.maroon.withValues(alpha: 0.25),
+                      color: DefensysTokens.maroon.withValues(alpha: 0.25),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),
@@ -1828,7 +1829,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                           Flexible(
                             flex: pFlex,
                             child: Container(
-                              color: AppColors.maroon,
+                              color: DefensysTokens.maroon,
                               height: double.infinity,
                             ),
                           ),
@@ -1849,7 +1850,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildLegendItem('Panel Evaluation', '$panel%', AppColors.maroon),
+              _buildLegendItem('Panel Evaluation', '$panel%', DefensysTokens.maroon),
               _buildLegendItem('Peer Evaluation', '$peer%', const Color(0xFFD97706)),
             ],
           ),
@@ -2533,7 +2534,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
               ),
               Switch.adaptive(
                 value: _peerGradingEnabled,
-                activeTrackColor: AppColors.maroon,
+                activeTrackColor: DefensysTokens.maroon,
                 activeThumbColor: Colors.white,
                 onChanged: isLocked
                     ? null
@@ -2636,7 +2637,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
 
     final dashboard = ref.watch(dashboardProvider('faculty')).data;
     final assignedPitYear = dashboard?['pit_lead_year']?.toString().trim();
-    final pitYear = assignedPitYear?.isNotEmpty == true ? assignedPitYear! : '2nd Year';
+    final pitYear = assignedPitYear ?? '';
 
     final panelRubrics = state.rubrics.where((r) {
       return r['scope'] == 'pit' && r['evaluation_type'] == 'panel';
@@ -2682,10 +2683,10 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: AppColors.maroon.withValues(alpha: 0.1),
+                          color: DefensysTokens.maroon.withValues(alpha: 0.1),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.event_note_rounded, size: 20, color: AppColors.maroon),
+                        child: const Icon(Icons.event_note_rounded, size: 20, color: DefensysTokens.maroon),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -2938,7 +2939,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                 children: [
                                   Row(
                                     children: [
-                                      const Icon(Icons.pie_chart_outline_rounded, size: 18, color: AppColors.maroon),
+                                      const Icon(Icons.pie_chart_outline_rounded, size: 18, color: DefensysTokens.maroon),
                                       const SizedBox(width: 8),
                                       const Text(
                                         'Role Weight Distribution',
@@ -2997,7 +2998,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                           keyboardType: TextInputType.number,
                                           decoration: _dialogInputDecoration(
                                             labelText: 'Panel Weight (%)',
-                                            prefixIcon: const Icon(Icons.gavel_rounded, size: 16, color: AppColors.maroon),
+                                            prefixIcon: const Icon(Icons.gavel_rounded, size: 16, color: DefensysTokens.maroon),
                                           ),
                                           style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 14),
                                           onChanged: _onPanelWeightChanged,
@@ -3037,11 +3038,11 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                   const SizedBox(height: 4),
                                   SliderTheme(
                                     data: SliderThemeData(
-                                      activeTrackColor: AppColors.maroon,
+                                      activeTrackColor: DefensysTokens.maroon,
                                       inactiveTrackColor: const Color(0xFFD97706),
-                                      thumbColor: AppColors.maroon,
-                                      overlayColor: AppColors.maroon.withValues(alpha: 0.12),
-                                      valueIndicatorColor: AppColors.maroon,
+                                      thumbColor: DefensysTokens.maroon,
+                                      overlayColor: DefensysTokens.maroon.withValues(alpha: 0.12),
+                                      valueIndicatorColor: DefensysTokens.maroon,
                                       valueIndicatorTextStyle: const TextStyle(color: Colors.white),
                                       trackHeight: 6,
                                     ),
@@ -3111,7 +3112,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                     children: [
                                       Row(
                                         children: [
-                                          const Icon(Icons.assignment_outlined, size: 18, color: AppColors.maroon),
+                                          const Icon(Icons.assignment_outlined, size: 18, color: DefensysTokens.maroon),
                                           const SizedBox(width: 8),
                                           const Text(
                                             'Evaluation Rubrics Attachment',
@@ -3131,7 +3132,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                             icon: const Icon(Icons.open_in_new_rounded, size: 13),
                                             label: const Text('Manage in Rubrics'),
                                             style: OutlinedButton.styleFrom(
-                                              foregroundColor: AppColors.maroon,
+                                              foregroundColor: DefensysTokens.maroon,
                                               side: const BorderSide(color: Color(0xFFCBD5E1)),
                                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                                               shape: RoundedRectangleBorder(
@@ -3221,7 +3222,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                         decoration: _dialogInputDecoration(
                                           labelText: 'Panel Rubric',
                                           helperText: panelRubrics.isEmpty ? 'No published panel rubrics found for this semester' : null,
-                                          prefixIcon: const Icon(Icons.gavel_rounded, size: 16, color: AppColors.maroon),
+                                          prefixIcon: const Icon(Icons.gavel_rounded, size: 16, color: DefensysTokens.maroon),
                                         ),
                                         style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 13.5, color: DefensysTokens.textPrimary),
                                         items: () {
@@ -3314,11 +3315,12 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               existingStages: [
                                 ...widget.availableEvents.where((e) =>
                                     StageDeliverablePresetManager.pitEventMatchesYearLevel(
-                                      e['event_name']?.toString() ?? '',
+                                      e['year_level']?.toString() ?? '',
                                       assignedPitYear ?? '',
                                     )).map((e) => {
                                   'id': e['id'],
                                   'scope': 'pit',
+                                  'year_level': e['year_level'],
                                   'label': e['event_name'] ?? e['name'] ?? 'PIT Event',
                                   'deliverables': e['deliverables'] ?? [],
                                 }),
@@ -3429,7 +3431,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                           icon: const Icon(Icons.arrow_forward_rounded, size: 16),
                           label: Text(_activeTab == 0 ? 'Next: Grading & Rubrics' : 'Next: Deliverables'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.maroon,
+                            backgroundColor: DefensysTokens.maroon,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                             textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, fontFamily: DefensysTokens.fontFamily),

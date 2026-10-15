@@ -588,6 +588,10 @@ class SystemAuditLogApiTests(APITestCase):
 
 class PasswordManagementTests(APITestCase):
     def setUp(self):
+        # Unit tests must not contact a real SMS gateway. Failure tests override this stub.
+        sms = patch('authentication_access_control.password_reset.send_password_reset_otp_sms', return_value=True)
+        self.sms_sender = sms.start()
+        self.addCleanup(sms.stop)
         self.user = User.objects.create_user(
             username='student-test',
             password='oldpassword123',

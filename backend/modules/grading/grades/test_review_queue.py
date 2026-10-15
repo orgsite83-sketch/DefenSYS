@@ -203,7 +203,7 @@ class GradeReviewQueueTests(APITestCase):
         self.semester.save(update_fields=['is_active'])
         self.first_semester.is_active = True
         self.first_semester.save(update_fields=['is_active'])
-        PitEventGradingConfig.objects.create(semester=self.first_semester, event_name='PIT Expo')
+        PitEventGradingConfig.objects.create(year_level='2nd Year', semester=self.first_semester, event_name='PIT Expo')
         grade = GradeContextService.get_or_create_for_schedule(self.pit_schedule)[0]
         response = self.client.delete(f'/api/defense/schedules/{self.pit_schedule.pk}/')
         self.assertEqual(response.status_code, 200, response.data)

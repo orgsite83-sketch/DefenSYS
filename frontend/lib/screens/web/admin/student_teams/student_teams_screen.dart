@@ -2,7 +2,6 @@ import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:excel/excel.dart' as xl;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -20,6 +19,7 @@ import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/utils/export/team_roster_excel_generator.dart';
 import 'package:defensys/utils/team_bulk_import_csv.dart';
+import 'package:defensys/utils/import/team_bulk_import_file.dart';
 import 'package:defensys/utils/team_bulk_import_draft.dart';
 import 'package:defensys/widgets/confirm_dialog.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
@@ -31,6 +31,7 @@ import 'components/student_teams_toolbar.dart';
 import 'dialogs/advisor_assignment_modal.dart';
 import 'dialogs/create_team_modal.dart';
 import 'dialogs/manage_sections_dialog.dart';
+import '../../shared/team_deliverables/team_deliverables_screen.dart';
 
 enum TeamListMode {
   capstoneAdmin,
@@ -67,6 +68,9 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   String? _bulkCsv = '';
   String? _bulkAdviserFilter = 'all';
   Map<String, dynamic>? _bulkPreview;
+  int _bulkPreviewRevision = 0;
+  bool _isBulkPreviewLoading = false;
+  String? _fileImportError;
   List<Map<String, dynamic>> _parsedBulkRows = [];
   bool _showIssuesOnly = false;
   TeamBulkImportDraft? _savedDraft;
@@ -399,6 +403,9 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     await clearTeamBulkImportDraft();
     if (!mounted) return;
     setState(() {
+      _bulkPreviewRevision++;
+      _isBulkPreviewLoading = false;
+      _fileImportError = null;
       _savedDraft = null;
       _parsedBulkRows = [];
       _bulkCsv = '';
@@ -495,87 +502,16 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   Future<void> _handleFilesDropped(List<PickedTabularFile> files) async {
     if (!mounted || files.isEmpty) return;
     try {
-      final texts = <String>[];
-      for (final f in files) {
-        if (f.isXlsx) {
-          final csvFromXlsx = _convertXlsxBytesToCsv(f.bytes);
-          if (csvFromXlsx.trim().isNotEmpty) {
-            texts.add(csvFromXlsx);
-          }
-        } else {
-          final t = f.text ?? utf8.decode(f.bytes, allowMalformed: true);
-          if (t.trim().isNotEmpty) {
-            texts.add(t);
-          }
-        }
-      }
-      if (texts.isEmpty) return;
-      _processCsvContent(texts.join('\n\n'));
-    } catch (e) {
-      _snack('Could not read file(s): $e');
-    }
-  }
-
-  String _convertXlsxBytesToCsv(List<int> bytes) {
-    try {
-      final excel = xl.Excel.decodeBytes(bytes);
-      if (excel.tables.isEmpty) return '';
-      final sheet = excel.tables.values.first;
-
-      // Expand merged cell spans so child cells inherit their top-left parent value
-      try {
-        for (final span in sheet.spannedItems) {
-          final parts = span.split(':');
-          if (parts.length != 2) continue;
-          final start = xl.CellIndex.indexByString(parts[0]);
-          final end = xl.CellIndex.indexByString(parts[1]);
-          final startVal = sheet.cell(start).value;
-          if (startVal == null) continue;
-          final minR = start.rowIndex < end.rowIndex ? start.rowIndex : end.rowIndex;
-          final maxR = start.rowIndex > end.rowIndex ? start.rowIndex : end.rowIndex;
-          final minC = start.columnIndex < end.columnIndex ? start.columnIndex : end.columnIndex;
-          final maxC = start.columnIndex > end.columnIndex ? start.columnIndex : end.columnIndex;
-          for (var r = minR; r <= maxR; r++) {
-            for (var c = minC; c <= maxC; c++) {
-              if (r == start.rowIndex && c == start.columnIndex) continue;
-              sheet.updateCell(xl.CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r), startVal);
-            }
-          }
-        }
-      } catch (_) {}
-
-      final buffer = StringBuffer();
-      for (final row in sheet.rows) {
-        final line = row.map((cell) {
-          final val = cell?.value;
-          if (val == null) return '';
-          String text = '';
-          if (val is xl.TextCellValue) {
-            text = (val.value.text ?? '').trim();
-          } else if (val is xl.IntCellValue) {
-            text = val.value.toString();
-          } else if (val is xl.DoubleCellValue) {
-            final n = val.value;
-            text = (n == n.roundToDouble()) ? n.round().toString() : n.toString();
-          } else if (val is xl.FormulaCellValue) {
-            text = val.formula.trim();
-          } else if (val is xl.BoolCellValue) {
-            text = val.value ? 'true' : 'false';
-          } else {
-            text = val.toString().trim();
-          }
-          if (text.contains(',') || text.contains('"') || text.contains('\n')) {
-            return '"${text.replaceAll('"', '""')}"';
-          }
-          return text;
-        }).join(',');
-        if (line.replaceAll(',', '').trim().isNotEmpty) {
-          buffer.writeln(line);
-        }
-      }
-      return buffer.toString().trim();
-    } catch (_) {
-      return '';
+      final csv = readTeamImportFiles(files);
+      setState(() => _fileImportError = null);
+      _processCsvContent(csv);
+    } catch (error, stackTrace) {
+      debugPrint('Team roster import failed: $error\n$stackTrace');
+      final message = error is FormatException
+          ? error.message
+          : 'Could not read selected files: $error';
+      setState(() => _fileImportError = message);
+      _snack(message);
     }
   }
 
@@ -596,7 +532,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     final recognizedHeaders = {
       'team_name', 'project_title', 'level', 'year_level', 'member_ids',
       'leader_id', 'adviser_id', 'adviser_name', 'team name', 'capstone project',
-      'pit project', 'project', 'project title', 'adviser', 'team members', 'members',
+      'pit project', 'project', 'project title', 'adviser', 'team members', 'team_members', 'members',
       'section', 'class section', 'class_section', 'names', 'modules', 'module',
       'system name', 'system_name', 'project manager', 'project_manager', 'pm', 'instructor', 'instructor_name',
     };
@@ -638,6 +574,12 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   }
 
   Future<void> _refreshBulkPreview() async {
+    if (!mounted) return;
+    final revision = ++_bulkPreviewRevision;
+    setState(() {
+      _bulkPreview = null;
+      _isBulkPreviewLoading = true;
+    });
     if (_parsedBulkRows.isEmpty) {
       final result = parseTeamBulkCsvWithContext(
         _csvDraft,
@@ -645,7 +587,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         pitLeadYear: _pitLeadYear,
       );
       if (result.rows.isEmpty) {
-        setState(() => _bulkPreview = null);
+        setState(() => _isBulkPreviewLoading = false);
         return;
       }
       final normalized = result.rows.map((row) => Map<String, dynamic>.from(row)).toList();
@@ -662,7 +604,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     _deriveLevelsOnRows(_parsedBulkRows);
 
     if (_parsedBulkRows.isEmpty) {
-      setState(() => _bulkPreview = null);
+      setState(() => _isBulkPreviewLoading = false);
       return;
     }
 
@@ -674,16 +616,20 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       systemName: _systemName,
       projectManager: _projectManager,
     );
-    if (!mounted) return;
-    setState(() => _bulkPreview = preview);
+    if (!mounted || revision != _bulkPreviewRevision) return;
+    setState(() {
+      _bulkPreview = preview;
+      _isBulkPreviewLoading = false;
+    });
     _scheduleDraftSave();
   }
 
-  List<Map<String, dynamic>> _readyRowsForImport() {
+  List<int> _readyRowNumbersForImport() {
+    if (_isBulkPreviewLoading || _bulkPreview == null) return [];
     final previewRows = (_bulkPreview?['rows'] as List? ?? const [])
         .map((item) => Map<String, dynamic>.from(item as Map))
         .toList();
-    if (previewRows.isEmpty) return _parsedBulkRows;
+    if (previewRows.isEmpty) return [];
 
     final readyNumbers = previewRows
         .where((item) => item['ready'] == true)
@@ -692,16 +638,17 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
 
     if (readyNumbers.isEmpty) return [];
 
-    final ready = <Map<String, dynamic>>[];
+    final ready = <int>[];
     for (var index = 0; index < _parsedBulkRows.length; index++) {
       if (readyNumbers.contains(index + 1)) {
-        ready.add(Map<String, dynamic>.from(_parsedBulkRows[index]));
+        ready.add(index + 1);
       }
     }
     return ready;
   }
 
   Future<void> _importBulkTeams() async {
+    if (_isBulkPreviewLoading || _templateWarning != null) return;
     if (_parsedBulkRows.isEmpty) {
       _snack('Upload a CSV or add rows to import.');
       return;
@@ -711,7 +658,12 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       await _refreshBulkPreview();
     }
 
-    final rows = _readyRowsForImport();
+    if (!mounted || _bulkPreview == null) return;
+    final submittedRowNumbers = _readyRowNumbersForImport();
+    final rows = [
+      for (final rowNumber in submittedRowNumbers)
+        Map<String, dynamic>.from(_parsedBulkRows[rowNumber - 1]),
+    ];
     if (rows.isEmpty) {
       _snack('No ready rows to import. Fix issues in the table first.');
       return;
@@ -739,6 +691,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     final remaining = trimRowsAfterImport(
       rows: _parsedBulkRows,
       importedRows: importedRows,
+      submittedRowNumbers: submittedRowNumbers,
     );
 
     if (remaining.isEmpty) {
@@ -771,63 +724,15 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   void _scheduleRowPreview(int index) {
     _scheduleDraftSave();
     _rowPreviewTimer?.cancel();
-    _rowPreviewTimer = Timer(const Duration(milliseconds: 500), () {
-      _preflightSingleRow(index);
-    });
-  }
-
-  Future<void> _preflightSingleRow(int index) async {
-    if (index < 0 || index >= _parsedBulkRows.length) return;
-    final row = Map<String, dynamic>.from(_parsedBulkRows[index]);
-    if (!_isCapstoneAdmin) _deriveLevelOnRow(row);
-    _parsedBulkRows[index] = row;
-    final preview = await ref.read(studentTeamsProvider.notifier).bulkImportPreview(
-      [row],
-      adviserFilter: _selectedBulkAdviserFilter,
-    );
-    if (!mounted || preview == null) return;
-    final previewRows = (preview['rows'] as List? ?? const [])
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
-    if (previewRows.isEmpty) return;
-
-    final previewRow = previewRows.first;
-    if (_isCapstoneAdmin) {
-      final inferredYear = previewRow['year_level']?.toString();
-      final inferredLevel = previewRow['level']?.toString();
-      if (inferredYear != null && inferredYear.isNotEmpty) row['year_level'] = inferredYear;
-      if (inferredLevel != null && inferredLevel.isNotEmpty) row['level'] = inferredLevel;
-      _parsedBulkRows[index] = row;
-    }
-
-    final existing = (_bulkPreview?['rows'] as List? ?? const [])
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
-    final rowNumber = index + 1;
-    final updated = [
-      for (final item in existing)
-        if (item['row'] != rowNumber) item,
-      {...previewRows.first, 'row': rowNumber, 'sheet_row': rowNumber + 1},
-    ];
-    updated.sort((a, b) => (a['row'] as int).compareTo(b['row'] as int));
-
-    final ready = updated.where((item) => item['ready'] == true).length;
+    // Invalidate immediately, including during the debounce interval.
     setState(() {
-      _bulkPreview = {
-        'rows': updated,
-        'summary': {
-          'total': _parsedBulkRows.length,
-          'ready': ready,
-          'with_adviser': updated.where((item) => item['adviser_status'] == 'valid').length,
-          'without_adviser': updated.where((item) => item['adviser_status'] == 'none').length,
-          'adviser_invalid': updated.where((item) {
-            final status = item['adviser_status']?.toString() ?? '';
-            return status != 'valid' && status != 'none';
-          }).length,
-        },
-      };
+      _bulkPreviewRevision++;
+      _bulkPreview = null;
+      _isBulkPreviewLoading = _parsedBulkRows.isNotEmpty;
     });
-    _scheduleDraftSave();
+    _rowPreviewTimer = Timer(const Duration(milliseconds: 500), () {
+      _refreshBulkPreview();
+    });
   }
 
   void _addBulkRow() {
@@ -962,6 +867,9 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         bulkCsvDraft: _csvDraft,
         selectedBulkAdviserFilter: _selectedBulkAdviserFilter,
         bulkPreview: _bulkPreview,
+        isPreviewLoading: _isBulkPreviewLoading,
+        fileImportError: _fileImportError,
+        onRetryPreview: _refreshBulkPreview,
         showIssuesOnly: _showIssuesOnly,
         templateWarning: _templateWarning,
         isBulkImportDirty: _isBulkImportDirty,
@@ -980,6 +888,9 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         onAddBulkRow: _addBulkRow,
         onClearStaged: () {
           setState(() {
+            _bulkPreviewRevision++;
+            _isBulkPreviewLoading = false;
+            _fileImportError = null;
             _parsedBulkRows = [];
             _bulkCsv = '';
             _bulkPreview = null;
@@ -1142,6 +1053,42 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                               yearLevel: _pitLeadYear ?? displayState.yearLevel,
                               section: displayState.section,
                             ),
+                    ),
+                    buildSecondaryButton(
+                      icon: Icons.grid_view_rounded,
+                      label: 'Deliverables Matrix',
+                      context: context,
+                      onTap: displayState.isLoading || displayState.isSaving
+                          ? null
+                          : () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (ctx) => Scaffold(
+                                    appBar: AppBar(
+                                      backgroundColor: DefensysTokens.surfaceOf(ctx),
+                                      foregroundColor: DefensysTokens.textPrimaryOf(ctx),
+                                      title: Text(
+                                        _isPitContext(displayState)
+                                            ? 'PIT Cohort Deliverables'
+                                            : 'Capstone Cohort Deliverables',
+                                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                                      ),
+                                      elevation: 0,
+                                      leading: IconButton(
+                                        icon: const Icon(Icons.arrow_back_rounded),
+                                        onPressed: () => Navigator.of(ctx).pop(),
+                                      ),
+                                    ),
+                                    body: TeamDeliverablesScreen(
+                                      initialScope: _isPitContext(displayState) ? 'pit' : 'capstone',
+                                      pitYearLevel: _pitLeadYear ?? displayState.yearLevel,
+                                      pitSection: displayState.section,
+                                      initialViewMode: DeliverablesViewMode.matrix,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
                     ),
                   ],
                 ),

@@ -6,7 +6,7 @@ See [docs/AGENTS.md](../docs/AGENTS.md). Prefer extending existing scripts befor
 
 ## Available Tools
 
-- `start_local_web.py`: Launches local full-stack server (Django + Flutter Web) on LAN IP.
+- `start_local_web.py`: Launches Django + Flutter Web on a shared LAN/phone hotspot IP. Use `--check` for adapter/API/CORS diagnostics or `--interface "Wi-Fi"` to select an adapter. See [the network guide](../docs/WIFI_IP_CONFIG_GUIDE.md).
 - `auto_peer_eval.py`: Automated testing tool to simulate student peer evaluations across teams and defense stages via REST API.
 - `auto_panelist_eval.py`: Automated testing tool to simulate panelist evaluations for scheduled defenses via REST API.
 - `auto_adviser_eval.py`: Automated testing tool to simulate capstone adviser grading for advised teams via REST API.

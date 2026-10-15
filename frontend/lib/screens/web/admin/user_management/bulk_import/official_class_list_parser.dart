@@ -1,4 +1,5 @@
 import 'package:excel/excel.dart' as xl;
+import 'package:defensys/utils/excel_safe_decode.dart';
 import 'package:flutter/material.dart';
 
 class AdminOfficialClassListParseResult {
@@ -37,7 +38,7 @@ AdminOfficialClassListParseResult parseOfficialClassListCsv(String rawCsv) {
 /// Official Class List XLSX Parser logic for bulk student imports.
 AdminOfficialClassListParseResult parseOfficialClassListXlsx(List<int> bytes) {
   try {
-    final workbook = xl.Excel.decodeBytes(bytes);
+    final workbook = safeDecodeExcel(bytes);
     if (workbook.tables.isEmpty) {
       return const AdminOfficialClassListParseResult(metadata: {}, students: []);
     }

@@ -63,6 +63,21 @@ def _segments(entry, group_by):
     ]
 
 
+def entries_in_folder(entries, group_by='team', folder_key=''):
+    """Return the records under a folder, including records in child folders."""
+    group_by = group_by if group_by in GROUP_BY_CHOICES else 'team'
+    path = _decode_path(folder_key)
+    if path is None:
+        path = []
+    if not path:
+        return entries
+    candidates = entries if group_by == 'deliverable' else _file_entries(entries)
+    return [
+        entry for entry in candidates
+        if [segment[0] for segment in _segments(entry, group_by)[:len(path)]] == path
+    ]
+
+
 def archive_folder_payload(entries, group_by='team', folder_key=''):
     group_by = group_by if group_by in GROUP_BY_CHOICES else 'team'
     selected_path = _decode_path(folder_key)
@@ -99,6 +114,8 @@ def archive_folder_payload(entries, group_by='team', folder_key=''):
                 'approved_count': 0,
                 'needs_revision_count': 0,
             })
+            if group_by == 'deliverable' and entry.get('is_missing'):
+                folder['title'] = title
             if entry.get('has_file') and not entry.get('is_missing'):
                 folder['file_count'] += 1
             elif entry.get('is_missing') or not entry.get('has_file'):

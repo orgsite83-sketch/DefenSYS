@@ -8,7 +8,6 @@ import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/services/defense_stages_provider.dart';
-import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/defensys_skeleton.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
@@ -607,7 +606,7 @@ class _DefenseSchedulerScreenState
       child: Scaffold(
         backgroundColor: isDark ? DefensysTokens.mistBackground : DefensysUi.bgLight,
         body: RefreshIndicator(
-          color: AppColors.maroon,
+          color: DefensysTokens.maroonOf(context),
           onRefresh: () =>
               ref.read(defenseSchedulerProvider.notifier).fetchSchedules(),
           child: SingleChildScrollView(

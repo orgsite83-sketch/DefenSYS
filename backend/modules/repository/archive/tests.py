@@ -235,7 +235,7 @@ class ProjectArchiveApiTests(APITestCase):
         # Create the configuration and template for D_PIT_2
         panel_rubric = Rubric.objects.create(name='PIT Panel', scope='pit', evaluation_type='panel', status='published', semester=self.semester)
         peer_rubric = Rubric.objects.create(name='PIT Peer', scope='pit', evaluation_type='peer', status='published', semester=self.semester)
-        pit_config = PitEventGradingConfig.objects.create(
+        pit_config = PitEventGradingConfig.objects.create(year_level='3rd Year',
             semester=self.semester,
             event_name='PIT Event 1',
             panel_rubric=panel_rubric,

@@ -19,15 +19,21 @@ def default_pit_weights():
     }
 
 
-def get_pit_event_config(semester, event_name):
+def get_pit_event_config(semester, event_name, *, year_level=None):
     if not semester or not (event_name or '').strip():
         return None
-    return (
+    configs = (
         PitEventGradingConfig.objects.select_related('panel_rubric', 'peer_rubric')
         .prefetch_related('deliverables')
         .filter(semester=semester, event_name__iexact=event_name.strip())
-        .first()
     )
+    if year_level is not None:
+        from .event_scope import pit_year
+        year = pit_year(year_level)
+        if not year:
+            return None
+        configs = configs.filter(year_level=year)
+    return configs.first()
 
 
 def pit_endorsement_required(config):
@@ -38,8 +44,8 @@ def pit_endorsement_required(config):
     ).exclude(requirement_timing=TIMING_DEFENSE).exists())
 
 
-def weights_for_pit_event(semester, event_name):
-    config = get_pit_event_config(semester, event_name)
+def weights_for_pit_event(semester, event_name, *, year_level=None):
+    config = get_pit_event_config(semester, event_name, year_level=year_level)
     if config is None:
         return default_pit_weights()
     return {
@@ -49,8 +55,8 @@ def weights_for_pit_event(semester, event_name):
     }
 
 
-def peer_rubric_for_pit_event(semester, event_name):
-    config = get_pit_event_config(semester, event_name)
+def peer_rubric_for_pit_event(semester, event_name, *, year_level=None):
+    config = get_pit_event_config(semester, event_name, year_level=year_level)
     if config is None:
         return None
     return config.peer_rubric
@@ -70,7 +76,7 @@ def check_pit_event_locked(config, semester=None):
     from grading.grades.models import TeamGrade
 
     # 1. Scheduled Defenses
-    if sem and DefenseSchedule.objects.filter(semester=sem, event_name__iexact=config.event_name).exists():
+    if sem and DefenseSchedule.objects.filter(semester=sem, scope='pit', team__year_level=config.year_level, event_name__iexact=config.event_name).exists():
         return True, 'This PIT event has scheduled defenses for the active semester.'
 
     # 2. Recorded Evaluation Grades
@@ -79,6 +85,7 @@ def check_pit_event_locked(config, semester=None):
         grades_exist = TeamGrade.objects.filter(
             semester=sem,
             scope=TeamGrade.SCOPE_PIT,
+            team__year_level=config.year_level,
             stage_label__iexact=config.event_name,
         ).exclude(status=TeamGrade.STATUS_PENDING).exists()
 
@@ -88,10 +95,12 @@ def check_pit_event_locked(config, semester=None):
     return False, None
 
 
+@transaction.atomic
 def upsert_pit_event_config(
     *,
     semester,
     event_name,
+    year_level,
     event_code=None,
     panel_rubric=None,
     peer_rubric=None,
@@ -100,11 +109,15 @@ def upsert_pit_event_config(
     archive_file_template=None,
     deliverables=None,
     peer_grading_enabled=None,
+    user=None,
+    request=None,
 ):
     from django.db.models import Q
     from grading.grades.models import TeamGrade
 
     event_name = (event_name or '').strip()
+    from .event_scope import require_pit_year, require_event_management
+    year_level = require_pit_year(year_level)
     if not event_name:
         raise ValidationError({'event_name': 'PIT event name is required.'})
     if panel_weight + peer_weight != 100:
@@ -117,9 +130,21 @@ def upsert_pit_event_config(
             except ApiValidationError as exc:
                 raise ValidationError({'deliverables': str(exc.detail)}) from exc
 
-    existing_config = PitEventGradingConfig.objects.filter(
+    existing_config = PitEventGradingConfig.objects.select_for_update().filter(
         semester=semester, event_name__iexact=event_name
     ).first()
+    if existing_config and existing_config.year_level != year_level:
+        raise ValidationError({'year_level': 'This event belongs to a different or unclassified PIT year level.'})
+    if user is not None:
+        from types import SimpleNamespace
+        require_event_management(user, existing_config or SimpleNamespace(year_level=year_level))
+    for rubric in (panel_rubric, peer_rubric):
+        owner_year = getattr(getattr(rubric, 'created_by', None), 'pit_lead_year', '')
+        if owner_year and owner_year != year_level:
+            raise ValidationError({'rubric': 'Selected rubric belongs to a different PIT year level.'})
+        if rubric and rubric.semester_id != semester.pk:
+            raise ValidationError({'rubric': 'Selected rubric belongs to a different semester.'})
+    old_values = pit_event_audit_values(existing_config) if existing_config else {}
 
     # Rubric Exclusivity Check
     if panel_rubric:
@@ -184,6 +209,7 @@ def upsert_pit_event_config(
                         raise ValidationError(f"Cannot modify deliverable checklist: {lock_reason}")
 
     defaults = {
+        'year_level': year_level,
         'panel_rubric': panel_rubric,
         'peer_rubric': peer_rubric,
         'panel_weight': panel_weight,
@@ -207,7 +233,7 @@ def upsert_pit_event_config(
     with transaction.atomic():
         config, _created = PitEventGradingConfig.objects.update_or_create(
             semester=semester,
-            event_name=event_name,
+            event_name=existing_config.event_name if existing_config else event_name,
             defaults=defaults,
         )
         if deliverables is not None:
@@ -239,6 +265,7 @@ def upsert_pit_event_config(
             from repository.deliverables.models import DeliverableSubmission
             for td in to_delete:
                 if td.deliverable_id and DeliverableSubmission.objects.filter(
+                    team__semester=semester, team__year_level=year_level, team__level__icontains='PIT',
                     stage_label__iexact=config.event_name,
                     deliverable_id=td.deliverable_id,
                 ).exists():
@@ -296,7 +323,19 @@ def upsert_pit_event_config(
                     if not deliv.deliverable_id:
                         deliv.deliverable_id = str(deliv.id)
                         deliv.save()
+        from authentication_access_control.audit import log_high_impact_action
+        from authentication_access_control.models import SystemAuditLog
+        log_high_impact_action(category=SystemAuditLog.CATEGORY_SCHEDULING,
+            action='pit_event.create' if _created else 'pit_event.update', target=config,
+            actor=user, request=request, old_values=old_values,
+            new_values=pit_event_audit_values(config), strict=True)
     return config
+
+
+def pit_event_audit_values(config):
+    values = pit_event_config_payload(config)
+    return {**values, 'scope': 'pit', 'year_level': config.year_level,
+            'semester_id': config.semester_id}
 
 
 def pit_event_config_payload(config):
@@ -324,6 +363,7 @@ def pit_event_config_payload(config):
     return {
         'id': config.id,
         'event_name': config.event_name,
+        'year_level': config.year_level,
         'event_code': config.event_code,
         'panel_rubric_id': config.panel_rubric_id,
         'peer_rubric_id': config.peer_rubric_id,

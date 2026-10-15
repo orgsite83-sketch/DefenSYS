@@ -153,7 +153,7 @@ def options_payload(entries, track='all'):
         'year_levels': sorted(set(['1st Year', '2nd Year', '3rd Year', '4th Year'] + year_levels)),
         'academic_years': sorted(academic_years, reverse=True),
         'semesters': sorted(set(['1st Semester', '2nd Semester', 'Summer'] + semesters)),
-        'stage_options': sorted(set(STAGE_OPTIONS + stages)),
+        'stage_options': sorted(set(([] if track == 'pit' else STAGE_OPTIONS) + stages)),
         'teams': teams_options_from_counts(team_counts),
         'deliverable_options': deliverable_options_payload(entries),
         'team_counts': team_counts,
@@ -345,12 +345,14 @@ def augment_deliverable_missing_rows(entries, deliverable_id='', stage_filter=''
 
     if scope.get('scope') == 'admin':
         stage_names = sorted(set(STAGE_OPTIONS + [e.get('stage') for e in entries if e.get('type') == 'capstone' and e.get('stage')]))
-        teams = list(_capstone_teams_queryset())
+        teams = list(_capstone_teams_queryset().filter(semester__is_active=True))
         for stage_name in stage_names:
             if stage_filter and stage_name != stage_filter:
                 continue
             definitions = deliverable_definitions_for_stage(stage_name)
             for definition in definitions:
+                if definition['type'] not in ('pre', 'post'):
+                    continue
                 if requested_id and definition['id'] != requested_id:
                     continue
                 for team in teams:
@@ -363,7 +365,7 @@ def augment_deliverable_missing_rows(entries, deliverable_id='', stage_filter=''
                         ))
 
     if scope.get('scope') in ('admin', 'pit_lead'):
-        from defense.scheduler.models import PitEventDeliverable
+        from defense.scheduler.models import DefenseSchedule, PitEventDeliverable
         from grading.grades.models import TeamGrade
         definitions = PitEventDeliverable.objects.select_related(
             'pit_event_config', 'pit_event_config__semester',
@@ -373,11 +375,17 @@ def augment_deliverable_missing_rows(entries, deliverable_id='', stage_filter=''
             definitions = definitions.filter(deliverable_id=requested_id)
         for item in definitions:
             config = item.pit_event_config
+            if not config.semester.is_active:
+                continue
             if stage_filter and config.event_name != stage_filter:
                 continue
-            team_ids = TeamGrade.objects.filter(
+            team_ids = set(TeamGrade.objects.filter(
                 pit_event_config=config, scope=TeamGrade.SCOPE_PIT,
-            ).values_list('team_id', flat=True)
+            ).values_list('team_id', flat=True))
+            team_ids.update(DefenseSchedule.objects.filter(
+                semester=config.semester, scope=DefenseSchedule.SCOPE_PIT,
+                event_name__iexact=config.event_name,
+            ).values_list('team_id', flat=True))
             teams = StudentTeam.objects.select_related(
                 'semester', 'semester__school_year',
             ).filter(id__in=team_ids, semester=config.semester,

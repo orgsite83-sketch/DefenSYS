@@ -235,6 +235,7 @@ class StageMinutesDeliverableCard extends StatelessWidget {
                   DefensysShadcnScope(
                     child: ShadButton.link(
                       size: ShadButtonSize.sm,
+                      expands: true,
                       onPressed: onConfigure,
                       child: const Text('Change in Stage Details'),
                     ),

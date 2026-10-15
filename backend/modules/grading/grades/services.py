@@ -764,14 +764,14 @@ def weights_for_schedule(schedule):
         from defense.scheduler.pit_config import get_pit_event_config, weights_for_pit_event
 
         label = schedule.event_name or schedule.stage_label
-        config = get_pit_event_config(schedule.semester, label)
+        config = get_pit_event_config(schedule.semester, label, year_level=schedule.team.year_level)
         if config is not None:
             return {
                 'panel_weight': config.panel_weight,
                 'peer_weight': config.peer_weight,
                 'adviser_weight': 0,
             }
-        return weights_for_pit_event(schedule.semester, label)
+        return weights_for_pit_event(schedule.semester, label, year_level=schedule.team.year_level)
 
     if schedule and schedule.rubric_id:
         rubric = schedule.rubric
@@ -796,16 +796,9 @@ def _is_pit_lead_only(user):
 def _is_pit_event_in_user_scope(config, label, user):
     if not _is_pit_lead_only(user):
         return True
-    pit_lead_year = (getattr(user, 'pit_lead_year', None) or '').strip()
-    if not pit_lead_year:
-        return False
-    from repository.project_archive.services import pit_event_matches_year_level
-    if pit_event_matches_year_level(label, pit_lead_year):
-        return True
-    semester = getattr(config, 'semester', None)
-    if config and semester:
-        return _grades_for_group(semester, TeamGrade.SCOPE_PIT, label, config=config, year_level=pit_lead_year).exists()
-    return False
+    from defense.scheduler.event_scope import pit_year
+    year = pit_year(getattr(user, 'pit_lead_year', ''))
+    return bool(year and config and config.year_level == year)
 
 
 def grade_queryset_for_user(user):
@@ -1143,7 +1136,7 @@ def _pit_event_config_for_schedule(schedule):
         return None
     from defense.scheduler.pit_config import get_pit_event_config
 
-    return get_pit_event_config(schedule.semester, schedule.event_name or schedule.stage_label)
+    return get_pit_event_config(schedule.semester, schedule.event_name or schedule.stage_label, year_level=schedule.team.year_level)
 
 
 def _identity_for_schedule(schedule):
@@ -1443,7 +1436,7 @@ class GradeContextService:
             lbl = grade.defense_stage.label if grade.defense_stage_id else grade.stage_label
             if not post_deliverables_complete(grade.team, lbl):
                 raise ValidationError({'deliverables': 'All required post-defense deliverables must be approved by the adviser before archiving.'})
-        if not verdict and (grade.final_grade is None or grade.final_grade < PASS_GRADE_THRESHOLD):
+        if grade.is_capstone and not verdict and (grade.final_grade is None or grade.final_grade < PASS_GRADE_THRESHOLD):
             raise ValidationError({'status': 'Only passed grades can be finalized for archive.'})
         if grade.status == TeamGrade.STATUS_PUBLISHED:
             return grade
@@ -1512,10 +1505,10 @@ class GradeContextService:
             team=team,
             scope=scope,
             status=TeamGrade.STATUS_PUBLISHED,
-            final_grade__gte=PASS_GRADE_THRESHOLD,
+            final_grade__isnull=False,
         )
         if scope == TeamGrade.SCOPE_CAPSTONE:
-            grades = grades.filter(Q(verdict=TeamGrade.VERDICT_APPROVED) | Q(
+            grades = grades.filter(final_grade__gte=PASS_GRADE_THRESHOLD).filter(Q(verdict=TeamGrade.VERDICT_APPROVED) | Q(
                 verdict=TeamGrade.VERDICT_APPROVED_WITH_REVISIONS, revisions_cleared_at__isnull=False))
         if semester:
             grades = grades.filter(semester=semester)
@@ -1655,7 +1648,7 @@ def find_matching_rubric(grade, evaluation_type):
 
         rubric = grade.pit_event_config.peer_rubric if grade.pit_event_config_id else None
         if rubric is None:
-            rubric = peer_rubric_for_pit_event(grade.semester, grade.stage_label)
+            rubric = peer_rubric_for_pit_event(grade.semester, grade.stage_label, year_level=grade.team.year_level)
         if rubric is not None:
             return (
                 Rubric.objects.select_related('defense_stage')
@@ -1696,7 +1689,7 @@ def _configured_rubric_for_grade(grade, evaluation_type):
     if config is None:
         from defense.scheduler.pit_config import get_pit_event_config
 
-        config = get_pit_event_config(grade.semester, grade.stage_label)
+        config = get_pit_event_config(grade.semester, grade.stage_label, year_level=grade.team.year_level)
     if config is None:
         return None
     if evaluation_type == Rubric.EVAL_PANEL:
@@ -1817,6 +1810,7 @@ def _pit_group_settings(semester, stage_label=None, *, pit_event_config=None):
     return {
         'scope': TeamGrade.SCOPE_PIT,
         'pit_event_config_id': config.id,
+        'year_level': config.year_level,
         'defense_stage_id': None,
         'stage_label': config.event_name,
         'is_officially_complete': payload['is_officially_complete'],
@@ -1866,7 +1860,7 @@ def group_settings_for_grade(grade):
     )
 
 
-def build_group_settings_map(grades_queryset, semester):
+def build_group_settings_map(grades_queryset, semester, *, user=None):
     if semester is None:
         return {}
     from defense.scheduler.models import PitEventGradingConfig
@@ -1884,7 +1878,7 @@ def build_group_settings_map(grades_queryset, semester):
         else:
             item = _capstone_group_settings(semester, label, defense_stage=defense_stage)
             cfg = defense_stage
-        counts = grading_readiness_counts_for_group(semester, scope, label, config=cfg)
+        counts = grading_readiness_counts_for_group(semester, scope, label, config=cfg, grades_queryset=grades_queryset)
         item.update(counts)
         result[key] = item
 
@@ -1907,11 +1901,14 @@ def build_group_settings_map(grades_queryset, semester):
             pit_event_config=pit_event_config,
         )
 
-    for stage in DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label'):
-        _put(TeamGrade.SCOPE_CAPSTONE, stage.label, defense_stage=stage)
-
-    for config in PitEventGradingConfig.objects.filter(semester=semester):
-        _put(TeamGrade.SCOPE_PIT, config.event_name, pit_event_config=config)
+    from authentication_access_control.scopes import is_admin_user, is_pit_lead_only
+    from defense.scheduler.event_scope import pit_events_for_user
+    if is_admin_user(user):
+        for stage in DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label'):
+            _put(TeamGrade.SCOPE_CAPSTONE, stage.label, defense_stage=stage)
+    if is_admin_user(user) or is_pit_lead_only(user):
+        for config in pit_events_for_user(user, semester=semester):
+            _put(TeamGrade.SCOPE_PIT, config.event_name, pit_event_config=config)
 
     return result
 
@@ -1929,6 +1926,8 @@ def _apply_team_result_from_grade(grade):
         mark_stage_result(grade, user=grade.published_by)
         return
 
+    # PIT retains the latest event's score indicator. Eligibility must never
+    # depend on it, and it is not the student's actual semester grade.
     next_status = (
         StudentTeam.STATUS_APPROVED
         if grade.final_grade is not None and grade.final_grade >= PASS_GRADE_THRESHOLD
@@ -1993,7 +1992,7 @@ def _grading_config_for_grade(grade, semester, scope, config=None):
 
         if grade.pit_event_config_id:
             return grade.pit_event_config
-        return get_pit_event_config(semester, grade.stage_label)
+        return get_pit_event_config(semester, grade.stage_label, year_level=grade.team.year_level)
 
     class _CapstonePlaceholder:
         peer_grading_enabled = False
@@ -2011,6 +2010,7 @@ def _grades_for_group(semester, scope, stage_label, *, config=None, year_level=N
         grades = grades.filter(team__year_level=year_level)
     if scope == TeamGrade.SCOPE_PIT:
         if config is not None:
+            grades = grades.filter(team__year_level=config.year_level, team__level__icontains='PIT')
             return grades.filter(
                 Q(pit_event_config=config)
                 | Q(pit_event_config__isnull=True, stage_label__iexact=getattr(config, 'event_name', label))
@@ -2164,16 +2164,11 @@ def incomplete_grading_teams_for_group(
 
 
 
-def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=None, year_level=None):
-    grades = list(
-        grade_review_queryset(_grades_for_group(
-            semester,
-            scope,
-            stage_label,
-            config=config,
-            year_level=year_level,
-        )).select_related('team', 'semester')
-    )
+def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=None, year_level=None, grades_queryset=None):
+    group = _grades_for_group(semester, scope, stage_label, config=config, year_level=year_level)
+    if grades_queryset is not None:
+        group = group.filter(pk__in=grades_queryset.values('pk'))
+    grades = list(grade_review_queryset(group).select_related('team', 'semester'))
     total = len(grades)
     redefense_teams = [
         {'team_id': grade.team_id, 'team_name': grade.team.name}
@@ -2305,6 +2300,7 @@ def group_completion_readiness(*, semester, scope, stage_label, user):
 
 
 def _auto_finalize_passed_grades_in_queryset(grades, user=None):
+    """Finalize eligible records; every complete PIT score is eligible."""
     from .peer_eval import is_team_peer_eval_complete, peer_submission_count
 
     ready_count = 0
@@ -2337,7 +2333,7 @@ def _auto_finalize_passed_grades_in_queryset(grades, user=None):
             _apply_team_result_from_grade(grade)
             skipped_below_threshold += 1
             continue
-        if not verdict and (grade.final_grade is None or grade.final_grade < PASS_GRADE_THRESHOLD):
+        if grade.is_capstone and not verdict and (grade.final_grade is None or grade.final_grade < PASS_GRADE_THRESHOLD):
             _mark_schedule_done_from_grade(grade)
             _apply_team_result_from_grade(grade)
             skipped_below_threshold += 1
@@ -2405,7 +2401,7 @@ def maybe_auto_finalize_passed_grade(grade, user=None):
     if grade.is_complete and team_grading_readiness(grade, grade.semester, grade.scope)['ready']:
         if verdict in TeamGrade.PASSING_VERDICTS:
             return finalize_passed_grade_for_archive(grade, user=user)
-        if not verdict and grade.final_grade is not None and grade.final_grade >= PASS_GRADE_THRESHOLD:
+        if grade.scope == TeamGrade.SCOPE_PIT or (not verdict and grade.final_grade is not None and grade.final_grade >= PASS_GRADE_THRESHOLD):
             return finalize_passed_grade_for_archive(grade, user=user)
     return grade
 
@@ -2445,6 +2441,9 @@ class StageCompletionService:
     @classmethod
     def complete_group(cls, *, semester, scope, stage_label, config, user=None, peer_grading_enabled=None):
         label = (stage_label or '').strip()
+        from authentication_access_control.scopes import is_admin_user
+        if user is not None and not is_admin_user(user) and (not _is_pit_lead_only(user) or scope != TeamGrade.SCOPE_PIT):
+            raise PermissionDenied('Only administrators can complete Capstone groups.')
         if _is_pit_lead_only(user):
             if scope != TeamGrade.SCOPE_PIT:
                 raise PermissionDenied('PIT leads can only complete PIT events.')
@@ -2581,6 +2580,9 @@ def update_group_settings(
     label = (stage_label or '').strip()
     if not label:
         raise ValidationError({'stage_label': 'Stage or event label is required.'})
+    from authentication_access_control.scopes import is_admin_user
+    if user is not None and not is_admin_user(user) and (not _is_pit_lead_only(user) or scope != TeamGrade.SCOPE_PIT):
+        raise PermissionDenied('Only administrators can manage Capstone settings.')
     update_fields = []
     if scope == TeamGrade.SCOPE_PIT:
         if _is_pit_lead_only(user) and scope != TeamGrade.SCOPE_PIT:
@@ -2594,6 +2596,8 @@ def update_group_settings(
         ).first()
         if config is None:
             raise ValidationError({'stage_label': f'No PIT event configuration found for "{label}".'})
+        from defense.scheduler.event_scope import require_pit_year
+        require_pit_year(config.year_level)
         if _is_pit_lead_only(user) and not _is_pit_event_in_user_scope(config, label, user):
             raise PermissionDenied('PIT leads can only manage PIT event settings for their assigned year level.')
     else:
@@ -2633,7 +2637,7 @@ def update_group_settings(
             update_fields.append('peer_grading_enabled')
 
     if update_fields:
-        year_level = getattr(user, 'pit_lead_year', '') if scope == TeamGrade.SCOPE_PIT else ''
+        year_level = config.year_level if scope == TeamGrade.SCOPE_PIT else ''
         if scope == TeamGrade.SCOPE_PIT and not year_level:
             year_level = _single_year_level_for_grades(
                 _grades_for_group(semester, scope, label, config=config)
@@ -2691,6 +2695,10 @@ def update_group_settings(
 
 
 def require_grade_editable(grade):
+    if grade.scope == TeamGrade.SCOPE_PIT and grade.pit_event_config_id:
+        config = grade.pit_event_config
+        if config.year_level != grade.team.year_level or config.semester_id != grade.semester_id:
+            raise ValidationError('This PIT assessment is outside the team cohort and is read-only.')
     from .defense_workflow import require_current, replacement_for
     require_current(grade)
     if grade.defense_stage_id and (grade.project_version > 1 or replacement_for(grade.team, grade.defense_stage)) and grade.status not in TeamGrade.LOCKED_STATUSES:

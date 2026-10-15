@@ -1,3 +1,4 @@
+import 'package:defensys/theme/program_colors.dart';
 import 'package:flutter/material.dart';
 
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
@@ -165,7 +166,7 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
         Text(
           teamName,
           style: TextStyle(
-            color: _textPrimary,
+            color: DefensysTokens.textPrimaryOf(context),
             fontSize: 13.5,
             fontWeight: FontWeight.bold,
           ),
@@ -304,15 +305,15 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           decoration: BoxDecoration(
-            color: _isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.25) : const Color(0xFFEFF6FF),
+            color: ProgramColors.of(context, data: team).tint,
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: _isDark ? const Color(0xFF1E40AF) : const Color(0xFFBFDBFE)),
+            border: Border.all(color: ProgramColors.of(context, data: team).border),
           ),
           child: Text(
             defenseText,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: _isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
+              color: ProgramColors.of(context, data: team).text,
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -693,11 +694,69 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                           ),
                           if (!isPit)
                             DefensysTableColumn<Map<String, dynamic>>(
-                              title: 'STAGE PROGRESS',
-                              flex: 1.4,
-                              minWidth: 170,
-                              cellBuilder: (context, team, index) =>
-                                  currentStageBadge(context, team),
+                              title: 'STAGE & DELIVERABLES',
+                              flex: 1.6,
+                              minWidth: 175,
+                              cellBuilder: (context, team, index) {
+                                final deliverableCount = (team['defense_context'] is Map
+                                    ? team['defense_context']['deliverable_count']
+                                    : null) as num? ?? team['deliverable_count'] as num? ?? 0;
+                                final teamId = _asInt(team['id']);
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    currentStageBadge(context, team),
+                                    const SizedBox(height: 3),
+                                    InkWell(
+                                      onTap: teamId == null
+                                          ? null
+                                          : () => widget.onOpenTeamDetail(teamId),
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 2),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              deliverableCount > 0
+                                                  ? Icons.check_circle_outline_rounded
+                                                  : Icons.description_outlined,
+                                              size: 11,
+                                              color: deliverableCount > 0
+                                                  ? const Color(0xFF059669)
+                                                  : _textSecondary,
+                                            ),
+                                            const SizedBox(width: 3),
+                                            Text(
+                                              deliverableCount > 0
+                                                  ? '$deliverableCount ${deliverableCount == 1 ? 'file' : 'files'} submitted'
+                                                  : 'No files yet',
+                                              style: TextStyle(
+                                                fontSize: 10.5,
+                                                color: deliverableCount > 0
+                                                    ? (_isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857))
+                                                    : _textSecondary,
+                                                fontWeight: deliverableCount > 0
+                                                    ? FontWeight.w600
+                                                    : FontWeight.normal,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 2),
+                                            Icon(
+                                              Icons.chevron_right_rounded,
+                                              size: 12,
+                                              color: deliverableCount > 0
+                                                  ? (_isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857))
+                                                  : _textSecondary,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
                             ),
                           DefensysTableColumn<Map<String, dynamic>>(
                             title: 'DETAILS',
@@ -720,9 +779,7 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                 ),
                                 label: const Text('View'),
                                 style: TextButton.styleFrom(
-                                  foregroundColor: isDark
-                                      ? const Color(0xFF93C5FD)
-                                      : DefensysUi.techBlue,
+                                  foregroundColor: DefensysTokens.maroonTextOf(context),
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 8,
                                   ),

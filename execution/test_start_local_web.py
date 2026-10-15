@@ -3,6 +3,7 @@
 import argparse
 from contextlib import ExitStack, redirect_stderr, redirect_stdout
 import io
+import json
 import subprocess
 import threading
 import unittest
@@ -11,15 +12,123 @@ from unittest.mock import Mock, call, patch
 from execution import start_local_web as launcher
 
 
+class NetworkDetectionTests(unittest.TestCase):
+    def setUp(self):
+        self.wifi = launcher.NetworkAddress('Wi-Fi', '172.20.10.2', True)
+        self.ethernet = launcher.NetworkAddress('Ethernet', '192.168.1.3', True)
+        self.vpn = launcher.NetworkAddress('VPN', '10.8.0.2', True, True)
+        self.vm = launcher.NetworkAddress('VirtualBox', '192.168.56.1', False, True)
+
+    def test_inventory_keeps_hotspot_addresses_and_identifies_virtual_adapters(self):
+        records = [
+            dict(name='Wi-Fi', address='172.20.10.2', gateway=True, type='Wireless80211'),
+            dict(name='USB tethering', address='192.168.42.10', gateway=True, type='Ethernet',
+                 description='Remote NDIS based Internet Sharing Device'),
+            dict(name='VM', address='192.168.56.1', description='VirtualBox Host-Only Ethernet Adapter'),
+            dict(name='VPN', address='10.8.0.2', type='Tunnel'),
+            dict(name='Loopback', address='127.0.0.1'),
+            dict(name='Unconfigured', address='169.254.1.2'),
+            dict(name='Public', address='203.0.113.1'),
+            dict(name='IPv6', address='fe80::1'),
+            dict(name='Malformed'),
+        ]
+        result = launcher.parse_network_addresses(json.dumps(records))
+        self.assertEqual([item.address for item in result], ['172.20.10.2', '192.168.42.10', '192.168.56.1', '10.8.0.2'])
+        self.assertEqual([item.virtual for item in result], [False, False, True, True])
+
+    def test_single_adapter_json_is_supported(self):
+        records = dict(name='Wi-Fi', address='172.20.10.2', gateway=True)
+        self.assertEqual(launcher.parse_network_addresses(json.dumps(records)), [self.wifi])
+
+    def test_hotspot_is_selected_when_default_route_uses_a_vpn(self):
+        with patch.object(launcher, 'default_route_ip', return_value=self.vpn.address):
+            self.assertEqual(launcher.detect_lan_ip(addresses=[self.vm, self.vpn, self.wifi]), self.wifi.address)
+
+    def test_hotspot_without_default_route_or_internet_is_supported(self):
+        offline_wifi = launcher.NetworkAddress('Wi-Fi', '192.168.43.25')
+        with patch.object(launcher, 'default_route_ip', side_effect=OSError('No route')):
+            self.assertEqual(launcher.detect_lan_ip(addresses=[self.vm, offline_wifi]), offline_wifi.address)
+
+    def test_public_default_route_does_not_hide_private_hotspot(self):
+        with patch.object(launcher, 'default_route_ip', side_effect=argparse.ArgumentTypeError('Public IP')):
+            self.assertEqual(launcher.detect_lan_ip(addresses=[self.wifi]), self.wifi.address)
+
+    def test_default_route_is_used_when_it_is_a_lan_adapter(self):
+        with patch.object(launcher, 'default_route_ip', return_value=self.ethernet.address):
+            self.assertEqual(launcher.detect_lan_ip(addresses=[self.wifi, self.ethernet]), self.ethernet.address)
+
+    def test_interface_override_uses_hotspot_instead_of_ethernet(self):
+        with patch.object(launcher, 'default_route_ip', return_value=self.ethernet.address):
+            self.assertEqual(launcher.detect_lan_ip(interface='wi-fi', addresses=[self.wifi, self.ethernet]), self.wifi.address)
+
+    def test_missing_interface_never_falls_back_to_another_adapter(self):
+        with patch.object(launcher, 'default_route_ip', return_value=self.ethernet.address):
+            with self.assertRaisesRegex(RuntimeError, 'No active private IPv4'):
+                launcher.detect_lan_ip(interface='Wi-Fi', addresses=[self.ethernet])
+
+    def test_ambiguous_adapters_require_an_override(self):
+        with patch.object(launcher, 'default_route_ip', return_value=self.vpn.address):
+            with self.assertRaisesRegex(RuntimeError, 'Wi-Fi: 172.20.10.2.*Ethernet: 192.168.1.3'):
+                launcher.detect_lan_ip(addresses=[self.wifi, self.ethernet, self.vpn])
+
+    def test_gateway_adapter_is_preferred_over_unrouted_lan(self):
+        unrouted = launcher.NetworkAddress('Ethernet', '192.168.1.3')
+        with patch.object(launcher, 'default_route_ip', side_effect=OSError('No route')):
+            self.assertEqual(launcher.detect_lan_ip(addresses=[unrouted, self.wifi]), self.wifi.address)
+
+    def test_only_virtual_adapters_are_not_advertised_automatically(self):
+        with patch.object(launcher, 'default_route_ip', return_value=self.vpn.address):
+            with self.assertRaisesRegex(RuntimeError, 'No active LAN/hotspot'):
+                launcher.detect_lan_ip(addresses=[self.vm, self.vpn])
+            self.assertEqual(launcher.detect_lan_ip(interface='VPN', addresses=[self.vpn]), self.vpn.address)
+
+    def test_default_route_fallback_when_inventory_is_unavailable(self):
+        with patch.object(launcher, 'default_route_ip', return_value=self.wifi.address):
+            self.assertEqual(launcher.detect_lan_ip(addresses=[]), self.wifi.address)
+
+    def test_windows_inventory_failure_falls_back_without_crashing(self):
+        for failure in [OSError('PowerShell missing'), subprocess.TimeoutExpired('powershell', 10)]:
+            with self.subTest(failure=failure), patch.object(launcher.os, 'name', 'nt'), \
+                    patch.object(launcher.subprocess, 'run', side_effect=failure), \
+                    patch.object(launcher.subprocess, 'CREATE_NO_WINDOW', 0, create=True):
+                self.assertEqual(launcher.network_addresses(), [])
+        with patch.object(launcher.os, 'name', 'nt'), \
+                patch.object(launcher.subprocess, 'run', return_value=Mock(stdout='invalid JSON')), \
+                patch.object(launcher.subprocess, 'CREATE_NO_WINDOW', 0, create=True):
+            self.assertEqual(launcher.network_addresses(), [])
+
+
+class BrowserApiCheckTests(unittest.TestCase):
+    def test_checks_origin_header_and_requires_matching_cors_response(self):
+        origin = 'http://172.20.10.2:57583'
+        url = 'http://172.20.10.2:8000/api/health/'
+        for allowed in [origin, None, '*', 'http://192.168.1.3:57583']:
+            with self.subTest(allowed=allowed), patch.object(launcher.HTTP, 'open') as request:
+                response = request.return_value.__enter__.return_value
+                response.status = 200
+                response.headers = {'Access-Control-Allow-Origin': allowed}
+                self.assertEqual(launcher.cors_ready(url, origin), allowed == origin)
+                self.assertEqual(request.call_args.args[0].get_header('Origin'), origin)
+                self.assertEqual(request.call_args.args[0].full_url, url)
+
+    def test_unreachable_api_reports_failed_browser_check(self):
+        with patch.object(launcher.HTTP, 'open', side_effect=launcher.URLError('No connection')):
+            self.assertFalse(launcher.cors_ready('http://172.20.10.2:8000/api/health/', 'http://172.20.10.2:57583'))
+
+
 class LocalWebLauncherTests(unittest.TestCase):
     def setup_runtime(self, stack):
-        stack.enter_context(redirect_stdout(io.StringIO()))
-        stack.enter_context(redirect_stderr(io.StringIO()))
-        stack.enter_context(patch.object(launcher, 'detect_lan_ip', return_value='192.168.1.3'))
-        stack.enter_context(patch.object(launcher.socket, 'socket'))
+        self.output = io.StringIO()
+        self.errors = io.StringIO()
+        stack.enter_context(redirect_stdout(self.output))
+        stack.enter_context(redirect_stderr(self.errors))
+        self.detect = stack.enter_context(patch.object(launcher, 'detect_lan_ip', return_value='192.168.1.3'))
+        self.addresses = stack.enter_context(patch.object(launcher, 'network_addresses', return_value=[]))
+        self.socket = stack.enter_context(patch.object(launcher.socket, 'socket'))
         stack.enter_context(patch.object(launcher, 'flutter_command', return_value=['flutter']))
         self.listening = stack.enter_context(patch.object(launcher, 'listening', return_value=False))
         self.ready = stack.enter_context(patch.object(launcher, 'ready', return_value=True))
+        self.cors = stack.enter_context(patch.object(launcher, 'cors_ready', return_value=True))
         self.start = stack.enter_context(patch.object(launcher, 'start'))
         self.start.return_value.poll.return_value = None
         def started(command, cwd, **kwargs):
@@ -50,6 +159,52 @@ class LocalWebLauncherTests(unittest.TestCase):
             self.start.assert_not_called()
             self.stop.assert_not_called()
             self.browser.assert_not_called()
+
+    def test_check_mode_lists_adapters_and_checks_browser_api_access(self):
+        with ExitStack() as stack:
+            self.setup_runtime(stack)
+            self.addresses.return_value = [launcher.NetworkAddress('Wi-Fi', '172.20.10.2', True)]
+            self.detect.return_value = '172.20.10.2'
+            self.assertEqual(launcher.main(['--check', '--no-android']), 0)
+            self.assertIn('Wi-Fi: 172.20.10.2', self.output.getvalue())
+            self.assertIn('Browser API access (CORS): True', self.output.getvalue())
+            self.cors.assert_called_once_with('http://172.20.10.2:8000/api/health/', 'http://172.20.10.2:57583')
+            self.start.assert_not_called()
+            self.stop.assert_not_called()
+
+    def test_hotspot_host_is_shared_by_web_and_android(self):
+        with ExitStack() as stack:
+            self.setup_runtime(stack)
+            self.android.return_value = 'demo-phone'
+            self.assertEqual(launcher.main(['--host', '172.20.10.2', '--no-browser']), 0)
+            commands = [item.args[0] for item in self.start.call_args_list]
+            self.assertIn('--dart-define=DEFENSYS_WEB_ORIGIN=http://172.20.10.2:57583', commands[0])
+            self.assertIn('--dart-define=DEFENSYS_API_HOST=172.20.10.2', commands[1])
+            self.detect.assert_not_called()
+
+    def test_interface_flag_is_passed_to_network_detection(self):
+        with ExitStack() as stack:
+            self.setup_runtime(stack)
+            self.assertEqual(launcher.main(['--interface', 'Wi-Fi', '--check', '--no-android']), 0)
+            self.detect.assert_called_once_with(interface='Wi-Fi', addresses=[])
+
+    def test_host_and_interface_cannot_be_requested_together(self):
+        with ExitStack() as stack:
+            self.setup_runtime(stack)
+            with self.assertRaises(SystemExit) as error:
+                launcher.main(['--host', '172.20.10.2', '--interface', 'Wi-Fi'])
+            self.assertEqual(error.exception.code, 2)
+            self.start.assert_not_called()
+
+    def test_phone_gateway_address_is_rejected_before_starting_anything(self):
+        with ExitStack() as stack:
+            self.setup_runtime(stack)
+            self.socket.return_value.__enter__.return_value.bind.side_effect = OSError('Cannot assign address')
+            self.assertEqual(launcher.main(['--host', '172.20.10.1']), 1)
+            self.assertIn('rather than the phone/gateway address', self.errors.getvalue())
+            self.start.assert_not_called()
+            self.android.assert_not_called()
+            self.stop_web.assert_not_called()
 
     def test_check_mode_with_restart_flags_is_still_read_only(self):
         with ExitStack() as stack:

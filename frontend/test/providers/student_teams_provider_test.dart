@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -42,6 +43,28 @@ void main() {
     final next = state.copyWith(clearError: true);
 
     expect(next.error, isNull);
+  });
+
+  test('stale preview failure cannot replace a newer successful validation', () async {
+    final responses = [Completer<http.Response>(), Completer<http.Response>()];
+    final bothStarted = Completer<void>();
+    var count = 0;
+    setApiHttpClientForTesting(MockClient((request) {
+      final index = count++;
+      if (count == 2) bothStarted.complete();
+      return responses[index].future;
+    }));
+    final container = ProviderContainer(overrides: authTestOverrides());
+    addTearDown(container.dispose);
+    final notifier = container.read(studentTeamsProvider.notifier);
+    final older = notifier.bulkImportPreview([{'team_name': 'Old'}]);
+    final newer = notifier.bulkImportPreview([{'team_name': 'New'}]);
+    await bothStarted.future;
+    responses[1].complete(http.Response('{"rows":[],"summary":{"ready":0}}', 200));
+    expect(await newer, isNotNull);
+    responses[0].complete(http.Response('{"detail":"Old validation error"}', 400));
+    expect(await older, isNull);
+    expect(container.read(studentTeamsProvider).error, isNull);
   });
 
   test('section choices ignore directory search without changing its filters', () async {

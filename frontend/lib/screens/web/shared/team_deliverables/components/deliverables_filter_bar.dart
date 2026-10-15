@@ -1,3 +1,4 @@
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,22 +21,15 @@ int _count(CapstoneDeliverablesState state, String key) {
   return _asInt(state.counts[key]);
 }
 
-BoxDecoration _cardDecoration() {
+BoxDecoration _cardDecoration(BuildContext context) {
   return BoxDecoration(
-    color: Colors.white,
-    borderRadius: BorderRadius.circular(16),
-    border: Border.all(color: const Color(0xFFE2E8F0)),
-    boxShadow: [
-      BoxShadow(
-        color: Colors.black.withValues(alpha: 0.02),
-        blurRadius: 10,
-        offset: const Offset(0, 4),
-      ),
-    ],
+    color: DefensysTokens.surfaceOf(context),
+    borderRadius: BorderRadius.circular(12),
+    border: Border.all(color: DefensysTokens.borderOf(context)),
   );
 }
 
-Widget _compactStatItem(String label, int count, IconData icon, Color color) {
+Widget _compactStatItem(BuildContext context, String label, int count, IconData icon, Color color) {
   return Row(
     mainAxisSize: MainAxisSize.min,
     children: [
@@ -54,19 +48,19 @@ Widget _compactStatItem(String label, int count, IconData icon, Color color) {
         children: [
           Text(
             count.toString(),
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
+              color: DefensysTokens.textPrimaryOf(context),
               height: 1.1,
             ),
           ),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: AppColors.textSecondary,
+              color: DefensysTokens.textSecondaryOf(context),
               height: 1.1,
             ),
           ),
@@ -77,19 +71,20 @@ Widget _compactStatItem(String label, int count, IconData icon, Color color) {
 }
 
 Widget buildDeliverablesStats(CapstoneDeliverablesState state) {
+  return Builder(builder: (context) {
   final teamLabel = state.scope == 'pit' ? 'PIT Teams' : 'Capstone Teams';
   final items = [
-    _compactStatItem(teamLabel, _count(state, 'teams'), Icons.groups_2_outlined, AppColors.maroon),
-    _compactStatItem('Ready', _count(state, 'ready'), Icons.verified_outlined, AppColors.success),
-    _compactStatItem('Pending', _count(state, 'pending_review'), Icons.rate_review_outlined, Colors.orange),
-    _compactStatItem('Missing', _count(state, 'missing_requirements'), Icons.warning_amber_outlined, AppColors.warning),
-    _compactStatItem('Files', _count(state, 'submitted_files'), Icons.folder_copy_outlined, Colors.blue),
-    _compactStatItem('Archive Files', _count(state, 'archive_files'), Icons.inventory_2_outlined, AppColors.gold),
+    _compactStatItem(context, teamLabel, _count(state, 'teams'), Icons.groups_2_outlined, DefensysTokens.maroonTextOf(context)),
+    _compactStatItem(context, 'Ready', _count(state, 'ready'), Icons.verified_outlined, AppColors.success),
+    _compactStatItem(context, 'Pending', _count(state, 'pending_review'), Icons.rate_review_outlined, Colors.orange),
+    _compactStatItem(context, 'Missing', _count(state, 'missing_requirements'), Icons.warning_amber_outlined, AppColors.warning),
+    _compactStatItem(context, 'Files', _count(state, 'submitted_files'), Icons.folder_copy_outlined, Colors.blue),
+    _compactStatItem(context, 'Archive Files', _count(state, 'archive_files'), Icons.inventory_2_outlined, AppColors.gold),
   ];
 
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-    decoration: _cardDecoration(),
+    decoration: _cardDecoration(context),
     child: LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth < 900) {
@@ -124,6 +119,7 @@ Widget buildDeliverablesStats(CapstoneDeliverablesState state) {
       },
     ),
   );
+  });
 }
 
 class DeliverablesFilterBar extends ConsumerStatefulWidget {
@@ -155,6 +151,7 @@ class DeliverablesFilterBar extends ConsumerStatefulWidget {
 }
 
 class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
+
   Timer? _debounceTimer;
 
   @override
@@ -166,26 +163,26 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
   InputDecoration _toolbarInputDec({required String label, IconData? prefixIcon}) {
     return InputDecoration(
       labelText: label,
-      prefixIcon: prefixIcon != null ? Icon(prefixIcon, size: 20) : null,
+      prefixIcon: prefixIcon != null ? Icon(prefixIcon, size: 18) : null,
       filled: true,
       fillColor: const Color(0xFFF8FAFC),
-      labelStyle: const TextStyle(
-        color: Color(0xFF64748B),
-        fontSize: 13,
+      labelStyle: TextStyle(
+        color: DefensysTokens.textSecondaryOf(context),
+        fontSize: 12.5,
         fontWeight: FontWeight.w500,
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: DefensysTokens.maroonOf(context), width: 1.5),
       ),
     );
   }
@@ -222,7 +219,11 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
     final searchField = TextField(
       controller: widget.searchController,
       decoration: _toolbarInputDec(
-        label: widget.isAdviser ? 'Search team, project' : 'Search team, project, adviser',
+        label: widget.isAdviser
+            ? 'Search team, project'
+            : (widget.state.scope == 'pit'
+                ? 'Search team, project, instructor'
+                : 'Search team, project, adviser'),
         prefixIcon: Icons.search,
       ),
       style: const TextStyle(
@@ -254,9 +255,9 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
       decoration: _toolbarInputDec(
         label: widget.state.scope == 'pit' ? 'PIT Event' : 'Stage View',
       ),
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 13,
-        color: AppColors.textPrimary,
+        color: DefensysTokens.textPrimaryOf(context),
       ),
       hint: Text(
         stageOptions.isEmpty
@@ -290,9 +291,9 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
     final statusDropdown = DropdownButtonFormField<String>(
       initialValue: widget.state.status,
       decoration: _toolbarInputDec(label: 'Status'),
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 13,
-        color: AppColors.textPrimary,
+        color: DefensysTokens.textPrimaryOf(context),
       ),
       isExpanded: true,
       items: statuses
@@ -324,20 +325,20 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
             .read(capstoneDeliverablesProvider.notifier)
             .fetchDeliverables(search: '', status: '');
       },
-      icon: const Icon(Icons.clear_all_rounded, size: 18),
+      icon: const Icon(Icons.clear_all_rounded, size: 16),
       label: const Text(
         'Clear Filters',
         style: TextStyle(
-          fontWeight: FontWeight.bold,
-          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          fontSize: 12.5,
         ),
       ),
       style: OutlinedButton.styleFrom(
-        foregroundColor: const Color(0xFF64748B),
-        side: const BorderSide(color: Color(0xFFCBD5E1)),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        foregroundColor: const Color(0xFF475569),
+        side: BorderSide(color: DefensysTokens.borderOf(context)),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(8),
         ),
       ),
     );
@@ -387,7 +388,7 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
     );
 
     return Container(
-      decoration: _cardDecoration(),
+      decoration: _cardDecoration(context),
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -415,17 +416,17 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
         onTap: () {
           widget.onTriageFilterChanged?.call(filter);
         },
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(8),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             color: isSelected
-                ? AppColors.maroon.withValues(alpha: 0.08)
-                : const Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(20),
+                ? DefensysTokens.maroonOf(context).withValues(alpha: 0.08)
+                : DefensysTokens.surfaceHigherOf(context),
+            borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: isSelected ? AppColors.maroon : const Color(0xFFE2E8F0),
+              color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
               width: isSelected ? 1.5 : 1.0,
             ),
           ),
@@ -447,7 +448,7 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
                 Icon(
                   icon,
                   size: 13,
-                  color: isSelected ? AppColors.maroon : const Color(0xFF64748B),
+                  color: isSelected ? DefensysTokens.maroonTextOf(context) : DefensysTokens.textSecondaryOf(context),
                 ),
                 const SizedBox(width: 5),
               ],
@@ -456,7 +457,7 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                  color: isSelected ? AppColors.maroon : const Color(0xFF475569),
+                  color: isSelected ? DefensysTokens.maroonTextOf(context) : DefensysTokens.textSecondaryOf(context),
                 ),
               ),
             ],
@@ -469,9 +470,9 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
   Widget _buildViewToggle() {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: DefensysTokens.surfaceHigherOf(context),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFCBD5E1)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       padding: const EdgeInsets.all(2.5),
       child: Row(
@@ -505,7 +506,7 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: isActive ? Colors.white : Colors.transparent,
+          color: isActive ? DefensysTokens.surfaceOf(context) : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           boxShadow: isActive
               ? [
@@ -523,7 +524,7 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
             Icon(
               icon,
               size: 14,
-              color: isActive ? AppColors.maroon : const Color(0xFF64748B),
+              color: isActive ? DefensysTokens.maroonTextOf(context) : DefensysTokens.textSecondaryOf(context),
             ),
             const SizedBox(width: 5),
             Text(
@@ -531,7 +532,7 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
               style: TextStyle(
                 fontSize: 11.5,
                 fontWeight: isActive ? FontWeight.bold : FontWeight.w600,
-                color: isActive ? AppColors.maroon : const Color(0xFF64748B),
+                color: isActive ? DefensysTokens.maroonTextOf(context) : DefensysTokens.textSecondaryOf(context),
               ),
             ),
           ],

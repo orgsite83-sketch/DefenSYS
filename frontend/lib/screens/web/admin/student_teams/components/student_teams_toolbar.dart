@@ -1,3 +1,4 @@
+import 'package:defensys/theme/program_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -251,12 +252,12 @@ class StudentTeamsLevelFilter extends StatelessWidget {
           options: levels.entries.map(
             (entry) => ShadOption(
               value: entry.key,
-              child: Text(entry.value, style: const TextStyle(fontSize: 12.5)),
+              child: Text(entry.value, style: TextStyle(fontSize: 12.5, color: ProgramColors.of(context, scope: entry.key).text)),
             ),
           ),
           selectedOptionBuilder: (_, value) => Text(
             levels[value]!,
-            style: const TextStyle(fontSize: 12.5),
+            style: TextStyle(fontSize: 12.5, color: ProgramColors.of(context, scope: value).text),
           ),
           onChanged: onLevelChanged,
         ),

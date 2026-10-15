@@ -42,7 +42,7 @@ class StageFileAccessTests(APITestCase):
         self.other_pit = self.make_team('PIT 2', '2nd Year', StudentTeam.LEVEL_2_PIT)
         TeamMembership.objects.create(team=self.team, student=self.student)
         for year in ('2nd Year', '3rd Year'):
-            config = PitEventGradingConfig.objects.create(semester=self.semester, event_name=f'{year} PIT Showcase', is_officially_complete=True)
+            config = PitEventGradingConfig.objects.create(year_level=year, semester=self.semester, event_name=f'{year} PIT Showcase', is_officially_complete=True)
             for pk in ('P1', 'P2'):
                 PitEventDeliverable.objects.create(pit_event_config=config, deliverable_id=pk, label=pk, deliverable_type='pre')
         self.approved = DeliverableSubmission.objects.create(team=self.team, stage_label=self.stage.label,

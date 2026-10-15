@@ -192,7 +192,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
         for grade in TeamGrade.objects.filter(team=obj, semester=obj.semester):
             if grade.status == TeamGrade.STATUS_PUBLISHED and grade.result == 'passed' and grade.defense_stage:
                 completed.add(grade.defense_stage.label)
-            elif grade.scope == TeamGrade.SCOPE_PIT and grade.status == TeamGrade.STATUS_PUBLISHED and grade.result == 'passed' and grade.stage_label:
+            elif grade.scope == TeamGrade.SCOPE_PIT and grade.status == TeamGrade.STATUS_PUBLISHED and grade.stage_label:
                 completed.add(grade.stage_label)
         return sorted(list(completed))
 
@@ -417,11 +417,16 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
         from repository.deliverables.timing import due_before_defense, materials_readiness
         from repository.deliverables.models import DeliverableSubmission
 
+        if not hasattr(self, '_material_permissions_loaded'):
+            from repository.deliverables.timing import load_material_permissions
+            records = self.parent.instance if self.parent and self.parent.instance is not None else [obj]
+            load_material_permissions(list(records))
+            self._material_permissions_loaded = True
         if not hasattr(self, '_material_definitions'):
             self._material_definitions = {}
         key = (obj.scope, obj.semester_id if obj.scope == 'pit' else None, obj.stage_label)
         if key not in self._material_definitions:
-            self._material_definitions[key] = get_deliverable_definitions_for_scope(obj.scope, obj.semester_id, obj.stage_label)
+            self._material_definitions[key] = get_deliverable_definitions_for_scope(obj.scope, obj.semester_id, obj.stage_label, year_level=obj.team.year_level)
         definitions = self._material_definitions[key]
         if not any(item.get('required') and due_before_defense(item) for item in definitions):
             return materials_readiness(obj, definitions=definitions, submitted={})
@@ -432,7 +437,7 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
             team_ids = {item.team_id for item in records}
             versions = {item.project_version for item in records}
             for submission in DeliverableSubmission.all_objects.filter(team_id__in=team_ids,
-                    project_version__in=versions).only('team_id', 'project_version', 'stage_label', 'deliverable_id', 'status', 'file'):
+                    project_version__in=versions).only('team_id', 'project_version', 'stage_label', 'deliverable_id', 'status', 'file', 'is_late'):
                 submission_key = (submission.team_id, submission.project_version, submission.stage_label.lower())
                 self._material_submissions.setdefault(submission_key, {})[submission.deliverable_id] = submission
         submitted = self._material_submissions.get((obj.team_id, obj.project_version, obj.stage_label.lower()), {})
@@ -566,7 +571,7 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
     def get_pit_event_config_id(self, obj):
         if obj.scope != DefenseSchedule.SCOPE_PIT:
             return None
-        config = get_pit_event_config(obj.semester, obj.event_name)
+        config = get_pit_event_config(obj.semester, obj.event_name, year_level=obj.team.year_level)
         return config.id if config else None
 
     def get_created_by_name(self, obj):
@@ -686,48 +691,29 @@ class ScheduleBaseSerializer(serializers.Serializer):
         return attrs
 
     def _validate_pit_event_setup(self, attrs):
+        # Validation is read-only. Event setup is an independently audited action.
+        from .event_scope import require_event_management, require_pit_year
         config = get_pit_event_config(attrs['semester'], attrs['event_name'])
-        
-        if not attrs.get('rubric') and config and config.panel_rubric:
-            attrs['rubric'] = config.panel_rubric
-
-        if not attrs.get('rubric'):
-            raise serializers.ValidationError({'rubric_id': 'Assign published panel and peer rubrics for this PIT event before scheduling.'})
-
-        peer_rubric = self._resolve_peer_rubric(attrs)
-        if peer_rubric is None and config and config.peer_rubric:
-            peer_rubric = config.peer_rubric
-
-        if peer_rubric is None:
-            raise serializers.ValidationError({'peer_rubric_id': 'Assign published panel and peer rubrics for this PIT event before scheduling.'})
-
-        panel_weight = attrs.get('panel_weight')
-        peer_weight = attrs.get('peer_weight')
-        if panel_weight is None or peer_weight is None:
-            if config is not None:
-                panel_weight = config.panel_weight if panel_weight is None else panel_weight
-                peer_weight = config.peer_weight if peer_weight is None else peer_weight
-            else:
-                panel_weight = panel_weight if panel_weight is not None else 80
-                peer_weight = peer_weight if peer_weight is not None else 20
-
-        if panel_weight + peer_weight != 100:
-            raise serializers.ValidationError(
-                'Panel and peer weights must total 100%.',
-            )
-
-        attrs['peer_rubric'] = peer_rubric
-        attrs['panel_weight'] = panel_weight
-        attrs['peer_weight'] = peer_weight
-        attrs['pit_event_config'] = upsert_pit_event_config(
-            semester=attrs['semester'],
-            event_name=attrs['event_name'],
-            panel_rubric=attrs['rubric'],
-            peer_rubric=peer_rubric,
-            panel_weight=panel_weight,
-            peer_weight=peer_weight,
-            archive_file_template=attrs.get('archive_file_template') or (config.archive_file_template if config else ''),
-        )
+        if config is None:
+            raise serializers.ValidationError({'event_name': 'Configure this PIT event before scheduling.'})
+        require_pit_year(config.year_level)
+        actor = getattr(self.context.get('request'), 'user', None)
+        if actor is not None:
+            require_event_management(actor, config)
+        if config.is_officially_complete:
+            raise serializers.ValidationError({'event_name': 'This PIT event is officially complete.'})
+        for key, rubric in (('rubric', config.panel_rubric), ('peer_rubric', config.peer_rubric)):
+            supplied = attrs.get('rubric') if key == 'rubric' else self._resolve_peer_rubric(attrs)
+            if rubric is None or rubric.status != Rubric.STATUS_PUBLISHED:
+                raise serializers.ValidationError({key + '_id': 'Assign published panel and peer rubrics in PIT Events Setup.'})
+            if supplied is not None and supplied.pk != rubric.pk:
+                raise serializers.ValidationError({key + '_id': 'Rubric must match this PIT event configuration.'})
+            attrs[key] = rubric
+        for key in ('panel_weight', 'peer_weight'):
+            if attrs.get(key) is not None and attrs[key] != getattr(config, key):
+                raise serializers.ValidationError({key: 'Change grading weights in PIT Events Setup before scheduling.'})
+            attrs[key] = getattr(config, key)
+        attrs['pit_event_config'] = config
         return attrs
 
     def _pit_lead_year_scope(self):
@@ -990,6 +976,12 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
             pk=validated_data['team'].pk,
         )
         self._validate_adviser_panel(validated_data['team'], validated_data['panelists'])
+        if validated_data['scope'] == 'pit':
+            from .models import PitEventGradingConfig
+            PitEventGradingConfig.objects.select_for_update().get(pk=validated_data['pit_event_config'].pk)
+            self._validate_pit_event_setup(validated_data)
+            if validated_data['team'].year_level != validated_data['pit_event_config'].year_level:
+                raise serializers.ValidationError({'team_id': 'Team is outside this PIT event year level.'})
         externals = validated_data.get('external_evaluators', [])
         guest_expiry = validated_data.get('guest_access_expires_at')
         chair_panelist_id = validated_data.pop('chair_panelist_id', None)
@@ -1069,6 +1061,8 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
             raise serializers.ValidationError({'team_id': 'PIT schedules require a PIT team.'})
         if attrs['scope'] == DefenseSchedule.SCOPE_PIT:
             self._validate_pit_team_scope(team)
+            if team.year_level != attrs['pit_event_config'].year_level:
+                raise serializers.ValidationError({'team_id': 'Team does not belong to this PIT event year level.'})
             config = get_pit_event_config(attrs['semester'], attrs['event_name'])
             if pit_endorsement_required(config):
                 if (team.ready_for_stage or '').strip().lower() != attrs['event_name'].strip().lower():
@@ -1306,6 +1300,7 @@ class GenerateSchedulePlanSerializer(SchedulePlanSerializer):
             pit_year = self._pit_lead_year_scope()
             if pit_year is not None:
                 queryset = queryset.filter(year_level=pit_year)
+            queryset = queryset.filter(year_level=attrs['pit_event_config'].year_level)
             queryset = queryset.exclude(year_level='3rd Year', semester__label=Semester.SECOND)
 
             config = get_pit_event_config(attrs['semester'], attrs['event_name'])
@@ -1354,6 +1349,8 @@ class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
                 raise serializers.ValidationError({'slots': 'PIT plans can only include PIT teams.'})
             else:
                 self._validate_pit_team_scope(team)
+                if team.year_level != attrs['pit_event_config'].year_level:
+                    raise serializers.ValidationError({'slots': 'A team is outside this PIT event year level.'})
                 config = get_pit_event_config(attrs['semester'], attrs['event_name'])
                 if pit_endorsement_required(config):
                     if (team.ready_for_stage or '').strip().lower() != attrs['event_name'].strip().lower():
@@ -1427,6 +1424,9 @@ class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
         list(StudentTeam.objects.select_for_update().filter(
             pk__in=[team.pk for team in attrs['teams']],
         ).order_by('pk'))
+        if attrs['scope'] == 'pit':
+            from .models import PitEventGradingConfig
+            PitEventGradingConfig.objects.select_for_update().get(pk=attrs['pit_event_config'].pk)
         attrs = self.validate(dict(attrs))
         actor = getattr(self.context.get('request'), 'user', None)
         batch_id = uuid.uuid4()
@@ -1725,20 +1725,9 @@ def schedule_options_payload(user=None, semester=None, pit_lead_only=None):
         if semester
         else PitEventGradingConfig.objects.none()
     )
-    if pit_lead_only and user:
-        from authentication_access_control.scopes import _pit_year
-        pit_year = _pit_year(user)
-        if pit_year:
-            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
-            exclude_filter = Q()
-            for y, hints in PIT_YEAR_EVENT_HINTS.items():
-                if y != pit_year:
-                    for hint in hints:
-                        exclude_filter |= Q(event_name__icontains=hint)
-            if exclude_filter:
-                pit_events_qs = pit_events_qs.exclude(exclude_filter)
-        else:
-            pit_events_qs = pit_events_qs.none()
+    from .event_scope import pit_events_for_user
+    if user:
+        pit_events_qs = pit_events_for_user(user, semester=semester).prefetch_related('deliverables') if semester else pit_events_qs.none()
     pit_events_data = [pit_event_config_payload(cfg) for cfg in pit_events_qs]
 
     return {

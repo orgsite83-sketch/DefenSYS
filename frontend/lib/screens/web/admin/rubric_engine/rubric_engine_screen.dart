@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/program_badge.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -779,42 +780,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     );
   }
 
-  Widget _scopeCell(Map<String, dynamic> rubric) {
-    final scope = rubric['scope']?.toString() ?? '';
-    final isPit = scope == 'pit';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
-      decoration: BoxDecoration(
-        color: isPit
-            ? (_isDark
-                  ? const Color(0xFF064E3B).withValues(alpha: 0.35)
-                  : const Color(0xFFF0FDF4))
-            : (_isDark
-                  ? const Color(0xFF1E3A8A).withValues(alpha: 0.35)
-                  : const Color(0xFFEFF6FF)),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: isPit
-              ? (_isDark
-                    ? const Color(0xFF064E3B).withValues(alpha: 0.7)
-                    : const Color(0xFFBBF2D0))
-              : (_isDark
-                    ? const Color(0xFF1E3A8A).withValues(alpha: 0.7)
-                    : const Color(0xFFBFDBFE)),
-        ),
-      ),
-      child: Text(
-        isPit ? 'PIT' : 'Capstone',
-        style: TextStyle(
-          color: isPit
-              ? (_isDark ? const Color(0xFF34D399) : const Color(0xFF166534))
-              : (_isDark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF)),
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
+  Widget _scopeCell(Map<String, dynamic> rubric) => ProgramBadge(scope: rubric['scope']?.toString());
 
   Widget _evaluationTypeCell(Map<String, dynamic> rubric) {
     return _evaluationTypeChip(rubric['evaluation_type']?.toString());

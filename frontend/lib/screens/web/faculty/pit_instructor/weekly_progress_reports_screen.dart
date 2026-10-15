@@ -1,10 +1,10 @@
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../services/dashboard_provider.dart';
 import '../../../../services/weekly_progress_provider.dart';
 import '../../../../widgets/empty_state.dart';
 import '../../../../theme/app_theme.dart';
-import '../../../../theme/defensys_tokens.dart';
 import 'package:intl/intl.dart';
 import '../../../../utils/universal_file_viewer.dart';
 import '../../../../toasts/feedback_toast.dart';
@@ -82,7 +82,7 @@ class _WeeklyProgressReportsScreenState
               icon: const Icon(Icons.refresh),
               label: const Text('Retry'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.maroon,
+                backgroundColor: DefensysTokens.maroon,
                 foregroundColor: Colors.white,
               ),
             ),

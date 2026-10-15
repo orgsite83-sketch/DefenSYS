@@ -227,7 +227,6 @@ def external_evaluators(request):
 def setup_report(request, *, pit=False):
     from defense.stages.models import DefenseStage, StageGradingConfig
     from defense.scheduler.models import PitEventGradingConfig
-    from repository.project_archive.services import pit_event_matches_year_level
     require_manager(request) if pit else require_admin(request)
     selected = period(request)
     rows, requirements, groups = [], [], []
@@ -239,7 +238,7 @@ def setup_report(request, *, pit=False):
         items = DefenseStage.objects.prefetch_related('deliverables').order_by('display_order', 'pk')
     for item in items:
         label = item.event_name if pit else item.label
-        if is_pit_lead_only(request.user) and not pit_event_matches_year_level(label, request.user.pit_lead_year):
+        if is_pit_lead_only(request.user) and item.year_level != request.user.pit_lead_year:
             continue
         search = request.query_params.get('search', '').strip().lower()
         if search and search not in label.lower():
@@ -375,7 +374,6 @@ class CatalogOptionsView(APIView):
         from grading.rubrics.views import rubric_queryset_for_read
         from defense.stages.models import DefenseStage
         from defense.scheduler.models import PitEventGradingConfig
-        from repository.project_archive.services import pit_event_matches_year_level
         validate_filters(request.query_params)
         teams = visible_teams_for(request.user)
         rubrics = rubric_queryset_for_read(request.user)
@@ -384,11 +382,14 @@ class CatalogOptionsView(APIView):
             rubrics = rubrics.filter(scope='pit')
         students = get_user_model().objects.filter(Q(team_memberships__team__in=teams) | Q(led_teams__in=teams)).distinct()
         stages = DefenseStage.objects.order_by('display_order', 'pk')
+        if is_pit_lead_only(request.user):
+            stages = stages.none()
         if request.query_params.get('report') != 'defense-stage-setup':
             stages = stages.filter(is_active=True)
         stage_choices = [{'value': stage.label, 'label': stage.label, 'scope': 'capstone'} for stage in stages]
-        for event in PitEventGradingConfig.objects.select_related('semester__school_year').order_by('semester_id', 'event_name'):
-            if is_pit_lead_only(request.user) and not pit_event_matches_year_level(event.event_name, request.user.pit_lead_year):
+        from defense.scheduler.event_scope import pit_events_for_user
+        for event in pit_events_for_user(request.user).select_related('semester__school_year').order_by('semester_id', 'event_name'):
+            if is_pit_lead_only(request.user) and event.year_level != request.user.pit_lead_year:
                 continue
             stage_choices.append({'value': event.event_name, 'label': event.event_name,
                                   'scope': 'pit', 'semester_id': event.semester_id})

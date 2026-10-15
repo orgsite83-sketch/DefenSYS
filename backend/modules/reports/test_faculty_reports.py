@@ -23,7 +23,7 @@ class FacultyReportTests(APITestCase):
         cls.stage = DefenseStage.objects.create(label='Faculty Report Proposal')
         StageDeliverable.objects.create(defense_stage=cls.stage, deliverable_id='FINAL',
             label='Final Archive', deliverable_type='post', required=True)
-        PitEventGradingConfig.objects.create(semester=cls.semester, event_name='Faculty Report PIT Event')
+        PitEventGradingConfig.objects.create(year_level='1st Year', semester=cls.semester, event_name='Faculty Report PIT Event')
         cls.advised = StudentTeam.objects.create(name='Advised Report Team', project_title='Advised Project',
             level=StudentTeam.LEVEL_4_CAPSTONE, year_level='4th Year', section='BSIT-4A',
             semester=cls.semester, leader=cls.student, adviser=cls.adviser)

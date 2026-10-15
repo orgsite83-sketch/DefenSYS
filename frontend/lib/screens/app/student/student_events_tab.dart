@@ -30,6 +30,7 @@ class StudentEventsTab extends ConsumerStatefulWidget {
 
 class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     with SingleTickerProviderStateMixin {
+
   late TabController _subTabController;
   int _activeSubIndex = 0;
   Timer? _countdownTimer;
@@ -266,7 +267,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       body: RefreshIndicator(
-        color: DefensysTokens.maroon,
+        color: DefensysTokens.maroonOf(context),
         onRefresh: _refreshAll,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -276,10 +277,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
             children: [
               // 1. CAPSTONE DEFENSE STAGES (HORIZONTAL PROGRESS STEPPER AT THE TOP)
               if (delivState.isLoading && stageOptions.isEmpty)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
                   child: Center(
-                    child: CircularProgressIndicator(color: DefensysTokens.maroon),
+                    child: CircularProgressIndicator(color: DefensysTokens.maroonOf(context)),
                   ),
                 )
               else if (stageOptions.isNotEmpty) ...[
@@ -359,12 +360,12 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         decoration: BoxDecoration(
                           color: isPastStage
                               ? const Color(0xFFFFFBEB)
-                              : const Color(0xFFF1F5F9),
+                              : DefensysTokens.surfaceHigherOf(context),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
                             color: isPastStage
                                 ? const Color(0xFFFDE68A)
-                                : const Color(0xFFCBD5E1),
+                                : DefensysTokens.borderOf(context),
                           ),
                         ),
                         child: Row(
@@ -376,7 +377,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                               size: 16,
                               color: isPastStage
                                   ? const Color(0xFFB45309)
-                                  : const Color(0xFF475569),
+                                  : DefensysTokens.textSecondaryOf(context),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -397,7 +398,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                   fontWeight: FontWeight.w500,
                                   color: isPastStage
                                       ? const Color(0xFF92400E)
-                                      : const Color(0xFF334155),
+                                      : DefensysTokens.textPrimaryOf(context),
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -424,7 +425,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                 decoration: BoxDecoration(
                                   color: isPastStage
                                       ? const Color(0xFFFEF3C7)
-                                      : Colors.white,
+                                      : DefensysTokens.surfaceOf(context),
                                   borderRadius: BorderRadius.circular(6),
                                   border: Border.all(
                                     color: isPastStage
@@ -441,7 +442,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                     fontWeight: FontWeight.bold,
                                     color: isPastStage
                                         ? const Color(0xFFB45309)
-                                        : DefensysTokens.maroon,
+                                        : DefensysTokens.maroonTextOf(context),
                                   ),
                                 ),
                               ),
@@ -459,9 +460,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   width: double.infinity,
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: DefensysTokens.surfaceOf(context),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    border: Border.all(color: DefensysTokens.borderOf(context)),
                   ),
                   child: Column(
                     children: [
@@ -478,7 +479,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                             ? 'Your defense timeline will appear after an administrator adds a stage.'
                             : 'Your PIT events will appear after an administrator configures them.',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 12, color: DefensysTokens.textSecondary),
+                        style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
                       ),
                     ],
                   ),
@@ -511,11 +512,11 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                       indicatorSize: TabBarIndicatorSize.tab,
                       labelPadding: EdgeInsets.zero,
                       indicator: BoxDecoration(
-                        color: DefensysTokens.maroon,
+                        color: DefensysTokens.maroonOf(context),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       labelColor: Colors.white,
-                      unselectedLabelColor: DefensysTokens.textSecondary,
+                      unselectedLabelColor: DefensysTokens.textSecondaryOf(context),
                       labelStyle:
                           const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
                       unselectedLabelStyle:
@@ -805,7 +806,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: DefensysTokens.surfaceOf(context),
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(color: borderColor),
                         ),
@@ -844,7 +845,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     width: double.infinity,
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: DefensysTokens.surfaceOf(context),
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(color: borderColor),
                     ),
@@ -930,9 +931,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
       width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
@@ -950,13 +951,13 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.event_available_rounded,
                   size: 20,
-                  color: DefensysTokens.maroon,
+                  color: DefensysTokens.maroonTextOf(context),
                 ),
               ),
               const SizedBox(width: 10),
@@ -966,10 +967,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   children: [
                     Text(
                       eventTitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
-                        color: DefensysTokens.textPrimary,
+                        color: DefensysTokens.textPrimaryOf(context),
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -977,10 +978,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     const SizedBox(height: 3),
                     Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.calendar_today_outlined,
                           size: 11.5,
-                          color: DefensysTokens.textSecondary,
+                          color: DefensysTokens.textSecondaryOf(context),
                         ),
                         const SizedBox(width: 4),
                         Expanded(
@@ -988,10 +989,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                             hasSchedule
                                 ? '$dateStr${timeStr.isNotEmpty ? ' • $timeStr' : ''}${roomStr.isNotEmpty ? ' • $roomStr' : ''}'
                                 : 'Schedule to be announced',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w500,
-                              color: DefensysTokens.textSecondary,
+                              color: DefensysTokens.textSecondaryOf(context),
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -1006,16 +1007,16 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.2)),
+                  border: Border.all(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2)),
                 ),
-                child: const Text(
+                child: Text(
                   'PIT Event',
                   style: TextStyle(
                     fontSize: 10.5,
                     fontWeight: FontWeight.w800,
-                    color: DefensysTokens.maroon,
+                    color: DefensysTokens.maroonTextOf(context),
                   ),
                 ),
               ),
@@ -1026,21 +1027,21 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: DefensysTokens.surfaceHigherOf(context),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFF1F5F9)),
+                border: Border.all(color: DefensysTokens.borderOf(context)),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.person_outline_rounded, size: 13, color: DefensysTokens.textSecondary),
+                  Icon(Icons.person_outline_rounded, size: 13, color: DefensysTokens.textSecondaryOf(context)),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       'Panel Chair: $chairStr',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: DefensysTokens.textPrimary,
+                        color: DefensysTokens.textPrimaryOf(context),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1053,12 +1054,12 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                       color: const Color(0xFFE2E8F0),
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: const Text(
+                    child: Text(
                       '80% Panel • 20% Peer',
                       style: TextStyle(
                         fontSize: 9.5,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF475569),
+                        color: DefensysTokens.textSecondaryOf(context),
                       ),
                     ),
                   ),
@@ -1085,10 +1086,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: isSel ? DefensysTokens.maroon : const Color(0xFFF1F5F9),
+                        color: isSel ? DefensysTokens.maroonOf(context) : DefensysTokens.surfaceHigherOf(context),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: isSel ? DefensysTokens.maroon : const Color(0xFFCBD5E1),
+                          color: isSel ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
                         ),
                       ),
                       child: Text(
@@ -1096,7 +1097,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
-                          color: isSel ? Colors.white : DefensysTokens.textSecondary,
+                          color: isSel ? Colors.white : DefensysTokens.textSecondaryOf(context),
                         ),
                       ),
                     ),
@@ -1129,9 +1130,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
@@ -1152,23 +1153,23 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     Container(
                       padding: const EdgeInsets.all(5),
                       decoration: BoxDecoration(
-                        color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                        color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(7),
                       ),
                       child: Icon(
                         isCapstone ? Icons.alt_route_rounded : Icons.event_available_rounded,
                         size: 16,
-                        color: DefensysTokens.maroon,
+                        color: DefensysTokens.maroonTextOf(context),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Flexible(
                       child: Text(
                         isCapstone ? 'Capstone Defense Stages' : 'Milestone Stages',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
-                          color: DefensysTokens.textPrimary,
+                          color: DefensysTokens.textPrimaryOf(context),
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1180,15 +1181,15 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   'Stage ${activeStageIdx >= 0 ? activeStageIdx + 1 : 1} of ${stageOptions.length}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: DefensysTokens.maroon,
+                    color: DefensysTokens.maroonTextOf(context),
                   ),
                 ),
               ),
@@ -1196,11 +1197,11 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
           ),
           const SizedBox(height: 6),
           Row(
-            children: const [
+            children: [
               Icon(
                 Icons.touch_app_outlined,
                 size: 11.5,
-                color: DefensysTokens.textSecondary,
+                color: DefensysTokens.textSecondaryOf(context),
               ),
               SizedBox(width: 4),
               Expanded(
@@ -1208,7 +1209,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   'Tap any stage above to inspect its details in the tabs below',
                   style: TextStyle(
                     fontSize: 10.5,
-                    color: DefensysTokens.textSecondary,
+                    color: DefensysTokens.textSecondaryOf(context),
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1280,7 +1281,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                       statusIcon = Icons.check_circle_rounded;
                     } else {
                       statusLabel = isActive ? 'Current' : 'Upcoming';
-                      statusColor = isActive ? DefensysTokens.maroon : const Color(0xFF94A3B8);
+                      statusColor = isActive ? DefensysTokens.maroonOf(context) : const Color(0xFF94A3B8);
                       statusIcon = null;
                     }
 
@@ -1299,8 +1300,8 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                       nodeBg = const Color(0xFF16A34A);
                       nodeBorder = const Color(0xFF15803D);
                     } else {
-                      nodeBg = isActive ? DefensysTokens.maroon : const Color(0xFFF1F5F9);
-                      nodeBorder = isActive ? DefensysTokens.maroon : const Color(0xFFCBD5E1);
+                      nodeBg = isActive ? DefensysTokens.maroonOf(context) : const Color(0xFFF1F5F9);
+                      nodeBorder = isActive ? DefensysTokens.maroonOf(context) : const Color(0xFFCBD5E1);
                     }
 
                     Widget nodeInner;
@@ -1315,7 +1316,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     } else if (isActive) {
                       nodeInner = Text('${stageIdx + 1}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.white));
                     } else {
-                      nodeInner = const Icon(Icons.lock_outline_rounded, size: 14, color: Color(0xFF94A3B8));
+                      nodeInner = Icon(Icons.lock_outline_rounded, size: 14, color: DefensysTokens.textSecondaryOf(context));
                     }
 
                     return Expanded(
@@ -1377,7 +1378,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                       : (isActive
                                           ? [
                                               BoxShadow(
-                                                color: DefensysTokens.maroon
+                                                color: DefensysTokens.maroonOf(context)
                                                     .withValues(alpha: 0.35),
                                                 blurRadius: 8,
                                                 spreadRadius: 1,
@@ -1415,10 +1416,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                   color: isSelected
                                       ? statusColor
                                       : (isActive
-                                          ? DefensysTokens.textPrimary
+                                          ? DefensysTokens.textPrimaryOf(context)
                                           : (isCleared
                                               ? const Color(0xFF1E293B)
-                                              : DefensysTokens.textSecondary)),
+                                              : DefensysTokens.textSecondaryOf(context))),
                                 ),
                               ),
                               if (isSelected) ...[
@@ -1562,9 +1563,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
       width: double.infinity,
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
@@ -1584,14 +1585,14 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                 decoration: BoxDecoration(
                   color: isCleared
                       ? const Color(0xFF16A34A).withValues(alpha: 0.1)
-                      : DefensysTokens.maroon.withValues(alpha: 0.1),
+                      : DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
                   isCleared
                       ? Icons.verified_rounded
                       : Icons.calendar_month_rounded,
-                  color: isCleared ? const Color(0xFF15803D) : DefensysTokens.maroon,
+                  color: isCleared ? const Color(0xFF15803D) : DefensysTokens.maroonTextOf(context),
                   size: 20,
                 ),
               ),
@@ -1602,10 +1603,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   children: [
                     Text(
                       'Defense Status for $selectedStageName',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
-                        color: DefensysTokens.textPrimary,
+                        color: DefensysTokens.textPrimaryOf(context),
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1618,7 +1619,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         fontSize: 11.5,
                         color: isCleared
                             ? const Color(0xFF15803D)
-                            : DefensysTokens.textSecondary,
+                            : DefensysTokens.textSecondaryOf(context),
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -1657,7 +1658,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   hBadgeText = isActive ? 'Current' : 'Upcoming';
                   hBadgeBg = isActive ? const Color(0xFFFEF2F2) : const Color(0xFFF1F5F9);
                   hBadgeBorder = isActive ? const Color(0xFFFCA5A5) : const Color(0xFFCBD5E1);
-                  hBadgeFg = isActive ? DefensysTokens.maroon : const Color(0xFF64748B);
+                  hBadgeFg = isActive ? DefensysTokens.maroonOf(context) : const Color(0xFF64748B);
                 }
 
                 return Container(
@@ -1736,7 +1737,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: Colors.white,
+                                    color: DefensysTokens.surfaceOf(context),
                                     borderRadius: BorderRadius.circular(6),
                                     border: Border.all(color: cBorder),
                                   ),
@@ -1778,9 +1779,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: DefensysTokens.surfaceHigherOf(context),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: DefensysTokens.borderOf(context)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -1803,26 +1804,26 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                 width: double.infinity,
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: DefensysTokens.surfaceHigherOf(context),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: DefensysTokens.borderOf(context)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.format_quote_rounded,
                       size: 16,
-                      color: Color(0xFF94A3B8),
+                      color: DefensysTokens.textSecondaryOf(context),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'Panel Feedback: "$remarks"',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           fontStyle: FontStyle.italic,
-                          color: DefensysTokens.textPrimary,
+                          color: DefensysTokens.textPrimaryOf(context),
                         ),
                       ),
                     ),
@@ -1867,12 +1868,12 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
 
               // Countdown / Passed State
               if (_timeUntilDefense != null && !_isDefensePast) ...[
-                const Text(
+                Text(
                   'DEFENSE COUNTDOWN:',
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
-                    color: DefensysTokens.textSecondary,
+                    color: DefensysTokens.textSecondaryOf(context),
                     letterSpacing: 0.5,
                   ),
                 ),
@@ -1900,17 +1901,17 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   width: double.infinity,
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
+                    color: DefensysTokens.surfaceHigherOf(context),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.history_rounded, size: 16, color: Color(0xFF64748B)),
+                      Icon(Icons.history_rounded, size: 16, color: DefensysTokens.textSecondaryOf(context)),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'Defense date passed ($scheduledDate). Awaiting deliberation evaluation.',
-                          style: const TextStyle(fontSize: 11, color: Color(0xFF475569)),
+                          style: TextStyle(fontSize: 11, color: DefensysTokens.textSecondaryOf(context)),
                         ),
                       ),
                     ],
@@ -1923,9 +1924,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                 width: double.infinity,
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: DefensysTokens.surfaceHigherOf(context),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: DefensysTokens.borderOf(context)),
                 ),
                 child: Column(
                   children: [
@@ -1959,13 +1960,13 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
               width: double.infinity,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
+                color: DefensysTokens.surfaceHigherOf(context),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                border: Border.all(color: DefensysTokens.borderOf(context)),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.lock_outline_rounded, size: 22, color: Color(0xFF64748B)),
+                  Icon(Icons.lock_outline_rounded, size: 22, color: DefensysTokens.textSecondaryOf(context)),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -1973,18 +1974,18 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                       children: [
                         Text(
                           'Upcoming Milestone: $selectedStageName',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.bold,
-                            color: DefensysTokens.textPrimary,
+                            color: DefensysTokens.textPrimaryOf(context),
                           ),
                         ),
                         const SizedBox(height: 2),
                         Text(
                           'Defense scheduling, deliverables, and deliberation will unlock after successfully completing $activeStageName.',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
-                            color: DefensysTokens.textSecondary,
+                            color: DefensysTokens.textSecondaryOf(context),
                             height: 1.3,
                           ),
                         ),
@@ -2016,10 +2017,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   children: [
                     Text(
                       isCapstone ? 'Adviser: $adviserName' : 'PIT scheduling',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.bold,
-                        color: DefensysTokens.textPrimary,
+                        color: DefensysTokens.textPrimaryOf(context),
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -2055,26 +2056,26 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 16, color: DefensysTokens.maroon),
+        Icon(icon, size: 16, color: DefensysTokens.maroonTextOf(context)),
         const SizedBox(width: 10),
         SizedBox(
           width: 120,
           child: Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12.5,
               fontWeight: FontWeight.w600,
-              color: DefensysTokens.textSecondary,
+              color: DefensysTokens.textSecondaryOf(context),
             ),
           ),
         ),
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
-              color: DefensysTokens.textPrimary,
+              color: DefensysTokens.textPrimaryOf(context),
             ),
           ),
         ),
@@ -2086,29 +2087,29 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: DefensysTokens.surfaceHigherOf(context),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             value.toString().padLeft(2, '0'),
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w900,
-              color: DefensysTokens.maroon,
+              color: DefensysTokens.maroonTextOf(context),
               letterSpacing: -0.5,
             ),
           ),
           const SizedBox(height: 1),
           Text(
             unit.toUpperCase(),
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 8.5,
               fontWeight: FontWeight.w700,
-              color: DefensysTokens.textSecondary,
+              color: DefensysTokens.textSecondaryOf(context),
               letterSpacing: 0.5,
             ),
           ),
@@ -2123,10 +2124,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
       children: [
         Text(
           score,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w800,
-            color: DefensysTokens.textPrimary,
+            color: DefensysTokens.textPrimaryOf(context),
           ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
@@ -2134,9 +2135,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
         const SizedBox(height: 2),
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 9.5,
-            color: DefensysTokens.textSecondary,
+            color: DefensysTokens.textSecondaryOf(context),
             fontWeight: FontWeight.w500,
           ),
           maxLines: 1,

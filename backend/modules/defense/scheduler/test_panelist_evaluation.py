@@ -115,7 +115,7 @@ class PanelistEvaluationTests(APITestCase):
             semester=self.semester, evaluation_type=Rubric.EVAL_PANEL,
             status=Rubric.STATUS_PUBLISHED, created_by=self.admin,
         )
-        PitEventGradingConfig.objects.create(
+        PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester, event_name='2nd Year PIT Verdict Test',
             panel_rubric=rubric, panel_weight=80, peer_weight=20,
         )

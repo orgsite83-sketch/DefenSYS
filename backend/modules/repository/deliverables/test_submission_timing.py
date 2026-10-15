@@ -178,7 +178,8 @@ class SubmissionTimingTests(APITestCase):
         with CaptureQueriesContext(connection) as queries:
             for record in serializer.instance:
                 self.assertEqual(serializer.child.get_materials_readiness(record)['status'], 'ready')
-        self.assertLessEqual(len(queries), 3)
+        # Definitions, files and the added permission facts remain batched.
+        self.assertLessEqual(len(queries), 4)
 
     def test_grace_deadline_reopens_only_materials_and_captures_reason_and_audit(self):
         schedule = self.schedule()
@@ -277,7 +278,7 @@ class SubmissionTimingTests(APITestCase):
     def test_pit_uses_its_own_configuration_and_independent_deadlines(self):
         self.team.level = StudentTeam.LEVEL_3_PIT
         self.team.save(update_fields=['level'])
-        event = PitEventGradingConfig.objects.create(semester=self.semester, event_name='3rd Year PIT Expo')
+        event = PitEventGradingConfig.objects.create(year_level='3rd Year', semester=self.semester, event_name='3rd Year PIT Expo')
         PitEventDeliverable.objects.create(pit_event_config=event, deliverable_id='DECK', label='PIT pitch deck',
             required=True, requirement_timing='defense', deadline_hours_before=12)
         self.assertTrue(required_complete(self.team, event.event_name))
@@ -295,3 +296,76 @@ class SubmissionTimingTests(APITestCase):
         self.team.save(update_fields=['semester'])
         # The old PIT schedule keeps its original term's twelve-hour policy.
         self.assertEqual(materials_readiness(schedule)['items'][0]['due_at'], old_deadline)
+
+    def test_late_upload_window_allows_missing_materials_and_sets_is_late(self):
+        self.clear_and_endorse()
+        past_date = timezone.localdate(self.now) - timedelta(days=1)
+        schedule = DefenseSchedule.objects.create(team=self.team, semester=self.semester, defense_stage=self.stage,
+            scheduled_date=past_date, start_time=time(9), room='Room 201', created_by=self.admin)
+
+        future_window = timezone.now() + timedelta(hours=6)
+        response = self.extension(schedule, future_window, mode='late_upload')
+        self.assertEqual(response.status_code, 200)
+        schedule.refresh_from_db()
+        self.assertEqual(schedule.materials_late_upload_until, future_window)
+
+        self.client.force_authenticate(self.student)
+        response = self.client.post('/api/repository/deliverables/upload/', {
+            'team_id': self.team.pk, 'stage_label': self.stage.label, 'deliverable_id': 'DECK',
+            'file_name': 'late_pitch.pptx', 'file_size': '20 B',
+            'file': SimpleUploadedFile('late_pitch.pptx', b'actual late presentation')}, format='multipart')
+        self.assertEqual(response.status_code, 200)
+
+        sub = DeliverableSubmission.objects.get(team=self.team, stage_label=self.stage.label, deliverable_id='DECK')
+        self.assertTrue(sub.is_late)
+        self.assertEqual(sub.file_name, 'late_pitch.pptx')
+
+    def test_late_upload_window_blocks_replacement_of_existing_submissions(self):
+        self.clear_and_endorse()
+        self.upload('DECK', 'initial_deck.pptx')
+        past_date = timezone.localdate(self.now) - timedelta(days=1)
+        schedule = DefenseSchedule.objects.create(team=self.team, semester=self.semester, defense_stage=self.stage,
+            scheduled_date=past_date, start_time=time(9), room='Room 201', created_by=self.admin)
+
+        future_window = timezone.now() + timedelta(hours=6)
+        response = self.extension(schedule, future_window, mode='late_upload')
+        self.assertEqual(response.status_code, 200)
+
+        self.client.force_authenticate(self.student)
+        response = self.client.post('/api/repository/deliverables/upload/', {
+            'team_id': self.team.pk, 'stage_label': self.stage.label, 'deliverable_id': 'DECK',
+            'file_name': 'replaced_deck.pptx', 'file_size': '20 B',
+            'file': SimpleUploadedFile('replaced_deck.pptx', b'new content')}, format='multipart')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Existing submitted files are locked', response.data['detail'])
+
+    def test_late_upload_window_preserves_evaluations(self):
+        from grading.grades.models import TeamGrade, PanelistGradeSubmission
+        from django.contrib.auth import get_user_model
+        panelist = get_user_model().objects.create(username='test_eval_panelist', role='faculty', is_panelist=True)
+        self.clear_and_endorse()
+        past_date = timezone.localdate(self.now) - timedelta(days=1)
+        schedule = DefenseSchedule.objects.create(team=self.team, semester=self.semester, defense_stage=self.stage,
+            scheduled_date=past_date, start_time=time(9), room='Room 201', created_by=self.admin)
+        team_grade = TeamGrade.objects.create(
+            team=self.team, semester=self.semester, schedule=schedule,
+            defense_stage=self.stage, stage_label=self.stage.label, status='draft',
+        )
+        eval_sub = PanelistGradeSubmission.objects.create(
+            team_grade=team_grade, schedule=schedule, panelist=panelist, remarks='Strong presentation',
+        )
+
+        future_window = timezone.now() + timedelta(hours=6)
+        response = self.extension(schedule, future_window, mode='late_upload')
+        self.assertEqual(response.status_code, 200)
+
+        self.client.force_authenticate(self.student)
+        response = self.client.post('/api/repository/deliverables/upload/', {
+            'team_id': self.team.pk, 'stage_label': self.stage.label, 'deliverable_id': 'DECK',
+            'file_name': 'late_pitch.pptx', 'file_size': '20 B',
+            'file': SimpleUploadedFile('late_pitch.pptx', b'late presentation')}, format='multipart')
+        self.assertEqual(response.status_code, 200)
+
+        eval_sub.refresh_from_db()
+        self.assertFalse(eval_sub.is_void)
+        self.assertEqual(eval_sub.remarks, 'Strong presentation')

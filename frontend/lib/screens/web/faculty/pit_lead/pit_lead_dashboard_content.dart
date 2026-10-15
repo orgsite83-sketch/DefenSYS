@@ -1,3 +1,4 @@
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../widgets/feedback/empty_state.dart';
@@ -39,7 +40,7 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
   static const _line = Color(0xFFF3F4F6);
   static const _ink = DefensysUi.textDark;
   static const _muted = DefensysUi.steelGrey;
-  static const _maroon = DefensysUi.primaryMaroon;
+  static const _brandAccent = DefensysTokens.maroon;
 
   static const double _cardHeight = 356.0;
 
@@ -72,6 +73,7 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 DefensysPageHeader(
+                  programScope: 'pit',
                   icon: Icons.workspace_premium_rounded,
                   title: 'Welcome, ${widget.facultyName}!',
                   subtitle: 'PIT Lead workspace · $pitYear',
@@ -628,15 +630,15 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                 InkWell(
                   onTap: widget.onOpenAuditCompliance,
                   borderRadius: BorderRadius.circular(6),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           'View All',
                           style: TextStyle(
-                            color: _maroon,
+                            color: DefensysTokens.maroonTextOf(context),
                             fontSize: 12.5,
                             fontWeight: FontWeight.w800,
                           ),
@@ -645,7 +647,7 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                         Icon(
                           Icons.arrow_forward_rounded,
                           size: 13,
-                          color: _maroon,
+                          color: DefensysTokens.maroonTextOf(context),
                         ),
                       ],
                     ),
@@ -681,7 +683,7 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
         decoration: BoxDecoration(
           border: Border(
             bottom: BorderSide(
-              color: isSelected ? _maroon : Colors.transparent,
+              color: isSelected ? _brandAccent : Colors.transparent,
               width: 3.0,
             ),
           ),
@@ -694,7 +696,7 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
               Icon(
                 icon,
                 size: 16,
-                color: isSelected ? _maroon : const Color(0xFF64748B),
+                color: isSelected ? DefensysTokens.maroonTextOf(context) : const Color(0xFF64748B),
               ),
               const SizedBox(width: 6),
             ],
@@ -1025,7 +1027,7 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                                 FilledButton.icon(
                                   onPressed: onActionTap,
                                   style: FilledButton.styleFrom(
-                                    backgroundColor: _maroon,
+                                    backgroundColor: _brandAccent,
                                     foregroundColor: Colors.white,
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 11,
@@ -1207,8 +1209,8 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                       ),
                       child: Text(
                         actionLabel,
-                        style: const TextStyle(
-                          color: _maroon,
+                        style: TextStyle(
+                          color: DefensysTokens.maroonTextOf(context),
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
                         ),

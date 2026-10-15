@@ -1,4 +1,4 @@
-"""Start DefenSYS with one Wi-Fi address for the PC, phones and invitations.
+"""Start DefenSYS with one LAN/hotspot address for the PC, phones and invitations.
 
 Uses only the standard library. Reuses a current API server on the LAN and
 enables Django's code reload. Compiles the current frontend on every start
@@ -24,11 +24,14 @@ import threading
 import time
 from urllib.error import URLError
 from urllib.parse import urlsplit
-from urllib.request import ProxyHandler, build_opener
+from urllib.request import ProxyHandler, Request, build_opener
 import webbrowser
 
 ROOT = Path(__file__).resolve().parents[1]
 HTTP = build_opener(ProxyHandler({}))  # Local traffic must not use a proxy.
+LAN_NETWORKS = tuple(ipaddress.ip_network(value) for value in (
+    '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16',
+))
 
 
 def lan_ip(value: str) -> str:
@@ -37,20 +40,128 @@ def lan_ip(value: str) -> str:
         address = ipaddress.IPv4Address(value)
     except ipaddress.AddressValueError as error:
         raise argparse.ArgumentTypeError('Use your PC\'s private IPv4 address.') from error
-    if not any(address in network for network in (
-        ipaddress.ip_network('10.0.0.0/8'),
-        ipaddress.ip_network('172.16.0.0/12'),
-        ipaddress.ip_network('192.168.0.0/16'),
-    )):
-        raise argparse.ArgumentTypeError('Use a Wi-Fi/LAN address, not localhost or a public IP.')
+    if not any(address in network for network in LAN_NETWORKS):
+        raise argparse.ArgumentTypeError('Use a LAN/hotspot address, not localhost or a public IP.')
     return str(address)
 
 
-def detect_lan_ip() -> str:
-    # UDP connect selects the default network route; no packet is sent.
+@dataclass(frozen=True)
+class NetworkAddress:
+    name: str
+    address: str
+    has_gateway: bool = False
+    virtual: bool = False
+
+
+def parse_network_addresses(output: str) -> list[NetworkAddress]:
+    """Keep active RFC1918 addresses from the Windows adapter inventory."""
+    records = json.loads(output or '[]')
+    if isinstance(records, dict):
+        records = [records]
+    if not isinstance(records, list):
+        raise ValueError('Invalid network adapter inventory')
+    addresses = []
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        try:
+            address = lan_ip(record['address'])
+            name = record['name']
+            if not isinstance(name, str) or not name:
+                continue
+        except (KeyError, TypeError, argparse.ArgumentTypeError):
+            continue
+        description = str(record.get('description', '')).casefold()
+        virtual = record.get('type') == 'Tunnel' or any(marker in description for marker in (
+            'virtual', 'vpn', 'wireguard', 'wintun', 'tap-', 'tun-',
+            'hyper-v', 'vmware', 'tailscale', 'zerotier', 'loopback',
+        ))
+        candidate = NetworkAddress(name, address, record.get('gateway') is True, virtual)
+        if candidate not in addresses:
+            addresses.append(candidate)
+    return addresses
+
+
+def network_addresses() -> list[NetworkAddress]:
+    """Read adapters without internet access, WMI privileges or extra packages."""
+    if os.name == 'nt':
+        # .NET works on Windows even where Get-NetIPConfiguration/CIM is denied.
+        # Wi-Fi and USB tethering appear as ordinary active network interfaces.
+        script = """
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+@([System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() |
+    Where-Object {$_.OperationalStatus -eq 'Up' -and $_.NetworkInterfaceType -ne 'Loopback'} |
+    ForEach-Object {
+        $adapter = $_
+        $properties = $adapter.GetIPProperties()
+        $gateway = @($properties.GatewayAddresses | Where-Object {
+            $_.Address.AddressFamily -eq 'InterNetwork' -and $_.Address.ToString() -ne '0.0.0.0'
+        }).Count -gt 0
+        $properties.UnicastAddresses | Where-Object {
+            $_.Address.AddressFamily -eq 'InterNetwork' -and $_.DuplicateAddressDetectionState -eq 'Preferred'
+        } | ForEach-Object {
+            [pscustomobject]@{
+                name = $adapter.Name
+                description = $adapter.Description
+                type = $adapter.NetworkInterfaceType.ToString()
+                address = $_.Address.ToString()
+                gateway = $gateway
+            }
+        }
+    }) | ConvertTo-Json -Compress
+"""
+        try:
+            result = subprocess.run(
+                ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script],
+                capture_output=True, text=True, encoding='utf-8', timeout=10, check=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            return parse_network_addresses(result.stdout)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            # Preserve default-route detection if PowerShell is unavailable.
+            return []
+    try:
+        hostname = socket.gethostname()
+        records = [dict(name=hostname, address=entry[4][0]) for entry in
+                   socket.getaddrinfo(hostname, None, socket.AF_INET, socket.SOCK_DGRAM)]
+        return parse_network_addresses(json.dumps(records))
+    except OSError:
+        return []
+
+
+def default_route_ip() -> str:
+    # UDP connect selects the route; no packet or internet request is sent.
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
         probe.connect(('192.0.2.1', 9))
         return lan_ip(probe.getsockname()[0])
+
+
+def detect_lan_ip(*, interface: str | None = None,
+                  addresses: list[NetworkAddress] | None = None) -> str:
+    addresses = network_addresses() if addresses is None else addresses
+    try:
+        route = default_route_ip()
+    except (OSError, argparse.ArgumentTypeError):
+        route = None
+    if interface is not None:
+        candidates = [item for item in addresses if item.name.casefold() == interface.casefold()]
+        if not candidates:
+            raise RuntimeError(f'No active private IPv4 address on interface {interface!r}. Use --check to list adapters or --host <PC-IP>.')
+    else:
+        candidates = [item for item in addresses if not item.virtual]
+        if not addresses and route:
+            return route
+        if not candidates:
+            raise RuntimeError('No active LAN/hotspot IPv4 address found. Connect the PC to Wi-Fi, a phone hotspot or USB tethering, then retry; use --host <PC-IP> if adapter detection is unavailable.')
+    if route in [item.address for item in candidates]:
+        return route
+    if interface is None:
+        candidates = [item for item in candidates if item.has_gateway] or candidates
+    if len(candidates) == 1:
+        return candidates[0].address
+    choices = ', '.join(f'{item.name}: {item.address}' for item in candidates)
+    raise RuntimeError(f'Multiple LAN/hotspot addresses found ({choices}). Choose --interface "<adapter-name>" or --host <PC-IP>.')
 
 
 def port(value: str) -> int:
@@ -81,6 +192,15 @@ def ready(url: str) -> bool:
         # take over a second. Don't disconnect healthy ASGI requests so early.
         with HTTP.open(url, timeout=5) as response:
             return response.status == 200
+    except (URLError, OSError):
+        return False
+
+
+def cors_ready(url: str, origin: str) -> bool:
+    """Check browser API access; a plain health request cannot detect CORS failures."""
+    try:
+        with HTTP.open(Request(url, headers={'Origin': origin}), timeout=5) as response:
+            return response.status == 200 and response.headers.get('Access-Control-Allow-Origin') == origin
     except (URLError, OSError):
         return False
 
@@ -418,7 +538,7 @@ def ensure_backend(host: str, number: int, health: str,
         print(f'Restarting the workspace backend: {reason}.', flush=True)
         stop_backend(existing, host, number)
     if listening('127.0.0.1', number) or listening(host, number):
-        raise RuntimeError(f'Port {number} is occupied but the API is not healthy over Wi-Fi. Check the backend terminal. No existing process was stopped.')
+        raise RuntimeError(f'Port {number} is occupied but the API is not healthy over the LAN/hotspot. Check the backend terminal. No existing process was stopped.')
     python = ROOT / 'backend' / 'venv' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
     if not python.exists():
         raise RuntimeError('Backend virtual environment is missing. Run backend/setup_venv.ps1 first.')
@@ -463,7 +583,7 @@ def monitor_servers(frontend: subprocess.Popen | None, host: str,
                         print('Backend is reloading. Waiting for its existing process; no second server will be started.', flush=True)
                     reloading = True
                 else:
-                    print('Backend stopped. Restoring it on the shared Wi-Fi address...', flush=True)
+                    print('Backend stopped. Restoring it on the shared LAN/hotspot address...', flush=True)
                     backend = ensure_backend(host, api_port, health, owned)
                     external_backend = backend_listener(api_port) if backend is None else None
                     print('Backend restored. You can retry signing in.', flush=True)
@@ -481,7 +601,9 @@ def monitor_servers(frontend: subprocess.Popen | None, host: str,
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--host', type=lan_ip, help='Override detected IP (e.g. when a VPN is active).')
+    network = parser.add_mutually_exclusive_group()
+    network.add_argument('--host', type=lan_ip, help="Use this PC's private LAN/hotspot IPv4 address.")
+    network.add_argument('--interface', help='Choose an active network adapter by name (e.g. "Wi-Fi" or "Ethernet 2").')
     parser.add_argument('--web-port', type=port, default=57583)
     parser.add_argument('--api-port', type=port, default=8000)
     parser.add_argument('--check', action='store_true', help='Print addresses and check setup without starting anything.')
@@ -502,9 +624,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     owned: list[subprocess.Popen] = []
     try:
-        host = args.host or detect_lan_ip()
+        addresses = network_addresses()
+        if args.check:
+            print('\nActive private IPv4 addresses:', flush=True)
+            for item in addresses:
+                kind = 'virtual/VPN' if item.virtual else 'LAN/hotspot'
+                print(f'  {item.name}: {item.address} ({kind})', flush=True)
+            if not addresses:
+                print('  Adapter inventory unavailable or no active private IPv4; trying the default route.', flush=True)
+        host = args.host or detect_lan_ip(interface=args.interface, addresses=addresses)
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-            probe.bind((host, 0))  # Reject another device's IP before launching.
+            try:
+                probe.bind((host, 0))  # Reject another device's IP before launching.
+            except OSError as error:
+                raise RuntimeError(f'{host} is not available on this PC. Use the PC address on the hotspot, rather than the phone/gateway address; run --check after connecting.') from error
         if args.web_port == args.api_port:
             raise RuntimeError('The web app and API need different ports.')
         origin = f'http://{host}:{args.web_port}'
@@ -523,14 +656,22 @@ def main(argv: list[str] | None = None) -> int:
         print(f'\nUse this address on the PC AND phone: {origin}', flush=True)
         print(f'Guest portal: {origin}/#/guest/evaluate', flush=True)
         print(f'Phone app API: http://{host}:{args.api_port}/api', flush=True)
-        print('Phone and PC must be on the same Wi-Fi. No .env edits are needed in development.', flush=True)
+        selected = next((item for item in addresses if item.address == host), None)
+        if selected:
+            print(f'Network adapter: {selected.name}', flush=True)
+        print('Connect the PC and client devices to the same Wi-Fi or phone hotspot. No .env edits are needed in development.', flush=True)
         if args.check:
-            print(f'Backend ready: {ready(health)}', flush=True)
+            backend_ready = ready(health)
+            print(f'API health URL: {health}', flush=True)
+            print(f'Backend ready: {backend_ready}', flush=True)
+            if backend_ready:
+                print(f'Browser API access (CORS): {cors_ready(health, origin)}', flush=True)
             print(f'Web port already in use: {listening("127.0.0.1", args.web_port)}', flush=True)
             print('Web startup: ' + ('reuse an existing session if available' if args.reuse_web else 'compile the current frontend'), flush=True)
             print('Flutter options: ' + ' '.join(command[command.index('run'):]), flush=True)
             if mobile_command:
                 print('Android options: ' + ' '.join(mobile_command[mobile_command.index('run'):]), flush=True)
+            print('On the phone, open the API health URL first. If it works only on the PC, check the current Windows firewall profile and whether the hotspot permits device-to-device traffic.', flush=True)
             return 0
         existing_web = listening('127.0.0.1', args.web_port) or listening(host, args.web_port)
         if existing_web and not is_defensys_web(origin):

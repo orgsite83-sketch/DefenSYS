@@ -7,7 +7,8 @@ from grading.constants import PASS_GRADE_THRESHOLD
 
 
 GRADE_OUTCOME_NOTE = (
-    "Outcome follows the recorded defense verdict. Without a verdict, the grade "
+    "PIT pass/fail marks indicate event scores only and do not restrict participation or decide semester results. "
+    "Capstone outcome follows the recorded defense verdict. Without a verdict, the grade "
     f"threshold is {PASS_GRADE_THRESHOLD:.0f}%. The average is for reference only. "
     "A defense approval does not change the numeric grade."
 )

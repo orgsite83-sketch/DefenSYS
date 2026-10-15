@@ -1,3 +1,4 @@
+import 'package:defensys/theme/program_colors.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -2837,7 +2838,7 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(
-                                        color: isPit ? const Color(0xFFEFF6FF) : const Color(0xFFECFDF5),
+                                        color: ProgramColors.of(context, isCapstone: !isPit).tint,
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: Text(
@@ -2845,7 +2846,7 @@ class _CloneRubricDialogState extends State<_CloneRubricDialog> {
                                         style: TextStyle(
                                           fontSize: 10,
                                           fontWeight: FontWeight.w600,
-                                          color: isPit ? const Color(0xFF1D4ED8) : const Color(0xFF047857),
+                                          color: ProgramColors.of(context, isCapstone: !isPit).text,
                                           fontFamily: DefensysUi.fontFamily,
                                         ),
                                       ),

@@ -44,7 +44,7 @@ def selected_stage(team, requested):
             valid = DefenseStage.objects.filter(label=stage, is_active=True).exists()
         else:
             from defense.scheduler.models import PitEventGradingConfig
-            valid = PitEventGradingConfig.objects.filter(semester=team.semester, event_name=stage).exists()
+            valid = PitEventGradingConfig.objects.filter(semester=team.semester, year_level=team.year_level, event_name=stage).exists()
         if not valid:
             raise ValidationError({'stage': 'Select a configured stage or event for this team.'})
     return stage

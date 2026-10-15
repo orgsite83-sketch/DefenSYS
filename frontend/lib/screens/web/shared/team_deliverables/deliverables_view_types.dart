@@ -41,6 +41,7 @@ class DeliverablesTriageHelper {
        ...(stage['post'] as List? ?? []).whereType<Map>()];
 
   static bool isPending(Map item) {
+    if (item['requirement_timing'] == 'defense') return false;
     if (item['is_waived'] == true || item['locked'] == true) return false;
     final submission = item['submission'];
     final status = (submission is Map ? submission['status'] :

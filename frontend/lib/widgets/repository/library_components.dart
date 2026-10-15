@@ -1,3 +1,4 @@
+import 'package:defensys/theme/program_colors.dart';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -6,7 +7,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../models/repository_library.dart';
 import '../../services/authenticated_client.dart';
-import '../../theme/defensys_tokens.dart';
 import '../shadcn/defensys_workflow_widgets.dart';
 
 final _posterBytesProvider = FutureProvider.autoDispose
@@ -251,53 +251,153 @@ class LibraryEntryTile extends StatelessWidget {
           : Padding(
               padding: const EdgeInsets.all(12),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    width: 55,
-                    height: 74,
+                    width: 58,
+                    height: 82,
+                    clipBehavior: Clip.antiAlias,
                     decoration: BoxDecoration(
-                      color: DefensysTokens.maroon,
-                      borderRadius: BorderRadius.circular(5),
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(3),
+                        bottomLeft: Radius.circular(3),
+                        topRight: Radius.circular(6),
+                        bottomRight: Radius.circular(6),
+                      ),
+                      gradient: const LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [
+                          Color(0xFF4C0B06),
+                          Color(0xFF6B140D),
+                          Color(0xFF7A110A),
+                        ],
+                        stops: [0.0, 0.12, 1.0],
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.14),
+                          blurRadius: 6,
+                          offset: const Offset(2, 3),
+                        ),
+                      ],
                     ),
-                    child: Icon(
-                      project != null
-                          ? Icons.layers_outlined
-                          : libraryOutputIcon(entry),
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(width: 13),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Stack(
                       children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
+                        Positioned(
+                          left: 6,
+                          top: 0,
+                          bottom: 0,
+                          child: Container(
+                            width: 1.2,
+                            color: const Color(0xFFD4AF37).withOpacity(0.7),
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          entry.teamName,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: colors.onSurfaceVariant,
-                          ),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          metadata,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: colors.onSurfaceVariant,
+                        Center(
+                          child: Icon(
+                            project != null
+                                ? Icons.menu_book_rounded
+                                : libraryOutputIcon(entry),
+                            color: const Color(0xFFFFD387),
+                            size: 22,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(width: 5),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: ProgramColors.of(context, scope: entry.type).tint,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                project != null
+                                    ? (entry.type == 'pit' ? 'PIT' : 'CAPSTONE')
+                                    : entry.outputLabel,
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: ProgramColors.of(context, scope: entry.type).text,
+                                ),
+                              ),
+                            ),
+                            if (entry.academicYear != '—' &&
+                                entry.academicYear.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Text(
+                                'SY ${entry.academicYear}',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  color: colors.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            letterSpacing: -0.2,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.groups_outlined,
+                              size: 13,
+                              color: colors.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                '${entry.teamName} · $metadata',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: colors.onSurfaceVariant,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if ((project?.overview?.previewText ??
+                                entry.previewText)
+                            .isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            project?.overview?.previewText ?? entry.previewText,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontStyle: FontStyle.italic,
+                              color: colors.onSurfaceVariant.withOpacity(0.85),
+                              height: 1.25,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
                   if (onDetails != null)
                     _detailsButton()
                   else
@@ -350,11 +450,35 @@ class LibraryCover extends ConsumerWidget {
       width: double.infinity,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: DefensysTokens.maroon,
-        borderRadius: const BorderRadius.horizontal(
-          left: Radius.circular(3),
-          right: Radius.circular(9),
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(4),
+          bottomLeft: Radius.circular(4),
+          topRight: Radius.circular(10),
+          bottomRight: Radius.circular(10),
         ),
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            const Color(0xFF252C35), // deep spine hinge
+            const Color(0xFF34404E), // crease shadow
+            const Color(0xFF475569), // neutral cover; track identity stays in its badge
+            const Color(0xFF526174), // subtle surface illumination
+          ],
+          stops: [0.0, 0.05, 0.16, 1.0],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.18),
+            blurRadius: 10,
+            offset: const Offset(3, 5),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 2,
+            offset: const Offset(1, 1),
+          ),
+        ],
       ),
       child:
           image?.when(
@@ -372,11 +496,40 @@ class LibraryCover extends ConsumerWidget {
 
   Widget _textCover(BuildContext context) => Stack(
     children: [
+      // Embossed gold spine hinge line
       Positioned(
-        left: 6,
+        left: 8,
         top: 0,
         bottom: 0,
-        child: Container(width: 1, color: const Color(0xFFBD8652)),
+        child: Container(
+          width: 1.2,
+          color: const Color(0xFFD4AF37).withOpacity(0.7),
+        ),
+      ),
+      // Spine crease shadow
+      Positioned(
+        left: 10,
+        top: 0,
+        bottom: 0,
+        child: Container(
+          width: 2.0,
+          color: Colors.black.withOpacity(0.22),
+        ),
+      ),
+      // Simulated page paper edge on right
+      Positioned(
+        right: 0,
+        top: 4,
+        bottom: 4,
+        child: Container(
+          width: 2.0,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF7ED).withOpacity(0.35),
+            borderRadius: const BorderRadius.horizontal(
+              right: Radius.circular(2),
+            ),
+          ),
+        ),
       ),
       Padding(
         padding: const EdgeInsets.fromLTRB(17, 14, 12, 12),

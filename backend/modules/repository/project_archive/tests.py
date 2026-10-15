@@ -7,8 +7,8 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APITestCase
 
 from academic_period_management.models import SchoolYear, Semester
-from defense.scheduler.models import PitEventGradingConfig
-from defense.stages.models import DefenseStage, StageGradingConfig
+from defense.scheduler.models import PitEventDeliverable, PitEventGradingConfig
+from defense.stages.models import DefenseStage, StageDeliverable, StageGradingConfig
 from grading.grades.models import TeamGrade
 from grading.rubrics.models import Rubric, RubricCriterion
 from repository.deliverables.models import DeliverableSubmission
@@ -161,8 +161,73 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertEqual(len(d1_folders), 2)
         self.assertNotEqual(d1_folders[0]['key'], d1_folders[1]['key'])
 
+    def test_deliverable_folder_compares_uploaded_and_missing_teams(self):
+        stage, _ = DefenseStage.objects.get_or_create(label='Concept Proposal')
+        StageDeliverable.objects.create(
+            defense_stage=stage, deliverable_id='D1', label='Concept paper',
+            deliverable_type=StageDeliverable.TYPE_PRE, required=True,
+        )
+        StudentTeam.objects.create(
+            name='Team Without Paper', project_title='Second concept',
+            level=StudentTeam.LEVEL_4_CAPSTONE, year_level='4th Year',
+            semester=self.semester, leader=self.student,
+        )
+        self.client.force_authenticate(user=self.admin)
+        root = self.client.get('/api/repository/audit/', {
+            'group_by': 'deliverable', 'type': 'capstone',
+            'stage': 'Concept Proposal', 'deliverable_id': 'D1',
+        })
+        folder = next(f for f in root.data['folder_browser']['folders']
+                      if f['title'] == 'Concept paper')
+        self.assertEqual(folder['file_count'], 1)
+        self.assertEqual(folder['missing_count'], 1)
+        self.assertEqual(root.data['counts']['total'], 1)
+        self.assertEqual(root.data['counts']['missing_required'], 1)
+
+        leaf = self.client.get('/api/repository/audit/', {
+            'group_by': 'deliverable', 'type': 'capstone',
+            'stage': 'Concept Proposal', 'deliverable_id': 'D1',
+            'folder_key': folder['key'],
+        })
+        self.assertEqual(leaf.data['pagination']['total'], 2)
+        missing = next(e for e in leaf.data['entries'] if e['is_missing'])
+        self.assertEqual(missing['team_name'], 'Team Without Paper')
+        self.assertFalse(missing['has_file'])
+
+        exported = self.client.get('/api/repository/project-archive/export/', {
+            'group_by': 'deliverable', 'type': 'capstone',
+            'stage': 'Concept Proposal', 'deliverable_id': 'D1',
+            'folder_key': folder['key'],
+        })
+        self.assertEqual(exported.status_code, 200)
+        csv = exported.content.decode('utf-8')
+        self.assertIn('Team Without Paper', csv)
+        self.assertIn('Team Cipher', csv)
+
+    def test_missing_rows_do_not_retroactively_fill_past_semesters(self):
+        stage, _ = DefenseStage.objects.get_or_create(label='Concept Proposal')
+        StageDeliverable.objects.create(
+            defense_stage=stage, deliverable_id='D1', label='Concept paper',
+            deliverable_type=StageDeliverable.TYPE_PRE, required=True,
+        )
+        past_year = SchoolYear.objects.create(label='2025-2026')
+        past_semester = Semester.objects.create(
+            school_year=past_year, label=Semester.FIRST, is_active=False,
+        )
+        StudentTeam.objects.create(
+            name='Past Team', project_title='Archived project',
+            level=StudentTeam.LEVEL_4_CAPSTONE, year_level='4th Year',
+            semester=past_semester, leader=self.student,
+        )
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get('/api/repository/audit/', {
+            'group_by': 'deliverable', 'deliverable_id': 'D1',
+        })
+        self.assertFalse(any(entry['team_name'] == 'Past Team'
+                             for entry in response.data['entries']))
+
     def test_submission_keeps_its_period_and_pit_year_after_team_moves(self):
-        event = PitEventGradingConfig.objects.create(
+        event = PitEventGradingConfig.objects.create(year_level='3rd Year',
             semester=self.semester, event_name='3rd Year Expo',
         )
         submission = DeliverableSubmission.objects.create(
@@ -177,8 +242,9 @@ class RepositoryAuditApiTests(APITestCase):
             school_year=next_year, label=Semester.FIRST,
         )
         self.pit_team.semester = next_semester
-        self.pit_team.year_level = '2nd Year'
-        self.pit_team.save(update_fields=['semester', 'year_level'])
+        self.pit_team.year_level = '4th Year'
+        self.pit_team.level = StudentTeam.LEVEL_4_CAPSTONE
+        self.pit_team.save(update_fields=['semester', 'year_level', 'level'])
 
         self.client.force_authenticate(user=self.pit_lead)
         response = self.client.get('/api/repository/audit/', {
@@ -191,6 +257,57 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertEqual(entry['pit_event_config_id'], event.id)
         self.assertTrue(any(f['title'] == event.event_name
                             for f in response.data['folder_browser']['folders']))
+
+    def test_pit_deliverable_comparison_stays_in_leads_assigned_year(self):
+        event = PitEventGradingConfig.objects.create(year_level='3rd Year',
+            semester=self.semester, event_name='Showcase',
+        )
+        PitEventDeliverable.objects.create(
+            pit_event_config=event, deliverable_id='PIT_D1',
+            label='Pitch deck', deliverable_type=PitEventDeliverable.TYPE_PRE,
+            required=True,
+        )
+        second_year_team = StudentTeam.objects.create(
+            name='Team Second Year', project_title='Another project',
+            level=StudentTeam.LEVEL_2_PIT, year_level='2nd Year',
+            semester=self.semester, leader=self.student,
+        )
+        second_event = PitEventGradingConfig.objects.create(semester=self.semester, year_level='2nd Year', event_name='Second Cohort Showcase')
+        for team, own_event in ((self.pit_team, event), (second_year_team, second_event)):
+            TeamGrade.objects.create(
+                team=team, semester=self.semester, scope=TeamGrade.SCOPE_PIT,
+                stage_label=own_event.event_name, pit_event_config=own_event,
+                panel_weight=80, peer_weight=20, adviser_weight=0,
+            )
+        self.client.force_authenticate(user=self.pit_lead)
+        response = self.client.get('/api/repository/audit/', {
+            'group_by': 'deliverable', 'deliverable_id': 'PIT_D1',
+        })
+        self.assertEqual(response.status_code, 200)
+        folder = next(folder for folder in response.data['folder_browser']['folders']
+                      if folder['title'] == 'Pitch deck')
+        self.assertEqual(folder['missing_count'], 1)
+        leaf = self.client.get('/api/repository/audit/', {
+            'group_by': 'deliverable', 'deliverable_id': 'PIT_D1',
+            'folder_key': folder['key'],
+        })
+        self.assertEqual([entry['team_name'] for entry in leaf.data['entries']],
+                         [self.pit_team.name])
+
+    def test_pit_archive_requires_year_assignment(self):
+        unassigned = User.objects.create_user(
+            username='pit-lead-unassigned', password='pass12345',
+            role='faculty', is_pit_lead=True,
+        )
+        self.client.force_authenticate(user=unassigned)
+        response = self.client.get('/api/repository/audit/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_pit_archive_stage_filters_exclude_capstone_stages(self):
+        self.client.force_authenticate(user=self.pit_lead)
+        response = self.client.get('/api/repository/audit/')
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('Concept Proposal', response.data['options']['stage_options'])
 
     def test_admin_can_view_pit_but_not_upload(self):
         self.client.force_authenticate(user=self.admin)
@@ -273,7 +390,7 @@ class RepositoryAuditApiTests(APITestCase):
             max_score=5,
             display_order=0,
         )
-        config = PitEventGradingConfig.objects.create(
+        config = PitEventGradingConfig.objects.create(year_level='3rd Year',
             semester=self.semester,
             event_name=event_name,
             panel_rubric=panel,
@@ -337,7 +454,7 @@ class RepositoryAuditApiTests(APITestCase):
             display_order=0,
         )
         event_name = '2nd yr expo'
-        PitEventGradingConfig.objects.create(
+        PitEventGradingConfig.objects.create(year_level='3rd Year',
             semester=self.semester,
             event_name=event_name,
             panel_rubric=panel,
@@ -427,7 +544,7 @@ class RepositoryAuditApiTests(APITestCase):
             max_score=5,
             display_order=0,
         )
-        PitEventGradingConfig.objects.create(
+        PitEventGradingConfig.objects.create(year_level='2nd Year',
             semester=self.semester,
             event_name='2nd yr expo',
             panel_rubric=panel,

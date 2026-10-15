@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:excel/excel.dart' as xl;
+import 'package:defensys/utils/excel_safe_decode.dart';
 import 'package:flutter/material.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/screens/web/admin/widgets/file_import_staging_modal.dart';
@@ -551,7 +552,7 @@ class _BulkImportViewState extends State<BulkImportView> {
 
   List<List<String>> _extractXlsxMatrix(List<int> bytes) {
     try {
-      final excel = xl.Excel.decodeBytes(bytes);
+      final excel = safeDecodeExcel(bytes);
       if (excel.tables.isEmpty) return [];
       final sheet = excel.tables.values.first;
       return sheet.rows
@@ -711,7 +712,7 @@ class _BulkImportViewState extends State<BulkImportView> {
   List<Map<String, dynamic>> _parseXlsxBytes(List<int> bytes, String fileName) {
     final rows = <Map<String, dynamic>>[];
     try {
-      final excel = xl.Excel.decodeBytes(bytes);
+      final excel = safeDecodeExcel(bytes);
       for (final table in excel.tables.keys) {
         final sheet = excel.tables[table];
         if (sheet == null || sheet.rows.isEmpty) continue;

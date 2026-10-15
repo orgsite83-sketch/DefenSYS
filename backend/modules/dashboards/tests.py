@@ -761,6 +761,7 @@ class DashboardApiTests(APITestCase):
             year_level='3rd Year',
             semester=semester,
             leader=student,
+            current_defense_stage='Concept Proposal',
         )
         TeamMembership.objects.create(team=team, student=student, is_leader=True)
         TeamGrade.objects.create(

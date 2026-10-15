@@ -32,6 +32,7 @@ class StudentDashboard extends ConsumerStatefulWidget {
 }
 
 class _StudentDashboardState extends ConsumerState<StudentDashboard> {
+
   int _selectedIndex = 0;
   final _eventsSubTabNotifier = ValueNotifier<int>(0);
   late final StudentProfile _profile;
@@ -252,7 +253,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
       ),
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        backgroundColor: DefensysTokens.maroon,
+        backgroundColor: DefensysTokens.maroonOf(context),
         foregroundColor: Colors.white,
         elevation: 0,
         leading: Builder(
@@ -327,7 +328,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                         icon: const Icon(Icons.refresh),
                         label: const Text('Retry'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: DefensysTokens.maroon,
+                          backgroundColor: DefensysTokens.maroonOf(context),
                           foregroundColor: Colors.white,
                         ),
                       ),
@@ -348,7 +349,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: safeIndex,
         onDestinationSelected: (i) => setState(() => _selectedIndex = i),
-        indicatorColor: DefensysTokens.maroon.withValues(alpha: 0.15),
+        indicatorColor: DefensysTokens.maroonOf(context).withValues(alpha: 0.15),
         destinations: destinations,
       ),
     ),
@@ -387,7 +388,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         top: false,
         child: Column(
           children: [
-            // Drawer Header with gradient maroon
+            // Navigation uses the DefenSYS brand, independently of team track.
             Container(
               width: double.infinity,
               padding: EdgeInsets.fromLTRB(
@@ -396,11 +397,11 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                 20,
                 20,
               ),
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    DefensysTokens.maroon,
-                    Color(0xFF520B13),
+                    DefensysTokens.maroonOf(context),
+                    DefensysTokens.maroonDark,
                   ],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -702,13 +703,13 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
             Container(
               padding: const EdgeInsets.all(7),
               decoration: BoxDecoration(
-                color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
                 icon,
                 size: 19,
-                color: DefensysTokens.maroon,
+                color: DefensysTokens.maroonTextOf(context),
               ),
             ),
             const SizedBox(width: 12),
@@ -754,7 +755,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroon,
+                  color: DefensysTokens.maroonOf(context),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(

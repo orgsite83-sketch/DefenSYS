@@ -49,6 +49,7 @@ class _PitInstructorAssignmentScreenState
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           DefensysPageHeader(
+            programScope: 'pit',
             icon: Icons.assignment_ind_outlined,
             title: 'PIT Instructors',
             subtitle:

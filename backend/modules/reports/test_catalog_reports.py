@@ -47,7 +47,7 @@ class CatalogReportTests(APITestCase):
         StageDeliverable.objects.create(defense_stage=cls.stage, deliverable_id='D1', label='Proposal Paper', required=True)
         cls.pit_rubric = Rubric.objects.create(name='IT Olympics Scoring', scope='pit', semester=cls.sem,
             event_name='IT Olympics', evaluation_type='panel', status='published', created_by=cls.lead)
-        PitEventGradingConfig.objects.create(semester=cls.sem, event_name='IT Olympics', panel_rubric=cls.pit_rubric,
+        PitEventGradingConfig.objects.create(year_level='2nd Year', semester=cls.sem, event_name='IT Olympics', panel_rubric=cls.pit_rubric,
             panel_weight=75, peer_weight=25)
         StudentAcademicRecord.objects.create(student=cls.student, semester=cls.sem, year_level='4th Year', section='BSIT-4A')
         cls.archive = ArchiveEntry.objects.create(entry_type='capstone', team=cls.team,
@@ -208,7 +208,7 @@ class CatalogReportTests(APITestCase):
     def test_rubric_export_lists_all_actual_stage_and_event_assignments(self):
         StageGradingConfig.objects.create(defense_stage=self.stage, semester=self.old_sem,
             panel_rubric=self.rubric, panel_weight=50, adviser_weight=30, peer_weight=20)
-        PitEventGradingConfig.objects.create(semester=self.sem, event_name='IT Hackathon',
+        PitEventGradingConfig.objects.create(year_level='2nd Year', semester=self.sem, event_name='IT Hackathon',
             panel_rubric=self.pit_rubric, panel_weight=60, peer_weight=40)
         preview = self.report('/api/reports/rubrics/', {'term_context': 'all'}).data
         rows = {row['name']: row for row in preview['rows']}

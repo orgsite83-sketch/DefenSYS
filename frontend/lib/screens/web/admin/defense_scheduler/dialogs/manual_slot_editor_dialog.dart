@@ -78,7 +78,13 @@ class ManualSlotEditorDialog {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            final teams = teamsForScope(state, scope);
+            final selectedEvent = state.pitEvents.firstWhere(
+              (item) => item['event_name'] == event.text.trim(),
+              orElse: () => <String, dynamic>{},
+            );
+            final teams = teamsForScope(state, scope).where((team) =>
+                scope != 'pit' || (selectedEvent['year_level'] != null &&
+                    team['year_level'] == selectedEvent['year_level'])).toList();
 
             final validTeam = teams.any((item) => asInt(item['id']) == teamId)
                 ? teamId

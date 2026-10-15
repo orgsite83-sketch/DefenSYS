@@ -344,6 +344,14 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     }, successMessage: 'Team endorsed for defense scheduling.');
   }
 
+  Future<bool> reviewAndEndorseTeam(int teamId, String stageLabel, String reviewToken) async {
+    return _postAction('review-endorse', {
+      'team_id': teamId,
+      'stage_label': stageLabel,
+      'review_token': reviewToken,
+    }, successMessage: 'Scheduling files approved and team endorsed.');
+  }
+
   Future<bool> unendorseTeam(int teamId, String stageLabel) async {
     return _postAction('unendorse', {
       'team_id': teamId,

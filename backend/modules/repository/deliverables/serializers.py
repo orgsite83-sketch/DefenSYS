@@ -49,16 +49,8 @@ class DeliverableUploadSerializer(serializers.Serializer):
         elif team.is_pit:
             from django.db.models import Q
             from defense.scheduler.models import PitEventGradingConfig
-            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
-            configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester)
-            if team.year_level:
-                exclude_filter = Q()
-                for y, hints in PIT_YEAR_EVENT_HINTS.items():
-                    if y != team.year_level:
-                        for hint in hints:
-                            exclude_filter |= Q(event_name__icontains=hint)
-                if exclude_filter:
-                    configs_qs = configs_qs.exclude(exclude_filter)
+            from defense.scheduler.event_scope import pit_events_for_team
+            configs_qs = pit_events_for_team(team)
             valid_events = list(configs_qs.values_list('event_name', flat=True))
             if not any(e.lower() == stage_label.lower() for e in valid_events):
                 raise serializers.ValidationError({'stage_label': f"'{stage_label}' is not a valid PIT event for this semester."})
@@ -94,16 +86,8 @@ class DeliverableActionSerializer(serializers.Serializer):
         elif team.is_pit:
             from django.db.models import Q
             from defense.scheduler.models import PitEventGradingConfig
-            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
-            configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester)
-            if team.year_level:
-                exclude_filter = Q()
-                for y, hints in PIT_YEAR_EVENT_HINTS.items():
-                    if y != team.year_level:
-                        for hint in hints:
-                            exclude_filter |= Q(event_name__icontains=hint)
-                if exclude_filter:
-                    configs_qs = configs_qs.exclude(exclude_filter)
+            from defense.scheduler.event_scope import pit_events_for_team
+            configs_qs = pit_events_for_team(team)
             valid_events = list(configs_qs.values_list('event_name', flat=True))
             if not any(e.lower() == stage_label.lower() for e in valid_events):
                 raise serializers.ValidationError({'stage_label': f"'{stage_label}' is not a valid PIT event for this semester."})
@@ -116,6 +100,10 @@ class DeliverableActionSerializer(serializers.Serializer):
         if definition_for(team, attrs['stage_label'], deliverable_id) is None:
             raise serializers.ValidationError({'deliverable_id': 'Deliverable does not exist for this stage.'})
         return attrs
+
+
+class ReviewEndorseSerializer(DeliverableActionSerializer):
+    review_token = serializers.CharField(max_length=30000)
 
 
 class DeliverableReviewSerializer(serializers.Serializer):
@@ -141,16 +129,8 @@ class DeliverableReviewSerializer(serializers.Serializer):
         elif team.is_pit:
             from django.db.models import Q
             from defense.scheduler.models import PitEventGradingConfig
-            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
-            configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester)
-            if team.year_level:
-                exclude_filter = Q()
-                for y, hints in PIT_YEAR_EVENT_HINTS.items():
-                    if y != team.year_level:
-                        for hint in hints:
-                            exclude_filter |= Q(event_name__icontains=hint)
-                if exclude_filter:
-                    configs_qs = configs_qs.exclude(exclude_filter)
+            from defense.scheduler.event_scope import pit_events_for_team
+            configs_qs = pit_events_for_team(team)
             valid_events = list(configs_qs.values_list('event_name', flat=True))
             if not any(e.lower() == stage_label.lower() for e in valid_events):
                 raise serializers.ValidationError({'stage_label': f"'{stage_label}' is not a valid PIT event for this semester."})

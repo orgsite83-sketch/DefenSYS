@@ -1,3 +1,4 @@
+import 'package:defensys/theme/program_colors.dart';
 import 'package:flutter/material.dart';
 
 import '../../theme/defensys_tokens.dart';
@@ -19,6 +20,7 @@ class StudentTeamSummaryCard extends StatelessWidget {
     final memberCount = team['memberCount'] ?? 0;
     final adviserName = team['adviserName'] ?? 'Unassigned';
     final isCapstone = team['isCapstone'] == true;
+    final colors = ProgramColors.of(context, data: team);
     final Color badgeBg;
     final Color badgeText;
     final Color badgeBorder;
@@ -58,7 +60,7 @@ class StudentTeamSummaryCard extends StatelessWidget {
             children: [
               Container(
                 width: 4,
-                color: isCapstone ? DefensysTokens.maroon : DefensysTokens.darkGold,
+                color: colors.text,
               ),
               Expanded(
                 child: Padding(
@@ -71,15 +73,15 @@ class StudentTeamSummaryCard extends StatelessWidget {
                           Container(
                             padding: const EdgeInsets.all(10),
                             decoration: BoxDecoration(
-                              color: (isCapstone ? DefensysTokens.maroon : DefensysTokens.darkGold).withValues(alpha: 0.08),
+                              color: colors.accent.withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
                               border: Border.all(
-                                color: (isCapstone ? DefensysTokens.maroon : DefensysTokens.darkGold).withValues(alpha: 0.2),
+                                color: colors.accent.withValues(alpha: 0.2),
                               ),
                             ),
                             child: Icon(
                               isCapstone ? Icons.school_outlined : Icons.book_outlined,
-                              color: isCapstone ? DefensysTokens.maroon : DefensysTokens.darkGold,
+                              color: colors.text,
                               size: 22,
                             ),
                           ),
@@ -155,7 +157,7 @@ class StudentTeamSummaryCard extends StatelessWidget {
                               children: [
                                 Icon(
                                   Icons.assignment_outlined,
-                                  color: isCapstone ? DefensysTokens.maroon : DefensysTokens.darkGold,
+                                  color: colors.text,
                                   size: 16,
                                 ),
                                 const SizedBox(width: 8),
@@ -177,7 +179,7 @@ class StudentTeamSummaryCard extends StatelessWidget {
                                 children: [
                                   Icon(
                                     Icons.layers_outlined,
-                                    color: isCapstone ? DefensysTokens.maroon : DefensysTokens.darkGold,
+                                    color: colors.text,
                                     size: 16,
                                   ),
                                   const SizedBox(width: 8),
@@ -200,7 +202,7 @@ class StudentTeamSummaryCard extends StatelessWidget {
                                 children: [
                                   Icon(
                                     Icons.assignment_ind_outlined,
-                                    color: isCapstone ? DefensysTokens.maroon : DefensysTokens.darkGold,
+                                    color: colors.text,
                                     size: 16,
                                   ),
                                   const SizedBox(width: 8),

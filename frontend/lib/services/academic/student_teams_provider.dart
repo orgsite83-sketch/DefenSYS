@@ -126,6 +126,7 @@ class StudentTeamsState {
 
 class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
   static String get baseUrl => ApiConfig.teamsUrl;
+  int _previewRequestRevision = 0;
 
   @override
   StudentTeamsState build() {
@@ -389,6 +390,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     String? systemName,
     String? projectManager,
   }) async {
+    final requestRevision = ++_previewRequestRevision;
     if (rows.isEmpty) {
       state = state.copyWith(error: 'CSV has no valid team rows.');
       return null;
@@ -410,6 +412,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
         }),
       );
 
+      if (!ref.mounted || requestRevision != _previewRequestRevision) return null;
       if (response.statusCode == 200) {
         return Map<String, dynamic>.from(jsonDecode(response.body));
       }
@@ -417,6 +420,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
       state = state.copyWith(error: _errorFromResponse(response));
       return null;
     } catch (e) {
+      if (!ref.mounted || requestRevision != _previewRequestRevision) return null;
       state = state.copyWith(error: 'Connection error: $e');
       return null;
     }

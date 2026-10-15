@@ -16,12 +16,6 @@ import 'package:defensys/utils/team_bulk_import_draft.dart';
 import 'student_teams_grid.dart';
 import 'student_teams_toolbar.dart';
 
-int? _asInt(dynamic value) {
-  if (value is int) return value;
-  if (value is num) return value.toInt();
-  return int.tryParse(value?.toString() ?? '');
-}
-
 class DraftResumeBanner extends StatelessWidget {
   const DraftResumeBanner({
     super.key,
@@ -111,6 +105,9 @@ class StudentTeamsBulkImportView extends StatefulWidget {
     required this.onAdviserFilterChanged,
     required this.onShowIssuesOnlyChanged,
     this.onClearStaged,
+    this.isPreviewLoading = false,
+    this.fileImportError,
+    this.onRetryPreview,
   });
 
   final StudentTeamsState state;
@@ -120,6 +117,9 @@ class StudentTeamsBulkImportView extends StatefulWidget {
   final String bulkCsvDraft;
   final String selectedBulkAdviserFilter;
   final Map<String, dynamic>? bulkPreview;
+  final bool isPreviewLoading;
+  final String? fileImportError;
+  final VoidCallback? onRetryPreview;
   final bool showIssuesOnly;
   final String? templateWarning;
   final bool isBulkImportDirty;
@@ -156,6 +156,15 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
   String _selectedAdviserFilter = 'all';
   String _groupBy = 'none'; // 'none' | 'section' | 'adviser'
   final Set<String> _customSections = {};
+
+  List<Map<String, dynamic>> get _previewRows =>
+      (widget.bulkPreview?['rows'] as List? ?? const [])
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
+  int get _readyCount => _previewRows.where((row) => row['ready'] == true).length;
+  int get _issueCount => _previewRows.where((row) => row['ready'] == false).length;
+  int get _pendingCount => (widget.parsedBulkRows.length - _previewRows.length)
+      .clamp(0, widget.parsedBulkRows.length);
 
   @override
   void dispose() {
@@ -229,6 +238,10 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
             if (widget.state.error != null) ...[
               const SizedBox(height: 14),
               _notice(widget.state.error!, warning: true),
+            ],
+            if (widget.fileImportError != null) ...[
+              const SizedBox(height: 12),
+              _notice(widget.fileImportError!, warning: true),
             ],
             if (widget.state.message != null) ...[
               const SizedBox(height: 14),
@@ -633,10 +646,8 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
 
   Widget _buildTeamUploadCard() {
     final hasRows = widget.parsedBulkRows.isNotEmpty;
-    final summary = (widget.bulkPreview?['summary'] as Map?)?.cast<String, dynamic>() ?? {};
-    final readyCount = _asInt(summary['ready']) ?? 0;
-    final totalRows = widget.parsedBulkRows.length;
-    final issueCount = totalRows - readyCount;
+    final readyCount = _readyCount;
+    final issueCount = _issueCount;
 
     return DefensysCard(
       child: Container(
@@ -791,7 +802,9 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                     const SizedBox(height: 4),
                     Text(
                       hasRows
-                          ? '$readyCount ready to import · ${issueCount > 0 ? '$issueCount needing review' : 'all valid'}'
+                          ? (_pendingCount > 0
+                              ? '$_pendingCount teams awaiting validation'
+                              : '$readyCount ready to import · ${issueCount > 0 ? '$issueCount needing review' : 'all valid'}')
                           : 'Multi-row teams and single-row formats supported',
                       textAlign: TextAlign.center,
                       style: TextStyle(
@@ -842,13 +855,10 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
 
   Widget _buildPreflightReviewCard() {
     final activeSemLabel = _getActiveSemLabel();
-    final summary = (widget.bulkPreview?['summary'] as Map?)?.cast<String, dynamic>() ?? {};
-    final previewRows = (widget.bulkPreview?['rows'] as List? ?? const [])
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
-    final readyCount = _asInt(summary['ready']) ?? 0;
+    final previewRows = _previewRows;
+    final readyCount = _readyCount;
     final totalRows = widget.parsedBulkRows.length;
-    final issueCount = totalRows - readyCount;
+    final issueCount = _issueCount;
 
     final uniqueSections = <String>{};
     for (final r in widget.parsedBulkRows) {
@@ -921,7 +931,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                   const SizedBox(width: 12),
                   ElevatedButton.icon(
                     key: const ValueKey('top_import_ready_teams_btn'),
-                    onPressed: widget.state.isSaving || widget.parsedBulkRows.isEmpty || widget.templateWarning != null || readyCount == 0
+                    onPressed: widget.state.isSaving || widget.isPreviewLoading || widget.parsedBulkRows.isEmpty || widget.templateWarning != null || readyCount == 0
                         ? null
                         : widget.onImportBulkTeams,
                     icon: widget.state.isSaving
@@ -954,6 +964,37 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
           ),
           const Divider(height: 1, color: Color(0xFFE5E7EB)),
 
+          if (totalRows > 0 && (widget.isPreviewLoading || _pendingCount > 0))
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
+              child: Row(
+                children: [
+                  if (widget.isPreviewLoading) ...[
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  Expanded(
+                    child: Text(
+                      widget.isPreviewLoading
+                          ? 'Validating teams…'
+                          : 'Validation has not completed. Retry to see which teams can be imported.',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  if (!widget.isPreviewLoading && widget.onRetryPreview != null)
+                    TextButton.icon(
+                      onPressed: widget.onRetryPreview,
+                      icon: const Icon(Icons.refresh_rounded, size: 16),
+                      label: const Text('Retry validation'),
+                    ),
+                ],
+              ),
+            ),
+
           // Team Intake Snapshot Strip
           if (totalRows > 0)
             Padding(
@@ -981,6 +1022,10 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                       ),
                       const SizedBox(width: 14),
                       _buildTeamStatItem('Ready to Import', readyCount, const Color(0xFF16A34A)),
+                      if (_pendingCount > 0) ...[
+                        _buildTeamStatDivider(),
+                        _buildTeamStatItem('Awaiting Validation', _pendingCount, _muted),
+                      ],
                       if (issueCount > 0) ...[
                         _buildTeamStatDivider(),
                         _buildTeamStatItem('Needs Fix', issueCount, const Color(0xFFD97706)),
@@ -1295,7 +1340,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                 ),
                 const SizedBox(width: 12),
                 ElevatedButton.icon(
-                  onPressed: widget.state.isSaving || widget.parsedBulkRows.isEmpty || widget.templateWarning != null || readyCount == 0
+                  onPressed: widget.state.isSaving || widget.isPreviewLoading || widget.parsedBulkRows.isEmpty || widget.templateWarning != null || readyCount == 0
                       ? null
                       : widget.onImportBulkTeams,
                   icon: widget.state.isSaving

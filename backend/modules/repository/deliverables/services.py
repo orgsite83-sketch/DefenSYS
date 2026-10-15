@@ -1,12 +1,14 @@
 from defensys_backend.file_cleanup import delete_repository_file_on_commit, replacement_file_name
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.utils import timezone
 
 from django.db.models import Q
 
 from academic_period_management.models import Semester
 from defense.scheduler.models import DefenseSchedule
 from defense.stages.models import DefenseStage
+from grading.constants import PASS_GRADE_THRESHOLD
 from student_teams.models import StudentTeam
 from student_teams.services import is_stage_ready, mark_stage_locked, mark_stage_ready, was_stage_endorsed
 from .models import DeliverableSubmission
@@ -89,10 +91,10 @@ def get_deliverable_definitions_for_team(team, stage_label):
     """Load deliverable definitions configured for a Capstone stage or PIT event."""
     if not team or not stage_label:
         return []
-    return get_deliverable_definitions_for_scope('capstone' if team.is_capstone else 'pit', team.semester_id, stage_label)
+    return get_deliverable_definitions_for_scope('capstone' if team.is_capstone else 'pit', team.semester_id, stage_label, year_level=team.year_level)
 
 
-def get_deliverable_definitions_for_scope(scope, semester_id, stage_label):
+def get_deliverable_definitions_for_scope(scope, semester_id, stage_label, *, year_level=None):
     """Use the record's term/scope when reading historical defenses."""
     if scope == 'capstone':
         return get_deliverable_definitions(stage_label)
@@ -101,6 +103,7 @@ def get_deliverable_definitions_for_scope(scope, semester_id, stage_label):
     from defense.scheduler.models import PitEventGradingConfig
     config = PitEventGradingConfig.objects.filter(
         semester_id=semester_id,
+        **({"year_level": year_level} if year_level is not None else {}),
         event_name__iexact=stage_label.strip()
     ).prefetch_related('deliverables').first()
     if not config:
@@ -218,9 +221,13 @@ def current_stage_for_team(team):
     else:
         # For PIT: find the scheduled schedule or the first event config
         from defense.scheduler.models import DefenseSchedule
+        from defense.scheduler.event_scope import pit_events_for_team
+        allowed_events = pit_events_for_team(team).values('event_name')
         sched = (
             DefenseSchedule.objects.filter(
                 team=team,
+                semester=team.semester,
+                event_name__in=allowed_events,
         project_version=team.project_version,
                 scope=DefenseSchedule.SCOPE_PIT,
                 status=DefenseSchedule.STATUS_SCHEDULED,
@@ -234,16 +241,8 @@ def current_stage_for_team(team):
         # Or, if they have configured events for this semester,
         # find the first event for which they don't have a STATUS_DONE schedule.
         from defense.scheduler.models import PitEventGradingConfig
-        from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
-        configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester)
-        if team.year_level:
-            exclude_filter = Q()
-            for y, hints in PIT_YEAR_EVENT_HINTS.items():
-                if y != team.year_level:
-                    for hint in hints:
-                        exclude_filter |= Q(event_name__icontains=hint)
-            if exclude_filter:
-                configs_qs = configs_qs.exclude(exclude_filter)
+        from defense.scheduler.event_scope import pit_events_for_team
+        configs_qs = pit_events_for_team(team)
         configs = list(configs_qs.order_by('event_name'))
         if configs:
             from .models import DeliverableSubmission
@@ -287,6 +286,8 @@ def current_stage_for_team(team):
         sched_any = (
             DefenseSchedule.objects.filter(
                 team=team,
+                semester=team.semester,
+                event_name__in=allowed_events,
         project_version=team.project_version,
                 scope=DefenseSchedule.SCOPE_PIT,
             )
@@ -299,7 +300,7 @@ def current_stage_for_team(team):
         return 'No PIT event configured'
 
 
-def team_queryset_for_user(user):
+def team_queryset_for_user(user, *, include_pit_lead=True):
     queryset = (
         StudentTeam.objects.select_related(
             'semester',
@@ -320,12 +321,10 @@ def team_queryset_for_user(user):
         q = Q()
         if getattr(user, 'is_adviser', False):
             q |= Q(adviser=user)
-        if getattr(user, 'is_pit_lead', False):
+        if include_pit_lead and getattr(user, 'is_pit_lead', False):
             pit_year = (getattr(user, 'pit_lead_year', None) or '').strip()
             if pit_year:
-                q |= Q(level__icontains=pit_year) & Q(level__icontains='PIT')
-            else:
-                q |= Q(level__icontains='PIT')
+                q |= Q(year_level=pit_year, level__icontains='PIT')
         
         # Section Instructors
         from user_management.models import SectionInstructorAssignment
@@ -337,12 +336,11 @@ def team_queryset_for_user(user):
                 q |= Q(
                     semester=assign.semester,
                     section=assign.section,
-                    level__icontains=norm_year
+                    year_level=norm_year,
+                    level__icontains='PIT',
                 )
 
-        if getattr(user, 'is_adviser', False) or getattr(user, 'is_pit_lead', False) or assignments.exists():
-            return queryset.filter(q)
-        return queryset.none()
+        return queryset.filter(q) if q else queryset.none()
     if getattr(user, 'role', None) == 'student':
         return queryset.filter(memberships__student=user).distinct()
     return queryset.none()
@@ -425,7 +423,7 @@ def archive_unlocked(team, stage_label, deliverable_type='post'):
         team=team,
         semester=team.semester,
     ).order_by('-updated_at', '-id').first()
-    if stage_grade:
+    if stage_grade and stage_grade.is_capstone:
         if getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
             return False
         if getattr(stage_grade, 'result', '') == 'failed':
@@ -433,7 +431,7 @@ def archive_unlocked(team, stage_label, deliverable_type='post'):
         if (
             stage_grade.status == TeamGrade.STATUS_PUBLISHED
             and stage_grade.final_grade is not None
-            and stage_grade.final_grade < 75.0
+            and stage_grade.final_grade < PASS_GRADE_THRESHOLD
             and getattr(stage_grade, 'verdict', '') not in TeamGrade.PASSING_VERDICTS
         ):
             return False
@@ -471,7 +469,7 @@ def is_presentation_stage(team, stage_label):
         sem = getattr(team, 'semester', None)
         if sem:
             config = PitEventGradingConfig.objects.filter(
-                semester=sem,
+                semester=sem, year_level=team.year_level,
                 event_name__iexact=stage_label.strip(),
             ).prefetch_related('deliverables').first()
             if config and not config.deliverables.exists():
@@ -501,11 +499,7 @@ def required_complete(team, stage_label):
         return True
     return all(
         item['id'] in submitted
-        and (
-            submitted[item['id']].status != DeliverableSubmission.STATUS_REJECTED
-            if not getattr(team, 'is_capstone', False) else
-            submitted[item['id']].status == DeliverableSubmission.STATUS_ACCEPTED
-        )
+        and submitted[item['id']].status == DeliverableSubmission.STATUS_ACCEPTED
         for item in required_items
     )
 
@@ -616,7 +610,7 @@ def compute_stage_status_detail(team, stage_label, configured, archive_required_
     elif not is_capstone:
         sem = getattr(team, 'semester', None)
         is_officially_complete = PitEventGradingConfig.objects.filter(
-            event_name=stage_label,
+            event_name=stage_label, year_level=team.year_level,
             is_officially_complete=True,
         ).filter(
             Q(semester=sem) if sem else Q()
@@ -667,6 +661,10 @@ def is_stage_defense_done(team, stage_label):
     from defense.stages.models import StageGradingConfig
 
     is_capstone = getattr(team, 'is_capstone', False)
+    if not is_capstone:
+        from defense.scheduler.event_scope import pit_events_for_team
+        if not pit_events_for_team(team).filter(event_name__iexact=stage_label).exists():
+            return False
     stage_obj = defense_stage_for_label(stage_label) if is_capstone else None
     progress = get_stage_progress(team, stage_obj) if stage_obj else None
     progress_status = progress.status if progress else ''
@@ -696,7 +694,7 @@ def is_stage_defense_done(team, stage_label):
     elif not is_capstone:
         sem = getattr(team, 'semester', None)
         is_officially_complete = PitEventGradingConfig.objects.filter(
-            event_name=stage_label,
+            event_name=stage_label, year_level=team.year_level,
             is_officially_complete=True,
         ).filter(
             Q(semester=sem) if sem else Q()
@@ -711,14 +709,15 @@ def is_stage_defense_done(team, stage_label):
     if stage_grade:
         if is_capstone:
             is_officially_complete = is_officially_complete and stage_grade.status == TeamGrade.STATUS_PUBLISHED
-        if getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
+        if is_capstone and getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
             return False
-        if getattr(stage_grade, 'result', '') == 'failed':
+        if is_capstone and getattr(stage_grade, 'result', '') == 'failed':
             return False
         if (
-            stage_grade.status == TeamGrade.STATUS_PUBLISHED
+            is_capstone
+            and stage_grade.status == TeamGrade.STATUS_PUBLISHED
             and stage_grade.final_grade is not None
-            and stage_grade.final_grade < 75.0
+            and stage_grade.final_grade < PASS_GRADE_THRESHOLD
             and getattr(stage_grade, 'verdict', '') not in TeamGrade.PASSING_VERDICTS
         ):
             return False
@@ -866,7 +865,7 @@ def stage_payload(team, stage_label, evaluator=None):
     elif not is_capstone:
         sem = getattr(team, 'semester', None)
         is_stage_officially_complete = PitEventGradingConfig.objects.filter(
-            event_name=stage_label,
+            event_name=stage_label, year_level=team.year_level,
             is_officially_complete=True,
         ).filter(
             Q(semester=sem) if sem else Q()
@@ -1057,8 +1056,13 @@ def stage_payload(team, stage_label, evaluator=None):
             'room': stage_sched.room,
             'status': stage_sched.status,
             'teamId': stage_sched.team_id,
+            'team_name': team.name,
+            'stage_label': stage_sched.stage_label,
+            'scope': stage_sched.scope,
+            'revision': stage_sched.revision,
             'panelists': panelists_list,
             'documenter': doc_data,
+            'materials_readiness': materials_readiness(stage_sched, definitions=definitions, submitted=submitted),
         }
 
     # Resolve stage-scoped peer evaluation data
@@ -1083,8 +1087,11 @@ def stage_payload(team, stage_label, evaluator=None):
     from grading.grades.availability import peer_grading_unavailable_reason
     stage_peer_reason = peer_grading_unavailable_reason(stage_grade)
 
+    from .endorsement import endorsement_review
+    review = endorsement_review(team, stage_label, definitions=definitions, submitted=submitted)
     return {
         'stage_label': stage_label,
+        'endorsement_review': review,
         'peer_eval_unavailable_reason': stage_peer_reason,
         'deliverables_configured': configured,
         'is_presentation_only': is_pres,
@@ -1167,6 +1174,7 @@ def submission_payload(submission):
         'file_url': files_data[0]['file_url'] if files_data else (submission.file.url if getattr(submission, 'file', None) and submission.file else None),
         'uploaded_by_name': display_name(submission.uploaded_by),
         'uploaded_at': submission.uploaded_at,
+        'is_late': getattr(submission, 'is_late', False),
         'status': submission.status,
         'feedback': submission.feedback,
         'file_replacement_unlocked': submission.file_replacement_unlocked,
@@ -1177,21 +1185,30 @@ def submission_payload(submission):
     }
 
 
+def resolve_team_instructor_or_adviser_name(team):
+    if team.adviser:
+        return display_name(team.adviser)
+    if not team.is_capstone and team.semester_id and team.section and team.year_level:
+        from student_teams.team_levels import normalize_year_level
+        from user_management.models import SectionInstructorAssignment
+        assignment = SectionInstructorAssignment.objects.filter(
+            semester_id=team.semester_id,
+            section=team.section,
+            year_level=normalize_year_level(team.year_level),
+            is_active=True,
+        ).select_related('faculty').first()
+        if assignment:
+            return display_name(assignment.faculty)
+    return None
+
+
 def team_payload(team, selected_stage=None, evaluator=None):
     if team.is_capstone:
         configured_stage_labels = list(STAGE_OPTIONS)
     else:
         from defense.scheduler.models import PitEventGradingConfig
-        from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
-        configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester)
-        if team.year_level:
-            exclude_filter = Q()
-            for y, hints in PIT_YEAR_EVENT_HINTS.items():
-                if y != team.year_level:
-                    for hint in hints:
-                        exclude_filter |= Q(event_name__icontains=hint)
-            if exclude_filter:
-                configs_qs = configs_qs.exclude(exclude_filter)
+        from defense.scheduler.event_scope import pit_events_for_team
+        configs_qs = pit_events_for_team(team)
         configured_stage_labels = list(
             configs_qs.order_by('event_name')
             .values_list('event_name', flat=True)
@@ -1276,6 +1293,7 @@ def team_payload(team, selected_stage=None, evaluator=None):
                 'peer_per_student': peer_per_student,
             }
 
+    effective_adviser_name = resolve_team_instructor_or_adviser_name(team)
     return {
         'id': team.id,
         'name': team.name,
@@ -1291,7 +1309,8 @@ def team_payload(team, selected_stage=None, evaluator=None):
         'current_stage': current_stage_for_team(team),
         'selected_stage': selected_payload,
         'stages': stages,
-        'adviser_name': display_name(team.adviser),
+        'adviser_name': effective_adviser_name,
+        'instructor_name': effective_adviser_name,
         'leader_name': display_name(team.leader),
         'member_count': team.memberships.count(),
         'submitted_count': team.deliverable_submissions.count(),
@@ -1463,10 +1482,17 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
         submission.summary = latest_file.summary
         submission.category = latest_file.category
         submission.category_confidence = latest_file.category_confidence
-        submission.save(update_fields=[
+        fields_to_update = [
             'file_name', 'file_size', 'file', 'extracted_text',
-            'topics', 'summary', 'category', 'category_confidence', 'uploaded_at'
-        ])
+            'topics', 'summary', 'category', 'category_confidence', 'uploaded_at',
+        ]
+        if due_before_defense(definition):
+            from .timing import stage_schedule, defense_starts_at
+            sched = stage_schedule(team, stage_label)
+            if sched and timezone.now() > defense_starts_at(sched):
+                submission.is_late = True
+                fields_to_update.append('is_late')
+        submission.save(update_fields=fields_to_update)
 
     if is_approved_replacement:
         from authentication_access_control.audit import audit_scope_metadata, log_high_impact_action
@@ -1558,7 +1584,7 @@ def remove_submission(team, stage_label, deliverable_id, file_id=None):
 
 
 @transaction.atomic
-def endorse_team(team, stage_label):
+def endorse_team(team, stage_label, user=None):
     if not stage_deliverables_configured(team, stage_label):
         raise ValueError(
             'No deliverables configured for this stage. Add them in Defense Stages or PIT configs before endorsement.'
@@ -1570,7 +1596,7 @@ def endorse_team(team, stage_label):
         if stage is None:
             raise ValueError('Defense stage does not exist.')
         try:
-            mark_stage_ready(team, stage)
+            mark_stage_ready(team, stage, user=user)
         except ValidationError as exc:
             raise ValueError(' '.join(exc.messages)) from exc
     else:
@@ -1617,9 +1643,13 @@ def unendorse_team(team, stage_label):
 
 @transaction.atomic
 def review_submission(team, stage_label, deliverable_id, status_val, feedback_val, reviewer_user, clear_defense_revisions=False):
+    team = StudentTeam.objects.select_for_update().get(pk=team.pk)
     definition = definition_for(team, stage_label, deliverable_id)
     if definition and definition.get('source') == 'defense_minutes':
         raise PermissionError('Use the defense minutes signing workflow to approve this record.')
+    if definition and due_before_defense(definition):
+        from .timing import ensure_material_editable
+        ensure_material_editable(team, stage_label, definition, lock=True)
     from django.utils import timezone
 
     try:

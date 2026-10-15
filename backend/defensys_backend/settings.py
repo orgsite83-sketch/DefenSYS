@@ -80,7 +80,7 @@ CSRF_TRUSTED_ORIGINS = [
 # served from different origins. Same-origin nginx deployments do not need this.
 CORS_ALLOWED_ORIGINS = _env_list('DJANGO_CORS_ALLOWED_ORIGINS')
 
-# Allow 192.168.* and 10.* origins during local development.
+# Allow RFC1918 LAN/hotspot origins (10/8, 172.16/12, 192.168/16) in development.
 # Automatically disabled in production when DEBUG=False.
 CORS_ALLOW_LAN = DEBUG
 

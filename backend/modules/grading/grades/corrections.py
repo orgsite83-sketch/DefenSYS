@@ -207,7 +207,7 @@ def _change(grade, changes):
 
 
 def _check_progression(before, after, protected):
-    if not protected:
+    if not protected or before.get('scope') == TeamGrade.SCOPE_PIT:
         return
     def passed(value):
         from grading.constants import PASS_GRADE_THRESHOLD

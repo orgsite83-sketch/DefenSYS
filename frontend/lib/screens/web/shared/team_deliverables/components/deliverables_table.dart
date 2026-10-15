@@ -1,3 +1,4 @@
+import 'package:defensys/theme/program_colors.dart';
 import 'package:defensys/widgets/defense/system_defense_records.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -24,6 +25,7 @@ import 'package:defensys/models/adviser_workflow.dart';
 import 'package:defensys/services/defense/team_defense_provider.dart';
 import 'package:defensys/widgets/adviser/workflow_reminder.dart';
 import 'package:defensys/widgets/repository/defense_material_readiness.dart';
+import 'package:defensys/screens/web/admin/defense_board/components/material_deadline_dialog.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import '../deliverables_view_types.dart';
@@ -51,11 +53,11 @@ double? parseAsDouble(dynamic value) {
   return null;
 }
 
-BoxDecoration cardDecoration() {
+BoxDecoration cardDecoration(BuildContext context) {
   return BoxDecoration(
-    color: Colors.white,
+    color: DefensysTokens.surfaceOf(context),
     borderRadius: BorderRadius.circular(16),
-    border: Border.all(color: const Color(0xFFE2E8F0)),
+    border: Border.all(color: DefensysTokens.borderOf(context)),
     boxShadow: [
       BoxShadow(
         color: Colors.black.withValues(alpha: 0.02),
@@ -89,6 +91,7 @@ class DeliverablesTablePane extends ConsumerStatefulWidget {
 }
 
 class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
+
   int? _selectedTeamId;
   bool _showMobileDetail = false;
   final Map<int, String> _cardSelectedStages = {};
@@ -152,8 +155,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       padding: const EdgeInsets.only(bottom: 6),
       child: Text(
         text,
-        style: const TextStyle(
-          color: AppColors.textSecondary,
+        style: TextStyle(
+          color: DefensysTokens.textSecondaryOf(context),
           fontWeight: FontWeight.w900,
           fontSize: 12,
         ),
@@ -363,6 +366,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       stageLabel: stageLabel,
       item: item,
       fileId: fileId,
+      programScope: widget.state.scope,
     );
   }
 
@@ -474,7 +478,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 isPost
                     ? 'Approve "$deliverableName" for $teamName and add it to the archive?'
                     : 'Accept "$deliverableName" for $teamName? This clears a pre-defense requirement for endorsement.',
-                style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+                style: TextStyle(fontSize: 13, color: DefensysTokens.textPrimaryOf(context)),
               ),
               if (canClearRevisions) ...[
                 const SizedBox(height: 12),
@@ -515,7 +519,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
                   ),
-                  child: const Row(
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(Icons.info_outline, size: 16, color: AppColors.gold),
@@ -523,7 +527,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       Expanded(
                         child: Text(
                           'Approval makes this file available in the archive according to its access settings. Only a System Admin can reopen it for revision.',
-                          style: TextStyle(fontSize: 12, color: AppColors.textPrimary, height: 1.3),
+                          style: TextStyle(fontSize: 12, color: DefensysTokens.textPrimaryOf(context), height: 1.3),
                         ),
                       ),
                     ],
@@ -575,12 +579,12 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     Map<String, dynamic> item,
   ) async {
     final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
-    final feedbackCtrl = TextEditingController();
+    var feedback = '';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (dialogCtx, setDialogState) => AlertDialog(
-        title: Text('${isPost ? 'Request Revision' : 'Reject Deliverable'}: ${item['label'] ?? item['id']}'),
+        title: Text('${isPost ? 'Request Revision' : 'Request corrections'}: ${item['label'] ?? item['id']}'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -588,16 +592,15 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             Text(
               isPost
                   ? 'Explain what the team must correct before this file can be archived:'
-                  : 'Please provide feedback explaining why this submission is being rejected so students can revise it:',
+                  : 'Explain what the team needs to correct and upload again:',
               style: const TextStyle(fontSize: 13),
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: feedbackCtrl,
-              onChanged: (_) => setDialogState(() {}),
+              onChanged: (value) => setDialogState(() => feedback = value),
               maxLines: 3,
               decoration: const InputDecoration(
-                hintText: 'Enter rejection remarks...',
+                hintText: 'Describe the required corrections...',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -609,29 +612,27 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: isPost && feedbackCtrl.text.trim().isEmpty
+            onPressed: feedback.trim().isEmpty
                 ? null
                 : () => Navigator.pop(dialogCtx, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.danger,
               foregroundColor: Colors.white,
             ),
-            child: Text(isPost ? 'Send Revision Request' : 'Confirm Rejection'),
+            child: Text(isPost ? 'Send Revision Request' : 'Request corrections'),
           ),
         ],
         ),
       ),
     );
 
-    final feedback = feedbackCtrl.text.trim();
-    feedbackCtrl.dispose();
     if (confirmed == true && mounted) {
       await ref.read(capstoneDeliverablesProvider.notifier).reviewDeliverable(
             teamId: parseAsInt(team['id']),
             stageLabel: stageLabel,
             deliverableId: item['id'].toString(),
             status: 'rejected',
-            feedback: feedback,
+            feedback: feedback.trim(),
           );
     }
   }
@@ -658,7 +659,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       decoration: BoxDecoration(
         color: AppColors.background.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: Row(
         children: [
@@ -681,7 +682,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 if (fileSize.isNotEmpty)
                   Text(
                     fileSize,
-                    style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
+                    style: TextStyle(fontSize: 10, color: DefensysTokens.textSecondaryOf(context)),
                   ),
               ],
             ),
@@ -771,6 +772,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         item['locked'] == true || subStatus == 'accepted';
     final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
     final postLocked = isPost && locked;
+    final isDefense = !isPost && item['requirement_timing'] == 'defense';
+    final combinedReview = !isPost && !isDefense && item['required'] == true && !endorsed;
+    final displayCleared = subStatus == 'accepted' || (isDefense && uploaded && subStatus != 'rejected');
     final canFacultyReview = item['can_faculty_review'] is bool
         ? item['can_faculty_review'] == true
         : (isPost
@@ -788,7 +792,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       decoration: BoxDecoration(
         color: subStatus == 'rejected'
             ? Colors.red.withValues(alpha: 0.04)
-            : (subStatus == 'accepted'
+            : (displayCleared
                 ? Colors.green.withValues(alpha: 0.05)
                 : (uploaded
                     ? Colors.orange.withValues(alpha: 0.04)
@@ -797,7 +801,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         border: Border.all(
           color: subStatus == 'rejected'
               ? Colors.red.withValues(alpha: 0.3)
-              : (subStatus == 'accepted'
+              : (displayCleared
                   ? Colors.green.withValues(alpha: 0.2)
                   : (uploaded
                       ? Colors.orange.withValues(alpha: 0.3)
@@ -810,20 +814,20 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           Row(
             children: [
               Icon(
-                subStatus == 'accepted'
+                displayCleared
                     ? Icons.check_circle_rounded
                     : (subStatus == 'rejected'
                         ? Icons.cancel_rounded
                         : (uploaded
                             ? Icons.hourglass_empty_rounded
                             : (postLocked ? Icons.lock_outline : Icons.radio_button_unchecked))),
-                color: subStatus == 'accepted'
+                color: displayCleared
                     ? AppColors.success
                     : (subStatus == 'rejected'
                         ? AppColors.danger
                         : (uploaded
                             ? AppColors.warning
-                            : AppColors.textSecondary)),
+                            : DefensysTokens.textSecondaryOf(context))),
                 size: 20,
               ),
               const SizedBox(width: 10),
@@ -839,7 +843,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
-                              color: uploaded ? AppColors.textPrimary : AppColors.textSecondary,
+                              color: uploaded ? DefensysTokens.textPrimaryOf(context) : DefensysTokens.textSecondaryOf(context),
                             ),
                           ),
                         ),
@@ -848,15 +852,34 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: AppColors.textSecondary.withValues(alpha: 0.08),
+                              color: DefensysTokens.textSecondaryOf(context).withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(4),
                             ),
-                            child: const Text(
+                            child: Text(
                               'OPTIONAL',
                               style: TextStyle(
                                 fontSize: 9,
                                 fontWeight: FontWeight.bold,
-                                color: AppColors.textSecondary,
+                                color: DefensysTokens.textSecondaryOf(context),
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (submission?['is_late'] == true || item['is_late'] == true) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEA580C).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: const Color(0xFFEA580C).withValues(alpha: 0.3)),
+                            ),
+                            child: const Text(
+                              'LATE SUBMISSION',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFFEA580C),
                               ),
                             ),
                           ),
@@ -867,7 +890,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       const SizedBox(height: 2),
                       Text(
                         item['description']?.toString() ?? '',
-                        style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                        style: TextStyle(fontSize: 11, color: DefensysTokens.textSecondaryOf(context)),
                       ),
                     ],
                   ],
@@ -898,6 +921,11 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   ),
                 ),
               ] else if (!uploaded) ...[
+                if (isDefense) ...[
+                  Text(item['materials_status'] == 'overdue' ? 'Overdue' : 'Missing',
+                      style: TextStyle(fontSize: 11, color: item['materials_status'] == 'overdue' ? AppColors.danger : DefensysTokens.textSecondaryOf(context))),
+                  const SizedBox(width: 8),
+                ],
                 if (!isFaculty || isAdmin)
                   if (!locked)
                     ElevatedButton.icon(
@@ -905,7 +933,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       icon: const Icon(Icons.upload_file, size: 14),
                       label: const Text('Upload'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.maroon,
+                        backgroundColor: DefensysTokens.maroonOf(context),
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         visualDensity: VisualDensity.compact,
@@ -913,7 +941,27 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       ),
                     ),
               ] else if (uploaded && !isWPR) ...[
-                if (isFaculty && !isAdmin) ...[
+                if ((isDefense || combinedReview) && (isFaculty || isAdmin)) ...[
+                  Text(
+                    subStatus == 'rejected' ? 'Corrections requested' :
+                        isDefense ? 'Uploaded' : subStatus == 'accepted' ? 'Accepted' : 'Awaiting review',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
+                        color: subStatus == 'rejected' ? AppColors.danger : displayCleared ? AppColors.success : DefensysTokens.textSecondaryOf(context)),
+                  ),
+                  if (canFacultyReview && subStatus != 'rejected') ...[
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: widget.state.isSaving ? null : () => _promptRejectDialog(team, stageLabel, item),
+                      icon: const Icon(Icons.edit_note_outlined, size: 14),
+                      label: const Text('Request corrections'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: DefensysTokens.textSecondaryOf(context),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ],
+                ] else if (isFaculty && !isAdmin) ...[
                   if (subStatus == 'accepted') ...[
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1029,21 +1077,21 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: AppColors.textSecondary.withValues(alpha: 0.1),
+                          color: DefensysTokens.textSecondaryOf(context).withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: AppColors.textSecondary.withValues(alpha: 0.3)),
+                          border: Border.all(color: DefensysTokens.textSecondaryOf(context).withValues(alpha: 0.3)),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.lock_outline, size: 12, color: AppColors.textSecondary),
+                            Icon(Icons.lock_outline, size: 12, color: DefensysTokens.textSecondaryOf(context)),
                             SizedBox(width: 4),
                             Text(
                               'Locked (Defense Done)',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
-                                color: AppColors.textSecondary,
+                                color: DefensysTokens.textSecondaryOf(context),
                               ),
                             ),
                           ],
@@ -1070,14 +1118,14 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               ],
             ],
           ),
-          if (uploaded && submission != null) ...[
-            if (item['requirement_timing'] == 'defense') ...[
+          if (isDefense) ...[
               const SizedBox(height: 6),
               Text(item['due_at'] == null
                   ? 'Deadline set when defense is scheduled'
                   : 'Due before defense: ${materialDeadlineLabel(item['due_at'])}',
-                  style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-            ],
+                  style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context))),
+          ],
+          if (uploaded && submission != null) ...[
             const SizedBox(height: 8),
             ..._buildFileList(
               team,
@@ -1108,7 +1156,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      'Rejection Remarks: $feedback',
+                      'Corrections requested: $feedback',
                       style: const TextStyle(
                         fontSize: 11,
                         color: AppColors.danger,
@@ -1138,13 +1186,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const [
+            children: [
               Text(
                 'Oral / Presentation Milestone',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+                  color: DefensysTokens.textPrimaryOf(context),
                 ),
               ),
               Text(
@@ -1172,16 +1220,16 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     }
 
     if (configured && total == 0) {
-      return const Column(
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Scheduling Clearance', style: TextStyle(
             fontSize: 12, fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
+            color: DefensysTokens.textPrimaryOf(context),
           )),
           SizedBox(height: 6),
           Text('No scheduling uploads required', style: TextStyle(
-            fontSize: 12, color: AppColors.textSecondary,
+            fontSize: 12, color: DefensysTokens.textSecondaryOf(context),
           )),
         ],
       );
@@ -1198,12 +1246,12 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           runSpacing: 6,
           alignment: WrapAlignment.spaceBetween,
           children: [
-            const Text(
+            Text(
               'Scheduling Clearance',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
+                color: DefensysTokens.textPrimaryOf(context),
               ),
             ),
             Text(
@@ -1245,12 +1293,12 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           runSpacing: 6,
           alignment: WrapAlignment.spaceBetween,
           children: [
-            const Text(
+            Text(
               'Post-Defense Deliverables',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
+                color: DefensysTokens.textPrimaryOf(context),
               ),
             ),
             Text(
@@ -1282,7 +1330,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final endorsed = stage['endorsed'] == true;
     final isPresentationOnly = stage['is_presentation_only'] == true;
     final configured = stage['deliverables_configured'] == true || isPresentationOnly;
-    final complete = stage['required_complete'] == true || isPresentationOnly;
+    final readyForReview = _canReviewAndEndorse(stage);
 
     if (!configured) {
       return {
@@ -1360,23 +1408,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       };
     }
 
-    if (complete) {
-      final materials = stage['materials_readiness'];
-      if (widget.state.scope == 'pit' && materials is Map) {
-        final required = parseAsInt(materials['required_total']);
-        final submitted = parseAsInt(materials['submitted_total']);
-        if (required > submitted) {
-          return {
-            'label': 'Files Pending',
-            'color': AppColors.warning,
-            'bg': AppColors.warning.withValues(alpha: 0.1),
-            'border': AppColors.warning.withValues(alpha: 0.3),
-            'icon': Icons.upload_file_outlined,
-          };
-        }
-      }
+    if (readyForReview) {
       return {
-        'label': 'Ready for Endorsement',
+        'label': 'Ready for review',
         'color': Colors.blue,
         'bg': Colors.blue.withValues(alpha: 0.1),
         'border': Colors.blue.withValues(alpha: 0.3),
@@ -1385,7 +1419,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     }
 
     return {
-      'label': 'Awaiting Endorsement',
+      'label': 'Awaiting requirements',
       'color': AppColors.warning,
       'bg': AppColors.warning.withValues(alpha: 0.1),
       'border': AppColors.warning.withValues(alpha: 0.3),
@@ -1420,23 +1454,46 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
+  bool _canReviewAndEndorse(Map<String, dynamic> stage) {
+    final review = stage['endorsement_review'];
+    return review is Map && review['can_review_and_endorse'] == true &&
+        (review['review_token']?.toString().isNotEmpty ?? false);
+  }
+
   Future<void> _confirmEndorseTeam(
     Map<String, dynamic> team,
     String selectedStage,
     bool isPresentationOnly,
   ) async {
+    final stage = _stagePayload(_stageList(team), selectedStage);
+    if (!_canReviewAndEndorse(stage)) return;
+    final review = stage['endorsement_review'] as Map;
+    final reviewToken = review['review_token'].toString();
+    final files = (review['files'] as List? ?? []).whereType<Map>().toList();
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Endorse Team'),
-        content: Text(
-          isPresentationOnly
+        title: const Text('Review & endorse'),
+        content: SizedBox(
+          width: 480,
+          child: SingleChildScrollView(child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(isPresentationOnly
               ? 'Endorse ${team['name']} for $selectedStage? '
                 'This confirms the team is verbally prepared and ready for presentation / demo scheduling.'
-              : 'Endorse ${team['name']} for $selectedStage? '
-                'This confirms the scheduling requirements are cleared '
-                'and the team is ready for defense scheduling. '
-                'Files marked Before defense can still be uploaded after endorsement and do not block scheduling.',
+              : 'Confirm that you have reviewed the required scheduling files for ${team['name']}. '
+                'This action approves these files and endorses the team for $selectedStage.'),
+              for (final file in files) ...[
+                const SizedBox(height: 12),
+                Text(file['label']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(file['file_name']?.toString() ?? '', style: const TextStyle(fontSize: 12)),
+              ],
+              const SizedBox(height: 16),
+              const Text('Before-defense materials remain due by their scheduled deadline.', style: TextStyle(fontSize: 12)),
+            ],
+          )),
         ),
         actions: [
           TextButton(
@@ -1446,7 +1503,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           ElevatedButton.icon(
             onPressed: () => Navigator.pop(dialogContext, true),
             icon: const Icon(Icons.verified_outlined),
-            label: const Text('Endorse'),
+            label: const Text('Approve & endorse'),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.success,
               foregroundColor: Colors.white,
@@ -1456,9 +1513,10 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       ),
     );
     if (confirmed == true && mounted) {
-      await ref.read(capstoneDeliverablesProvider.notifier).endorseTeam(
+      await ref.read(capstoneDeliverablesProvider.notifier).reviewAndEndorseTeam(
             parseAsInt(team['id']),
             selectedStage,
+            reviewToken,
           );
     }
   }
@@ -1475,11 +1533,11 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           : null,
       icon: const Icon(Icons.verified_outlined, size: 16),
       label: const Text(
-        'Endorse Team',
+        'Review & endorse',
         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
       ),
       style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.maroon,
+        backgroundColor: DefensysTokens.maroonOf(context),
         foregroundColor: Colors.white,
         elevation: 0,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1510,9 +1568,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           border: isActive
-              ? const Border(
+              ? Border(
                   bottom: BorderSide(
-                    color: AppColors.maroon,
+                    color: DefensysTokens.maroonOf(context),
                     width: 2.5,
                   ),
                 )
@@ -1525,7 +1583,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               label,
               style: TextStyle(
                 fontWeight: isActive ? FontWeight.bold : FontWeight.w600,
-                color: isActive ? AppColors.maroon : AppColors.textSecondary,
+                color: isActive ? DefensysTokens.maroonTextOf(context) : DefensysTokens.textSecondaryOf(context),
                 fontSize: 13,
               ),
             ),
@@ -1534,7 +1592,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                 decoration: BoxDecoration(
-                  color: (badgeColor ?? AppColors.textSecondary).withValues(alpha: 0.1),
+                  color: (badgeColor ?? DefensysTokens.textSecondaryOf(context)).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
@@ -1542,7 +1600,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
-                    color: badgeColor ?? AppColors.textSecondary,
+                    color: badgeColor ?? DefensysTokens.textSecondaryOf(context),
                   ),
                 ),
               ),
@@ -1585,13 +1643,12 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
 
     final isPresentationOnly = stage['is_presentation_only'] == true;
     final configured = stage['deliverables_configured'] == true || isPresentationOnly;
-    final complete = stage['required_complete'] == true || isPresentationOnly;
     final endorsed = stage['endorsed'] == true;
     final archiveUnlocked = stage['archive_unlocked'] == true;
     final showPostChecklist = vault.isNotEmpty &&
         (endorsed || stage['has_active_schedule'] == true ||
             stage['has_done_schedule'] == true);
-    final canEndorse = configured && complete && !endorsed &&
+    final canEndorse = configured && _canReviewAndEndorse(stage) && !endorsed &&
         (widget.state.scope != 'pit' || stage['endorsement_required'] != false);
     final canCancelEndorsement = (stage['can_cancel_endorsement'] == true) ||
         (endorsed &&
@@ -1614,8 +1671,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         // Workspace Tab Switcher
         Container(
           height: 40,
-          decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: DefensysTokens.borderOf(context))),
           ),
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -1630,7 +1687,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     ? const Color(0xFF4F46E5)
                     : ((configured && reqUploaded >= reqTotal && reqTotal > 0)
                         ? AppColors.success
-                        : AppColors.textSecondary),
+                        : DefensysTokens.textSecondaryOf(context)),
               ),
               if (widget.isAdviser && widget.state.scope == 'capstone') ...[
                 const SizedBox(width: 24),
@@ -1665,24 +1722,24 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               width: double.infinity,
               padding: const EdgeInsets.all(32),
               margin: const EdgeInsets.only(bottom: 20),
-              decoration: cardDecoration(),
+              decoration: cardDecoration(context),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
                     Icons.event_busy_outlined,
                     size: 48,
-                    color: AppColors.textSecondary.withValues(alpha: 0.4),
+                    color: DefensysTokens.textSecondaryOf(context).withValues(alpha: 0.4),
                   ),
                   const SizedBox(height: 12),
                   Text(
                     widget.state.scope == 'pit'
                         ? 'No PIT events configured for ${team['year_level'] ?? 'this team'}.'
                         : 'No defense stages configured.',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 14,
-                      color: AppColors.textPrimary,
+                      color: DefensysTokens.textPrimaryOf(context),
                     ),
                     textAlign: TextAlign.center,
                   ),
@@ -1692,9 +1749,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       widget.state.scope == 'pit'
                           ? 'Configure PIT events and deliverables in PIT Events Setup.'
                           : 'Configure stages and deliverables in Defense Stages Setup.',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 12,
-                        color: AppColors.textSecondary,
+                        color: DefensysTokens.textSecondaryOf(context),
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -1715,9 +1772,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 final reqBlock = Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
+                    color: DefensysTokens.surfaceHigherOf(context),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFF1F5F9)),
+                    border: Border.all(color: DefensysTokens.borderOf(context)),
                   ),
                   child: _requiredProgressBlock(
                     configured: configuredReq,
@@ -1739,9 +1796,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 final archiveBlock = Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
+                    color: DefensysTokens.surfaceHigherOf(context),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFF1F5F9)),
+                    border: Border.all(color: DefensysTokens.borderOf(context)),
                   ),
                   child: _archiveProgressBlock(stage),
                 );
@@ -1802,12 +1859,12 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 ),
               )
             else if (pre.isEmpty)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text(
                   'No pre-defense requirements configured.',
                   style: TextStyle(
-                    color: AppColors.textSecondary,
+                    color: DefensysTokens.textSecondaryOf(context),
                     fontStyle: FontStyle.italic,
                     fontSize: 12,
                   ),
@@ -1824,7 +1881,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     stage['endorsement_required'] == false
                         ? 'Required files here must be cleared before the team can be scheduled.'
                         : 'Required files here must be cleared before the team can be endorsed.',
-                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
                   ),
                 ),
                 ...beforeEndorsement.map(
@@ -1838,7 +1895,49 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               ],
               if (beforeDefense.isNotEmpty) ...[
                 if (beforeEndorsement.isNotEmpty) const SizedBox(height: 14),
-                _sectionTitle('Before defense'),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    _sectionTitle('Before defense'),
+                    const Spacer(),
+                    if (((widget.state.scope == 'admin' ||
+                                ref.watch(authProvider).user?['is_pit_lead'] == true ||
+                                ref.watch(authProvider).user?['role'] == 'admin') &&
+                            stage['schedule'] is Map))
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          onPressed: () async {
+                            final sched =
+                                Map<String, dynamic>.from(stage['schedule'] as Map);
+                            sched.putIfAbsent(
+                              'materials_readiness',
+                              () => stage['materials_readiness'],
+                            );
+                            sched.putIfAbsent('team_name', () => team['name']);
+                            sched.putIfAbsent('stage_label', () => selectedStage);
+                            await showMaterialDeadlineDialog(context, sched);
+                            ref
+                                .read(capstoneDeliverablesProvider.notifier)
+                                .fetchInitialData();
+                          },
+                          icon: const Icon(Icons.edit_calendar_outlined, size: 14),
+                          label: const Text('Edit deadline'),
+                        ),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 DefenseMaterialReadiness(
                   readiness: Map<String, dynamic>.from(
@@ -1864,16 +1963,16 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               _sectionTitle('Post-Defense Deliverables'),
               const SizedBox(height: 8),
               if (!archiveUnlocked)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(bottom: 10),
                   child: Row(
                     children: [
-                      Icon(Icons.lock_outline, size: 15, color: AppColors.textSecondary),
+                      Icon(Icons.lock_outline, size: 15, color: DefensysTokens.textSecondaryOf(context)),
                       SizedBox(width: 7),
                       Expanded(
                         child: Text(
                           'For after this defense. Student uploads and faculty review open once the defense is completed.',
-                          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                          style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
                         ),
                       ),
                     ],
@@ -2011,7 +2110,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               borderRadius: BorderRadius.circular(12),
               child: Container(
                 decoration: BoxDecoration(
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: DefensysTokens.borderOf(context)),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: WeeklyProgressReportsScreen(
@@ -2048,7 +2147,19 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final cardSelectedStageLabel = _effectiveSelectedStage(team);
     final selectedStage = _stagePayload(stages, cardSelectedStageLabel);
 
-    final badge = _resolveStageStatusBadge(selectedStage);
+    final hasPendingReview = DeliverablesTriageHelper.hasPendingReview(team);
+    final pendingCount = DeliverablesTriageHelper.pendingReviewCount(team);
+
+    final Map<String, dynamic> badge;
+    if (hasPendingReview) {
+      badge = {
+        'label': '$pendingCount Awaiting Review',
+        'color': const Color(0xFFDC2626),
+        'icon': Icons.rate_review_rounded,
+      };
+    } else {
+      badge = _resolveStageStatusBadge(selectedStage);
+    }
     final badgeColor = badge['color'] as Color;
     final badgeText = badge['label'] as String;
     final badgeIcon = badge['icon'] as IconData;
@@ -2062,15 +2173,14 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final minutesToSign = adviserMinutesToSign(team, cardSelectedStageLabel,
       ref.watch(teamDefenseProvider).schedules);
     final adviserScore = gradeRecord['adviser_score'];
-    final showTeamMeta = !widget.isAdviser || adviserScore != null;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: isSelected ? AppColors.maroon.withValues(alpha: 0.04) : Colors.white,
+        color: isSelected ? DefensysTokens.maroonOf(context).withValues(alpha: 0.04) : DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isSelected ? AppColors.maroon : const Color(0xFFE2E8F0),
+          color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
           width: isSelected ? 2 : 1,
         ),
       ),
@@ -2093,85 +2203,42 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            team['name']?.toString() ?? '',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
-                              color: isSelected ? AppColors.maroon : AppColors.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            team['project_title']?.toString() ?? 'No Project Title',
-                            maxLines: widget.isAdviser ? 2 : 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: badgeColor.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(badgeIcon, size: 12, color: badgeColor),
-                          const SizedBox(width: 4),
-                          Text(
-                            badgeText,
-                            style: TextStyle(
-                              color: badgeColor,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                if (DeliverablesTriageHelper.hasPendingReview(team)) ...[
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFEE2E2),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: const Color(0xFFFECACA)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.rate_review_rounded, size: 16, color: Color(0xFFB91C1C)),
-                        SizedBox(width: 4),
-                        Text(
-                          '${DeliverablesTriageHelper.pendingReviewCount(team)} awaiting review',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFFB91C1C),
-                          ),
-                        ),
-                      ],
+                Tooltip(
+                  message: team['name']?.toString() ?? '',
+                  child: Text(
+                    team['name']?.toString() ?? '',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: DefensysTokens.textPrimaryOf(context),
                     ),
                   ),
-                ],
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: badgeColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(badgeIcon, size: 11, color: badgeColor),
+                      const SizedBox(width: 3),
+                      Text(
+                        badgeText,
+                        style: TextStyle(
+                          color: badgeColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 if (widget.isAdviser && (gradingStatus.needsGrade || minutesToSign.isNotEmpty)) ...[
                   const SizedBox(height: 6),
                   Wrap(spacing: 6, runSpacing: 4, children: [
@@ -2181,59 +2248,24 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       _adviserTeamAction(teamId, 3, 'Sign minutes', Icons.draw_outlined),
                   ]),
                 ],
-                if (showTeamMeta) const SizedBox(height: 10),
-                if (showTeamMeta) Row(
-                  children: [
-                    if (!widget.isAdviser && team['current_stage']?.toString().isNotEmpty == true) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.maroon.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: AppColors.maroon.withValues(alpha: 0.2)),
-                        ),
-                        child: Text(
-                          team['current_stage'].toString(),
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.maroon,
-                          ),
-                        ),
+                if (adviserScore != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: DefensysTokens.surfaceHigherOf(context),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      'Adv: ${parseAsDouble(adviserScore)?.toStringAsFixed(1)}',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: DefensysTokens.textPrimaryOf(context),
                       ),
-                      const SizedBox(width: 8),
-                    ],
-                    if (!widget.isAdviser && team['adviser_name']?.toString().isNotEmpty == true) ...[
-                      const Icon(Icons.person_outline, size: 12, color: AppColors.textSecondary),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          team['adviser_name'].toString(),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                        ),
-                      ),
-                    ],
-                    if (adviserScore != null) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF3F4F6),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          'Adv: ${parseAsDouble(adviserScore)?.toStringAsFixed(1)}',
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -2244,13 +2276,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
 
   Widget _buildTeamListCompact(List<Map<String, dynamic>> teams) {
     if (teams.isEmpty) {
-      return const Padding(
+      return Padding(
         padding: EdgeInsets.symmetric(vertical: 24, horizontal: 8),
         child: Center(
           child: Text(
             'No teams match this triage filter.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+            style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
           ),
         ),
       );
@@ -2270,27 +2302,27 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
 
   Widget _buildNoSelectionDetailPane() {
     return Container(
-      decoration: cardDecoration(),
+      decoration: cardDecoration(context),
       padding: const EdgeInsets.all(40),
       alignment: Alignment.center,
-      child: const Column(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.groups_outlined, size: 48, color: AppColors.textSecondary),
+          Icon(Icons.groups_outlined, size: 48, color: DefensysTokens.textSecondaryOf(context)),
           SizedBox(height: 16),
           Text(
             'Select a Team',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
+              color: DefensysTokens.textPrimaryOf(context),
             ),
           ),
           SizedBox(height: 8),
           Text(
             'Choose a team from the list on the left to view deliverables, grades, and team details.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+            style: TextStyle(fontSize: 13, color: DefensysTokens.textSecondaryOf(context)),
           ),
         ],
       ),
@@ -2303,7 +2335,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       builder: (dialogCtx) => AlertDialog(
         title: Row(
           children: [
-            const Icon(Icons.groups_outlined, color: AppColors.maroon),
+            Icon(Icons.groups_outlined, color: DefensysTokens.maroonTextOf(context)),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -2344,9 +2376,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: DefensysTokens.surfaceOf(context),
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFFCBD5E1)),
+            border: Border.all(color: DefensysTokens.borderOf(context)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -2371,7 +2403,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                         height: 24,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: isLeader ? AppColors.maroon : const Color(0xFF64748B),
+                          color: isLeader ? DefensysTokens.maroonOf(context) : const Color(0xFF64748B),
                           border: Border.all(color: Colors.white, width: 2),
                         ),
                         alignment: Alignment.center,
@@ -2391,14 +2423,14 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               const SizedBox(width: 4),
               Text(
                 remainingCount > 0 ? '+${remainingCount + visibleMembers.length}' : '${members.length} ${members.length == 1 ? "Member" : "Members"}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+                  color: DefensysTokens.textPrimaryOf(context),
                 ),
               ),
               const SizedBox(width: 2),
-              const Icon(Icons.arrow_drop_down, size: 14, color: Color(0xFF64748B)),
+              Icon(Icons.arrow_drop_down, size: 14, color: DefensysTokens.textSecondaryOf(context)),
             ],
           ),
         ),
@@ -2468,7 +2500,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text('Team roster (${members.length})',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: DefensysTokens.textPrimaryOf(context))),
               if (canDownloadReport)
                 OutlinedButton.icon(
                   onPressed: reportLoading ? null : () => _downloadTeamGradeReport(
@@ -2481,8 +2513,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           ),
           const SizedBox(height: 10),
           if (members.isEmpty)
-            const Text('No members assigned to this team.',
-                style: TextStyle(color: AppColors.textSecondary))
+            Text('No members assigned to this team.',
+                style: TextStyle(color: DefensysTokens.textSecondaryOf(context)))
           else
             Wrap(
               spacing: 8,
@@ -2493,9 +2525,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 return Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                   decoration: BoxDecoration(
-                    color: isLeader ? AppColors.gold.withValues(alpha: 0.12) : Colors.white,
+                    color: isLeader ? AppColors.gold.withValues(alpha: 0.12) : DefensysTokens.surfaceOf(context),
                     border: Border.all(color: isLeader
-                        ? AppColors.gold.withValues(alpha: 0.35) : const Color(0xFFE2E8F0)),
+                        ? AppColors.gold.withValues(alpha: 0.35) : DefensysTokens.borderOf(context)),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
@@ -2515,7 +2547,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       ),
                       if (isLeader) ...[
                         const SizedBox(width: 5),
-                        const Text('· Leader', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                        Text('· Leader', style: TextStyle(fontSize: 11, color: DefensysTokens.textSecondaryOf(context))),
                       ],
                     ],
                   ),
@@ -2545,17 +2577,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final materialsPending = materialReadiness is Map &&
         parseAsInt(materialReadiness['required_total']) >
             parseAsInt(materialReadiness['submitted_total']);
-    final canEndorse = (stagePayload['deliverables_configured'] == true || isPresentationOnly) &&
-        (stagePayload['required_complete'] == true || isPresentationOnly) &&
+    final canEndorse = _canReviewAndEndorse(stagePayload) &&
         stagePayload['endorsed'] != true &&
         (!isPit || stagePayload['endorsement_required'] != false);
-    final endorsementHint = isPresentationOnly
-        ? 'No uploads required. Endorse the team for presentation scheduling.'
-        : stagePayload['deliverables_configured'] != true
-            ? 'Configure pre-defense requirements before endorsing the team.'
-            : canEndorse
-                ? 'All required pre-defense deliverables are accepted. Endorse the team for defense scheduling.'
-                : 'Accept all required pre-defense deliverables, then endorse the team for defense scheduling.';
+    final review = stagePayload['endorsement_review'];
+    final endorsementHint = canEndorse
+        ? 'Review the scheduling files, then approve and endorse the team in one step.'
+        : (review is Map ? review['reason']?.toString() : null) ?? 'Upload the required scheduling files before review.';
     final instructorHint = stages.isEmpty
         ? 'No PIT event is configured for this team yet.'
         : stagePayload['has_done_schedule'] == true
@@ -2567,8 +2595,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     : stagePayload['endorsed'] == true
                         ? 'The team is endorsed and ready for event scheduling.'
                         : canEndorse
-                            ? 'Scheduling requirements are accepted. Endorse the team for this PIT event.'
-                            : 'Accept the required scheduling files, then endorse the team for this PIT event.';
+                            ? 'Review the scheduling files, then approve and endorse the team in one step.'
+                            : endorsementHint;
     final compactHeader = MediaQuery.sizeOf(context).width < 1200;
 
     return Container(
@@ -2578,9 +2606,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               ? const Key('instructor-team-summary')
               : null,
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: DefensysTokens.surfaceHigherOf(context),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
@@ -2598,10 +2626,10 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                         Flexible(
                           child: Text(
                             team['name']?.toString() ?? '',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: AppColors.textPrimary,
+                              color: DefensysTokens.textPrimaryOf(context),
                             ),
                           ),
                         ),
@@ -2612,16 +2640,16 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: AppColors.maroon.withValues(alpha: 0.08),
+                              color: ProgramColors.of(context, scope: widget.state.scope, data: team).accent.withValues(alpha: 0.08),
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: AppColors.maroon.withValues(alpha: 0.2)),
+                              border: Border.all(color: ProgramColors.of(context, scope: widget.state.scope, data: team).accent.withValues(alpha: 0.2)),
                             ),
                             child: Text(
                               isPit ? 'PIT: $currentStage' : currentStage,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.bold,
-                                color: AppColors.maroon,
+                                color: ProgramColors.of(context, scope: widget.state.scope, data: team).text,
                               ),
                             ),
                           ),
@@ -2634,9 +2662,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                         team['project_title']?.toString() ?? 'No Project Title',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12.5,
-                          color: AppColors.textSecondary,
+                          color: DefensysTokens.textSecondaryOf(context),
                         ),
                       ),
                     ],
@@ -2648,21 +2676,21 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: DefensysTokens.surfaceOf(context),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                    border: Border.all(color: DefensysTokens.borderOf(context)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.person_outline, size: 14, color: AppColors.textSecondary),
+                      Icon(Icons.person_outline, size: 14, color: DefensysTokens.textSecondaryOf(context)),
                       const SizedBox(width: 5),
                       Text(
                         'Adv: ${team['adviser_name']}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
+                          color: DefensysTokens.textPrimaryOf(context),
                         ),
                       ),
                     ],
@@ -2698,21 +2726,21 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           ],
           if (isFacultyHeader) ...[
             const SizedBox(height: 12),
-            const Text(
+            Text(
               'Project title',
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: AppColors.textSecondary,
+                color: DefensysTokens.textSecondaryOf(context),
               ),
             ),
             const SizedBox(height: 3),
             Text(
               team['project_title']?.toString() ?? 'No Project Title',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
+                color: DefensysTokens.textPrimaryOf(context),
               ),
             ),
             if (yearLevel.isNotEmpty || section.isNotEmpty) ...[
@@ -2723,10 +2751,10 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 children: [
                   if (yearLevel.isNotEmpty)
                     Text('Year level: $yearLevel',
-                        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                        style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context))),
                   if (section.isNotEmpty)
                     Text('Section: $section',
-                        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                        style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context))),
                 ],
               ),
             ],
@@ -2757,20 +2785,20 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
 
                         Color pillBg = Colors.white;
                         Color pillBorder = const Color(0xFFE2E8F0);
-                        Color pillText = AppColors.textSecondary;
+                        Color pillText = DefensysTokens.textSecondaryOf(context);
 
                         if (isSelected) {
-                          pillBg = AppColors.maroon;
-                          pillBorder = AppColors.maroon;
+                          pillBg = DefensysTokens.maroonOf(context);
+                          pillBorder = DefensysTokens.maroonOf(context);
                           pillText = Colors.white;
                         } else if (isPassed) {
                           pillBg = const Color(0xFFF0FDF4);
                           pillBorder = const Color(0xFFBBF7D0);
                           pillText = const Color(0xFF15803D);
                         } else if (isCurrent) {
-                          pillBg = AppColors.maroon.withValues(alpha: 0.05);
-                          pillBorder = AppColors.maroon.withValues(alpha: 0.3);
-                          pillText = AppColors.maroon;
+                          pillBg = DefensysTokens.maroonOf(context).withValues(alpha: 0.05);
+                          pillBorder = DefensysTokens.maroonOf(context).withValues(alpha: 0.3);
+                          pillText = DefensysTokens.maroonOf(context);
                         }
 
                         return Row(
@@ -2807,14 +2835,14 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                                         margin: const EdgeInsets.only(right: 5),
                                         decoration: BoxDecoration(
                                           shape: BoxShape.circle,
-                                          color: isSelected ? Colors.white.withValues(alpha: 0.25) : const Color(0xFFE2E8F0),
+                                          color: isSelected ? DefensysTokens.surfaceOf(context).withValues(alpha: 0.25) : const Color(0xFFE2E8F0),
                                         ),
                                         child: Text(
                                           '${idx + 1}',
                                           style: TextStyle(
                                             fontSize: 9,
                                             fontWeight: FontWeight.bold,
-                                            color: isSelected ? Colors.white : const Color(0xFF475569),
+                                            color: isSelected ? Colors.white : DefensysTokens.textSecondaryOf(context),
                                           ),
                                         ),
                                       ),
@@ -2831,7 +2859,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                                         decoration: BoxDecoration(
-                                          color: AppColors.maroon,
+                                          color: DefensysTokens.maroonOf(context),
                                           borderRadius: BorderRadius.circular(3),
                                         ),
                                         child: const Text(
@@ -2883,11 +2911,11 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: stagePayload['admin_unlocked'] == true
                           ? AppColors.danger
-                          : AppColors.maroon,
+                          : DefensysTokens.maroonOf(context),
                       side: BorderSide(
                         color: stagePayload['admin_unlocked'] == true
                             ? AppColors.danger
-                            : AppColors.maroon,
+                            : DefensysTokens.maroonOf(context),
                       ),
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       visualDensity: VisualDensity.compact,
@@ -2905,12 +2933,12 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   runSpacing: 6,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    const Text(
+                    Text(
                       'Stage status',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.textSecondary,
+                        color: DefensysTokens.textSecondaryOf(context),
                       ),
                     ),
                     _buildStageStatusBadge(stagePayload),
@@ -2942,7 +2970,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                         ? 'No endorsement needed. This team can be scheduled now. Defense files may be uploaded later, before their scheduled deadline.'
                         : 'No endorsement needed. This team can be scheduled now.')
                     : 'Scheduling checks are clear. You may endorse this team now; defense files may be uploaded later, before their scheduled deadline.',
-                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
               ),
             ],
           ],
@@ -2956,20 +2984,20 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   final hint = Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Next step',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
+                          color: DefensysTokens.textPrimaryOf(context),
                         ),
                       ),
                       const SizedBox(height: 3),
                       Text(
                         widget.isPitInstructor ? instructorHint : endorsementHint,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: AppColors.textSecondary,
+                          color: DefensysTokens.textSecondaryOf(context),
                         ),
                       ),
                     ],
@@ -3088,7 +3116,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
 
     return Container(
-      decoration: cardDecoration(),
+      decoration: cardDecoration(context),
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3138,7 +3166,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         SizedBox(
           width: 320,
           child: Container(
-            decoration: cardDecoration(),
+            decoration: cardDecoration(context),
             padding: const EdgeInsets.all(12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3149,11 +3177,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     children: [
                       Expanded(
                         child: Text(
-                          'Teams (${filteredTeams.length})',
-                          style: const TextStyle(
+                          widget.activeTriageFilter == TeamTriageFilter.needsReview
+                              ? 'Teams (${filteredTeams.length}) - Review first'
+                              : 'Teams (${filteredTeams.length})',
+                          style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 13,
-                            color: AppColors.textSecondary,
+                            color: DefensysTokens.textSecondaryOf(context),
                           ),
                         ),
                       ),
@@ -3221,11 +3251,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             children: [
               Expanded(
                 child: Text(
-                  'Teams (${filteredTeams.length})',
-                  style: const TextStyle(
+                  widget.activeTriageFilter == TeamTriageFilter.needsReview
+                      ? 'Teams (${filteredTeams.length}) - Review first'
+                      : 'Teams (${filteredTeams.length})',
+                  style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 13,
-                    color: AppColors.textSecondary,
+                    color: DefensysTokens.textSecondaryOf(context),
                   ),
                 ),
               ),
@@ -3247,19 +3279,19 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   Widget build(BuildContext context) {
     if (widget.state.teams.isEmpty) {
       return Container(
-        decoration: cardDecoration(),
+        decoration: cardDecoration(context),
         padding: const EdgeInsets.all(40),
         alignment: Alignment.center,
-        child: const Column(
+        child: Column(
           children: [
-            Icon(Icons.inbox, size: 48, color: AppColors.textSecondary),
+            Icon(Icons.inbox, size: 48, color: DefensysTokens.textSecondaryOf(context)),
             SizedBox(height: 12),
             Text(
               'No teams match the current filters.',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 14,
-                color: AppColors.textSecondary,
+                color: DefensysTokens.textSecondaryOf(context),
               ),
             ),
           ],

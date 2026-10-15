@@ -13,6 +13,46 @@ from defensys_backend.cors import LocalCorsMiddleware
 
 @override_settings(DEBUG=True, CORS_ALLOW_LAN=True)
 class LocalCorsMiddlewareTests(SimpleTestCase):
+    @override_settings(CORS_ALLOWED_ORIGINS=[])
+    def test_development_preflight_accepts_all_private_hotspot_ranges(self):
+        for host in ['10.0.0.2', '172.16.0.2', '172.20.10.2', '172.31.255.254', '192.168.43.25']:
+            with self.subTest(host=host):
+                origin = f'http://{host}:57583'
+                view = Mock()
+                response = LocalCorsMiddleware(view)(RequestFactory().options('/', HTTP_ORIGIN=origin))
+                self.assertEqual(response['Access-Control-Allow-Origin'], origin)
+                view.assert_not_called()
+
+    @override_settings(CORS_ALLOWED_ORIGINS=[])
+    def test_development_rejects_public_ips_and_lookalike_origins(self):
+        for origin in [
+            'http://172.15.255.254:57583', 'http://172.32.0.1:57583',
+            'http://203.0.113.1:57583', 'http://169.254.1.2:57583',
+            'http://localhost.example.com', 'http://127.0.0.1.example.com',
+            'http://192.168.1.2.example.com', 'http://10.example.com',
+            'http://172.20.10.2.example.com', 'http://user@172.20.10.2:57583',
+            'http://172.20.10.2:99999', 'http://172.20.10.2:0',
+            'http://172.20.10.2/path', 'http://[invalid', 'null',
+        ]:
+            with self.subTest(origin=origin):
+                response = LocalCorsMiddleware(Mock())(RequestFactory().options('/', HTTP_ORIGIN=origin))
+                self.assertNotIn('Access-Control-Allow-Origin', response)
+
+    @override_settings(CORS_ALLOW_LAN=False, CORS_ALLOWED_ORIGINS=[])
+    def test_lan_requires_opt_in_but_loopback_still_works_in_development(self):
+        for origin in ['http://localhost:57583', 'http://127.0.0.1:57583', 'http://172.20.10.2:57583']:
+            with self.subTest(origin=origin):
+                response = LocalCorsMiddleware(Mock())(RequestFactory().options('/', HTTP_ORIGIN=origin))
+                expected = None if '172.20' in origin else origin
+                self.assertEqual(response.get('Access-Control-Allow-Origin'), expected)
+
+    @override_settings(DEBUG=False, CORS_ALLOWED_ORIGINS=[])
+    def test_hotspot_origins_are_not_automatically_allowed_in_production(self):
+        for origin in ['http://10.0.0.2:57583', 'http://172.20.10.2:57583', 'http://192.168.43.25:57583']:
+            with self.subTest(origin=origin):
+                response = LocalCorsMiddleware(Mock())(RequestFactory().options('/', HTTP_ORIGIN=origin))
+                self.assertNotIn('Access-Control-Allow-Origin', response)
+
     def test_sync_response_keeps_cors_and_pdf_headers(self):
         request = RequestFactory().get(
             '/media/report.pdf', HTTP_ORIGIN='http://192.168.1.3:57583',

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../program_badge.dart';
 import '../../theme/defensys_tokens.dart';
 import 'defensys_table_tokens.dart';
 
@@ -106,33 +107,7 @@ class DefensysTableCell {
 
   /// Compact pill badge for Scope (PIT / Capstone).
   static Widget scopeBadge(String scope) {
-    final isPit = scope.trim().toLowerCase() == 'pit';
-    final fg = isPit ? const Color(0xFF16A34A) : const Color(0xFF2563EB);
-    final bg = isPit ? const Color(0xFFF0FDF4) : const Color(0xFFEFF6FF);
-    final border = isPit ? const Color(0xFFBBF7D0) : const Color(0xFFBFDBFE);
-
-    final displayLabel = scope.trim().isEmpty
-        ? 'General'
-        : (isPit ? 'PIT' : 'Capstone');
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(5),
-        border: Border.all(color: border),
-      ),
-      child: Text(
-        displayLabel,
-        style: TextStyle(
-          fontFamily: DefensysTokens.fontFamily,
-          fontSize: 10.5,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 0.4,
-          color: fg,
-        ),
-      ),
-    );
+    return ProgramBadge(scope: scope);
   }
 
   /// Compact evaluation type badge with icon (Peer, Panel, Adviser).

@@ -53,6 +53,8 @@ void main() {
             stageName: 'Concept Proposal',
             enabled: true,
             onConfigure: () => configured = true,
+            expanded: true,
+            onToggle: () {},
           ),
         ),
       );
@@ -61,9 +63,12 @@ void main() {
         '12',
       );
       expect(number.text, '12');
-      expect(find.text('Format: PDF'), findsOneWidget);
+      expect(
+        find.textContaining('PDF · Created by assigned documenter'),
+        findsOneWidget,
+      );
       expect(find.byType(Checkbox), findsNothing);
-      await tester.tap(find.text('Required · Set in Stage Details'));
+      await tester.tap(find.text('Change in Stage Details'));
       expect(configured, isTrue);
     },
   );
@@ -115,6 +120,8 @@ void main() {
               stageName: 'Concept Proposal',
               enabled: false,
               onConfigure: () {},
+              expanded: true,
+              onToggle: () {},
             ),
             const SystemDefenseRecords(
               items: [

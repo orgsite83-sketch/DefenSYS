@@ -43,11 +43,13 @@ class DefenseWorkflowTests(APITestCase):
         self.assertEqual(schedule_progress(self.capstone_schedule)['display_status'], 'awaiting_evaluation')
 
     def test_all_assigned_panels_are_required_before_verdict(self):
-        SchedulePanelist.objects.create(schedule=self.capstone_schedule, panelist=self.adviser)
+        second_panelist = self.panelist.__class__.objects.create_user(
+            username='second-workflow-panel', role='faculty', is_panelist=True)
+        SchedulePanelist.objects.create(schedule=self.capstone_schedule, panelist=second_panelist)
         self.submit_panel()
         with self.assertRaises(ValidationError):
             record_verdict(self.grade, actor=self.admin, verdict='approved')
-        self.submit_panel(self.adviser)
+        self.submit_panel(second_panelist)
         result = record_verdict(self.grade, actor=self.admin, verdict='approved')
         self.assertEqual(result.verdict, 'approved')
 

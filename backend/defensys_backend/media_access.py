@@ -13,8 +13,17 @@ def _can_read_submission(user, submission):
 
     guest = getattr(user, 'is_guest_panelist', False)
     if not guest:
-        if team_queryset_for_user(user).filter(pk=submission.team_id).exists():
+        # Team assignments grant access independently of the PIT cohort role.
+        # Cohort access follows the same captured year as the archive listing.
+        if team_queryset_for_user(user, include_pit_lead=False).filter(pk=submission.team_id).exists():
             return True
+        if getattr(user, 'role', None) == 'faculty' and getattr(user, 'is_pit_lead', False):
+            from repository.project_archive.services import pit_deliverable_queryset_for_scope
+            pit_year = (getattr(user, 'pit_lead_year', '') or '').strip()
+            if pit_year and pit_deliverable_queryset_for_scope({
+                'scope': 'pit_lead', 'pit_year_level': pit_year,
+            }).filter(pk=submission.pk).exists():
+                return True
         # The research repository intentionally shares accepted, unrestricted work.
         if (capstone_visible_queryset().filter(pk=submission.pk).exists()
                 or pit_visible_deliverables_queryset().filter(pk=submission.pk).exists()):

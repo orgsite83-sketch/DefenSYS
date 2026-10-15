@@ -25,10 +25,12 @@ void main() {
                     'id': 1,
                     'name': 'Team Alpha',
                     'level': '1st Year PIT',
+                    'year_level': '1st Year',
                     'section': 'BSIT-1A',
                   }],
                   pitEvents: const [{
                     'event_name': 'System Concept Pitching',
+                    'year_level': '1st Year',
                     'deliverables': [
                       {'deliverable_type': 'pre', 'required': true, 'requirement_timing': 'defense'},
                     ],

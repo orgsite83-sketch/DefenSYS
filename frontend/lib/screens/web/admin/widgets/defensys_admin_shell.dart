@@ -1,3 +1,4 @@
+import 'package:defensys/theme/program_colors.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -228,6 +229,7 @@ class DefensysPageHeader extends StatelessWidget {
   final String subtitle;
   final IconData? icon;
   final Widget? actions;
+  final String? programScope;
 
   const DefensysPageHeader({
     super.key,
@@ -235,6 +237,7 @@ class DefensysPageHeader extends StatelessWidget {
     required this.subtitle,
     this.icon,
     this.actions,
+    this.programScope,
   });
 
   @override
@@ -252,7 +255,9 @@ class DefensysPageHeader extends StatelessWidget {
                   if (icon != null) ...[
                     Icon(
                       icon,
-                      color: isDark ? DefensysTokens.mistMaroon : DefensysUi.primaryMaroon,
+                      color: programScope != null
+                          ? ProgramColors.of(context, scope: programScope).text
+                          : isDark ? DefensysTokens.mistMaroon : DefensysUi.primaryMaroon,
                       size: 20,
                     ),
                     const SizedBox(width: 8),
@@ -261,7 +266,7 @@ class DefensysPageHeader extends StatelessWidget {
                     child: Text(
                       title,
                       style: DefensysUi.pageTitle.copyWith(
-                        color: isDark ? const Color(0xFFF4F4F5) : DefensysTokens.maroon,
+                        color: DefensysTokens.textPrimaryOf(context),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

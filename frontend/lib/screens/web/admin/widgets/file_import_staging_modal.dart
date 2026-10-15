@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:excel/excel.dart' as xl;
+import 'package:defensys/utils/excel_safe_decode.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../theme/defensys_tokens.dart';
@@ -211,7 +212,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
 
   StagedFileInfo _inspectXlsxFile(PickedTabularFile file, String importMode) {
     try {
-      final workbook = xl.Excel.decodeBytes(file.bytes);
+      final workbook = safeDecodeExcel(file.bytes);
       if (workbook.tables.isEmpty) {
         return StagedFileInfo(
           file: file,

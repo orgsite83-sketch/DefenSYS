@@ -1,3 +1,4 @@
+import 'package:defensys/theme/program_colors.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -43,8 +44,8 @@ class _DashboardSchedulePlannerState
     'November',
     'December',
   ];
-  static const _pit = Color(0xFF0284C7);
-  static const _capstone = DefensysTokens.maroon;
+  Color get _pit => ProgramColors.of(context, scope: 'pit').text;
+  Color get _capstone => ProgramColors.of(context, scope: 'capstone').text;
 
   late DateTime _focusDay;
   bool _monthView = false;

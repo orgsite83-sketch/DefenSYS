@@ -507,6 +507,8 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
           deliverableId: state.deliverableId,
           submissionKind: state.submissionKind,
           viewMode: state.viewMode,
+          groupBy: state.groupBy,
+          folderKey: state.folderKey,
         ),
       );
       if (response.statusCode == 200) {

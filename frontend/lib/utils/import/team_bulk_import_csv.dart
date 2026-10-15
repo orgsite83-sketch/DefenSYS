@@ -1074,10 +1074,16 @@ const sampleTeamCsvTemplatePit =
 List<Map<String, dynamic>> trimRowsAfterImport({
   required List<Map<String, dynamic>> rows,
   required List<dynamic> importedRows,
+  List<int>? submittedRowNumbers,
 }) {
+  // The API numbers the submitted subset, which may omit staged invalid rows.
   final remove = <int>{
     for (final item in importedRows)
-      if (int.tryParse(item.toString()) != null) int.parse(item.toString()),
+      if (int.tryParse(item.toString()) case final int number)
+        if (submittedRowNumbers == null)
+          number
+        else if (number > 0 && number <= submittedRowNumbers.length)
+          submittedRowNumbers[number - 1],
   };
 
   if (remove.isEmpty) {

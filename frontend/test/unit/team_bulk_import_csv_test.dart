@@ -1007,6 +1007,27 @@ BSIT-4B,Patricia Ramos,Prof. Roberto Gomez,Prof. Cynthia Morales,Campus Logistic
   });
 
   group('trimRowsAfterImport', () {
+    test('maps submitted subset numbers back to the staged draft', () {
+      final rows = [
+        {'team_name': 'Needs fixes'},
+        {'team_name': 'Ready A'},
+        {'team_name': 'Also needs fixes'},
+        {'team_name': 'Ready B'},
+      ];
+      expect(
+        trimRowsAfterImport(
+          rows: rows, importedRows: [1, 2], submittedRowNumbers: [2, 4],
+        ).map((row) => row['team_name']),
+        ['Needs fixes', 'Also needs fixes'],
+      );
+      expect(
+        trimRowsAfterImport(
+          rows: rows, importedRows: [2], submittedRowNumbers: [2, 4],
+        ).map((row) => row['team_name']),
+        ['Needs fixes', 'Ready A', 'Also needs fixes'],
+      );
+    });
+
     test('removes imported row numbers', () {
       final rows = [
         {'team_name': 'A'},

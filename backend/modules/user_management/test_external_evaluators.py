@@ -350,7 +350,7 @@ class ExternalEvaluatorTests(APITestCase):
         panel = Rubric.objects.create(name='PIT panel', scope='pit', semester=self.semester, evaluation_type='panel', status='published', created_by=self.lead)
         peer = Rubric.objects.create(name='PIT peer', scope='pit', semester=self.semester, evaluation_type='peer', status='published', created_by=self.lead)
         criterion = RubricCriterion.objects.create(rubric=panel, name='Prototype', max_score=10, scale=Rubric.SCALE_10)
-        PitEventGradingConfig.objects.create(semester=self.semester, event_name='PIT Demo', panel_rubric=panel, peer_rubric=peer, panel_weight=80, peer_weight=20)
+        PitEventGradingConfig.objects.create(year_level='1st Year', semester=self.semester, event_name='PIT Demo', panel_rubric=panel, peer_rubric=peer, panel_weight=80, peer_weight=20)
         slot = self.schedule(own, scope='pit', defense_stage=None, rubric=panel, event_name='PIT Demo')
         self.guest(self.invite([slot]))
         response = self.client.get(SCHEDULES + 'guest-assignments/')

@@ -47,27 +47,9 @@ class StageDeliverablePreset {
 class StageDeliverablePresetManager {
   static const _prefKey = 'defensys_custom_stage_presets_v1';
 
-  static String? pitYearInEventName(String eventName) {
-    final name = eventName.toLowerCase();
-    const yearWords = {
-      '1st Year': ['1st', 'first'],
-      '2nd Year': ['2nd', 'second'],
-      '3rd Year': ['3rd', 'third'],
-      '4th Year': ['4th', 'fourth'],
-    };
-    for (final entry in yearWords.entries) {
-      if (entry.value.any((word) => RegExp('\\b$word\\b').hasMatch(name))) {
-        return entry.key;
-      }
-    }
-    return null;
-  }
-
-  static bool pitEventMatchesYearLevel(String eventName, String yearLevel) {
+  static bool pitEventMatchesYearLevel(String eventYearLevel, String yearLevel) {
     if (yearLevel.trim().isEmpty) return false;
-    final mentionedYear = pitYearInEventName(eventName);
-    return mentionedYear == null ||
-        mentionedYear.toLowerCase() == yearLevel.trim().toLowerCase();
+    return eventYearLevel.trim().toLowerCase() == yearLevel.trim().toLowerCase();
   }
 
   static String? _storageKey(DeliverablePresetScope scope, String? yearLevel) {

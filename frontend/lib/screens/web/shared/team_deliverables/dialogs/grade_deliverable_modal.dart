@@ -1,3 +1,4 @@
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/rubric_scoring.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -219,6 +220,7 @@ class GradeDeliverableTab extends ConsumerStatefulWidget {
 }
 
 class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
+
   int _selectedStudentIndex = 0;
 
   Map<String, dynamic>? _assignedRubricFromGrade(Map<String, dynamic> grade) {
@@ -610,8 +612,8 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
       padding: const EdgeInsets.only(bottom: 6),
       child: Text(
         text,
-        style: const TextStyle(
-          color: AppColors.textSecondary,
+        style: TextStyle(
+          color: DefensysTokens.textSecondaryOf(context),
           fontWeight: FontWeight.w900,
           fontSize: 12,
         ),
@@ -626,10 +628,10 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: hasScore ? const Color(0xFFF3F4F6) : const Color(0xFFFFFBEB),
+        color: hasScore ? DefensysTokens.surfaceHigherOf(context) : const Color(0xFFFFFBEB),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: hasScore ? const Color(0xFFE5E7EB) : const Color(0xFFFDE68A),
+          color: hasScore ? DefensysTokens.borderOf(context) : const Color(0xFFFDE68A),
         ),
       ),
       child: Row(
@@ -637,10 +639,10 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
         children: [
           Text(
             '$label: ',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: AppColors.textSecondary,
+              color: DefensysTokens.textSecondaryOf(context),
             ),
           ),
           Text(
@@ -648,7 +650,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w800,
-              color: hasScore ? AppColors.textPrimary : const Color(0xFFB45309),
+              color: hasScore ? DefensysTokens.textPrimaryOf(context) : const Color(0xFFB45309),
             ),
           ),
         ],
@@ -663,7 +665,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
 
     Color bg = const Color(0xFFF3F4F6);
     Color border = const Color(0xFFE5E7EB);
-    Color text = AppColors.textPrimary;
+    Color text = DefensysTokens.textPrimaryOf(context);
 
     if (hasScore) {
       if (result == 'passed') {
@@ -687,12 +689,12 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
+          Text(
             'Overall Grade: ',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
-              color: AppColors.textPrimary,
+              color: DefensysTokens.textPrimaryOf(context),
             ),
           ),
           Text(
@@ -735,11 +737,11 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     bool isReadOnly = false,
   }) {
     if (criteria.isEmpty) {
-      return const Padding(
+      return Padding(
         padding: EdgeInsets.all(12),
         child: Text(
           'No criteria defined for this section.',
-          style: TextStyle(color: AppColors.textSecondary, fontStyle: FontStyle.italic),
+          style: TextStyle(color: DefensysTokens.textSecondaryOf(context), fontStyle: FontStyle.italic),
         ),
       );
     }
@@ -751,9 +753,9 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
       child: Column(
         children: criteria.asMap().entries.map((entry) {
@@ -768,7 +770,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               border: i < criteria.length - 1
-                  ? const Border(bottom: BorderSide(color: Color(0xFFE2E8F0), width: 0.5))
+                  ? Border(bottom: BorderSide(color: DefensysTokens.borderOf(context), width: 0.5))
                   : null,
             ),
             child: Row(
@@ -780,20 +782,20 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                     children: [
                       Text(
                         name,
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: DefensysTokens.textPrimaryOf(context)),
                       ),
                       if (desc.isNotEmpty) ...[
                         const SizedBox(height: 2),
                         Text(
                           desc,
-                          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                          style: TextStyle(fontSize: 11, color: DefensysTokens.textSecondaryOf(context)),
                         ),
                       ],
                     ],
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text('/ $maxScore', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                Text('/ $maxScore', style: TextStyle(color: DefensysTokens.textSecondaryOf(context), fontSize: 12)),
                 const SizedBox(width: 12),
                 SizedBox(
                   width: 80,
@@ -801,17 +803,17 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                       ? Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF1F5F9),
+                            color: DefensysTokens.surfaceHigherOf(context),
                             borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                            border: Border.all(color: DefensysTokens.borderOf(context)),
                           ),
                           alignment: Alignment.center,
                           child: Text(
                             ctrl.text.isNotEmpty ? ctrl.text : '-',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.bold,
-                              color: AppColors.textPrimary,
+                              color: DefensysTokens.textPrimaryOf(context),
                             ),
                           ),
                         )
@@ -920,10 +922,10 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
           children: [
             Text(
               'Overall assessment · ${widget.selectedStage}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 14,
-                color: AppColors.textPrimary,
+                color: DefensysTokens.textPrimaryOf(context),
               ),
             ),
             Container(
@@ -958,11 +960,11 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
         const Divider(color: Color(0xFFF1F5F9), height: 1),
         const SizedBox(height: 16),
         ] else if (!widget.isAdviser)
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
             child: Text(
               'No grades are available for this stage yet.',
-              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
             ),
           ),
 
@@ -978,7 +980,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   margin: const EdgeInsets.only(bottom: 6),
                   decoration: BoxDecoration(
-                    color: AppColors.maroon.withValues(alpha: 0.1),
+                    color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
@@ -987,10 +989,10 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                         : targetType == 'individual'
                             ? 'Individual'
                             : 'Team',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.maroon,
+                      color: DefensysTokens.maroonTextOf(context),
                     ),
                   ),
                 ),
@@ -1024,11 +1026,11 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
             if (teamCrits.isNotEmpty) ...[
               Row(
                 children: [
-                  const Icon(Icons.groups_outlined, size: 16, color: AppColors.maroon),
+                  Icon(Icons.groups_outlined, size: 16, color: DefensysTokens.maroonTextOf(context)),
                   const SizedBox(width: 6),
                   Text(
                     targetType == 'both' ? 'Team-Wide Criteria' : 'Criteria',
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: DefensysTokens.textPrimaryOf(context)),
                   ),
                   const SizedBox(width: 8),
                   Container(
@@ -1046,7 +1048,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                         fontWeight: FontWeight.bold,
                         color: _isTeamCriteriaComplete(teamId, widget.selectedStage)
                             ? AppColors.success
-                            : AppColors.textSecondary,
+                            : DefensysTokens.textSecondaryOf(context),
                       ),
                     ),
                   ),
@@ -1067,11 +1069,11 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
             if (indCrits.isNotEmpty) ...[
               Row(
                 children: [
-                  const Icon(Icons.person_outline_rounded, size: 16, color: AppColors.maroon),
+                  Icon(Icons.person_outline_rounded, size: 16, color: DefensysTokens.maroonTextOf(context)),
                   const SizedBox(width: 6),
-                  const Expanded(child: Text(
+                  Expanded(child: Text(
                     'Individual Criteria (Score Each Member)',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: DefensysTokens.textPrimaryOf(context)),
                   )),
                 ],
               ),
@@ -1099,10 +1101,10 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
-                            color: isSelected ? AppColors.maroon : Colors.white,
+                            color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.surfaceOf(context),
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: isSelected ? AppColors.maroon : const Color(0xFFE2E8F0),
+                              color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
                               width: isSelected ? 1.5 : 1,
                             ),
                           ),
@@ -1119,7 +1121,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                                  color: isSelected ? Colors.white : AppColors.textPrimary,
+                                  color: isSelected ? Colors.white : DefensysTokens.textPrimaryOf(context),
                                 ),
                               ),
                               const SizedBox(width: 6),
@@ -1127,7 +1129,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                                 decoration: BoxDecoration(
                                   color: isSelected
-                                      ? Colors.white.withValues(alpha: 0.2)
+                                      ? DefensysTokens.surfaceOf(context).withValues(alpha: 0.2)
                                       : isComplete
                                           ? AppColors.success.withValues(alpha: 0.1)
                                           : Colors.grey.shade100,
@@ -1142,7 +1144,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                                         ? Colors.white
                                         : isComplete
                                             ? AppColors.success
-                                            : AppColors.textSecondary,
+                                            : DefensysTokens.textSecondaryOf(context),
                                   ),
                                 ),
                               ),
@@ -1163,9 +1165,9 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                     final sScore = _computeStudentScore(teamId, widget.selectedStage, sId, gradeRecord);
                     return Container(
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: DefensysTokens.surfaceOf(context),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        border: Border.all(color: DefensysTokens.borderOf(context)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1173,27 +1175,27 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                             decoration: BoxDecoration(
-                              color: AppColors.maroon.withValues(alpha: 0.04),
+                              color: DefensysTokens.maroonOf(context).withValues(alpha: 0.04),
                               borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
-                              border: const Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+                              border: Border(bottom: BorderSide(color: DefensysTokens.borderOf(context))),
                             ),
                             child: Wrap(
                               spacing: 12, runSpacing: 6,
                               children: [
                                 Text(
                                   'Scoring: ${activeMember['name']}',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 12.5,
-                                    color: AppColors.maroon,
+                                    color: DefensysTokens.maroonTextOf(context),
                                   ),
                                 ),
                                 Text(
                                   'Student Score: ${sScore.toStringAsFixed(2)} / 100',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 12,
-                                    color: AppColors.textSecondary,
+                                    color: DefensysTokens.textSecondaryOf(context),
                                   ),
                                 ),
                               ],
@@ -1213,7 +1215,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                   }),
                 ],
               ] else ...[
-                const Text('No members found in this team.', style: TextStyle(color: AppColors.textSecondary)),
+                Text('No members found in this team.', style: TextStyle(color: DefensysTokens.textSecondaryOf(context))),
               ],
               const SizedBox(height: 16),
             ],
@@ -1222,9 +1224,9 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
-                color: AppColors.maroon.withValues(alpha: 0.06),
+                color: DefensysTokens.maroonOf(context).withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.maroon.withValues(alpha: 0.2)),
+                border: Border.all(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2)),
               ),
               child: Column(
                 children: [
@@ -1239,14 +1241,14 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                           children: [
                             Expanded(child: Text(
                               m['name']?.toString() ?? 'Student',
-                              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: DefensysTokens.textPrimaryOf(context)),
                             )),
                             Text(
                               isComplete ? '${sScore.toStringAsFixed(2)} / 100' : 'Incomplete',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
-                                color: isComplete ? AppColors.maroon : Colors.grey,
+                                color: isComplete ? DefensysTokens.maroonTextOf(context) : Colors.grey,
                               ),
                             ),
                           ],
@@ -1259,13 +1261,13 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                     children: [
                       Expanded(child: Text(
                         targetType != 'team' ? 'Overall Team Adviser Score (Avg):' : 'Computed Adviser Score:',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: DefensysTokens.textPrimaryOf(context)),
                       )),
                       Text(
                         _computeOverallTeamScore(teamId, widget.selectedStage, gradeRecord).toStringAsFixed(2),
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.maroon),
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: DefensysTokens.maroonTextOf(context)),
                       ),
-                      const Text(' / 100', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                      Text(' / 100', style: TextStyle(color: DefensysTokens.textSecondaryOf(context), fontSize: 12)),
                     ],
                   ),
                 ],
@@ -1288,7 +1290,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                     ),
                     style: ElevatedButton.styleFrom(
                       disabledBackgroundColor: const Color(0xFFE2E8F0),
-                      disabledForegroundColor: AppColors.textSecondary,
+                      disabledForegroundColor: DefensysTokens.textSecondaryOf(context),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       elevation: 0,

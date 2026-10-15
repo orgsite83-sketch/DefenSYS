@@ -434,4 +434,38 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'DefenseMaterialReadiness shows late-upload window banner and triggers edit deadline callback',
+    (tester) async {
+      var editClicked = false;
+      await pumpDefensysWidget(
+        tester,
+        DefenseMaterialReadiness(
+          readiness: const {
+            'required_total': 1,
+            'submitted_total': 0,
+            'status': 'late_window',
+            'late_window_active': true,
+            'late_upload_until': '2030-11-20T17:00:00+08:00',
+            'items': [
+              {
+                'id': 'DECK',
+                'label': 'Pitch deck',
+                'due_at': '2030-11-19T09:00:00+08:00',
+              },
+            ],
+          },
+          onEditDeadline: () => editClicked = true,
+        ),
+      );
+      expect(find.textContaining('Late-upload window active'), findsOneWidget);
+      expect(find.textContaining('Late-upload window open until'), findsOneWidget);
+      expect(find.text('Edit deadline'), findsOneWidget);
+
+      await tester.tap(find.text('Edit deadline'));
+      await tester.pump();
+      expect(editClicked, isTrue);
+    },
+  );
 }

@@ -156,18 +156,31 @@ class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
     return Map<String, dynamic>.from(jsonDecode(response.body));
   }
 
-  Future<void> extendMaterialDeadline({required int scheduleId, required int revision,
-    required DateTime deadline, required String reason}) async {
+  Future<void> extendMaterialDeadline({
+    required int scheduleId,
+    required int revision,
+    required DateTime deadline,
+    required String reason,
+    String? mode,
+  }) async {
     final response = await _client.post(
       Uri.parse('${ApiConfig.defenseSchedulesUrl}/$scheduleId/material-deadline/'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'deadline': deadline.toUtc().toIso8601String(), 'reason': reason, 'revision': revision}),
+      body: jsonEncode({
+        'deadline': deadline.toUtc().toIso8601String(),
+        'reason': reason,
+        'revision': revision,
+        if (mode != null) 'mode': mode,
+      }),
     );
     if (response.statusCode != 200) throw Exception(_errorFromResponse(response));
     ref.read(dataRefreshProvider.notifier).markChanged(const [
       DataArea.repository, DataArea.audit, DataArea.dashboard, DataArea.scheduler,
     ]);
-    await fetchBoard(successMessage: 'Material deadline extended. Students have been notified.');
+    final msg = mode == 'late_upload'
+        ? 'Late-upload window opened. Students have been notified.'
+        : 'Material deadline extended. Students have been notified.';
+    await fetchBoard(successMessage: msg);
   }
 
   Future<Map<String, dynamic>> managementContext() async {

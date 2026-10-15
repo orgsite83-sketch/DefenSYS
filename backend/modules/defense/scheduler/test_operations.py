@@ -605,3 +605,59 @@ class ScheduleOperationsTests(APITestCase):
         self.assertTrue(DefenseSchedule.objects.filter(pk=a.pk).exists())
         self.assertFalse(DefenseSchedule.objects.filter(pk=b.pk).exists())
         self.assertTrue(DefenseSchedule.objects.filter(pk=other.pk).exists())
+
+    def test_late_upload_window_on_completed_defense(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        schedule = self.schedule()
+        from defense.stages.models import StageDeliverable
+        StageDeliverable.objects.create(defense_stage=self.stage, deliverable_id='LATE_DECK',
+            label='Pitch deck', required=True, requirement_timing='defense')
+        schedule.status = 'done'
+        schedule.save()
+        target_deadline = timezone.now() + timedelta(days=2)
+        response = self.operation(schedule, changes={
+            'materials_deadline_mode': 'late_upload',
+            'materials_deadline': target_deadline.isoformat(),
+        })
+        self.assertEqual(response.status_code, 200, response.data)
+        schedule.refresh_from_db()
+        self.assertIsNotNone(schedule.materials_late_upload_until)
+        self.assertEqual(SystemAuditLog.objects.filter(target_id=str(schedule.pk), action='schedule.operational_change').count(), 1)
+
+    def test_extend_mode_adapts_to_late_upload_for_past_defense(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        schedule = self.schedule()
+        from defense.stages.models import StageDeliverable
+        StageDeliverable.objects.create(defense_stage=self.stage, deliverable_id='LATE_DECK',
+            label='Pitch deck', required=True, requirement_timing='defense')
+        schedule.scheduled_date = timezone.localdate() - timedelta(days=2)
+        schedule.save()
+        target_deadline = timezone.now() + timedelta(days=1)
+        response = self.operation(schedule, changes={
+            'materials_deadline_mode': 'extend',
+            'materials_deadline': target_deadline.isoformat(),
+        })
+        self.assertEqual(response.status_code, 200, response.data)
+        schedule.refresh_from_db()
+        self.assertIsNotNone(schedule.materials_late_upload_until)
+
+    def test_history_for_includes_late_upload_opened(self):
+        from authentication_access_control.audit import log_high_impact_action
+        from django.utils import timezone
+        schedule = self.schedule()
+        log = log_high_impact_action(
+            category=SystemAuditLog.CATEGORY_SCHEDULING,
+            action='schedule.late_upload_opened',
+            target=schedule,
+            old_values={'revision': 1},
+            new_values={'revision': 2, 'late_upload_until': timezone.now().isoformat(), 'change_details': [{'field': 'materials_late_upload_until', 'label': 'Late-upload window', 'before': 'None', 'after': timezone.now().isoformat()}]},
+            reason='Allow missing slides upload',
+            actor=self.admin,
+        )
+        response = self.client.get(f'/api/defense/board/operations/?history_for={schedule.pk}')
+        self.assertEqual(response.status_code, 200)
+        history_ids = [item['id'] for item in response.data['history']]
+        self.assertIn(log.pk, history_ids)
+

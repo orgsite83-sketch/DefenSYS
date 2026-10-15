@@ -39,9 +39,11 @@ void main() {
                 'name': 'Team Alpha',
                 'project_title': 'Project Alpha',
                 'level': '1st Year PIT',
+                'year_level': '1st Year',
               }],
               pitEvents: [{
                 'event_name': event,
+                'year_level': '1st Year',
                 'deliverables': [
                   {'deliverable_type': 'pre', 'required': true, 'requirement_timing': timing},
                 ],

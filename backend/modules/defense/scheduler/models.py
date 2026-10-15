@@ -73,6 +73,7 @@ class DefenseSchedule(models.Model):
     ])
     operation_reason = models.TextField(blank=True)
     materials_deadline_override = models.DateTimeField(null=True, blank=True)
+    materials_late_upload_until = models.DateTimeField(null=True, blank=True)
     materials_deadline_reason = models.TextField(blank=True)
     materials_notice_key = models.CharField(max_length=64, blank=True)
     scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, default=SCOPE_CAPSTONE)
@@ -177,6 +178,10 @@ class DefenseSchedule(models.Model):
                 errors['event_name'] = 'PIT schedules require an event name.'
             if self.team_id and not self.team.is_pit:
                 errors['team'] = 'PIT schedules require a PIT team.'
+            if not self.pk and self.team_id and self.semester_id:
+                config = PitEventGradingConfig.objects.filter(semester_id=self.semester_id, event_name__iexact=self.event_name).first()
+                if config and config.year_level != self.team.year_level:
+                    errors['event_name'] = 'PIT event year level must match the team.'
 
         if self.rubric_id:
             if self.rubric.status != 'published':
@@ -205,7 +210,16 @@ class DefenseSchedule(models.Model):
         if errors:
             raise ValidationError(errors)
 
+    def clear_material_deadlines(self):
+        self.materials_deadline_override = None
+        self.materials_late_upload_until = None
+        self.materials_deadline_reason = ''
+        self.materials_notice_key = ''
+
     def save(self, *args, **kwargs):
+        # Operational edits can validate a new deadline against the new slot in
+        # the same transaction. Other reschedules must expire the old permission.
+        material_deadlines_revalidated = kwargs.pop('material_deadlines_revalidated', False)
         is_new = self.pk is None
         if is_new:
             self.project_version = self.team.project_version
@@ -232,15 +246,13 @@ class DefenseSchedule(models.Model):
         else:
             self.event_name = ''
         self.full_clean()
-        if not is_new and previous and (previous['scheduled_date'] != self.scheduled_date or previous['start_time'] != self.start_time):
+        if not material_deadlines_revalidated and not is_new and previous and (previous['scheduled_date'] != self.scheduled_date or previous['start_time'] != self.start_time):
             # A grace deadline belongs to one defense time. Rescheduling derives
             # fresh deadlines from the new slot instead of retaining an old one.
-            self.materials_deadline_override = None
-            self.materials_deadline_reason = ''
-            self.materials_notice_key = ''
+            self.clear_material_deadlines()
             if kwargs.get('update_fields') is not None:
                 kwargs['update_fields'] = set(kwargs['update_fields']) | {
-                    'materials_deadline_override', 'materials_deadline_reason', 'materials_notice_key'}
+                    'materials_deadline_override', 'materials_late_upload_until', 'materials_deadline_reason', 'materials_notice_key'}
         super().save(*args, **kwargs)
 
         # Sync TeamStageProgress status for Capstone schedules
@@ -360,6 +372,11 @@ class PitEventGradingConfig(models.Model):
         on_delete=models.CASCADE,
     )
     event_name = models.CharField(max_length=120)
+    year_level = models.CharField(
+        max_length=20, blank=True, default='',
+        choices=[(year, year) for year in ('1st Year', '2nd Year', '3rd Year')],
+        help_text='Owning PIT cohort. Unclassified legacy events are hidden from cohort workspaces.',
+    )
     event_code = models.SlugField(max_length=140, blank=True, default='')
     panel_rubric = models.ForeignKey(
         'grading.Rubric',
@@ -401,6 +418,10 @@ class PitEventGradingConfig(models.Model):
 
     def clean(self):
         errors = {}
+        if self.pk:
+            previous = type(self).objects.filter(pk=self.pk).values('year_level', 'event_name').first()
+            if previous and previous['year_level'] and previous['year_level'] != self.year_level:
+                errors['year_level'] = 'An existing PIT event cannot be moved to another year level.'
         if self.panel_weight + self.peer_weight != 100:
             errors['panel_weight'] = 'Panel and peer weights must total 100%.'
         from grading.rubrics.models import Rubric
@@ -439,8 +460,10 @@ class PitEventGradingConfig(models.Model):
         from django.db.models import Q
 
         TeamGrade.objects.filter(
-            Q(pit_event_config=self) | Q(semester=self.semester, scope=TeamGrade.SCOPE_PIT, stage_label__iexact=self.event_name),
+            Q(pit_event_config=self) | Q(semester=self.semester, scope=TeamGrade.SCOPE_PIT, stage_label__iexact=self.event_name, team__year_level=self.year_level),
             status=TeamGrade.STATUS_PENDING,
+            scope=TeamGrade.SCOPE_PIT,
+            team__year_level=self.year_level,
         ).update(
             pit_event_config=self,
             panel_weight=self.panel_weight,

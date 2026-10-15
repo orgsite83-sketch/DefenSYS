@@ -20,6 +20,7 @@ class _DeadlineBoard extends DefenseBoardNotifier {
     required int revision,
     required DateTime deadline,
     required String reason,
+    String? mode,
   }) async {
     if (fail) throw Exception('Connection interrupted. Try again.');
     savedReason = reason;

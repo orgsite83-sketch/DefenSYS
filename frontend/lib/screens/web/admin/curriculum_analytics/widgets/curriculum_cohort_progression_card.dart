@@ -1,3 +1,4 @@
+import 'package:defensys/theme/program_colors.dart';
 import 'package:flutter/material.dart';
 import '../../../../../theme/app_theme.dart';
 
@@ -113,7 +114,7 @@ class CurriculumCohortProgressionCard extends StatelessWidget {
                 return Column(
                   children: [
                     for (int i = 0; i < items.length; i++) ...[
-                      _buildStepCard(items[i], i, items.length),
+                      _buildStepCard(context, items[i], i, items.length),
                       if (i < items.length - 1)
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -133,7 +134,7 @@ class CurriculumCohortProgressionCard extends StatelessWidget {
                 children: [
                   for (int i = 0; i < items.length; i++) ...[
                     Expanded(
-                      child: _buildStepCard(items[i], i, items.length),
+                      child: _buildStepCard(context, items[i], i, items.length),
                     ),
                     if (i < items.length - 1)
                       Padding(
@@ -154,7 +155,7 @@ class CurriculumCohortProgressionCard extends StatelessWidget {
     );
   }
 
-  Widget _buildStepCard(Map<String, dynamic> item, int index, int total) {
+  Widget _buildStepCard(BuildContext context, Map<String, dynamic> item, int index, int total) {
     final title = item['title']?.toString() ?? 'Year ${index + 1}';
     final phase = item['phase']?.toString() ?? '';
     final focus = item['focus']?.toString() ?? '';
@@ -164,8 +165,9 @@ class CurriculumCohortProgressionCard extends StatelessWidget {
         ? double.tryParse(item['on_time_rate'].toString()) ?? 90.0
         : 90.0;
 
-    final isCapstone = index == total - 1;
-    final color = isCapstone ? AppColors.maroon : const Color(0xFF0284C7);
+    final colors = ProgramColors.of(context, data: item);
+    final isCapstone = colors.track == ProgramTrack.capstone;
+    final color = colors.text;
 
     return Container(
       padding: const EdgeInsets.all(14),

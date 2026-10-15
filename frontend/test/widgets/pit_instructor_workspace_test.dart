@@ -456,7 +456,7 @@ void main() {
     );
 
     expect(find.text('Ready to Schedule'), findsWidgets);
-    expect(find.text('Ready for Endorsement'), findsNothing);
+    expect(find.text('Ready for review'), findsNothing);
     expect(find.text('No scheduling uploads required'), findsOneWidget);
     expect(
       find.textContaining(
@@ -464,7 +464,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('Endorse Team'), findsNothing);
+    expect(find.text('Review & endorse'), findsNothing);
   });
 
   testWidgets('instructor team has read only Schedule tab and scoped exports', (tester) async {
@@ -532,7 +532,7 @@ void main() {
     expect(find.textContaining('minutes', findRichText: true), findsNothing);
   });
 
-  testWidgets('instructor default matrix exposes the assigned teams export', (tester) async {
+  testWidgets('instructor defaults to dossier workspace and matrix exposes assigned teams export', (tester) async {
     tester.view.physicalSize = const Size(1500, 1100);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -542,6 +542,24 @@ void main() {
       const TeamDeliverablesScreen(
         initialScope: 'pit',
         isPitInstructor: true,
+      ),
+      overrides: [
+        capstoneDeliverablesProvider.overrideWith(_PitDeliverablesNotifier.new),
+        adviserGradingProvider.overrideWith(_PitGradesNotifier.new),
+        weeklyProgressProvider.overrideWith(_PitWeeklyNotifier.new),
+        pitInstructorDefenseProvider.overrideWith(_PitDefenseNotifier.new),
+      ],
+    );
+    await tester.pump();
+    expect(find.byType(DeliverablesTablePane), findsOneWidget);
+
+    // When matrix view is explicitly selected:
+    await pumpDefensysWidget(
+      tester,
+      const TeamDeliverablesScreen(
+        initialScope: 'pit',
+        isPitInstructor: true,
+        initialViewMode: DeliverablesViewMode.matrix,
       ),
       overrides: [
         capstoneDeliverablesProvider.overrideWith(_PitDeliverablesNotifier.new),
@@ -592,7 +610,7 @@ void main() {
       overrides: [adviserGradingProvider.overrideWith(_PitGradesNotifier.new)],
     );
     final summary = find.byKey(const Key('instructor-team-summary'));
-    expect(find.descendant(of: summary, matching: find.text('Awaiting Endorsement')),
+    expect(find.descendant(of: summary, matching: find.text('Awaiting requirements')),
         findsOneWidget);
     expect(find.descendant(of: summary, matching: find.text('Ready to Schedule')),
         findsNothing);
@@ -652,6 +670,7 @@ void main() {
       'stage_status_detail': 'awaiting_endorsement',
       'required_total': 1,
       'required_uploaded': 1,
+      'endorsement_review': {'can_review_and_endorse': true, 'review_token': 'pit-reviewed-files', 'files': []},
       'materials_readiness': {'required_total': 0, 'submitted_total': 0},
       'pre': [
         {
@@ -685,11 +704,63 @@ void main() {
       overrides: [adviserGradingProvider.overrideWith(_PitGradesNotifier.new)],
     );
 
-    expect(find.text('Ready for Endorsement'), findsWidgets);
+    expect(find.text('Ready for review'), findsWidgets);
     final endorseButton = find.ancestor(
-      of: find.text('Endorse Team'),
+      of: find.text('Review & endorse'),
       matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
     );
     expect(tester.widget<ElevatedButton>(endorseButton).onPressed, isNotNull);
+  });
+
+  testWidgets('compact team card shows the name with a small status below', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1500, 1050);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final stageWithReview = <String, dynamic>{
+      ..._pitStage,
+      'pre': [
+        {
+          'id': 'PAPER',
+          'label': 'Concept Paper',
+          'type': 'pre',
+          'required': true,
+          'uploaded': true,
+          'submission': {'status': 'pending'},
+        },
+      ],
+    };
+    final teamWithReview = <String, dynamic>{
+      ..._pitTeam,
+      'adviser_name': 'Eduardo Padilla',
+      'stages': [stageWithReview],
+    };
+
+    await pumpDefensysWidget(
+      tester,
+      SingleChildScrollView(
+        child: DeliverablesTablePane(
+          state: CapstoneDeliverablesState(
+            scope: 'pit',
+            selectedStage: 'System Concept Pitching',
+            stageOptions: const ['System Concept Pitching'],
+            teams: [teamWithReview],
+          ),
+          isAdviser: false,
+          isPitInstructor: true,
+          initialTeamId: 7,
+        ),
+      ),
+      overrides: [adviserGradingProvider.overrideWith(_PitGradesNotifier.new)],
+    );
+
+    // Keep review status visible without repeating the project title in the list.
+    expect(find.text('1 Awaiting Review'), findsOneWidget);
+
+    // No competing separate banners or bottom tags on the compact card list:
+    expect(find.text('1 awaiting review'), findsNothing);
+    expect(find.text('Library tracker'), findsOneWidget);
   });
 }

@@ -6,9 +6,11 @@ void main() {
     const event = 'System Concept Pitching';
     final team = <String, dynamic>{
       'level': '1st Year PIT',
+      'year_level': '1st Year',
       'ready_for_stage': null,
     };
     final defenseFilesOnly = <String, dynamic>{
+      'year_level': '1st Year',
       'deliverables': [
         {'deliverable_type': 'pre', 'required': true, 'requirement_timing': 'defense'},
         {'deliverable_type': 'pre', 'required': false, 'requirement_timing': 'scheduling'},
@@ -18,6 +20,7 @@ void main() {
     expect(isPitTeamReadyToSchedule(team, event, defenseFilesOnly), isTrue);
 
     final schedulingFile = <String, dynamic>{
+      'year_level': '1st Year',
       'deliverables': [
         {'deliverable_type': 'pre', 'required': true, 'requirement_timing': 'scheduling'},
       ],

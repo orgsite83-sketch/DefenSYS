@@ -18,7 +18,6 @@ import '../../../widgets/confirm_dialog.dart';
 import '../../../toasts/feedback_toast.dart';
 import '../../../utils/progress_upload.dart';
 import '../../../utils/universal_file_viewer.dart';
-import '../../../widgets/export/deliverable_document_reader_screen.dart';
 import '../../../widgets/repository/defense_material_readiness.dart';
 
 /// Smooth dashed border painter for the upload dropzone container.
@@ -114,6 +113,7 @@ class StudentDeliverablesTab extends ConsumerStatefulWidget {
 }
 
 class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab> {
+
   String? get _studentYearLevel {
     final y = widget.studentData?['year_level']?.toString().trim();
     return (y != null && y.isNotEmpty) ? y : null;
@@ -163,8 +163,8 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final team = state.teams.firstOrNull;
 
     if (state.isLoading && team == null) {
-      return const Center(
-        child: CircularProgressIndicator(color: DefensysTokens.maroon),
+      return Center(
+        child: CircularProgressIndicator(color: DefensysTokens.maroonOf(context)),
       );
     }
 
@@ -185,7 +185,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               const SizedBox(height: 16),
               ElevatedButton(
                 onPressed: _refresh,
-                style: ElevatedButton.styleFrom(backgroundColor: DefensysTokens.maroon),
+                style: ElevatedButton.styleFrom(backgroundColor: DefensysTokens.maroonOf(context)),
                 child: const Text('Retry', style: TextStyle(color: Colors.white)),
               ),
             ],
@@ -224,6 +224,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
         selectedStage['endorsement_required'] == false;
     final pre = _deliverables(selectedStage, 'pre');
     final vault = _deliverables(selectedStage, 'post');
+    final postUnlocked = selectedStage['vault_unlocked'] == true ||
+        selectedStage['archive_unlocked'] == true ||
+        selectedStage['post_unlocked'] == true;
     final systemRecords = _deliverables(selectedStage, 'system');
 
     final content = Column(
@@ -235,7 +238,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
             width: double.infinity,
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: DefensysTokens.maroon,
+              color: DefensysTokens.maroonOf(context),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
@@ -408,7 +411,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                         width: double.infinity,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: DefensysTokens.surfaceOf(context),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: const Color(0xFFDCFCE7)),
                         ),
@@ -450,9 +453,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                                   : noEndorsementNeeded
                                       ? 'No endorsement or file uploads are needed for scheduling. Prepare your presentation materials, slides, and live demonstration.'
                                       : 'Prepare your presentation materials, slides, and live demonstration. Your adviser can endorse your readiness directly without file uploads.',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
-                                color: Color(0xFF475569),
+                                color: DefensysTokens.textSecondaryOf(context),
                                 height: 1.35,
                               ),
                             ),
@@ -522,7 +525,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                                 noEndorsementNeeded
                                     ? 'Required files here must be cleared before your team can be scheduled.'
                                     : 'Required files here must be cleared before your team can be endorsed.',
-                                style: const TextStyle(fontSize: 12, color: DefensysTokens.textSecondary),
+                                style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
                               ),
                             ),
                             ...pre.where((item) => item['requirement_timing'] != 'defense')
@@ -544,9 +547,10 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                         if (vault.isNotEmpty) ...[
                           _sectionTitle('Post-Defense Submissions', showRedDot: hasPendingPost),
                           const SizedBox(height: 8),
-                          if (selectedStage['vault_unlocked'] != true && selectedStage['archive_unlocked'] != true)
-                            _lockedVaultNotice(state.selectedStage, stageGrade),
-                          ...vault.map((item) => _deliverableRow(team, state.selectedStage, item, endorsed, stageGrade)),
+                          if (!postUnlocked)
+                            _lockedVaultNotice(state.selectedStage, stageGrade)
+                          else
+                            ...vault.map((item) => _deliverableRow(team, state.selectedStage, item, endorsed, stageGrade)),
                         ],
                       ],
                     );
@@ -567,7 +571,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       body: RefreshIndicator(
-        color: DefensysTokens.maroon,
+        color: DefensysTokens.maroonOf(context),
         onRefresh: _refresh,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -586,10 +590,10 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: DefensysTokens.maroon,
+              color: DefensysTokens.maroonTextOf(context),
             ),
           ),
           if (showRedDot) ...[
@@ -626,9 +630,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        border: Border.all(color: DefensysTokens.borderOf(context), width: 1.2),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.03),
@@ -644,12 +648,12 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Expanded(child: Text(
+              Expanded(child: Text(
                 'CLEARANCE PROGRESS',
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF64748B),
+                  color: DefensysTokens.textSecondaryOf(context),
                   letterSpacing: 0.8,
                 ),
               )),
@@ -700,12 +704,12 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
           const SizedBox(height: 6),
 
           // Row 2: Prominent Title
-          const Text(
+          Text(
             'Scheduling Clearance Status',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: DefensysTokens.textPrimary,
+              color: DefensysTokens.textPrimaryOf(context),
               letterSpacing: -0.2,
             ),
           ),
@@ -721,7 +725,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 value: progressPercent,
                 backgroundColor: const Color(0xFFF1F5F9),
                 valueColor: AlwaysStoppedAnimation<Color>(
-                  isAllDone ? const Color(0xFF16A34A) : DefensysTokens.maroon,
+                  isAllDone ? const Color(0xFF16A34A) : DefensysTokens.maroonOf(context),
                 ),
               ),
             ),
@@ -737,7 +741,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 style: TextStyle(
                   fontSize: 11.5,
                   fontWeight: FontWeight.bold,
-                  color: isAllDone ? const Color(0xFF16A34A) : DefensysTokens.maroon,
+                  color: isAllDone ? const Color(0xFF16A34A) : DefensysTokens.maroonTextOf(context),
                 ),
               ),
               const SizedBox(width: 12),
@@ -751,10 +755,10 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                               ? 'Awaiting 1 document'
                               : 'Awaiting $remaining documents')),
                   textAlign: TextAlign.end,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w500,
-                    color: Color(0xFF64748B),
+                    color: DefensysTokens.textSecondaryOf(context),
                   ),
                 ),
               ),
@@ -820,7 +824,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: DefensysTokens.surfaceOf(context),
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(color: borderColor),
                   ),
@@ -845,22 +849,22 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               width: double.infinity,
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: DefensysTokens.surfaceOf(context),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: borderColor),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.format_quote_rounded, size: 14, color: Color(0xFF94A3B8)),
+                  Icon(Icons.format_quote_rounded, size: 14, color: DefensysTokens.textSecondaryOf(context)),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       remarks,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11.5,
                         fontStyle: FontStyle.italic,
-                        color: DefensysTokens.textPrimary,
+                        color: DefensysTokens.textPrimaryOf(context),
                         height: 1.35,
                       ),
                     ),
@@ -980,6 +984,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final rawFeedback = (submission['feedback'] ?? item['feedback'])?.toString() ?? '';
     final isAccepted = status == 'accepted';
     final isRejected = status == 'rejected' || status == 'Needs Revision';
+    final isDefenseUploaded = item['requirement_timing'] == 'defense' && uploaded && !isRejected;
 
     final replacementUnlockedByAdmin = item['type'] == 'pre' && isAccepted &&
         submission['file_replacement_unlocked'] == true;
@@ -998,7 +1003,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final dueAfterScheduling = item['requirement_timing'] == 'defense' &&
         item['materials_status'] == 'awaiting_schedule';
 
-    final Color cardBorderColor = (isWaived || isAccepted)
+    final Color cardBorderColor = (isWaived || isAccepted || isDefenseUploaded)
         ? const Color(0xFF86EFAC)
         : (isRejected
             ? const Color(0xFFFECACA)
@@ -1009,7 +1014,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: cardBorderColor, width: 1.2),
         boxShadow: [
@@ -1032,10 +1037,10 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 Expanded(
                   child: Text(
                     item['label']?.toString() ?? 'Requirement',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 14,
-                      color: DefensysTokens.textPrimary,
+                      color: DefensysTokens.textPrimaryOf(context),
                       letterSpacing: -0.1,
                     ),
                     maxLines: 2,
@@ -1066,9 +1071,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                         !item['description'].toString().toLowerCase().contains('standard format'))
                     ? item['description'].toString()
                     : (isRequired ? 'Mandatory for oral defense' : 'Optional document'),
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11.5,
-                  color: Color(0xFF64748B),
+                  color: DefensysTokens.textSecondaryOf(context),
                   height: 1.35,
                 ),
                 maxLines: 2,
@@ -1080,7 +1085,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               Text(item['due_at'] == null
                   ? 'Deadline set when your defense is scheduled'
                   : 'Due: ${materialDeadlineLabel(item['due_at'])}',
-                  style: const TextStyle(fontSize: 12, color: DefensysTokens.textSecondary)),
+                  style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context))),
               if (item['upload_lock_reason']?.toString().isNotEmpty == true)
                 Text(item['upload_lock_reason'].toString(), style: Theme.of(context).textTheme.bodySmall),
             ],
@@ -1092,28 +1097,28 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: DefensysTokens.surfaceHigherOf(context),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: DefensysTokens.borderOf(context)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.assessment_outlined, size: 16, color: DefensysTokens.maroon),
+                    Icon(Icons.assessment_outlined, size: 16, color: DefensysTokens.maroonTextOf(context)),
                     const SizedBox(width: 8),
-                    const Expanded(
+                    Expanded(
                       child: Text(
                         'Weekly Progress Reports (Team)',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFF1E293B),
+                          color: DefensysTokens.textPrimaryOf(context),
                         ),
                       ),
                     ),
                     ElevatedButton(
                       onPressed: () => _showWPRDialog(team, stageLabel),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: DefensysTokens.maroon,
+                        backgroundColor: DefensysTokens.maroonOf(context),
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         visualDensity: VisualDensity.compact,
@@ -1144,7 +1149,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        border: Border.all(color: DefensysTokens.borderOf(context)),
                       ),
                       child: Row(
                         children: [
@@ -1174,11 +1179,11 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                               children: [
                                 Text(
                                   fileName,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12,
                                     fontFamily: 'monospace',
                                     fontWeight: FontWeight.w700,
-                                    color: Color(0xFF1E293B),
+                                    color: DefensysTokens.textPrimaryOf(context),
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -1186,10 +1191,10 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                                 const SizedBox(height: 2),
                                 Text(
                                   actualFormat.label,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 10.5,
                                     fontWeight: FontWeight.w500,
-                                    color: Color(0xFF64748B),
+                                    color: DefensysTokens.textSecondaryOf(context),
                                   ),
                                 ),
                               ],
@@ -1200,23 +1205,23 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF1F5F9),
+                              color: DefensysTokens.surfaceHigherOf(context),
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFCBD5E1)),
+                              border: Border.all(color: DefensysTokens.borderOf(context)),
                             ),
-                            child: const Row(
+                            child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
                                   'Details',
                                   style: TextStyle(
-                                    color: Color(0xFF334155),
+                                    color: DefensysTokens.textPrimaryOf(context),
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
                                 SizedBox(width: 3),
-                                Icon(Icons.chevron_right_rounded, size: 14, color: Color(0xFF64748B)),
+                                Icon(Icons.chevron_right_rounded, size: 14, color: DefensysTokens.textSecondaryOf(context)),
                               ],
                             ),
                           ),
@@ -1251,19 +1256,19 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
+                    color: DefensysTokens.surfaceHigherOf(context),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    border: Border.all(color: DefensysTokens.borderOf(context)),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.lock_outline_rounded, size: 14, color: Color(0xFF94A3B8)),
+                      Icon(Icons.lock_outline_rounded, size: 14, color: DefensysTokens.textSecondaryOf(context)),
                       SizedBox(width: 6),
                       Expanded(
                         child: Text(
                           'Uploads are currently locked for this deliverable',
-                          style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Color(0xFF94A3B8)),
+                          style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: DefensysTokens.textSecondaryOf(context)),
                         ),
                       ),
                     ],
@@ -1275,7 +1280,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     color: const Color(0xFFFDF2F4),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                      color: DefensysTokens.maroon.withValues(alpha: 0.25),
+                      color: DefensysTokens.maroonOf(context).withValues(alpha: 0.25),
                       width: 1.2,
                     ),
                   ),
@@ -1294,13 +1299,13 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                                 width: 36,
                                 height: 36,
                                 decoration: BoxDecoration(
-                                  color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.cloud_upload_rounded,
                                   size: 20,
-                                  color: DefensysTokens.maroon,
+                                  color: DefensysTokens.maroonTextOf(context),
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -1310,18 +1315,18 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                                   children: [
                                     Text(
                                       "Upload ${(item['label']?.toString().trim().isNotEmpty == true) ? item['label'] : 'Deliverable'}",
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 12.5,
                                         fontWeight: FontWeight.w700,
-                                        color: DefensysTokens.maroon,
+                                        color: DefensysTokens.maroonTextOf(context),
                                       ),
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
                                       'Accepted: ${formatInfo.label} • Max 50 MB',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 11,
-                                        color: Color(0xFF64748B),
+                                        color: DefensysTokens.textSecondaryOf(context),
                                       ),
                                     ),
                                   ],
@@ -1330,11 +1335,11 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: DefensysTokens.maroon,
+                                  color: DefensysTokens.maroonOf(context),
                                   borderRadius: BorderRadius.circular(6),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: DefensysTokens.maroon.withValues(alpha: 0.2),
+                                      color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2),
                                       blurRadius: 4,
                                       offset: const Offset(0, 2),
                                     ),
@@ -1410,24 +1415,24 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
             Row(
               children: [
                 if (uploaded) ...[
-                  const Icon(Icons.person_outline_rounded, size: 12, color: Color(0xFF94A3B8)),
+                  Icon(Icons.person_outline_rounded, size: 12, color: DefensysTokens.textSecondaryOf(context)),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Builder(builder: (ctx) {
                       final cardDate = _formatDateString(uploadedAt).split('·').first.trim();
                       return Text(
                         'Uploaded by $uploadedBy${cardDate.isNotEmpty ? ' • $cardDate' : ''}',
-                        style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                        style: TextStyle(fontSize: 10.5, color: DefensysTokens.textSecondaryOf(context), fontWeight: FontWeight.w500),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       );
                     }),
                   ),
                 ] else ...[
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Awaiting team upload',
-                      style: TextStyle(fontSize: 10.5, color: Color(0xFF94A3B8), fontStyle: FontStyle.italic),
+                      style: TextStyle(fontSize: 10.5, color: DefensysTokens.textSecondaryOf(context), fontStyle: FontStyle.italic),
                     ),
                   ),
                 ],
@@ -1467,7 +1472,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     bool isDefenseTimed = false,
     bool dueAfterScheduling = false,
   }) {
-    if (isWaived || isAccepted) {
+    if (isWaived || isAccepted || (isDefenseTimed && uploaded && !isRejected)) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
@@ -1481,7 +1486,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
             const Icon(Icons.check_circle_rounded, size: 11, color: Color(0xFF15803D)),
             const SizedBox(width: 3.5),
             Text(
-              isPost && isAccepted ? 'Archived' : 'Approved',
+              isDefenseTimed && uploaded ? 'Uploaded' : isPost && isAccepted ? 'Archived' : 'Approved',
               style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
             ),
           ],
@@ -1533,9 +1538,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          color: isRequired && !dueAfterScheduling ? const Color(0xFFFFF1F2) : const Color(0xFFF1F5F9),
+          color: isRequired && !dueAfterScheduling ? const Color(0xFFFFF1F2) : DefensysTokens.surfaceHigherOf(context),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: isRequired && !dueAfterScheduling ? const Color(0xFFFECDD3) : const Color(0xFFE2E8F0)),
+          border: Border.all(color: isRequired && !dueAfterScheduling ? const Color(0xFFFECDD3) : DefensysTokens.borderOf(context)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -1554,7 +1559,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
-                color: isRequired && !dueAfterScheduling ? const Color(0xFFBE123C) : const Color(0xFF64748B),
+                color: isRequired && !dueAfterScheduling ? const Color(0xFFBE123C) : DefensysTokens.textSecondaryOf(context),
               ),
             ),
           ],
@@ -1584,6 +1589,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final isAccepted = status == 'accepted';
     final isPost = item['type'] == 'post';
     final isRejected = status == 'rejected' || status == 'Needs Revision';
+    final isDefenseUploaded = item['requirement_timing'] == 'defense' && uploaded && !isRejected;
     final rawFeedback = (submission['feedback'] ?? item['feedback'])?.toString() ?? '';
     final isWPR = item['id'] == 'WPR';
     final isWaived = item['is_waived'] == true;
@@ -1606,8 +1612,8 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
       backgroundColor: Colors.transparent,
       builder: (modalCtx) => Container(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-        decoration: const BoxDecoration(
-          color: Colors.white,
+        decoration: BoxDecoration(
+          color: DefensysTokens.surfaceOf(context),
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: SingleChildScrollView(child: Column(
@@ -1659,10 +1665,10 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     children: [
                       Text(
                         item['label']?.toString() ?? 'Deliverable',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.bold,
-                          color: DefensysTokens.textPrimary,
+                          color: DefensysTokens.textPrimaryOf(context),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -1708,7 +1714,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF94A3B8)),
+                  icon: Icon(Icons.close_rounded, size: 20, color: DefensysTokens.textSecondaryOf(context)),
                   tooltip: 'Close',
                   constraints: const BoxConstraints(),
                   padding: const EdgeInsets.all(4),
@@ -1723,12 +1729,12 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: isWaived || isAccepted
+                color: isWaived || isAccepted || isDefenseUploaded
                     ? const Color(0xFFF0FDF4)
                     : (isRejected ? const Color(0xFFFEF2F2) : (uploaded ? const Color(0xFFFFFBEB) : const Color(0xFFF8FAFC))),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: isWaived || isAccepted
+                  color: isWaived || isAccepted || isDefenseUploaded
                       ? const Color(0xFFBBF7D0)
                       : (isRejected ? const Color(0xFFFECACA) : (uploaded ? const Color(0xFFFDE68A) : const Color(0xFFE2E8F0))),
                 ),
@@ -1736,11 +1742,11 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               child: Row(
                 children: [
                   Icon(
-                    isWaived || isAccepted
+                    isWaived || isAccepted || isDefenseUploaded
                         ? Icons.verified_rounded
                         : (isRejected ? Icons.warning_amber_rounded : (uploaded ? Icons.schedule_rounded : Icons.info_outline_rounded)),
                     size: 16,
-                    color: isWaived || isAccepted
+                    color: isWaived || isAccepted || isDefenseUploaded
                         ? const Color(0xFF15803D)
                         : (isRejected ? const Color(0xFFDC2626) : (uploaded ? const Color(0xFFD97706) : const Color(0xFF64748B))),
                   ),
@@ -1752,6 +1758,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                         Text(
                           isWaived
                               ? 'Status: Approved with no revisions'
+                              : isDefenseUploaded ? 'Status: Uploaded'
                               : (isAccepted
                                   ? (isPost ? 'Status: Archived' : 'Status: Accepted for Oral Defense')
                                   : (isRejected
@@ -1760,7 +1767,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                           style: TextStyle(
                             fontSize: 11.5,
                             fontWeight: FontWeight.bold,
-                            color: isWaived || isAccepted
+                            color: isWaived || isAccepted || isDefenseUploaded
                                 ? const Color(0xFF15803D)
                                 : (isRejected ? const Color(0xFFDC2626) : (uploaded ? const Color(0xFFB45309) : const Color(0xFF475569))),
                           ),
@@ -1775,7 +1782,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                                   : (uploaded ? 'Submitted and queued for verification.' : 'Please upload document before the stage deadline.')),
                           style: TextStyle(
                             fontSize: 10,
-                            color: isWaived || isAccepted
+                            color: isWaived || isAccepted || isDefenseUploaded
                                 ? const Color(0xFF166534)
                                 : (isRejected ? const Color(0xFF991B1B) : const Color(0xFF64748B)),
                           ),
@@ -1790,12 +1797,12 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
 
             // File Properties & Info (matching reference Image 1)
             if (uploaded && !isWPR) ...[
-              const Text(
+              Text(
                 'FILE PROPERTIES & INFO',
                 style: TextStyle(
                   fontSize: 10.5,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF64748B),
+                  color: DefensysTokens.textSecondaryOf(context),
                   letterSpacing: 0.6,
                 ),
               ),
@@ -1804,9 +1811,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 width: double.infinity,
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: DefensysTokens.surfaceHigherOf(context),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  border: Border.all(color: DefensysTokens.borderOf(context)),
                 ),
                 child: Column(
                   children: [
@@ -1854,9 +1861,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                         label: 'File Name',
                         value: suggestedName,
                         icon: Icons.insert_drive_file_outlined,
-                        iconColor: DefensysTokens.maroon,
+                        iconColor: DefensysTokens.maroonOf(context),
                         trailing: IconButton(
-                          icon: const Icon(Icons.copy_rounded, size: 14, color: Color(0xFF64748B)),
+                          icon: Icon(Icons.copy_rounded, size: 14, color: DefensysTokens.textSecondaryOf(context)),
                           tooltip: 'Copy file name',
                           constraints: const BoxConstraints(),
                           padding: const EdgeInsets.all(2),
@@ -1882,7 +1889,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                         icon: Icons.insert_drive_file_outlined,
                         iconColor: const Color(0xFF64748B),
                         trailing: IconButton(
-                          icon: const Icon(Icons.copy_rounded, size: 14, color: Color(0xFF64748B)),
+                          icon: Icon(Icons.copy_rounded, size: 14, color: DefensysTokens.textSecondaryOf(context)),
                           tooltip: 'Copy file name',
                           constraints: const BoxConstraints(),
                           padding: const EdgeInsets.all(2),
@@ -1961,7 +1968,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                       icon: const Icon(Icons.visibility_outlined, size: 16),
                       label: const Text('View Document', style: TextStyle(fontWeight: FontWeight.bold)),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: DefensysTokens.maroon,
+                        backgroundColor: DefensysTokens.maroonOf(context),
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -1992,8 +1999,8 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                       icon: Icon(uploaded ? Icons.swap_horiz_rounded : Icons.upload_file_rounded, size: 16),
                       label: Text(uploaded ? 'Replace File' : 'Upload File', style: const TextStyle(fontWeight: FontWeight.bold)),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: DefensysTokens.maroon,
-                        side: const BorderSide(color: DefensysTokens.maroon),
+                        foregroundColor: DefensysTokens.maroonOf(context),
+                        side: BorderSide(color: DefensysTokens.maroonOf(context)),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
@@ -2024,20 +2031,20 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
           width: 120,
           child: Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11.5,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF64748B),
+              color: DefensysTokens.textSecondaryOf(context),
             ),
           ),
         ),
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11.5,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF1E293B),
+              color: DefensysTokens.textPrimaryOf(context),
             ),
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.right,
@@ -2068,8 +2075,8 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: DefensysTokens.maroon),
+      builder: (context) => Center(
+        child: CircularProgressIndicator(color: DefensysTokens.maroonOf(context)),
       ),
     );
 
@@ -2110,35 +2117,12 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
         );
       }
 
-      final isPdf = fileName.toLowerCase().endsWith('.pdf') ||
-          (bytes.length >= 4 &&
-              bytes[0] == 0x25 &&
-              bytes[1] == 0x50 &&
-              bytes[2] == 0x44 &&
-              bytes[3] == 0x46); // %PDF
-
-      if (isPdf) {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (ctx) => DeliverableDocumentReaderScreen(
-              fileBytes: Uint8List.fromList(bytes),
-              fileName: fileName,
-              deliverableLabel: item?['label']?.toString(),
-              stageLabel: stageLabel,
-              teamName: team?['name']?.toString() ?? team?['team_name']?.toString(),
-              propertiesInfo: propsInfo,
-            ),
-          ),
-        );
-      } else {
-        await viewFileInDialog(
-          context: context,
-          fileBytes: bytes,
-          fileName: fileName,
-          propertiesInfo: propsInfo,
-        );
-      }
+      await viewFileInDialog(
+        context: context,
+        fileBytes: bytes,
+        fileName: fileName,
+        propertiesInfo: propsInfo,
+      );
     } catch (e) {
       if (mounted && Navigator.canPop(context)) Navigator.pop(context);
       if (mounted) {
@@ -2214,10 +2198,10 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.cloud_upload_rounded, size: 20, color: DefensysTokens.maroon),
+                child: Icon(Icons.cloud_upload_rounded, size: 20, color: DefensysTokens.maroonTextOf(context)),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -2230,7 +2214,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     ),
                     Text(
                       item['label']?.toString() ?? '',
-                      style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13, color: Color(0xFF64748B)),
+                      style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13, color: DefensysTokens.textSecondaryOf(context)),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -2304,7 +2288,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
+                          color: DefensysTokens.surfaceHigherOf(context),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Column(
@@ -2314,31 +2298,31 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                               width: 50,
                               height: 50,
                               decoration: BoxDecoration(
-                                color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                                color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
                                 shape: BoxShape.circle,
                               ),
-                              child: const Icon(
+                              child: Icon(
                                 Icons.cloud_upload_rounded,
                                 size: 28,
-                                color: DefensysTokens.maroon,
+                                color: DefensysTokens.maroonTextOf(context),
                               ),
                             ),
                             const SizedBox(height: 12),
-                            const Text(
+                            Text(
                               'Click to browse or drop your document here',
                               style: TextStyle(
                                 fontSize: 13.5,
                                 fontWeight: FontWeight.w700,
-                                color: Color(0xFF1E293B),
+                                color: DefensysTokens.textPrimaryOf(context),
                               ),
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 4),
                             Text(
                               'Select any file with ${formatInfo.label} extension',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11.5,
-                                color: Color(0xFF64748B),
+                                color: DefensysTokens.textSecondaryOf(context),
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -2376,10 +2360,10 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                             children: [
                               Text(
                                 selectedFileName!,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontWeight: FontWeight.w700,
                                   fontSize: 13,
-                                  color: Color(0xFF0F172A),
+                                  color: DefensysTokens.textPrimaryOf(context),
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -2431,21 +2415,21 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
+                      color: DefensysTokens.surfaceHigherOf(context),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: DefensysTokens.borderOf(context)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            const Text(
+                            Text(
                               'Recommended File Name:',
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF64748B),
+                                color: DefensysTokens.textSecondaryOf(context),
                               ),
                             ),
                             const Spacer(),
@@ -2459,15 +2443,15 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
-                                  children: const [
-                                    Icon(Icons.copy_rounded, size: 13, color: DefensysTokens.maroon),
+                                  children: [
+                                    Icon(Icons.copy_rounded, size: 13, color: DefensysTokens.maroonTextOf(context)),
                                     SizedBox(width: 4),
                                     Text(
                                       'Copy',
                                       style: TextStyle(
                                         fontSize: 11,
                                         fontWeight: FontWeight.w700,
-                                        color: DefensysTokens.maroon,
+                                        color: DefensysTokens.maroonTextOf(context),
                                       ),
                                     ),
                                   ],
@@ -2479,19 +2463,19 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                         const SizedBox(height: 4),
                         SelectableText(
                           suggestedName,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11.5,
                             fontFamily: 'monospace',
                             fontWeight: FontWeight.w700,
-                            color: DefensysTokens.maroon,
+                            color: DefensysTokens.maroonTextOf(context),
                           ),
                         ),
                         const SizedBox(height: 4),
-                        const Text(
+                        Text(
                           'DefenSYS will automatically standardize this file for the repository archive upon upload.',
                           style: TextStyle(
                             fontSize: 10.5,
-                            color: Color(0xFF64748B),
+                            color: DefensysTokens.textSecondaryOf(context),
                             height: 1.25,
                           ),
                         ),
@@ -2505,19 +2489,19 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
+                      color: DefensysTokens.surfaceHigherOf(context),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      border: Border.all(color: DefensysTokens.borderOf(context)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            const SizedBox(
+                            SizedBox(
                               width: 16,
                               height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: DefensysTokens.maroon),
+                              child: CircularProgressIndicator(strokeWidth: 2, color: DefensysTokens.maroonOf(context)),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
@@ -2530,7 +2514,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                             ),
                             Text(
                               '${(uploadProgress * 100).toStringAsFixed(0)}%',
-                              style: const TextStyle(fontWeight: FontWeight.bold, color: DefensysTokens.maroon, fontSize: 13),
+                              style: TextStyle(fontWeight: FontWeight.bold, color: DefensysTokens.maroonTextOf(context), fontSize: 13),
                             ),
                           ],
                         ),
@@ -2539,8 +2523,8 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                           borderRadius: BorderRadius.circular(999),
                           child: LinearProgressIndicator(
                             value: uploadProgress,
-                            color: DefensysTokens.maroon,
-                            backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.15),
+                            color: DefensysTokens.maroonOf(context),
+                            backgroundColor: DefensysTokens.maroonOf(context).withValues(alpha: 0.15),
                             minHeight: 8,
                           ),
                         ),
@@ -2578,7 +2562,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
           actions: [
             TextButton(
               onPressed: isUploading ? null : () => Navigator.pop(dialogContext),
-              child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+              child: Text('Cancel', style: TextStyle(color: DefensysTokens.textSecondaryOf(context))),
             ),
             ElevatedButton.icon(
               onPressed: (selectedFileName != null && !isUploading)
@@ -2658,27 +2642,27 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
+                                  Text(
                                     'Your file:',
-                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: DefensysTokens.textSecondaryOf(context)),
                                   ),
                                   const SizedBox(height: 4),
                                   Container(
                                     width: double.infinity,
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFF8FAFC),
+                                      color: DefensysTokens.surfaceHigherOf(context),
                                       borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                                      border: Border.all(color: DefensysTokens.borderOf(context)),
                                     ),
                                     child: Row(
                                       children: [
-                                        const Icon(Icons.description_outlined, size: 15, color: Color(0xFF64748B)),
+                                        Icon(Icons.description_outlined, size: 15, color: DefensysTokens.textSecondaryOf(context)),
                                         const SizedBox(width: 8),
                                         Expanded(
                                           child: Text(
                                             selectedFileName!,
-                                            style: const TextStyle(fontSize: 12, fontFamily: 'monospace', fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                                            style: TextStyle(fontSize: 12, fontFamily: 'monospace', fontWeight: FontWeight.w600, color: DefensysTokens.textPrimaryOf(context)),
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
@@ -2686,27 +2670,27 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                                     ),
                                   ),
                                   const SizedBox(height: 14),
-                                  const Text(
+                                  Text(
                                     'Repository name:',
-                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: DefensysTokens.textSecondaryOf(context)),
                                   ),
                                   const SizedBox(height: 4),
                                   Container(
                                     width: double.infinity,
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                     decoration: BoxDecoration(
-                                      color: DefensysTokens.maroon.withValues(alpha: 0.06),
+                                      color: DefensysTokens.maroonOf(context).withValues(alpha: 0.06),
                                       borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.2)),
+                                      border: Border.all(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2)),
                                     ),
                                     child: Row(
                                       children: [
-                                        Icon(Icons.inventory_2_outlined, size: 15, color: DefensysTokens.maroon),
+                                        Icon(Icons.inventory_2_outlined, size: 15, color: DefensysTokens.maroonTextOf(context)),
                                         const SizedBox(width: 8),
                                         Expanded(
                                           child: Text(
                                             targetRepoName,
-                                            style: const TextStyle(fontSize: 12, fontFamily: 'monospace', fontWeight: FontWeight.w700, color: DefensysTokens.maroon),
+                                            style: TextStyle(fontSize: 12, fontFamily: 'monospace', fontWeight: FontWeight.w700, color: DefensysTokens.maroonTextOf(context)),
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
@@ -2740,12 +2724,12 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                               actions: [
                                 TextButton(
                                   onPressed: () => Navigator.pop(confirmCtx, false),
-                                  child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+                                  child: Text('Cancel', style: TextStyle(color: DefensysTokens.textSecondaryOf(context))),
                                 ),
                                 ElevatedButton(
                                   onPressed: () => Navigator.pop(confirmCtx, true),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: DefensysTokens.maroon,
+                                    backgroundColor: DefensysTokens.maroonOf(context),
                                     foregroundColor: Colors.white,
                                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -2822,7 +2806,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   : const Icon(Icons.cloud_upload_rounded, size: 16),
               label: Text(isUploading ? 'Uploading...' : 'Submit Deliverable'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: DefensysTokens.maroon,
+                backgroundColor: DefensysTokens.maroonOf(context),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -3002,8 +2986,8 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                       label: const Text('Choose PDF File'),
                       style: OutlinedButton.styleFrom(
                         minimumSize: const Size(double.infinity, 48),
-                        side: BorderSide(color: DefensysTokens.maroon),
-                        foregroundColor: DefensysTokens.maroon,
+                        side: BorderSide(color: DefensysTokens.maroonOf(context)),
+                        foregroundColor: DefensysTokens.maroonOf(context),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -3048,7 +3032,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)))
                       : const Icon(Icons.send, size: 16),
                   label: const Text('Submit Report'),
-                  style: ElevatedButton.styleFrom(backgroundColor: DefensysTokens.maroon, foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(backgroundColor: DefensysTokens.maroonOf(context), foregroundColor: Colors.white),
                 ),
             ],
           );
