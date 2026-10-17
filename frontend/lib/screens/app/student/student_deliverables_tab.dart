@@ -1,4 +1,6 @@
 import 'package:defensys/widgets/defense/system_defense_records.dart';
+import 'package:defensys/widgets/repository/concept_workspace.dart';
+import 'package:defensys/widgets/repository/document_group.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
@@ -13,6 +15,7 @@ import '../../../config/api_config.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../services/capstone_deliverables_provider.dart';
 import '../../../services/dashboard_provider.dart';
+import '../../../services/academic/student_team_selection_provider.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../toasts/feedback_toast.dart';
@@ -160,7 +163,8 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(capstoneDeliverablesProvider);
-    final team = state.teams.firstOrNull;
+    final selectedTeamId = ref.watch(studentTeamSelectionProvider);
+    final team = state.teams.where((t) => t['id'] == selectedTeamId).firstOrNull ?? state.teams.firstOrNull;
 
     if (state.isLoading && team == null) {
       return Center(
@@ -232,6 +236,22 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (state.teams.length > 1) Padding(padding: const EdgeInsets.only(bottom: 16),
+          child: DropdownButtonFormField<int>(
+            key: ValueKey('deliverables-team-${team['id']}'), initialValue: team['id'] as int,
+            isExpanded: true, decoration: const InputDecoration(labelText: 'Team'),
+            items: state.teams.map((t) => DropdownMenuItem<int>(value: t['id'] as int,
+              child: Text('${t['name']} · ${t['current_defense_stage'] ?? t['level'] ?? ''}',
+                  overflow: TextOverflow.ellipsis))).toList(),
+            onChanged: state.isSaving ? null : (id) {
+              ref.read(studentTeamSelectionProvider.notifier).select(id);
+              final next = state.teams.where((t) => t['id'] == id).firstOrNull;
+              final stage = next?['current_defense_stage']?.toString();
+              if (stage != null && state.stageOptions.contains(stage)) {
+                ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(selectedStage: stage);
+              }
+            },
+          )),
         if (!widget.hideHeader) ...[
           // Header section
           Container(
@@ -498,6 +518,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        ConceptWorkspace(teamId: team['id'] as int, stageLabel: state.selectedStage, stage: selectedStage),
                         _buildRequiredProgressBlock(pre.where((item) => item['requirement_timing'] != 'defense').toList()),
                         const SizedBox(height: 16),
                         _sectionTitle(
@@ -972,6 +993,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     bool endorsed, [
     Map<String, dynamic>? stageGrade,
   ]) {
+    if ((item['file_policy'] as Map? ?? {}).isNotEmpty) {
+      return DocumentGroup(teamId: team['id'] as int, stageLabel: stageLabel, item: item);
+    }
     final uploaded = item['uploaded'] == true;
     final isWaived = item['is_waived'] == true;
     final stageVerdict = stageGrade?['verdict']?.toString();
@@ -1604,7 +1628,10 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
         ((item['type'] == 'pre' && endorsed) || item['locked'] == true)));
 
     final formattedDate = _formatDateString(uploadedAt);
-    final suggestedName = (item['suggested_file_name'] ?? '').toString().trim();
+    final suggestedName = formatInfo.recommendedFileName(
+      (item['suggested_file_name'] ?? '').toString(),
+      selectedFileName: uploaded ? fileName : null,
+    );
 
     showModalBottomSheet(
       context: context,
@@ -2183,6 +2210,10 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final rawFormat = item['file_format'] ?? item['fileFormat'];
     final formatInfo = DeliverableFormatInfo.fromFormat(rawFormat?.toString());
     final suggestedName = item['suggested_file_name']?.toString() ?? '';
+    String recommendedName() => formatInfo.recommendedFileName(
+      suggestedName,
+      selectedFileName: selectedFileName,
+    );
 
     await showDialog<bool>(
       context: context,
@@ -2435,7 +2466,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                             const Spacer(),
                             InkWell(
                               onTap: () {
-                                Clipboard.setData(ClipboardData(text: suggestedName));
+                                Clipboard.setData(ClipboardData(text: recommendedName()));
                                 showSuccessToast(context, 'Recommended filename copied');
                               },
                               borderRadius: BorderRadius.circular(4),
@@ -2462,7 +2493,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                         ),
                         const SizedBox(height: 4),
                         SelectableText(
-                          suggestedName,
+                          recommendedName(),
                           style: TextStyle(
                             fontSize: 11.5,
                             fontFamily: 'monospace',
@@ -2590,21 +2621,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                           return dotIdx > 0 ? name.substring(0, dotIdx) : name;
                         }
 
-                        // Ensure repository name preserves the uploaded file's actual extension
-                        String targetRepoName = suggestedName;
-                        final selDot = selectedFileName!.lastIndexOf('.');
-                        final sugDot = suggestedName.lastIndexOf('.');
-                        if (selDot > 0) {
-                          final selExt = selectedFileName!.substring(selDot);
-                          if (sugDot < 0) {
-                            targetRepoName = '$suggestedName$selExt';
-                          } else {
-                            final sugExt = suggestedName.substring(sugDot);
-                            if (sugExt.toLowerCase() != selExt.toLowerCase()) {
-                              targetRepoName = '${suggestedName.substring(0, sugDot)}$selExt';
-                            }
-                          }
-                        }
+                        final targetRepoName = recommendedName();
 
                         final selectedBase = stripExt(selectedFileName!).trim().toLowerCase();
                         final suggestedBase = stripExt(suggestedName).trim().toLowerCase();

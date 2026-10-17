@@ -1,3 +1,5 @@
+import 'package:defensys/widgets/repository/document_policy_editor.dart';
+import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:flutter/material.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
 
@@ -39,6 +41,7 @@ class TeamReadinessTracker extends StatefulWidget {
 }
 
 class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
+  String _conceptFilter = 'all';
 
   final TextEditingController _trackerSearchController = TextEditingController();
   final Map<String, String?> _selectedSectionAdviserFilter = {};
@@ -133,6 +136,8 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
       (event) => event['event_name'] == activeStageOrEventName,
       orElse: () => <String, dynamic>{},
     );
+    final showConceptFilters = widget.scope == 'capstone' ||
+        (activeEvent['concept_config'] as Map? ?? {})['enabled'] == true;
 
     final pitYearLevels = widget.scope == 'pit'
         ? (teamsForScope(widget.state, 'pit')
@@ -152,6 +157,14 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
           (activeEvent['year_level'] == null ||
               team['year_level'] != activeEvent['year_level'])) {
         return false;
+      }
+      if (showConceptFilters && _conceptFilter != 'all') {
+        final workflow = (team['concept_workflows'] as Map? ?? {})[activeStageOrEventName] as Map? ?? {};
+        if (_conceptFilter == 'failed') {
+          if (!['failed', 'project_rejected'].contains((team['stage_verdicts'] as Map? ?? {})[activeStageOrEventName])) return false;
+        } else if (workflow['status'] != _conceptFilter) {
+          return false;
+        }
       }
       final query = _trackerSearchController.text.toLowerCase().trim();
       if (query.isEmpty) return true;
@@ -296,6 +309,14 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
           if (widget.stageSelector != null) ...[
             const SizedBox(height: 14),
             widget.stageSelector!,
+          ],
+          if (showConceptFilters) ...[
+            const SizedBox(height: 12),
+            DefensysShadcnScope(child: WorkflowChoice(value: _conceptFilter, options: {
+              'all': 'All defense workflows', 'replacement_concepts_needed': 'Replacement concepts needed',
+              'concept_review_pending': widget.scope == 'pit' ? 'Instructor review pending' : 'Adviser review pending', 'concept_endorsement_pending': 'Concept endorsement pending',
+              'ready_to_schedule_redefense': 'Ready to schedule re-defense', 'scheduled': 'Concept hearing scheduled', 'failed': 'Failed / rejected',
+            }, onChanged: (value) => setState(() => _conceptFilter = value))),
           ],
           const SizedBox(height: 10),
           Text(

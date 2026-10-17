@@ -4,6 +4,17 @@ import 'package:defensys/screens/web/admin/widgets/template_blueprint_models.dar
 
 void main() {
   group('parseTeamBulkCsv', () {
+    test('omitted project column preserves unassigned import intent', () {
+      final result = parseTeamBulkCsv('Team Name,Section,Team Members\nTeam Orion,BSIT-4A,2024-001\n,,2024-002');
+      expect(result.rows, hasLength(1));
+      expect(result.rows.first['project_title'], isEmpty);
+      expect(result.rows.first['member_ids'], ['2024-001', '2024-002']);
+    });
+
+    test('assigned and unassigned teams stay distinct in one roster', () {
+      final result = parseTeamBulkCsv('Team Name,Project / Module,Section,Team Members\nTeam Orion,,BSIT-4A,2024-001\nTeam Vega,Patient Records,BSIT-4A,2024-002');
+      expect(result.rows.map((r) => r['project_title']), ['', 'Patient Records']);
+    });
     test('parses valid capstone CSV rows', () {
       const csv = '''
 team_name,project_title,year_level,member_ids,leader_id,adviser_name

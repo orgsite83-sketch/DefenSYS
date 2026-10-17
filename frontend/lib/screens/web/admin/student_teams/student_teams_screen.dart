@@ -1,3 +1,5 @@
+import 'package:defensys/widgets/repository/document_policy_editor.dart';
+import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -64,6 +66,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   late final UnsavedChangesSaveDraftNotifier _unsavedDraftNotifier;
   final _searchController = TextEditingController();
 
+  String _conceptFilter = 'all';
   bool? _showBulkImport = false;
   String? _bulkCsv = '';
   String? _bulkAdviserFilter = 'all';
@@ -272,6 +275,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       isCapstoneAdmin: _isCapstoneAdmin,
       isPitLeadManager: _isPitLeadManager,
       pitLeadYear: _pitLeadYear,
+      onBulkImport: () => _onBulkImportPressed(state),
     );
   }
 
@@ -827,7 +831,15 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       ref.watch(dashboardProvider('faculty'));
     }
     final state = ref.watch(studentTeamsProvider);
-    final displayState = _scopedStateForDisplay(state);
+    final scopedState = _scopedStateForDisplay(state);
+    final displayState = scopedState.copyWith(teams: scopedState.teams.where((team) {
+      if (_isPitContext(scopedState) || _conceptFilter == 'all') return true;
+      final context = team['defense_context'] as Map? ?? {};
+      final workflow = context['concept_workflow'] as Map? ?? {};
+      if (_conceptFilter == 'failed') return ['failed', 'project_rejected'].contains(workflow['status']) || team['status'] == 'Failed';
+      if (_conceptFilter == 'redefense_scheduled') return workflow['status'] == 'scheduled' && (workflow['round'] as int? ?? 1) > 1;
+      return workflow['status'] == _conceptFilter;
+    }).toList());
 
     ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (previous, next) {
       if (next == DefensysAdminSection.studentTeams && previous != DefensysAdminSection.studentTeams) {
@@ -1000,6 +1012,11 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                     },
                   ),
                   controls: [
+                    if (!_isPitContext(displayState)) DefensysShadcnScope(child: WorkflowChoice(value: _conceptFilter,
+                      options: const {'all': 'All team workflows', 'replacement_concepts_needed': 'Replacement concepts needed',
+                        'concept_review_pending': 'Adviser review pending', 'concept_endorsement_pending': 'Concept endorsement pending',
+                        'ready_to_schedule_redefense': 'Ready to schedule re-defense', 'redefense_scheduled': 'Re-defense scheduled', 'failed': 'Failed / rejected'},
+                      onChanged: (value) => setState(() => _conceptFilter = value))),
                     if (_isPitContext(displayState) && !_isPitLeadManager) ...[
                       PitYearLevelDropdownFilter(
                         currentYearLevel: displayState.yearLevel,

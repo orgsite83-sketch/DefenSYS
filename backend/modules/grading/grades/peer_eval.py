@@ -282,6 +282,7 @@ def submit_student_peer_evaluation(*, evaluator, team_id, evaluatee_id, breakdow
         evaluator=evaluator,
         evaluatee=evaluatee,
         defaults={
+            'attempt_number': grade.attempt_count,
             'total_score': total_decimal,
             'max_score': max_decimal,
             'weighted_score': weighted_score,

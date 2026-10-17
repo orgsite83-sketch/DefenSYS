@@ -27,6 +27,7 @@ class StageAccessChangeSerializer(StageAccessScopeSerializer):
 
 
 class DeliverableUploadSerializer(serializers.Serializer):
+    slot_key = serializers.CharField(max_length=100, required=False, allow_blank=True)
     team_id = serializers.IntegerField()
     stage_label = serializers.CharField(max_length=120)
     deliverable_id = serializers.CharField(max_length=20)
@@ -107,6 +108,7 @@ class ReviewEndorseSerializer(DeliverableActionSerializer):
 
 
 class DeliverableReviewSerializer(serializers.Serializer):
+    file_id = serializers.IntegerField(required=False, allow_null=True)
     team_id = serializers.IntegerField()
     stage_label = serializers.CharField(max_length=120)
     deliverable_id = serializers.CharField(max_length=20)

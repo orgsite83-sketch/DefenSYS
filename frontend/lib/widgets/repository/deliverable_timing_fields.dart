@@ -17,18 +17,46 @@ class DefenseMaterialToggle extends StatelessWidget {
   final ValueChanged<bool> onChanged;
 
   @override
-  Widget build(BuildContext context) => DefensysShadcnScope(
-    child: Tooltip(
-      message:
-          'Panelists can view this uploaded file during oral grading. This choice does not change the submission deadline.',
-      child: ShadCheckbox(
-        value: value,
-        enabled: enabled,
-        onChanged: onChanged,
-        label: const Text('Defense material for panelists'),
-      ),
-    ),
-  );
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final primaryColor = isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B);
+    final secondaryColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: DefensysShadcnScope(
+            child: ShadCheckbox(
+              value: value,
+              enabled: enabled,
+              onChanged: onChanged,
+              label: Text(
+                'Defense material for panelists',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: primaryColor,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Tooltip(
+          message:
+              'Panelists use this file during oral defense. Marking it as defense material does not change its due time.',
+          constraints: const BoxConstraints(maxWidth: 240),
+          child: Icon(
+            Icons.help_outline_rounded,
+            size: 14,
+            color: secondaryColor,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 /// Timing is independent of required status and visibility to panelists.
@@ -53,128 +81,131 @@ class DeliverableTimingFields extends StatelessWidget {
   final ValueChanged<int> onHoursChanged;
 
   @override
-  Widget build(BuildContext context) => DefensysShadcnScope(
-    child: AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      padding: showTimingChoices ? const EdgeInsets.all(12) : EdgeInsets.zero,
-      decoration: showTimingChoices
-          ? BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            )
-          : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (showTimingChoices) ...[
-            Text(
-              'When should students submit this file?',
-              style: Theme.of(
-                context,
-              ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            if (isDefenseMaterial) ...[
-              const SizedBox(height: 4),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final primaryColor = isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B);
+    final secondaryColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+
+    return DefensysShadcnScope(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: EdgeInsets.zero,
+        decoration: null,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (showTimingChoices) ...[
               Text(
-                'Panelists use this file. Marking it as defense material does not change its due time.',
-                style: Theme.of(context).textTheme.bodySmall,
+                'When should students submit this file?',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                  color: primaryColor,
+                ),
               ),
-            ],
-            const SizedBox(height: 10),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final schedulingChoice = _timingChoice(
-                  context,
-                  value: 'scheduling',
-                  title: 'Before endorsement',
-                  description:
-                      'If required, this file must be cleared before scheduling.',
-                  icon: Icons.fact_check_outlined,
-                );
-                final defenseChoice = _timingChoice(
-                  context,
-                  value: 'defense',
-                  title: 'Before scheduled defense',
-                  description:
-                      'Does not block endorsement or scheduling. Students can upload it before the defense deadline.',
-                  icon: Icons.event_outlined,
-                );
-                return constraints.maxWidth < 540
-                    ? Column(
-                        children: [
-                          schedulingChoice,
-                          const SizedBox(height: 8),
-                          defenseChoice,
-                        ],
-                      )
-                    : Row(
-                        children: [
-                          Expanded(child: schedulingChoice),
-                          const SizedBox(width: 8),
-                          Expanded(child: defenseChoice),
-                        ],
-                      );
-              },
-            ),
-          ] else
-            WorkflowSelect(
-              label: 'Needed by',
-              value: timing,
-              enabled: enabled,
-              searchable: false,
-              options: const {
-                'scheduling': 'Before endorsement / scheduling',
-                'defense': 'Before scheduled defense',
-              },
-              onChanged: onTimingChanged,
-            ),
-          if (timing == 'defense') ...[
-            if (showTimingChoices) const SizedBox(height: 12),
-            if (showTimingChoices)
-              _StageDeadlineChoices(
-                hoursBefore: hoursBefore,
-                enabled: enabled,
-                onChanged: onHoursChanged,
-              )
-            else
+              const SizedBox(height: 8),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final schedulingChoice = _timingChoice(
+                    context,
+                    value: 'scheduling',
+                    title: 'Before endorsement',
+                    description:
+                        'If required, this file must be cleared before scheduling.',
+                    icon: Icons.fact_check_outlined,
+                  );
+                  final defenseChoice = _timingChoice(
+                    context,
+                    value: 'defense',
+                    title: 'Before scheduled defense',
+                    description:
+                        'Does not block endorsement or scheduling. Students can upload it before the defense deadline.',
+                    icon: Icons.event_outlined,
+                  );
+                  return constraints.maxWidth < 540
+                      ? Column(
+                          children: [
+                            schedulingChoice,
+                            const SizedBox(height: 6),
+                            defenseChoice,
+                          ],
+                        )
+                      : Row(
+                          children: [
+                            Expanded(child: schedulingChoice),
+                            const SizedBox(width: 8),
+                            Expanded(child: defenseChoice),
+                          ],
+                        );
+                },
+              ),
+            ] else
               WorkflowSelect(
-                label: 'Submission deadline',
-                value: hoursBefore.toString(),
+                label: 'Needed by',
+                value: timing,
                 enabled: enabled,
                 searchable: false,
-                options: {
-                  for (final hours in {
-                    0,
-                    1,
-                    6,
-                    12,
-                    24,
-                    48,
-                    72,
-                    168,
-                    hoursBefore,
-                  }.toList()..sort())
-                    hours.toString(): hours == 0
-                        ? 'At defense start'
-                        : '$hours hours before defense',
+                options: const {
+                  'scheduling': 'Before endorsement / scheduling',
+                  'defense': 'Before scheduled defense',
                 },
-                onChanged: (value) => onHoursChanged(int.parse(value)),
+                onChanged: onTimingChanged,
               ),
-            Text(
-              'Students can upload and replace this file after endorsement until its deadline. '
-              'It does not block scheduling.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ] else if (!showTimingChoices)
-            Text(
-              'Required items must be cleared before endorsement. Approved files lock when the team is endorsed.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-        ],
+            if (timing == 'defense') ...[
+              if (showTimingChoices) const SizedBox(height: 10),
+              if (showTimingChoices)
+                _StageDeadlineChoices(
+                  hoursBefore: hoursBefore,
+                  enabled: enabled,
+                  onChanged: onHoursChanged,
+                )
+              else
+                WorkflowSelect(
+                  label: 'Submission deadline',
+                  value: hoursBefore.toString(),
+                  enabled: enabled,
+                  searchable: false,
+                  options: {
+                    for (final hours in {
+                      0,
+                      1,
+                      6,
+                      12,
+                      24,
+                      48,
+                      72,
+                      168,
+                      hoursBefore,
+                    }.toList()..sort())
+                      hours.toString(): hours == 0
+                          ? 'At defense start'
+                          : '$hours hours before defense',
+                  },
+                  onChanged: (value) => onHoursChanged(int.parse(value)),
+                ),
+              const SizedBox(height: 4),
+              Text(
+                'Students can upload and replace this file after endorsement until its deadline. '
+                'It does not block scheduling.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 11,
+                  color: secondaryColor,
+                ),
+              ),
+            ] else if (!showTimingChoices)
+              Text(
+                'Required items must be cleared before endorsement. Approved files lock when the team is endorsed.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 11,
+                  color: secondaryColor,
+                ),
+              ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget _timingChoice(
     BuildContext context, {
@@ -193,8 +224,8 @@ class DeliverableTimingFields extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          constraints: const BoxConstraints(minHeight: 82),
-          padding: const EdgeInsets.all(12),
+          constraints: const BoxConstraints(minHeight: 46),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           decoration: BoxDecoration(
             color: selected
                 ? (isDark ? const Color(0xFF1E293B) : Colors.white)
@@ -210,19 +241,18 @@ class DeliverableTimingFields extends StatelessWidget {
                 ? const [
                     BoxShadow(
                       color: Color(0x0A000000),
-                      blurRadius: 4,
+                      blurRadius: 3,
                       offset: Offset(0, 1),
                     ),
                   ]
                 : null,
           ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Container(
-                margin: const EdgeInsets.only(top: 2),
-                width: 16,
-                height: 16,
+                width: 14,
+                height: 14,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
@@ -235,8 +265,8 @@ class DeliverableTimingFields extends StatelessWidget {
                 child: selected
                     ? Center(
                         child: Container(
-                          width: 8,
-                          height: 8,
+                          width: 6,
+                          height: 6,
                           decoration: const BoxDecoration(
                             shape: BoxShape.circle,
                             color: Color(0xFF0F172A),
@@ -245,43 +275,40 @@ class DeliverableTimingFields extends StatelessWidget {
                       )
                     : null,
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
+              Icon(
+                icon,
+                size: 15,
+                color: selected
+                    ? const Color(0xFF0F172A)
+                    : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Row(
-                      children: [
-                        Icon(
-                          icon,
-                          size: 15,
-                          color: selected
-                              ? const Color(0xFF0F172A)
-                              : const Color(0xFF64748B),
-                        ),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            title,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: selected
-                                  ? const Color(0xFF0F172A)
-                                  : const Color(0xFF334155),
-                            ),
-                          ),
-                        ),
-                      ],
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: selected
+                            ? const Color(0xFF0F172A)
+                            : const Color(0xFF334155),
+                      ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 1.5),
                     Text(
                       description,
                       style: const TextStyle(
-                        fontSize: 11.5,
+                        fontSize: 10.5,
                         color: Color(0xFF64748B),
-                        height: 1.35,
+                        height: 1.25,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),

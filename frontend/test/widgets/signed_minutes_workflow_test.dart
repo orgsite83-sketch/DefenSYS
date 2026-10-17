@@ -27,6 +27,10 @@ void main() {
           ),
         ),
       );
+      expect(
+        tester.getTopLeft(find.text('Signed minutes required')).dx,
+        lessThan(tester.getTopLeft(find.text('Minutes not required')).dx),
+      );
       await tester.tap(find.text('Signed minutes required'));
       await tester.pump();
       expect(requiredMinutes, isTrue);

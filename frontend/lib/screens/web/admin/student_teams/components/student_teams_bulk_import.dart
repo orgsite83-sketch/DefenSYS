@@ -576,13 +576,15 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                     runSpacing: 5,
                     children: [
                       _buildTemplateSpecTag('Team Name', isRequired: true),
-                      _buildTemplateSpecTag(isCapstone ? 'Capstone Project' : 'PIT Project', isRequired: true),
+                      _buildTemplateSpecTag('Project / Module (optional column)'),
                       _buildTemplateSpecTag('Class Section', isRequired: true),
                       if (isCapstone)
                         _buildTemplateSpecTag('Adviser'),
                       _buildTemplateSpecTag('Team Members (Leader First)', isRequired: true),
                     ],
                   ),
+                  const SizedBox(height: 8),
+                  const Text('Omit Project / Module for the stage default (normally 3 proposals). Enter an assigned project/module for one concept. Review detected requirements before importing.'),
                 ],
               ),
             ),
@@ -1054,6 +1056,16 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                   ),
                 ),
               ),
+            ),
+
+          if (((widget.bulkPreview?['summary'] as Map?)?['concept_sections'] as Map?)?.isNotEmpty == true)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 10, 24, 0),
+              child: Wrap(spacing: 16, runSpacing: 6, children: [
+                for (final entry in ((widget.bulkPreview?['summary'] as Map)['concept_sections'] as Map).entries)
+                  Text('${entry.key}: ${entry.value['assigned']} assigned teams · ${entry.value['proposals']} teams requiring proposals',
+                    style: TextStyle(color: _muted, fontSize: 12)),
+              ]),
             ),
 
           // Search + Filter Toolbar
@@ -1716,7 +1728,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
             children: [
               _buildGutterCell('1', isHeader: true),
               _buildColumnHeaderCell('Team Name', flex: 3, isRequired: true),
-              _buildColumnHeaderCell('Capstone Project', flex: 4, isRequired: true),
+              _buildColumnHeaderCell('Capstone Project', flex: 4),
               _buildColumnHeaderCell('Section', flex: 2, isRequired: true),
               _buildColumnHeaderCell('Adviser', flex: 3, isRequired: true),
               _buildColumnHeaderCell('Team Members', flex: 4, isRequired: true),
@@ -2265,7 +2277,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
     final rightSectionName = isCapstone ? 'BSIT-4B' : 'BSIT-2B';
     final systemName = isCapstone ? 'Hospital Management System' : 'Societree';
     final projectManager = 'Juan Dela Cruz';
-    final projectColTitle = isCapstone ? 'Capstone Project *' : 'PIT Project *';
+    final projectColTitle = isCapstone ? 'Capstone Project (optional)' : 'PIT Project (optional)';
     final adviserColTitle = isCapstone ? 'Adviser *' : 'Instructor *';
 
     return Container(
@@ -2467,7 +2479,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                         child: Row(
                           children: [
                             _buildExcelTableHeadCell('Team Name *', width: colGW, height: rowH),
-                            _buildExcelTableHeadCell('Module *', width: colHW, height: rowH),
+                            _buildExcelTableHeadCell('Module (optional)', width: colHW, height: rowH),
                           ],
                         ),
                       ),
@@ -2965,7 +2977,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
               _buildGutterCell((currentRow++).toString(), isHeader: true),
               _buildColumnHeaderCell('Team Name', flex: 3, isRequired: true),
               _buildColumnHeaderCell('Names', flex: 4, isRequired: true),
-              _buildColumnHeaderCell('Project / Module', flex: 4, isRequired: true),
+              _buildColumnHeaderCell('Project / Module', flex: 4),
             ],
           ),
         ),
@@ -3013,7 +3025,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
               _buildGutterCell((currentRow++).toString(), isHeader: true),
               _buildColumnHeaderCell('Team Name', flex: 3, isRequired: true),
               _buildColumnHeaderCell('Names', flex: 4, isRequired: true),
-              _buildColumnHeaderCell('Project / Module', flex: 4, isRequired: true),
+              _buildColumnHeaderCell('Project / Module', flex: 4),
             ],
           ),
         ),
@@ -3070,7 +3082,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
               _buildGutterCell((currentRow++).toString(), isHeader: true),
               _buildColumnHeaderCell('Team Name', flex: 3, isRequired: true),
               _buildColumnHeaderCell('Names', flex: 4, isRequired: true),
-              _buildColumnHeaderCell('Project / Module', flex: 4, isRequired: true),
+              _buildColumnHeaderCell('Project / Module', flex: 4),
             ],
           ),
         ),
@@ -3117,7 +3129,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
               _buildGutterCell((currentRow++).toString(), isHeader: true),
               _buildColumnHeaderCell('Team Name', flex: 3, isRequired: true),
               _buildColumnHeaderCell('Names', flex: 4, isRequired: true),
-              _buildColumnHeaderCell('Project / Module', flex: 4, isRequired: true),
+              _buildColumnHeaderCell('Project / Module', flex: 4),
             ],
           ),
         ),
@@ -3166,7 +3178,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
               _buildGutterCell((currentRow++).toString(), isHeader: true),
               _buildColumnHeaderCell('Team Name', flex: 3, isRequired: true),
               _buildColumnHeaderCell('Names', flex: 4, isRequired: true),
-              _buildColumnHeaderCell('Project / Module', flex: 4, isRequired: true),
+              _buildColumnHeaderCell('Project / Module', flex: 4),
             ],
           ),
         ),
@@ -3213,7 +3225,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
               _buildGutterCell((currentRow++).toString(), isHeader: true),
               _buildColumnHeaderCell('Team Name', flex: 3, isRequired: true),
               _buildColumnHeaderCell('Names', flex: 4, isRequired: true),
-              _buildColumnHeaderCell('Project / Module', flex: 4, isRequired: true),
+              _buildColumnHeaderCell('Project / Module', flex: 4),
             ],
           ),
         ),

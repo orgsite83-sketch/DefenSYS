@@ -134,7 +134,7 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                   _quickActionsCard(compact: true),
                   const SizedBox(height: 20),
                   _dashboardCard(
-                    title: 'Upcoming PIT Events',
+                    title: 'Defense Schedule',
                     child: DashboardSchedulePlanner(workspace: 'faculty', refreshToken: widget.data),
                   ),
                   const SizedBox(height: 20),
@@ -148,7 +148,7 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                       Expanded(child: _quickActionsCard()),
                       const SizedBox(width: 20),
                       Expanded(child: _dashboardCard(
-                        title: 'Upcoming PIT Events',
+                        title: 'Defense Schedule',
                         child: DashboardSchedulePlanner(workspace: 'faculty', refreshToken: widget.data),
                       )),
                     ],

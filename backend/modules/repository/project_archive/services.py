@@ -433,9 +433,35 @@ def _semester_key_from_label(semester_label):
     return '1stSemester'
 
 
+def _archive_file_name_with_extension(name, file_format, file_extension):
+    formats = {
+        'pdf': ('pdf',), 'archive': ('zip', 'rar', '7z', 'tar', 'gz'),
+        'presentation': ('pptx', 'ppt', 'pdf'),
+        'document': ('docx', 'doc', 'pdf', 'txt', 'rtf', 'odt'),
+        'spreadsheet': ('xlsx', 'xls', 'csv'),
+        'video': ('mp4', 'mov', 'avi', 'mkv', 'webm'),
+        'image': ('png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'),
+        'audio': ('mp3', 'wav', 'aac', 'ogg', 'm4a', 'flac'),
+    }
+    allowed = formats.get((file_format or 'any').lower())
+    known = set(VALID_ARCHIVE_EXTENSIONS).union(
+        extension for extensions in formats.values() for extension in extensions
+    )
+    base, separator, suffix = name.rpartition('.')
+    has_extension = bool(separator and suffix.lower() in known)
+    explicit = (file_extension or '').strip().lower().lstrip('.')
+    if explicit in known:
+        extension = explicit
+    elif has_extension and (allowed is None or suffix.lower() in allowed):
+        return name
+    else:
+        extension = allowed[0] if allowed else 'pdf'
+    return f"{base if has_extension else name}.{extension}"
+
+
 def resolve_archive_file_template(
     template, team, stage_label, semester_label='1st Semester',
-    deliverable_label='', file_extension='',
+    deliverable_label='', file_extension='', file_format='any',
 ):
     """Resolve a vault filename template by substituting variables.
 
@@ -448,7 +474,8 @@ def resolve_archive_file_template(
         {semester}    - semester key, e.g. '2ndSemester'
 
     Returns the resolved filename.  Falls back to the default auto-generated
-    name when *template* is empty.
+    name when *template* is empty. The uploaded extension takes precedence;
+    otherwise preserve a compatible template suffix or use the required format.
     """
     template = (template or '').strip()
     is_pit = team.is_pit if team else False
@@ -463,8 +490,8 @@ def resolve_archive_file_template(
             base, ext = os.path.splitext(base_name)
             slug = _deliverable_slug(deliverable_label)
             if slug:
-                return f"{base}_{slug}{ext or '.pdf'}"
-        return base_name
+                base_name = f"{base}_{slug}{ext or '.pdf'}"
+        return _archive_file_name_with_extension(base_name, file_format, file_extension)
 
     project = _project_slug(team.project_title if team else 'ProjectTitle')
     semester_key = _semester_key_from_label(semester_label)
@@ -486,24 +513,7 @@ def resolve_archive_file_template(
     resolved = resolved.replace('{deliverable}', _deliverable_slug(deliverable_label))
     resolved = resolved.replace('{semester}', semester_key)
 
-    # If the template already ends with a known extension, preserve it
-    if any(resolved.lower().endswith(f'.{ext}') for ext in VALID_ARCHIVE_EXTENSIONS):
-        return resolved
-
-    # If an explicit file_extension was provided, use it
-    if file_extension:
-        ext = file_extension.strip().lower()
-        if not ext.startswith('.'):
-            ext = f'.{ext}'
-        if ext[1:] in VALID_ARCHIVE_EXTENSIONS:
-            resolved += ext
-            return resolved
-
-    # Otherwise default to .pdf
-    if not resolved.lower().endswith('.pdf'):
-        resolved += '.pdf'
-
-    return resolved
+    return _archive_file_name_with_extension(resolved, file_format, file_extension)
 
 
 def capstone_archive_upload_queue(semester=None):
@@ -1550,6 +1560,7 @@ def request_archive_resubmission(user, entry_id, status=ArchiveEntry.STATUS_NEED
     if not scope['can_override']:
         raise PermissionDenied('You do not have permission to request repository resubmissions.')
     
+    requested_file_id = instance.pk if target_type == 'submission_file' else None
     if target_type == 'submission_file' and hasattr(instance, 'submission'):
         instance = instance.submission
 
@@ -1628,6 +1639,22 @@ def request_archive_resubmission(user, entry_id, status=ArchiveEntry.STATUS_NEED
         if not keep_approved and hasattr(instance, 'reviewed_by') and instance.reviewed_by:
             update_fields.extend(['reviewed_by', 'reviewed_at'])
         instance.save(update_fields=update_fields)
+        from repository.deliverables.services import definition_for
+        definition = definition_for(instance.team, instance.stage_label, instance.deliverable_id) or {}
+        if definition.get('file_policy'):
+            if keep_approved:
+                raise ValidationError('For document groups, request corrections to the selected document so the replacement can be reviewed.')
+            from repository.deliverables.documents import sync_submission
+            from repository.deliverables.concepts import stage_for
+            targets = instance.files.filter(is_current=True)
+            if requested_file_id:
+                targets = targets.filter(pk=requested_file_id)
+            targets.update(status=instance.status, feedback=formatted_feedback, reviewed_by=user, reviewed_at=timezone.now())
+            sync_submission(instance, definition,
+                stage_for(instance.team, instance.stage_label))
+            from repository.deliverables.concepts import invalidate_clearance
+            invalidate_clearance(instance.team, instance.stage_label, instance.deliverable_id)
+
     else:
         instance.status = status
         if not instance.metadata:
@@ -1769,6 +1796,8 @@ def resolve_archive_target(user, entry_id):
             from repository.deliverables.models import DeliverableSubmissionFile
             sub_file = DeliverableSubmissionFile.objects.filter(pk=int(file_id), submission=submission).first()
             if sub_file:
+                if not sub_file.is_current:
+                    raise ValidationError('Historical file revisions are read-only.')
                 target_type, instance = ('submission_file', sub_file)
             else:
                 target_type, instance = ('submission', submission)
@@ -1813,6 +1842,11 @@ def replace_archive_file(user, entry_id, file_obj):
 
     target_type, instance, scope = resolve_archive_target(user, entry_id)
     submission = instance.submission if target_type == 'submission_file' else instance
+    if isinstance(submission, DeliverableSubmission):
+        from repository.deliverables.services import definition_for
+        policy = (definition_for(submission.team, submission.stage_label, submission.deliverable_id) or {}).get('file_policy') or {}
+        if policy.get('mode') in ('named', 'multiple', 'concepts'):
+            raise ValidationError('Request corrections for the selected document and review its replacement through the deliverable workspace.')
     if isinstance(submission, DeliverableSubmission) and submission.deliverable_type == DeliverableSubmission.TYPE_POST:
         raise ValidationError(
             'Reopen this post-defense file for student revision and review instead of replacing it directly.'

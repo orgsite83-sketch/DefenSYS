@@ -849,6 +849,26 @@ class CapstoneDeliverablesApiTests(APITestCase):
             '3rdYear.CAP301.CloudFileSync.ConceptProposal.D41ApprovedConceptPaper.2ndSemester.pdf'
         )
 
+    def test_archive_recommendation_matches_required_and_uploaded_extension(self):
+        definition = StageDeliverable.objects.get(defense_stage=self.stage, deliverable_id='D4.1')
+        definition.file_format = 'archive'
+        definition.archive_file_template = '{project}_{deliverable}.pdf'
+        definition.save()
+
+        def recommendation():
+            response = self.client.get('/api/repository/deliverables/', {'stage_label': self.stage.label})
+            self.assertEqual(response.status_code, 200)
+            team = next(team for team in response.data['teams'] if team['id'] == self.team.id)
+            return next(row for row in team['selected_stage']['deliverables'] if row['id'] == 'D4.1')
+
+        self.assertTrue(recommendation()['suggested_file_name'].endswith('.zip'))
+        DeliverableSubmission.objects.create(
+            team=self.team, stage_label=self.stage.label, deliverable_id='D4.1',
+            label=definition.label, deliverable_type=DeliverableSubmission.TYPE_POST,
+            file_name='source.rar', uploaded_by=self.student,
+        )
+        self.assertTrue(recommendation()['suggested_file_name'].endswith('.rar'))
+
     def test_archive_submission_enforces_naming_convention(self):
         DefenseSchedule.objects.create(
             scope=DefenseSchedule.SCOPE_CAPSTONE,

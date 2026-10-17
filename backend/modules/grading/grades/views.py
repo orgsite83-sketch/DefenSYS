@@ -499,7 +499,9 @@ class TeamGradeVerdictView(APIView):
         try:
             grade = record_verdict(grade, actor=request.user, verdict=verdict,
                 remarks=verdict_remarks, deadline=parsed_deadline,
-                verification_required=drf_serializers.BooleanField().run_validation(request.data.get('redefense_verification_required', False)))
+                verification_required=drf_serializers.BooleanField().run_validation(request.data.get('redefense_verification_required', False)),
+                concept_decisions=request.data.get('concept_decisions'),
+                replacement_concepts_required=drf_serializers.BooleanField().run_validation(request.data.get('replacement_concepts_required', False)))
         except DjangoValidationError as exc:
             return Response({'detail': ' '.join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
 

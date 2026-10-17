@@ -1,5 +1,6 @@
 from django.db.models import Q
 from rest_framework import serializers
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 from .models import DefenseStage, StageDeliverable, StageGradingConfig
 from .readiness import stage_setup_readiness
@@ -24,6 +25,7 @@ class StageDeliverableSerializer(serializers.ModelSerializer):
             'is_defense_material',
             'verdict_condition',
             'file_format',
+            'file_policy',
         ]
 
     def validate_deliverable_id(self, value):
@@ -47,6 +49,10 @@ class StageDeliverableSerializer(serializers.ModelSerializer):
             'deliverable_type', 'requirement_timing', 'deadline_hours_before')} if self.instance else {}
         values.update(attrs)
         attrs.update(validate_timing(values))
+        stage = self.instance.defense_stage if self.instance else self.context.get('stage')
+        policy = attrs.get('file_policy', self.instance.file_policy if self.instance else {})
+        if policy.get('mode') == 'concepts' and not (stage and stage.concept_config.get('enabled')):
+            raise serializers.ValidationError('Enable concept selection in this stage before configuring concept documents.')
         return attrs
 
 
@@ -99,6 +105,7 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'description',
             'is_active',
             'is_presentation_only',
+            'concept_config',
             'minutes_required',
             'minutes_deliverable_id',
             'minutes_deliverable_label',
@@ -310,7 +317,7 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DefenseStage
-        fields = ['label', 'code', 'display_order', 'description', 'is_active', 'is_presentation_only', 'minutes_required', 'minutes_deliverable_id', 'minutes_deliverable_label', 'deliverables']
+        fields = ['label', 'code', 'display_order', 'description', 'is_active', 'is_presentation_only', 'concept_config', 'minutes_required', 'minutes_deliverable_id', 'minutes_deliverable_label', 'deliverables']
         extra_kwargs = {
             'code': {'required': False, 'allow_blank': True},
             'display_order': {'required': False},
@@ -348,6 +355,11 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
                 if not label:
                     raise serializers.ValidationError('Deliverable label cannot be blank.')
                 item.update(validate_timing(item))
+                from defense.document_policy import validate_file_policy
+                try:
+                    validate_file_policy(item.get('file_policy', {}))
+                except DjangoValidationError as exc:
+                    raise serializers.ValidationError(exc.messages) from exc
         return value
 
     def create(self, validated_data):
@@ -362,6 +374,28 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
         return stage
 
     def validate(self, attrs):
+        from defense.document_policy import validate_concept_config, with_concept_papers
+        config = attrs.get('concept_config', getattr(self.instance, 'concept_config', {}))
+        try:
+            config = validate_concept_config(config)
+            if 'concept_config' in attrs:
+                attrs['concept_config'] = config
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({'concept_config': exc.messages}) from exc
+        items = attrs.get('deliverables')
+        if items is None:
+            items = list(self.instance.deliverables.values()) if self.instance else []
+        generated = with_concept_papers(items, config)
+        if generated != items:
+            items = attrs['deliverables'] = generated
+        concept_items = [d for d in items if (d.get('file_policy') or {}).get('mode') == 'concepts']
+        if any(d.get('deliverable_type', 'pre') != 'pre' for d in concept_items):
+            raise serializers.ValidationError('Concept-set documents belong to pre-defense requirements.')
+        if config.get('enabled'):
+            if attrs.get('is_presentation_only', getattr(self.instance, 'is_presentation_only', False)):
+                raise serializers.ValidationError('Concept selection requires configured student documents.')
+            if not any(d.get('required', True) and d.get('requirement_timing', 'scheduling') == 'scheduling' for d in concept_items):
+                raise serializers.ValidationError('Add a required concept-documents deliverable before enabling concept selection.')
         required = attrs.get('minutes_required', getattr(self.instance, 'minutes_required', False))
         number = attrs.get('minutes_deliverable_id', getattr(self.instance, 'minutes_deliverable_id', 'MINUTES')).strip()
         if not number:
@@ -389,9 +423,25 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
         stage = super().update(instance, validated_data)
         
         if deliverables_data is not None:
-            # Delete existing deliverables and recreate them
-            instance.deliverables.all().delete()
-            self._create_deliverables(stage, deliverables_data)
+            # Stable IDs preserve settings and links when concept selection is toggled.
+            existing = {d.deliverable_id: d for d in instance.deliverables.all()}
+            keep = []
+            for item in deliverables_data:
+                item = {k: v for k, v in item.items() if k not in ('id', 'defense_stage_id')}
+                target = existing.get(item.get('deliverable_id'))
+                if target:
+                    for name, value in item.items():
+                        setattr(target, name, value)
+                    target.save()
+                else:
+                    self._create_deliverables(stage, [item])
+                keep.append(item.get('deliverable_id'))
+            removed = instance.deliverables.exclude(deliverable_id__in=keep)
+            from repository.deliverables.models import DeliverableSubmission
+            if DeliverableSubmission.objects.filter(stage_label=stage.label,
+                    deliverable_id__in=removed.values('deliverable_id')).exists():
+                raise serializers.ValidationError('Requirements with submissions cannot be removed. Preserve their documents.')
+            removed.delete()
         
         return stage
 
@@ -428,6 +478,7 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
                 is_defense_material=bool(deliverable_data.get('is_defense_material', False)),
                 verdict_condition=deliverable_data.get('verdict_condition', StageDeliverable.VERDICT_CONDITION_ALL_PASS),
                 file_format=deliverable_data.get('file_format', StageDeliverable.FORMAT_ANY),
+                file_policy=deliverable_data.get('file_policy', {}),
             )
 
 

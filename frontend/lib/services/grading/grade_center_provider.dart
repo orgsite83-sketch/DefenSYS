@@ -608,6 +608,8 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     String? remarks,
     String? revisionDeadline,
     bool redefenseVerificationRequired = false,
+    List<Map<String, dynamic>>? conceptDecisions,
+    bool replacementConceptsRequired = false,
   }) async {
     state = state.copyWith(
       isSaving: true,
@@ -618,6 +620,8 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       final body = <String, dynamic>{
         'verdict': verdict,
         'redefense_verification_required': redefenseVerificationRequired,
+        if (conceptDecisions != null) 'concept_decisions': conceptDecisions,
+        'replacement_concepts_required': replacementConceptsRequired,
         if (remarks != null) 'verdict_remarks': remarks,
         if (revisionDeadline != null) 'revision_deadline': revisionDeadline,
       };

@@ -14,7 +14,9 @@ from defense.scheduler.serializers import (
     active_semester,
     schedule_queryset,
 )
-from authentication_access_control.scopes import manageable_schedules_for, visible_schedules_for
+from authentication_access_control.scopes import (
+    manageable_schedules_for, section_instructor_section_filters, visible_schedules_for,
+)
 from user_management.permissions import CanManageModule
 
 
@@ -96,6 +98,15 @@ def section_options(queryset):
 
 
 def filter_board_queryset(request, queryset):
+    # A faculty account may have several duties. A workspace's team calendar
+    # must not inherit unrelated panel, documenter, or PIT-lead assignments.
+    workspace = request.query_params.get('workspace', '').strip()
+    if workspace == 'adviser':
+        queryset = queryset.filter(scope='capstone', team__adviser=request.user, semester__is_active=True)
+    elif workspace == 'instructor':
+        from student_teams.models import StudentTeam
+        assigned = StudentTeam.objects.filter(section_instructor_section_filters(request.user))
+        queryset = queryset.filter(scope='pit', team__in=assigned, semester__is_active=True)
     search = request.query_params.get('search', '').strip()
     stage = request.query_params.get('stage', '').strip()
     status_filter = request.query_params.get('status', '').strip()

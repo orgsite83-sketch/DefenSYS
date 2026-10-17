@@ -1814,52 +1814,15 @@ class _GradeCenterEventTeamsScreenState
   List<_PanelistColumnDef> _extractStagePanelists(
     List<Map<String, dynamic>> grades,
   ) {
-    final result = <_PanelistColumnDef>[];
-    final seenKeys = <String>{};
-
+    final columns = <String, _PanelistColumnDef>{};
     for (final grade in grades) {
-      final panelistList = grade['panelists'] is List
-          ? (grade['panelists'] as List)
-          : [];
-      for (final p in panelistList) {
-        if (p is Map) {
-          final u = p['username']?.toString().trim() ?? '';
-          final n = p['name']?.toString().trim() ?? '';
-          if (u.isNotEmpty && !seenKeys.contains(u)) {
-            seenKeys.add(u);
-            result.add(
-              _PanelistColumnDef(key: u, displayName: n.isNotEmpty ? n : u),
-            );
-          }
-        }
-      }
-
-      final breakdowns = grade['breakdowns'] is List
-          ? (grade['breakdowns'] as List).cast<Map<String, dynamic>>()
-          : <Map<String, dynamic>>[];
-      for (final b in breakdowns) {
-        if (b['evaluation_type'] != 'panel') continue;
-        final raw = b['remarks']?.toString() ?? '';
-        final firstLine = raw.split('\n').first.trim();
-        if (firstLine.startsWith('Panelist:')) {
-          final key = firstLine.substring('Panelist:'.length).trim();
-          if (key.isNotEmpty && !seenKeys.contains(key)) {
-            seenKeys.add(key);
-            result.add(
-              _PanelistColumnDef(key: key, displayName: 'Panelist $key'),
-            );
-          }
-        } else if (firstLine.startsWith('Guest panelist:')) {
-          final key = firstLine.substring('Guest panelist:'.length).trim();
-          if (key.isNotEmpty && !seenKeys.contains(key)) {
-            seenKeys.add(key);
-            result.add(_PanelistColumnDef(key: key, displayName: key));
-          }
-        }
+      for (final column in gradePanelistColumns(grade)) {
+        columns.putIfAbsent(column['key']!, () => _PanelistColumnDef(
+          key: column['key']!, displayName: column['name']!,
+        ));
       }
     }
-
-    return result;
+    return columns.values.toList();
   }
 
   double? _getPanelistScoreForStudent({
@@ -1877,7 +1840,9 @@ class _GradeCenterEventTeamsScreenState
       final raw = b['remarks']?.toString() ?? '';
       final firstLine = raw.split('\n').first.trim();
       bool isMatch = false;
-      if (firstLine.startsWith('Panelist:')) {
+      if (b['panelist_key'] != null) {
+        isMatch = b['panelist_key'] == panelistKey;
+      } else if (firstLine.startsWith('Panelist:')) {
         final key = firstLine.substring('Panelist:'.length).trim();
         isMatch = key == panelistKey;
       } else if (firstLine.startsWith('Guest panelist:')) {

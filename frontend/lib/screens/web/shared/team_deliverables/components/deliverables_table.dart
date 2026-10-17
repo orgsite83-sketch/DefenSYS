@@ -1,9 +1,12 @@
 import 'package:defensys/theme/program_colors.dart';
+import 'package:defensys/widgets/repository/concept_workspace.dart';
+import 'package:defensys/widgets/repository/document_group.dart';
 import 'package:defensys/widgets/defense/system_defense_records.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-import 'package:defensys/models/defense_workflow_labels.dart';
+import 'package:defensys/models/team_workflow_status.dart';
+import 'package:defensys/widgets/repository/workflow_status_style.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/services/adviser_grading_provider.dart';
 import 'package:defensys/services/reports_provider.dart';
@@ -567,9 +570,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             status: 'accepted',
             clearDefenseRevisions: canClearRevisions && clearRevisions,
           );
-      if (canClearRevisions && clearRevisions && mounted) {
-        ref.read(capstoneDeliverablesProvider.notifier).fetchInitialData();
-      }
     }
   }
 
@@ -579,12 +579,16 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     Map<String, dynamic> item,
   ) async {
     final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
+    final isDefense = !isPost && item['requirement_timing'] == 'defense';
+    final actionLabel = isPost
+        ? 'Request Revision'
+        : isDefense ? 'Request corrections' : 'Reject';
     var feedback = '';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => StatefulBuilder(
         builder: (dialogCtx, setDialogState) => AlertDialog(
-        title: Text('${isPost ? 'Request Revision' : 'Request corrections'}: ${item['label'] ?? item['id']}'),
+        title: Text('$actionLabel: ${item['label'] ?? item['id']}'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -619,7 +623,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               backgroundColor: AppColors.danger,
               foregroundColor: Colors.white,
             ),
-            child: Text(isPost ? 'Send Revision Request' : 'Request corrections'),
+            child: Text(isPost ? 'Send Revision Request' : actionLabel),
           ),
         ],
         ),
@@ -759,6 +763,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     Map<String, dynamic> item,
     void Function(void Function()) setDialogState,
   ) {
+    if ((item['file_policy'] as Map? ?? {}).isNotEmpty) {
+      return DocumentGroup(teamId: team['id'] as int, stageLabel: stageLabel, item: item);
+    }
     final submission = item['submission'] as Map?;
     final uploaded = item['uploaded'] == true || submission != null;
     final isFaculty = widget.isAdviser || widget.state.scope == 'pit' || widget.state.scope == 'capstone';
@@ -773,7 +780,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
     final postLocked = isPost && locked;
     final isDefense = !isPost && item['requirement_timing'] == 'defense';
-    final combinedReview = !isPost && !isDefense && item['required'] == true && !endorsed;
     final displayCleared = subStatus == 'accepted' || (isDefense && uploaded && subStatus != 'rejected');
     final canFacultyReview = item['can_faculty_review'] is bool
         ? item['can_faculty_review'] == true
@@ -941,10 +947,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       ),
                     ),
               ] else if (uploaded && !isWPR) ...[
-                if ((isDefense || combinedReview) && (isFaculty || isAdmin)) ...[
+                if (isDefense && (isFaculty || isAdmin)) ...[
                   Text(
-                    subStatus == 'rejected' ? 'Corrections requested' :
-                        isDefense ? 'Uploaded' : subStatus == 'accepted' ? 'Accepted' : 'Awaiting review',
+                    subStatus == 'rejected' ? 'Corrections requested' : 'Uploaded',
                     style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
                         color: subStatus == 'rejected' ? AppColors.danger : displayCleared ? AppColors.success : DefensysTokens.textSecondaryOf(context)),
                   ),
@@ -1326,104 +1331,14 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   }
 
   Map<String, dynamic> _resolveStageStatusBadge(Map<String, dynamic> stage) {
-    final statusDetail = stage['stage_status_detail']?.toString();
-    final endorsed = stage['endorsed'] == true;
-    final isPresentationOnly = stage['is_presentation_only'] == true;
-    final configured = stage['deliverables_configured'] == true || isPresentationOnly;
-    final readyForReview = _canReviewAndEndorse(stage);
-
-    if (!configured) {
-      return {
-        'label': 'Not Configured',
-        'color': Colors.grey.shade600,
-        'bg': Colors.grey.shade100,
-        'border': Colors.grey.shade300,
-        'icon': Icons.settings_outlined,
-      };
-    }
-
-    if (['failed', 'project_rejected', 'for_redefense', 'revisions_pending'].contains(statusDetail)) {
-      final color = statusDetail == 'revisions_pending' ? Colors.orange.shade700 : Colors.red.shade700;
-      return {'label': defenseProgressLabel(statusDetail!), 'color': color,
-        'bg': color.withValues(alpha: 0.1), 'border': color.withValues(alpha: 0.3),
-        'icon': Icons.warning_amber_rounded};
-    }
-    if (statusDetail == 'passed') {
-      return {
-        'label': 'Passed',
-        'color': AppColors.success,
-        'bg': AppColors.success.withValues(alpha: 0.1),
-        'border': AppColors.success.withValues(alpha: 0.3),
-        'icon': Icons.check_circle_rounded,
-      };
-    }
-
-    if (statusDetail == 'pending_post_defense') {
-      return {
-        'label': 'Pending Post-Defense',
-        'color': const Color(0xFF7C3AED),
-        'bg': const Color(0xFF7C3AED).withValues(alpha: 0.1),
-        'border': const Color(0xFF7C3AED).withValues(alpha: 0.3),
-        'icon': Icons.assignment_late_rounded,
-      };
-    }
-
-    if (statusDetail == 'defense_ongoing') {
-      return {
-        'label': 'Defense Ongoing',
-        'color': const Color(0xFF2563EB),
-        'bg': const Color(0xFF2563EB).withValues(alpha: 0.1),
-        'border': const Color(0xFF2563EB).withValues(alpha: 0.3),
-        'icon': Icons.campaign_rounded,
-      };
-    }
-
-    if (statusDetail == 'defense_scheduled') {
-      return {
-        'label': 'Defense Scheduled',
-        'color': Colors.blue.shade700,
-        'bg': Colors.blue.withValues(alpha: 0.1),
-        'border': Colors.blue.withValues(alpha: 0.3),
-        'icon': Icons.event_rounded,
-      };
-    }
-
-    if (statusDetail == 'endorsed' || (endorsed && statusDetail == null)) {
-      return {
-        'label': 'Endorsed',
-        'color': AppColors.success,
-        'bg': AppColors.success.withValues(alpha: 0.1),
-        'border': AppColors.success.withValues(alpha: 0.3),
-        'icon': Icons.verified_rounded,
-      };
-    }
-
-    if (widget.state.scope == 'pit' && stage['endorsement_required'] == false) {
-      return {
-        'label': 'Ready to Schedule',
-        'color': AppColors.success,
-        'bg': AppColors.success.withValues(alpha: 0.1),
-        'border': AppColors.success.withValues(alpha: 0.3),
-        'icon': Icons.event_available_outlined,
-      };
-    }
-
-    if (readyForReview) {
-      return {
-        'label': 'Ready for review',
-        'color': Colors.blue,
-        'bg': Colors.blue.withValues(alpha: 0.1),
-        'border': Colors.blue.withValues(alpha: 0.3),
-        'icon': Icons.check_circle_outline,
-      };
-    }
-
+    final status = TeamWorkflowStatus.fromStage(stage, scope: widget.state.scope);
+    final style = WorkflowStatusStyle.of(context, status.tone);
     return {
-      'label': 'Awaiting requirements',
-      'color': AppColors.warning,
-      'bg': AppColors.warning.withValues(alpha: 0.1),
-      'border': AppColors.warning.withValues(alpha: 0.3),
-      'icon': Icons.hourglass_top_rounded,
+      'label': status.label,
+      'color': style.foreground,
+      'bg': style.background,
+      'border': style.border,
+      'icon': WorkflowStatusStyle.iconFor(status),
     };
   }
 
@@ -1454,10 +1369,11 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
-  bool _canReviewAndEndorse(Map<String, dynamic> stage) {
+  bool _canEndorseTeam(Map<String, dynamic> stage) {
     final review = stage['endorsement_review'];
-    return review is Map && review['can_review_and_endorse'] == true &&
-        (review['review_token']?.toString().isNotEmpty ?? false);
+    return stage['required_complete'] == true &&
+        review is Map &&
+        review['can_review_and_endorse'] == true;
   }
 
   Future<void> _confirmEndorseTeam(
@@ -1466,14 +1382,11 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     bool isPresentationOnly,
   ) async {
     final stage = _stagePayload(_stageList(team), selectedStage);
-    if (!_canReviewAndEndorse(stage)) return;
-    final review = stage['endorsement_review'] as Map;
-    final reviewToken = review['review_token'].toString();
-    final files = (review['files'] as List? ?? []).whereType<Map>().toList();
+    if (!_canEndorseTeam(stage)) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Review & endorse'),
+        title: const Text('Endorse team'),
         content: SizedBox(
           width: 480,
           child: SingleChildScrollView(child: Column(
@@ -1483,13 +1396,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               Text(isPresentationOnly
               ? 'Endorse ${team['name']} for $selectedStage? '
                 'This confirms the team is verbally prepared and ready for presentation / demo scheduling.'
-              : 'Confirm that you have reviewed the required scheduling files for ${team['name']}. '
-                'This action approves these files and endorses the team for $selectedStage.'),
-              for (final file in files) ...[
-                const SizedBox(height: 12),
-                Text(file['label']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600)),
-                Text(file['file_name']?.toString() ?? '', style: const TextStyle(fontSize: 12)),
-              ],
+              : 'All required before-endorsement files have been accepted. '
+                'Endorse ${team['name']} for $selectedStage scheduling?'),
               const SizedBox(height: 16),
               const Text('Before-defense materials remain due by their scheduled deadline.', style: TextStyle(fontSize: 12)),
             ],
@@ -1503,7 +1411,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           ElevatedButton.icon(
             onPressed: () => Navigator.pop(dialogContext, true),
             icon: const Icon(Icons.verified_outlined),
-            label: const Text('Approve & endorse'),
+            label: const Text('Endorse'),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.success,
               foregroundColor: Colors.white,
@@ -1513,10 +1421,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       ),
     );
     if (confirmed == true && mounted) {
-      await ref.read(capstoneDeliverablesProvider.notifier).reviewAndEndorseTeam(
+      await ref.read(capstoneDeliverablesProvider.notifier).endorseTeam(
             parseAsInt(team['id']),
             selectedStage,
-            reviewToken,
           );
     }
   }
@@ -1533,7 +1440,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           : null,
       icon: const Icon(Icons.verified_outlined, size: 16),
       label: const Text(
-        'Review & endorse',
+        'Endorse team',
         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
       ),
       style: ElevatedButton.styleFrom(
@@ -1648,7 +1555,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final showPostChecklist = vault.isNotEmpty &&
         (endorsed || stage['has_active_schedule'] == true ||
             stage['has_done_schedule'] == true);
-    final canEndorse = configured && _canReviewAndEndorse(stage) && !endorsed &&
+    final canEndorse = configured && _canEndorseTeam(stage) && !endorsed &&
         (widget.state.scope != 'pit' || stage['endorsement_required'] != false);
     final canCancelEndorsement = (stage['can_cancel_endorsement'] == true) ||
         (endorsed &&
@@ -1760,6 +1667,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               ),
             )
           else ...[
+            ConceptWorkspace(teamId: team['id'] as int, stageLabel: selectedStage, stage: stage),
             // Deliverables Progress Summary (Required & Post-Defense Archive)
             LayoutBuilder(
               builder: (context, constraints) {
@@ -2147,19 +2055,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final cardSelectedStageLabel = _effectiveSelectedStage(team);
     final selectedStage = _stagePayload(stages, cardSelectedStageLabel);
 
-    final hasPendingReview = DeliverablesTriageHelper.hasPendingReview(team);
-    final pendingCount = DeliverablesTriageHelper.pendingReviewCount(team);
-
-    final Map<String, dynamic> badge;
-    if (hasPendingReview) {
-      badge = {
-        'label': '$pendingCount Awaiting Review',
-        'color': const Color(0xFFDC2626),
-        'icon': Icons.rate_review_rounded,
-      };
-    } else {
-      badge = _resolveStageStatusBadge(selectedStage);
-    }
+    final badge = _resolveStageStatusBadge(selectedStage);
     final badgeColor = badge['color'] as Color;
     final badgeText = badge['label'] as String;
     final badgeIcon = badge['icon'] as IconData;
@@ -2220,7 +2116,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: badgeColor.withValues(alpha: 0.1),
+                    color: badge['bg'] as Color,
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Row(
@@ -2577,26 +2473,14 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final materialsPending = materialReadiness is Map &&
         parseAsInt(materialReadiness['required_total']) >
             parseAsInt(materialReadiness['submitted_total']);
-    final canEndorse = _canReviewAndEndorse(stagePayload) &&
+    final canEndorse = _canEndorseTeam(stagePayload) &&
         stagePayload['endorsed'] != true &&
         (!isPit || stagePayload['endorsement_required'] != false);
     final review = stagePayload['endorsement_review'];
-    final endorsementHint = canEndorse
-        ? 'Review the scheduling files, then approve and endorse the team in one step.'
-        : (review is Map ? review['reason']?.toString() : null) ?? 'Upload the required scheduling files before review.';
-    final instructorHint = stages.isEmpty
-        ? 'No PIT event is configured for this team yet.'
-        : stagePayload['has_done_schedule'] == true
-            ? 'The event is complete. Review the team’s submissions and published results.'
-            : stagePayload['has_active_schedule'] == true
-                ? 'The event is scheduled. Defense files remain due before the scheduled deadline.'
-                : stagePayload['endorsement_required'] == false
-                    ? 'No endorsement is needed. The team can be scheduled when its requirements are clear.'
-                    : stagePayload['endorsed'] == true
-                        ? 'The team is endorsed and ready for event scheduling.'
-                        : canEndorse
-                            ? 'Review the scheduling files, then approve and endorse the team in one step.'
-                            : endorsementHint;
+    final reviewReason = review is Map ? review['reason']?.toString() ?? '' : '';
+    final workflow = TeamWorkflowStatus.fromStage(stagePayload, scope: widget.state.scope);
+    final workflowHint = workflow.code == 'on_hold' && reviewReason.isNotEmpty
+        ? reviewReason : workflow.nextStep;
     final compactHeader = MediaQuery.sizeOf(context).width < 1200;
 
     return Container(
@@ -2994,7 +2878,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        widget.isPitInstructor ? instructorHint : endorsementHint,
+                        workflowHint,
                         style: TextStyle(
                           fontSize: 12,
                           color: DefensysTokens.textSecondaryOf(context),

@@ -3,7 +3,6 @@ import 'package:defensys/screens/web/faculty/dashboard_widgets.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/components/deliverables_table.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/components/cohort_submissions_matrix.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/team_deliverables_screen.dart';
-import 'package:defensys/screens/web/shared/team_deliverables/deliverables_view_types.dart';
 import 'package:defensys/services/adviser_grading_provider.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/services/defense/team_defense_provider.dart';
@@ -96,7 +95,7 @@ class _PitWeeklyNotifier extends WeeklyProgressNotifier {
 class _PitDefenseNotifier extends PitInstructorDefenseNotifier {
   @override
   TeamDefenseState build() {
-    final date = DateTime.now().add(const Duration(days: 7));
+    final date = DateTime.now();
     final scheduledDate =
         '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
     return TeamDefenseState(
@@ -123,7 +122,7 @@ class _PitDefenseNotifier extends PitInstructorDefenseNotifier {
   }
 
   @override
-  Future<void> fetch() async {}
+  Future<void> fetch({String? workspace}) async {}
 }
 
 void main() {
@@ -177,19 +176,15 @@ void main() {
 
       expect(find.text('My actions'), findsOneWidget);
       expect(find.text('Quick Actions'), findsNothing);
-      expect(find.text('Defense schedule & materials'), findsOneWidget);
+      expect(find.text('Defense Schedule'), findsOneWidget);
       expect(find.text('My teams'), findsOneWidget);
       expect(
         tester.getTopLeft(find.text('My teams')).dx,
-        lessThan(
-          tester.getTopLeft(find.text('Defense schedule & materials')).dx,
-        ),
+        lessThan(tester.getTopLeft(find.text('Defense Schedule')).dx),
       );
       expect(
         tester.getTopLeft(find.text('My actions')).dy,
-        greaterThan(
-          tester.getTopLeft(find.text('Defense schedule & materials')).dy,
-        ),
+        greaterThan(tester.getTopLeft(find.text('Defense Schedule')).dy),
       );
       expect(
         tester.getTopLeft(find.text('My actions')).dx,
@@ -204,9 +199,9 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Other section'), findsNothing);
-      await tester.tap(find.text('Month view'));
+      await tester.tap(find.text('Month'));
       await tester.pump();
-      expect(find.text('Week view'), findsOneWidget);
+      expect(find.text('Week'), findsOneWidget);
       await tester.tap(find.text('Team AlphaWave').first);
       expect(openedTeam, 7);
       await tester.tap(find.byTooltip('Actions for Team AlphaWave'));
@@ -374,13 +369,14 @@ void main() {
     tester.view.physicalSize = const Size(350, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
-    final date = DateTime.now().add(const Duration(days: 7));
+    final date = DateTime.now();
     await pumpDefensysWidget(
       tester,
       SingleChildScrollView(
         child: DefenseScheduleCalendar(
           title: 'Defense schedule & materials',
           subtitle: 'Select a date to see team defenses and file progress.',
+          programScope: 'pit',
           schedules: [
             {
               'team_id': 7,
@@ -403,18 +399,12 @@ void main() {
       ),
     );
     expect(tester.takeException(), isNull);
-    final selectedDay = find.byKey(
-      Key('defense-calendar-day-${date.year}-${date.month}-${date.day}'),
+    expect(find.text('Today'), findsOneWidget);
+    expect(
+      find.textContaining('1 defense is scheduled for 1 team'),
+      findsOneWidget,
     );
-    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    final weekdayLabel = tester.widget<Text>(
-      find.descendant(
-        of: selectedDay,
-        matching: find.text(weekdays[date.weekday - 1]),
-      ),
-    );
-    expect(weekdayLabel.style?.color, Colors.white);
-    await tester.tap(find.text('Month view'));
+    await tester.tap(find.text('Month'));
     await tester.pump();
     expect(tester.takeException(), isNull);
   });
@@ -455,8 +445,8 @@ void main() {
       overrides: [adviserGradingProvider.overrideWith(_PitGradesNotifier.new)],
     );
 
-    expect(find.text('Ready to Schedule'), findsWidgets);
-    expect(find.text('Ready for review'), findsNothing);
+    expect(find.text('Ready to schedule'), findsWidgets);
+    expect(find.text('Needs review'), findsNothing);
     expect(find.text('No scheduling uploads required'), findsOneWidget);
     expect(
       find.textContaining(
@@ -464,10 +454,12 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('Review & endorse'), findsNothing);
+    expect(find.text('Endorse team'), findsNothing);
   });
 
-  testWidgets('instructor team has read only Schedule tab and scoped exports', (tester) async {
+  testWidgets('instructor team has read only Schedule tab and scoped exports', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1500, 1100);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -497,20 +489,52 @@ void main() {
     expect(find.text('Export team summary'), findsOneWidget);
     final summary = find.byKey(const Key('instructor-team-summary'));
     expect(summary, findsOneWidget);
-    expect(find.descendant(of: summary, matching: find.text('Project title')), findsOneWidget);
-    expect(find.descendant(of: summary, matching: find.text('Library tracker')), findsOneWidget);
-    expect(find.descendant(of: summary, matching: find.text('Year level: 1st Year')), findsOneWidget);
-    expect(find.descendant(of: summary, matching: find.text('Section: BSIT-1A')), findsOneWidget);
-    expect(find.descendant(of: summary, matching: find.text('Team roster (2)')), findsOneWidget);
-    expect(find.descendant(of: summary, matching: find.text('Next step')), findsOneWidget);
+    expect(
+      find.descendant(of: summary, matching: find.text('Project title')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: summary, matching: find.text('Library tracker')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: summary, matching: find.text('Year level: 1st Year')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: summary, matching: find.text('Section: BSIT-1A')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: summary, matching: find.text('Team roster (2)')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: summary, matching: find.text('Next step')),
+      findsOneWidget,
+    );
     expect(find.text('Stage status'), findsNothing);
     expect(find.text('PIT: System Concept Pitching'), findsNothing);
     expect(
-      tester.getTopLeft(find.descendant(of: summary, matching: find.text('Export team summary'))).dy,
-      closeTo(tester.getTopLeft(find.descendant(
-        of: summary,
-        matching: find.text('Ready to Schedule'),
-      )).dy, 16),
+      tester
+          .getTopLeft(
+            find.descendant(
+              of: summary,
+              matching: find.text('Export team summary'),
+            ),
+          )
+          .dy,
+      closeTo(
+        tester
+            .getTopLeft(
+              find.descendant(
+                of: summary,
+                matching: find.text('Ready to schedule'),
+              ),
+            )
+            .dy,
+        16,
+      ),
     );
     expect(find.textContaining('Review first'), findsNothing);
     expect(
@@ -532,48 +556,57 @@ void main() {
     expect(find.textContaining('minutes', findRichText: true), findsNothing);
   });
 
-  testWidgets('instructor defaults to dossier workspace and matrix exposes assigned teams export', (tester) async {
-    tester.view.physicalSize = const Size(1500, 1100);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
+  testWidgets(
+    'instructor defaults to dossier workspace and matrix exposes assigned teams export',
+    (tester) async {
+      tester.view.physicalSize = const Size(1500, 1100);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
 
-    await pumpDefensysWidget(
-      tester,
-      const TeamDeliverablesScreen(
-        initialScope: 'pit',
-        isPitInstructor: true,
-      ),
-      overrides: [
-        capstoneDeliverablesProvider.overrideWith(_PitDeliverablesNotifier.new),
-        adviserGradingProvider.overrideWith(_PitGradesNotifier.new),
-        weeklyProgressProvider.overrideWith(_PitWeeklyNotifier.new),
-        pitInstructorDefenseProvider.overrideWith(_PitDefenseNotifier.new),
-      ],
-    );
-    await tester.pump();
-    expect(find.byType(DeliverablesTablePane), findsOneWidget);
+      await pumpDefensysWidget(
+        tester,
+        const TeamDeliverablesScreen(
+          initialScope: 'pit',
+          isPitInstructor: true,
+        ),
+        overrides: [
+          capstoneDeliverablesProvider.overrideWith(
+            _PitDeliverablesNotifier.new,
+          ),
+          adviserGradingProvider.overrideWith(_PitGradesNotifier.new),
+          weeklyProgressProvider.overrideWith(_PitWeeklyNotifier.new),
+          pitInstructorDefenseProvider.overrideWith(_PitDefenseNotifier.new),
+        ],
+      );
+      await tester.pump();
+      expect(find.byType(DeliverablesTablePane), findsOneWidget);
 
-    // When matrix view is explicitly selected:
-    await pumpDefensysWidget(
-      tester,
-      const TeamDeliverablesScreen(
-        initialScope: 'pit',
-        isPitInstructor: true,
-        initialViewMode: DeliverablesViewMode.matrix,
-      ),
-      overrides: [
-        capstoneDeliverablesProvider.overrideWith(_PitDeliverablesNotifier.new),
-        adviserGradingProvider.overrideWith(_PitGradesNotifier.new),
-        weeklyProgressProvider.overrideWith(_PitWeeklyNotifier.new),
-        pitInstructorDefenseProvider.overrideWith(_PitDefenseNotifier.new),
-      ],
-    );
-    await tester.pump();
-    expect(find.byType(CohortSubmissionsMatrix), findsOneWidget);
-    expect(find.text('Export teams'), findsOneWidget);
-  });
+      // When matrix view is explicitly selected:
+      await pumpDefensysWidget(
+        tester,
+        const TeamDeliverablesScreen(
+          initialScope: 'pit',
+          isPitInstructor: true,
+          initialViewMode: DeliverablesViewMode.matrix,
+        ),
+        overrides: [
+          capstoneDeliverablesProvider.overrideWith(
+            _PitDeliverablesNotifier.new,
+          ),
+          adviserGradingProvider.overrideWith(_PitGradesNotifier.new),
+          weeklyProgressProvider.overrideWith(_PitWeeklyNotifier.new),
+          pitInstructorDefenseProvider.overrideWith(_PitDefenseNotifier.new),
+        ],
+      );
+      await tester.pump();
+      expect(find.byType(CohortSubmissionsMatrix), findsOneWidget);
+      expect(find.text('Export teams'), findsOneWidget);
+    },
+  );
 
-  testWidgets('instructor dossier follows the PIT event selected above', (tester) async {
+  testWidgets('instructor dossier follows the PIT event selected above', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(1500, 1000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -610,14 +643,20 @@ void main() {
       overrides: [adviserGradingProvider.overrideWith(_PitGradesNotifier.new)],
     );
     final summary = find.byKey(const Key('instructor-team-summary'));
-    expect(find.descendant(of: summary, matching: find.text('Awaiting requirements')),
-        findsOneWidget);
-    expect(find.descendant(of: summary, matching: find.text('Ready to Schedule')),
-        findsNothing);
+    expect(
+      find.descendant(of: summary, matching: find.text('Awaiting files')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: summary, matching: find.text('Ready to schedule')),
+      findsNothing,
+    );
     expect(find.text('0/1'), findsWidgets);
   });
 
-  testWidgets('instructor export and team actions fit a narrow phone', (tester) async {
+  testWidgets('instructor export and team actions fit a narrow phone', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(320, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -670,7 +709,11 @@ void main() {
       'stage_status_detail': 'awaiting_endorsement',
       'required_total': 1,
       'required_uploaded': 1,
-      'endorsement_review': {'can_review_and_endorse': true, 'review_token': 'pit-reviewed-files', 'files': []},
+      'endorsement_review': {
+        'can_review_and_endorse': true,
+        'review_token': 'pit-reviewed-files',
+        'files': [],
+      },
       'materials_readiness': {'required_total': 0, 'submitted_total': 0},
       'pre': [
         {
@@ -704,9 +747,9 @@ void main() {
       overrides: [adviserGradingProvider.overrideWith(_PitGradesNotifier.new)],
     );
 
-    expect(find.text('Ready for review'), findsWidgets);
+    expect(find.text('Awaiting endorsement'), findsWidgets);
     final endorseButton = find.ancestor(
-      of: find.text('Review & endorse'),
+      of: find.text('Endorse team'),
       matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
     );
     expect(tester.widget<ElevatedButton>(endorseButton).onPressed, isNotNull);
@@ -721,6 +764,9 @@ void main() {
 
     final stageWithReview = <String, dynamic>{
       ..._pitStage,
+      'endorsement_required': true,
+      'required_complete': false,
+      'stage_status_detail': 'awaiting_endorsement',
       'pre': [
         {
           'id': 'PAPER',
@@ -757,7 +803,7 @@ void main() {
     );
 
     // Keep review status visible without repeating the project title in the list.
-    expect(find.text('1 Awaiting Review'), findsOneWidget);
+    expect(find.text('Needs review'), findsNWidgets(2));
 
     // No competing separate banners or bottom tags on the compact card list:
     expect(find.text('1 awaiting review'), findsNothing);

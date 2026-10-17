@@ -206,18 +206,12 @@ class _PitInstructorDashboardContentState
     };
     final state = ref.watch(capstoneDeliverablesProvider);
     final defense = ref.watch(pitInstructorDefenseProvider);
-    final today = DateTime.now();
-    final upcoming = defense.schedules.where((schedule) {
+    final teamSchedules = defense.schedules.where((schedule) {
       if (schedule['scope'] != 'pit' ||
-          schedule['status'] != 'scheduled' ||
           !teamIds.contains(_id(schedule['team_id']))) {
         return false;
       }
-      final date = DateTime.tryParse(
-        schedule['scheduled_date']?.toString() ?? '',
-      );
-      return date != null &&
-          !date.isBefore(DateTime(today.year, today.month, today.day));
+      return true;
     }).toList();
     final details = state.scope == 'pit'
         ? {
@@ -339,13 +333,16 @@ class _PitInstructorDashboardContentState
         const SizedBox(height: 18),
         FacultyDashboardColumns(
           topRight: DefenseScheduleCalendar(
-            title: 'Defense schedule & materials',
-            subtitle: 'Select a date to see team defenses and file progress.',
-            schedules: upcoming,
+            title: 'Defense Schedule',
+            subtitle:
+                'Your assigned teams only · Select a date to see defenses and materials.',
+            programScope: 'pit',
+            schedules: teamSchedules,
             teamNames: teamNames,
             loading: defense.isLoading,
             hasError: defense.error != null,
             onOpenDefense: (teamId, _) => widget.onOpenDeliverables(teamId),
+            onRefresh: _refresh,
           ),
           left: _panel(
             'My teams',

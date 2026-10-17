@@ -66,12 +66,10 @@ void main() {
   }
 
   testWidgets('renders stage names, active stage, and locked state accurately', (tester) async {
-    int? changedPosition;
-
     await tester.pumpWidget(
       buildTestWidget(
         selectedPosition: 2,
-        onPositionChanged: (pos) => changedPosition = pos,
+        onPositionChanged: (_) {},
       ),
     );
     await tester.pumpAndSettle();
@@ -82,7 +80,7 @@ void main() {
     expect(find.text('Exhibit'), findsWidgets);
 
     // Verify Concept Proposal has locked status
-    expect(find.text('Locked (Completed)'), findsOneWidget);
+    expect(find.text('Configuration locked'), findsOneWidget);
 
     // Verify active stage indicator
     expect(find.text('Active Stage'), findsOneWidget);

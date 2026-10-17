@@ -135,8 +135,8 @@ class StageVerdictConditionChoices extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
-              constraints: const BoxConstraints(minHeight: 82),
-              padding: const EdgeInsets.all(12),
+              constraints: const BoxConstraints(minHeight: 46),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
               decoration: BoxDecoration(
                 color: selected
                     ? (isDark ? const Color(0xFF1E293B) : Colors.white)
@@ -154,19 +154,18 @@ class StageVerdictConditionChoices extends StatelessWidget {
                     ? const [
                         BoxShadow(
                           color: Color(0x0A000000),
-                          blurRadius: 4,
+                          blurRadius: 3,
                           offset: Offset(0, 1),
                         ),
                       ]
                     : null,
               ),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Container(
-                    margin: const EdgeInsets.only(top: 2),
-                    width: 16,
-                    height: 16,
+                    width: 14,
+                    height: 14,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
@@ -179,8 +178,8 @@ class StageVerdictConditionChoices extends StatelessWidget {
                     child: selected
                         ? Center(
                             child: Container(
-                              width: 8,
-                              height: 8,
+                              width: 6,
+                              height: 6,
                               decoration: const BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: Color(0xFF0F172A),
@@ -189,29 +188,32 @@ class StageVerdictConditionChoices extends StatelessWidget {
                           )
                         : null,
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           title,
                           style: TextStyle(
-                            fontSize: 13,
+                            fontSize: 12.5,
                             fontWeight: FontWeight.w700,
                             color: selected
                                 ? const Color(0xFF0F172A)
                                 : const Color(0xFF334155),
                           ),
                         ),
-                        const SizedBox(height: 3),
+                        const SizedBox(height: 1.5),
                         Text(
                           explanation,
                           style: const TextStyle(
-                            fontSize: 11.5,
+                            fontSize: 10.5,
                             color: Color(0xFF64748B),
-                            height: 1.35,
+                            height: 1.25,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),
@@ -231,6 +233,8 @@ class StageVerdictConditionChoices extends StatelessWidget {
           'Who needs to submit this file?',
           style: theme.textTheme.labelLarge?.copyWith(
             fontWeight: FontWeight.w700,
+            fontSize: 12,
+            color: isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B),
           ),
         ),
         const SizedBox(height: 8),
@@ -247,9 +251,8 @@ class StageVerdictConditionChoices extends StatelessWidget {
               'Required only when revisions are assigned.',
             );
             return constraints.maxWidth < 540
-                ? Column(children: [all, const SizedBox(height: 8), revisions])
+                ? Column(children: [all, const SizedBox(height: 6), revisions])
                 : Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(child: all),
                       const SizedBox(width: 8),

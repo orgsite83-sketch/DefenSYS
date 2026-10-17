@@ -132,7 +132,11 @@ def capstone_entry_payload(submission):
         else 'Read-only archive preview. Source downloads are disabled from this public archive.'
     )
     
-    files = list(submission.files.all().order_by('uploaded_at'))
+    from repository.deliverables.services import definition_for
+    definition = definition_for(team, submission.stage_label, submission.deliverable_id) or {}
+    files = list(submission.files.filter(is_current=True).order_by('uploaded_at'))
+    if definition.get('file_policy'):
+        files = [f for f in files if f.status == 'accepted']
     if not files:
         entry_id = f'pit-deliverable-{submission.id}' if is_pit else f'capstone-{submission.id}'
         return [{

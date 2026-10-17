@@ -159,7 +159,7 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
                 Expanded(child: _quickActionsCard()),
                 const SizedBox(width: 20),
                 Expanded(child: _dashboardCard(
-                  title: 'Upcoming Defenses',
+                  title: 'Defense Schedule',
                   child: DashboardSchedulePlanner(workspace: 'admin', refreshToken: dashState.data),
                 )),
               ],

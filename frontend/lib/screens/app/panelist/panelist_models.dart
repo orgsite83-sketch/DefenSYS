@@ -133,8 +133,10 @@ class TeamData {
   }
 
   bool get isToday => scheduledDate == manilaToday;
+  bool get usesDefenseVerdict => isCapstone ||
+      (workflowGrade?['workflow'] as Map? ?? {})['concept_workflow'] != null;
   bool get panelWorkFinished =>
-      isCompleted || (isPosted && (!isCapstone || !isChair || hasVerdict));
+      isCompleted || (isPosted && (!usesDefenseVerdict || !isChair || hasVerdict));
   bool get gradingAvailable =>
       !isCompleted &&
       !isPosted &&
@@ -143,7 +145,7 @@ class TeamData {
       (serverGradingAvailable ?? true);
   bool get canIssueVerdict =>
       !isCompleted &&
-      isCapstone &&
+      usesDefenseVerdict &&
       isChair &&
       !isLockedByDate &&
       scheduleStatus == 'scheduled' &&

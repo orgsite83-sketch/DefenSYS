@@ -322,100 +322,89 @@ void main() {
     );
   }
 
-  testWidgets(
-    'manual draft survives a rebuilt workspace with its deliverables and unanswered minutes',
-    (tester) async {
-      await pumpWorkspace(tester);
-      await tester.tap(find.text('Add stage'));
-      await tester.pumpAndSettle();
-      expect(
-        tester
-            .widget<StageMinutesSettings>(find.byType(StageMinutesSettings))
-            .requiredMinutes,
-        isNull,
-      );
-      await tester.enterText(
-        find.byType(TextField).first,
-        'Reloadable concept',
-      );
-      await tester.tap(find.text('3. Deliverables'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Add Pre-Defense'));
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byType(TextFormField).first,
-        'Concept manuscript',
-      );
-      await tester.tap(find.text('Save draft'));
-      await tester.pumpAndSettle();
-      expect(find.byType(Dialog), findsNothing);
-      dismissFeedbackToasts();
-      await tester.pumpAndSettle();
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pumpAndSettle();
-      await pumpWorkspace(tester, resetStorage: false);
-      await tester.tap(find.text('Resume draft'));
-      await tester.pumpAndSettle();
-      expect(find.text('Concept manuscript'), findsOneWidget);
-      await tester.tap(find.text('1. Stage Details'));
-      await tester.pumpAndSettle();
-      expect(find.text('Reloadable concept'), findsWidgets);
-      expect(
-        tester
-            .widget<StageMinutesSettings>(find.byType(StageMinutesSettings))
-            .requiredMinutes,
-        isNull,
-      );
-      expect(tester.takeException(), isNull);
-    },
-  );
+  testWidgets('manual draft keeps required minutes after a workspace rebuild', (
+    tester,
+  ) async {
+    await pumpWorkspace(tester);
+    await tester.tap(find.text('Add stage'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<StageMinutesSettings>(find.byType(StageMinutesSettings))
+          .requiredMinutes,
+      isTrue,
+    );
+    await tester.enterText(find.byType(TextField).first, 'Reloadable concept');
+    await tester.tap(find.text('3. Deliverables'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Pre-Defense'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextFormField).first,
+      'Concept manuscript',
+    );
+    await tester.tap(find.text('Save draft'));
+    await tester.pumpAndSettle();
+    expect(find.byType(Dialog), findsNothing);
+    dismissFeedbackToasts();
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    await pumpWorkspace(tester, resetStorage: false);
+    await tester.tap(find.text('Resume draft'));
+    await tester.pumpAndSettle();
+    expect(find.text('Concept manuscript'), findsOneWidget);
+    await tester.tap(find.text('1. Stage Details'));
+    await tester.pumpAndSettle();
+    expect(find.text('Reloadable concept'), findsWidgets);
+    expect(
+      tester
+          .widget<StageMinutesSettings>(find.byType(StageMinutesSettings))
+          .requiredMinutes,
+      isTrue,
+    );
+    expect(tester.takeException(), isNull);
+  });
 
-  testWidgets(
-    'new stage requires an explicit minutes choice for Next and Add Stage',
-    (tester) async {
-      await pumpWorkspace(tester);
-      final stages =
-          ProviderScope.containerOf(
-                tester.element(find.byType(DefenseStagesScreen)),
-              ).read(defenseStagesProvider.notifier)
-              as _Stages;
-      await tester.tap(find.text('Add stage'));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField).first, 'Concept');
-      await tester.tap(find.text('Next: Grading & Rubrics'));
-      await tester.pumpAndSettle();
-      expect(
-        tester
-            .widget<StageMinutesSettings>(find.byType(StageMinutesSettings))
-            .requiredMinutes,
-        isNull,
-      );
-      expect(
-        find.text('Choose Signed minutes required or Minutes not required.'),
-        findsOneWidget,
-      );
-      await tester.tap(find.text('3. Deliverables'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Add Stage'));
-      await tester.pumpAndSettle();
-      expect(stages.adds, 0);
-      expect(find.byType(StageMinutesSettings), findsOneWidget);
-      await tester.tap(find.text('Minutes not required'));
-      await tester.tap(find.text('3. Deliverables'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Add Stage'));
-      await tester.pumpAndSettle();
-      expect(stages.adds, 1);
-      expect(
-        await StageSetupDraftStore(userId: '1', semesterId: 3).load(),
-        isNull,
-      );
-      expect(find.text('Resume draft'), findsNothing);
-      dismissFeedbackToasts();
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-    },
-  );
+  testWidgets('new stage starts with signed minutes required', (tester) async {
+    await pumpWorkspace(tester);
+    final stages =
+        ProviderScope.containerOf(
+              tester.element(find.byType(DefenseStagesScreen)),
+            ).read(defenseStagesProvider.notifier)
+            as _Stages;
+    await tester.tap(find.text('Add stage'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'Concept');
+    expect(find.text('Stage policies'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('Session documentation')).dy,
+      lessThan(tester.getTopLeft(find.text('Concept selection')).dy),
+    );
+    await tester.tap(find.text('Next: Grading & Rubrics'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<StageMinutesSettings>(
+            find.byType(StageMinutesSettings, skipOffstage: false),
+          )
+          .requiredMinutes,
+      isTrue,
+    );
+    await tester.tap(find.text('3. Deliverables'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Stage'));
+    await tester.pumpAndSettle();
+    expect(stages.adds, 1);
+    expect(
+      await StageSetupDraftStore(userId: '1', semesterId: 3).load(),
+      isNull,
+    );
+    expect(find.text('Resume draft'), findsNothing);
+    dismissFeedbackToasts();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'editor draft survives workspace rebuild and successful save clears it',
@@ -484,6 +473,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Before scheduled defense').last);
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Custom'));
       await tester.tap(find.text('Custom'));
       await tester.pumpAndSettle();
       await tester.enterText(

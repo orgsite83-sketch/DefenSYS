@@ -111,6 +111,10 @@ Future<void> showUploadDialog({
   final rawFormat = item['file_format'] ?? item['fileFormat'];
   final formatInfo = DeliverableFormatInfo.fromFormat(rawFormat?.toString());
   final suggestedName = item['suggested_file_name']?.toString() ?? '';
+  String recommendedName() => formatInfo.recommendedFileName(
+    suggestedName,
+    selectedFileName: selectedFileName,
+  );
 
   await showDialog<bool>(
     context: context,
@@ -363,7 +367,7 @@ Future<void> showUploadDialog({
                           const Spacer(),
                           InkWell(
                             onTap: () {
-                              Clipboard.setData(ClipboardData(text: suggestedName));
+                              Clipboard.setData(ClipboardData(text: recommendedName()));
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text('Recommended filename copied to clipboard'),
@@ -396,7 +400,7 @@ Future<void> showUploadDialog({
                       ),
                       const SizedBox(height: 4),
                       SelectableText(
-                        suggestedName,
+                        recommendedName(),
                         style: TextStyle(
                           fontSize: 11.5,
                           fontFamily: 'monospace',
@@ -524,21 +528,7 @@ Future<void> showUploadDialog({
                         return dotIdx > 0 ? name.substring(0, dotIdx) : name;
                       }
 
-                      // Ensure repository name preserves the uploaded file's actual extension
-                      String targetRepoName = suggestedName;
-                      final selDot = selectedFileName!.lastIndexOf('.');
-                      final sugDot = suggestedName.lastIndexOf('.');
-                      if (selDot > 0) {
-                        final selExt = selectedFileName!.substring(selDot);
-                        if (sugDot < 0) {
-                          targetRepoName = '$suggestedName$selExt';
-                        } else {
-                          final sugExt = suggestedName.substring(sugDot);
-                          if (sugExt.toLowerCase() != selExt.toLowerCase()) {
-                            targetRepoName = '${suggestedName.substring(0, sugDot)}$selExt';
-                          }
-                        }
-                      }
+                      final targetRepoName = recommendedName();
 
                       final selectedBase = stripExt(selectedFileName!).trim().toLowerCase();
                       final suggestedBase = stripExt(suggestedName).trim().toLowerCase();

@@ -6,6 +6,49 @@ import 'package:defensys/services/defense_scheduler_provider.dart';
 import '../helpers/auth_test_overrides.dart';
 
 void main() {
+  testWidgets('PIT concept filters retain only matching teams in the event year', (tester) async {
+    tester.view.physicalSize = const Size(1280, 1100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(ProviderScope(
+      overrides: authTestOverrides(),
+      child: MaterialApp(home: Scaffold(body: SingleChildScrollView(child: TeamReadinessTracker(
+        state: DefenseSchedulerState(
+          teams: [
+            for (final entry in [
+              (1, 'Replacement team', '1st Year', 'replacement_concepts_needed'),
+              (2, 'Review team', '1st Year', 'concept_review_pending'),
+              (3, 'Other year team', '2nd Year', 'replacement_concepts_needed'),
+            ]) {
+              'id': entry.$1, 'name': entry.$2,
+              'level': '${entry.$3} PIT', 'year_level': entry.$3, 'section': 'Concept Section',
+              'concept_workflows': {'PIT Concepts': {'enabled': true, 'status': entry.$4}},
+            },
+          ],
+          pitEvents: const [{
+            'event_name': 'PIT Concepts', 'year_level': '1st Year',
+            'concept_config': {'enabled': true}, 'deliverables': [],
+          }],
+        ),
+        scope: 'pit', activeStageOrEventName: 'PIT Concepts',
+        onReviewTeamDeliverables: (_, _) {}, onSendReminder: (_, _) {}, isSendingReminder: false,
+      )))),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('All defense workflows'));
+    await tester.pumpAndSettle();
+    expect(find.text('Instructor review pending'), findsOneWidget);
+    await tester.tap(find.text('Replacement concepts needed').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Concept Section'));
+    await tester.pumpAndSettle();
+    expect(find.text('Replacement team'), findsOneWidget);
+    expect(find.text('Review team'), findsNothing);
+    expect(find.text('Other year team'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('PIT event without scheduling files is ready without endorsement', (
     tester,
   ) async {

@@ -1131,11 +1131,7 @@ class _NavItemState extends State<_NavItem> {
   }
 
   void _handleTapUp(TapUpDetails _) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _isPressed && widget.activeSection != widget.section) {
-        setState(() => _isPressed = false);
-      }
-    });
+    if (mounted) setState(() => _isPressed = false);
   }
 
   void _handleTap() {

@@ -31,13 +31,16 @@ class TeamGradeQuerySet(models.QuerySet):
             'verdict_by',
             'schedule__minutes',
         ).prefetch_related(
-            Prefetch('breakdowns', queryset=GradeBreakdown.objects.select_related('rubric', 'student')),
+            Prefetch('breakdowns', queryset=GradeBreakdown.objects.select_related('rubric', 'student', 'source_submission__panelist')),
             'student_grades',
             'student_grades__student',
             'team__memberships',
             'team__memberships__student',
             'schedule__panel_assignments',
             'schedule__panel_assignments__panelist',
+            'schedule__guest_invitations__evaluator',
+            'schedule__guest_panelist_codes__evaluator',
+            'panelist_submissions',
             'attempt_history',
         )
 
@@ -215,8 +218,15 @@ class TeamGrade(models.Model):
         return fields
 
     @property
+    def uses_defense_verdict(self):
+        return self.is_capstone or bool(self.pit_event_config_id and
+            (self.pit_event_config.concept_config or {}).get('enabled'))
+
+    @property
     def result(self):
-        if self.is_capstone and self.verdict:
+        if self.scope == self.SCOPE_PIT and self.uses_defense_verdict and not self.verdict:
+            return 'pending'
+        if self.uses_defense_verdict and self.verdict:
             if self.verdict in (self.VERDICT_FAILED, self.VERDICT_PROJECT_REJECTED):
                 return 'failed'
             if self.verdict == self.VERDICT_APPROVED_WITH_REVISIONS and not self.revisions_cleared_at:
@@ -468,7 +478,8 @@ class PanelistGradeSubmission(models.Model):
     def identity_label(self):
         if self.panelist_id:
             return f'Panelist: {self.panelist.username}'
-        return f'Guest panelist: {self.guest_name} ({self.guest_code})'
+        from .evaluator_identity import public_guest_name
+        return f'External panelist: {public_guest_name(self.guest_name)}'
 
     def clean(self):
         if bool(self.panelist_id) == bool(self.guest_code_id):
@@ -576,7 +587,16 @@ class StudentStageGrade(models.Model):
         return f'{self.student} grade summary for {self.team_grade}'
 
 
+class ActivePeerSubmissionManager(models.Manager):
+    def get_queryset(self):
+        return super().get_queryset().filter(is_void=False)
+
+
 class PeerEvaluationSubmission(models.Model):
+    objects = ActivePeerSubmissionManager()
+    all_objects = models.Manager()
+    is_void = models.BooleanField(default=False)
+    attempt_number = models.PositiveIntegerField(default=1)
     team_grade = models.ForeignKey(
         TeamGrade,
         related_name='peer_evaluation_submissions',
@@ -607,6 +627,7 @@ class PeerEvaluationSubmission(models.Model):
             models.UniqueConstraint(
                 fields=['team_grade', 'evaluator', 'evaluatee'],
                 name='unique_peer_submission_per_evaluator_evaluatee',
+                condition=models.Q(is_void=False),
             ),
         ]
 

@@ -44,6 +44,7 @@ from user_management.academic_records.rollover import next_academic_step
 from user_management.academic_records.serializers import StudentAcademicRecordSerializer
 from student_teams.models import StudentTeam, TeamMembership
 from student_teams.services import is_stage_ready
+from student_teams.team_levels import normalize_year_level
 from student_teams.term_scope import (
     apply_team_scope,
     get_active_semester,
@@ -56,8 +57,21 @@ from student_teams.term_scope import (
 User = get_user_model()
 
 
+def _planner_time_blocks(slots):
+    merged = []
+    for begins, ends in sorted(slots):
+        if merged and begins <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(ends, merged[-1][1]))
+        else:
+            merged.append((begins, ends))
+    return [
+        {'start': begins.isoformat(timespec='minutes'), 'end': ends.isoformat(timespec='minutes')}
+        for begins, ends in merged
+    ]
+
+
 class SchedulePlannerView(APIView):
-    """Small, complete calendar feed for the dashboard's visible date range."""
+    """Shared booking summaries; access to defense records stays cohort-scoped."""
 
     permission_classes = [IsAuthenticated, IsPitLeadOrAdmin]
 
@@ -77,14 +91,17 @@ class SchedulePlannerView(APIView):
             return Response({'sessions': []})
         schedules = DefenseSchedule.objects.filter(
             semester=semester,
-            status=DefenseSchedule.STATUS_SCHEDULED,
+            status__in=(DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE,
+                        DefenseSchedule.STATUS_ARCHIVED),
             scheduled_date__range=(start, end),
-        ).select_related('defense_stage').order_by('scheduled_date', 'start_time', 'pk')
-        if not is_admin:
-            schedules = schedules.filter(
-                scope=DefenseSchedule.SCOPE_PIT,
-                team_id__in=_pit_teams_queryset(user).values('id'),
-            )
+        ).select_related('defense_stage', 'team').prefetch_related(Prefetch(
+            'grade_records',
+            queryset=TeamGrade.all_objects.filter(status=TeamGrade.STATUS_PUBLISHED).only(
+                'schedule_id', 'scope', 'verdict', 'revisions_cleared_at', 'final_grade',
+            ),
+            to_attr='_planner_published_grades',
+        )).order_by('scheduled_date', 'start_time', 'pk')
+        own_team_ids = set() if is_admin else set(_pit_teams_queryset(user).values_list('id', flat=True))
 
         groups = {}
         for schedule in schedules:
@@ -96,27 +113,40 @@ class SchedulePlannerView(APIView):
                 'event_name': schedule.stage_label or 'Defense session',
                 'rooms': set(),
                 'team_ids': set(),
+                'year_levels': set(),
+                'status_counts': {},
+                'can_open': is_admin,
+                'venue_slots': {},
                 'slots': [],
             })
             group['team_ids'].add(schedule.team_id)
+            year = normalize_year_level(schedule.team.year_level or schedule.team.level)
+            if year:
+                group['year_levels'].add(year)
+            group['can_open'] = group['can_open'] or schedule.team_id in own_team_ids
+            # A past date or an assessed attempt does not establish completion.
+            completed = any(grade.scope == TeamGrade.SCOPE_PIT or grade.result == 'passed'
+                            for grade in schedule._planner_published_grades)
+            state = ('archived' if schedule.status == DefenseSchedule.STATUS_ARCHIVED else
+                     'completed' if completed else
+                     'assessed' if schedule.status == DefenseSchedule.STATUS_DONE else 'scheduled')
+            group['status_counts'][state] = group['status_counts'].get(state, 0) + 1
             group['rooms'].add(schedule.room or 'Venue to be confirmed')
             start_at = datetime.combine(schedule.scheduled_date, schedule.start_time)
-            group['slots'].append((start_at, start_at + timedelta(minutes=schedule.slot_duration)))
+            slot = (start_at, start_at + timedelta(minutes=schedule.slot_duration))
+            group['slots'].append(slot)
+            group['venue_slots'].setdefault(schedule.room or 'Venue to be confirmed', []).append(slot)
 
         result = []
         for group in groups.values():
-            merged = []
-            for begins, ends in sorted(group.pop('slots')):
-                if merged and begins <= merged[-1][1]:
-                    merged[-1] = (merged[-1][0], max(ends, merged[-1][1]))
-                else:
-                    merged.append((begins, ends))
             group['team_count'] = len(group.pop('team_ids'))
+            group['year_levels'] = sorted(group['year_levels'])
             rooms = group.pop('rooms')
             group['room'] = next(iter(rooms)) if len(rooms) == 1 else 'multiple rooms'
-            group['time_blocks'] = [
-                {'start': begins.isoformat(timespec='minutes'), 'end': ends.isoformat(timespec='minutes')}
-                for begins, ends in merged
+            group['time_blocks'] = _planner_time_blocks(group.pop('slots'))
+            group['venues'] = [
+                {'room': room, 'time_blocks': _planner_time_blocks(slots)}
+                for room, slots in sorted(group.pop('venue_slots').items())
             ]
             result.append(group)
         return Response({'sessions': result})
@@ -1431,14 +1461,22 @@ class StudentDashboardView(APIView):
     def get(self, request):
         user = request.user
         
-        # First, try to find team through memberships relationship (most reliable)
-        team = (
+        # A student may have different teams across events, or several in one event.
+        owned_teams = (
             StudentTeam.objects.filter(memberships__student=user)
             .select_related('semester', 'semester__school_year', 'leader', 'adviser')
             .prefetch_related('memberships', 'memberships__student', 'deliverable_submissions')
             .order_by('-updated_at', '-id')
-            .first()
         )
+        selected_id = request.query_params.get('team_id')
+        if selected_id:
+            from django.shortcuts import get_object_or_404
+            if not selected_id.isdigit():
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError({'team_id': 'Choose a valid team.'})
+            team = get_object_or_404(owned_teams, pk=int(selected_id))
+        else:
+            team = owned_teams.first()
         academic_record = _latest_academic_record(user)
         team_payload = _team_payload(team) if team else None
         # Query active schedule scoped to team's current defense stage, fallback to most recent schedule of current stage
@@ -1590,6 +1628,9 @@ class StudentDashboardView(APIView):
                 'year_level': academic_record.year_level,
             } if academic_record else None,
             'team': team_payload,
+            'team_options': [{'id': item.pk, 'name': item.name,
+                              'event_name': item.current_defense_stage or '', 'level': item.level,
+                              'semester_id': item.semester_id} for item in owned_teams],
             'schedule': _schedule_payload(schedule),
             'grades': {
                 'status': grade.status,

@@ -68,6 +68,9 @@ def check_pit_event_locked(config, semester=None):
 
     if config.is_officially_complete:
         return True, 'This PIT event is officially complete for the active semester.'
+    from repository.deliverables.models import ConceptRound
+    if ConceptRound.objects.filter(pit_event_config=config).exists():
+        return True, 'Students have already started concept submissions for this PIT event.'
 
     sem = semester or config.semester
 
@@ -109,6 +112,7 @@ def upsert_pit_event_config(
     archive_file_template=None,
     deliverables=None,
     peer_grading_enabled=None,
+    concept_config=None,
     user=None,
     request=None,
 ):
@@ -124,6 +128,8 @@ def upsert_pit_event_config(
         raise ValidationError('Panel and peer weights must total 100%.')
     if deliverables is not None:
         from rest_framework.exceptions import ValidationError as ApiValidationError
+        if not isinstance(deliverables, list) or any(not isinstance(item, dict) for item in deliverables):
+            raise ValidationError({'deliverables': 'Deliverables must be a list of document requirements.'})
         for item in deliverables:
             try:
                 item.update(validate_timing(item))
@@ -145,6 +151,27 @@ def upsert_pit_event_config(
         if rubric and rubric.semester_id != semester.pk:
             raise ValidationError({'rubric': 'Selected rubric belongs to a different semester.'})
     old_values = pit_event_audit_values(existing_config) if existing_config else {}
+    from defense.document_policy import validate_concept_config, validate_file_policy, with_concept_papers
+    concept_config = validate_concept_config(
+        concept_config if concept_config is not None else getattr(existing_config, 'concept_config', {}))
+    concept_deliverables = deliverables if deliverables is not None else (
+        list(existing_config.deliverables.values())
+        if existing_config else [])
+    generated = with_concept_papers(concept_deliverables, concept_config)
+    if generated != concept_deliverables:
+        concept_deliverables = deliverables = generated
+    concept_items = []
+    for item in concept_deliverables:
+        policy = validate_file_policy(item.get('file_policy', {}))
+        if policy.get('mode') == 'concepts':
+            concept_items.append(item)
+    if any(d.get('deliverable_type', 'pre') != 'pre' for d in concept_items):
+        raise ValidationError('Concept documents must be pre-defense requirements.')
+    if concept_config.get('enabled') and not any(
+        d.get('required', True) and d.get('requirement_timing', 'scheduling') == 'scheduling'
+        for d in concept_items
+    ):
+        raise ValidationError('Concept selection needs a required concept-documents deliverable cleared before scheduling.')
 
     # Rubric Exclusivity Check
     if panel_rubric:
@@ -184,12 +211,13 @@ def upsert_pit_event_config(
             changing_code = (
                 event_code is not None and (existing_config.event_code or '').strip() != event_code.strip()
             )
-            if changing_rubrics or changing_weights or changing_code:
+            if changing_rubrics or changing_weights or changing_code or existing_config.concept_config != concept_config:
                 raise ValidationError(f"Cannot update configuration parameters: {lock_reason}")
 
             if deliverables is not None:
                 existing_delivs = list(existing_config.deliverables.all().values(
-                    'id', 'label', 'deliverable_type', 'required', 'is_defense_material'
+                    'id', 'label', 'deliverable_type', 'required', 'is_defense_material',
+                    'file_policy', 'requirement_timing', 'deadline_hours_before'
                 ))
                 if len(deliverables) != len(existing_delivs):
                     raise ValidationError(f"Cannot add or remove deliverables: {lock_reason}")
@@ -205,11 +233,15 @@ def upsert_pit_event_config(
                         or existing_d['deliverable_type'] != d.get('deliverable_type', 'pre').strip()
                         or existing_d['required'] != bool(d.get('required', True))
                         or existing_d.get('is_defense_material', False) != bool(d.get('is_defense_material', False))
+                        or existing_d['file_policy'] != d.get('file_policy', {})
+                        or existing_d['requirement_timing'] != d['requirement_timing']
+                        or existing_d['deadline_hours_before'] != d['deadline_hours_before']
                     ):
                         raise ValidationError(f"Cannot modify deliverable checklist: {lock_reason}")
 
     defaults = {
         'year_level': year_level,
+        'concept_config': concept_config,
         'panel_rubric': panel_rubric,
         'peer_rubric': peer_rubric,
         'panel_weight': panel_weight,
@@ -284,6 +316,8 @@ def upsert_pit_event_config(
                 is_restricted = bool(d.get('is_restricted', False))
                 is_defense_material = bool(d.get('is_defense_material', False))
                 file_format = (d.get('file_format') or 'any').strip()
+                from defense.document_policy import validate_file_policy
+                file_policy = validate_file_policy(d.get('file_policy', {}))
 
                 if target:
                     # Update existing in-place
@@ -298,6 +332,7 @@ def upsert_pit_event_config(
                     target.requirement_timing = d['requirement_timing']
                     target.deadline_hours_before = d['deadline_hours_before']
                     target.file_format = file_format
+                    target.file_policy = file_policy
                     if provided_deliv_id:
                         target.deliverable_id = provided_deliv_id
                     elif not target.deliverable_id or target.deliverable_id.startswith('d_') or target.deliverable_id.startswith('deliv_'):
@@ -319,6 +354,7 @@ def upsert_pit_event_config(
                         requirement_timing=d['requirement_timing'],
                         deadline_hours_before=d['deadline_hours_before'],
                         file_format=file_format,
+                        file_policy=file_policy,
                     )
                     if not deliv.deliverable_id:
                         deliv.deliverable_id = str(deliv.id)
@@ -357,6 +393,7 @@ def pit_event_config_payload(config):
             'requirement_timing': d.requirement_timing,
             'deadline_hours_before': d.deadline_hours_before,
             'file_format': getattr(d, 'file_format', 'any') or 'any',
+            'file_policy': d.file_policy,
         }
         for d in config.deliverables.all().order_by('display_order', 'deliverable_id')
     ]
@@ -371,6 +408,7 @@ def pit_event_config_payload(config):
         'peer_weight': config.peer_weight,
         'is_officially_complete': config.is_officially_complete,
         'peer_grading_enabled': config.peer_grading_enabled,
+        'concept_config': config.concept_config,
         'archive_file_template': config.archive_file_template,
         'is_locked': is_locked,
         'lock_reason': lock_reason,

@@ -8,8 +8,11 @@ DISPLAY_STATUSES = ['scheduled', 'awaiting_evaluation', 'evaluating', 'awaiting_
     'cancelled', 'archived']
 
 
-def schedule_progress(schedule):
-    cached = getattr(schedule, '_workflow_progress', None)
+def schedule_progress(schedule, *, reconcile_status=True):
+    # Deliverable/status presentations must be read-only. Keep their cache
+    # separate so a later operational caller can still reconcile stale status.
+    cache_key = '_workflow_progress' if reconcile_status else '_workflow_progress_readonly'
+    cached = getattr(schedule, cache_key, None)
     if cached is not None:
         return cached
     grade = next(iter(schedule.grade_records.all()), None)
@@ -17,7 +20,9 @@ def schedule_progress(schedule):
         grade = TeamGrade.all_objects.filter(schedule=schedule).select_related('team', 'semester', 'schedule').first()
     history = None if grade else GradeAttemptHistory.objects.filter(schedule=schedule).order_by('-id').first()
     verdict = ''
-    if schedule.scope == 'capstone':
+    from repository.deliverables.concepts import enabled, stage_for
+    uses_verdict = schedule.scope == 'capstone' or enabled(stage_for(schedule.team, schedule.stage_label))
+    if uses_verdict:
         verdict = grade.verdict if grade else history.verdict if history else ''
     evidence = grade or history
     result = {'verdict': verdict, 'attempt_count': grade.attempt_count if grade else history.attempt_number if history else 1,
@@ -36,7 +41,7 @@ def schedule_progress(schedule):
     elif schedule.operation_state != 'normal' and schedule.status == 'scheduled':
         display = schedule.operation_state
     elif grade:
-        if verdict and schedule.status == 'scheduled':
+        if reconcile_status and verdict and schedule.status == 'scheduled':
             from defense.scheduler.models import DefenseSchedule
             DefenseSchedule.objects.filter(pk=schedule.pk, status='scheduled').update(status=DefenseSchedule.STATUS_DONE)
             schedule.status = DefenseSchedule.STATUS_DONE
@@ -44,7 +49,7 @@ def schedule_progress(schedule):
         readiness = team_grading_readiness(grade, grade.semester, grade.scope)
         result.update(panel_evaluators_submitted=readiness['panel_evaluators_submitted'],
                       panel_evaluators_required=readiness['panel_evaluators_required'])
-        if grade.status == 'published' and (grade.scope == TeamGrade.SCOPE_PIT or grade.result == 'passed'):
+        if grade.status == 'published' and (not uses_verdict or grade.result == 'passed'):
             display = 'completed'
         elif grade.status == 'published' and grade.result == 'failed':
             display = 'failed'
@@ -56,10 +61,10 @@ def schedule_progress(schedule):
             display = 'revisions_pending'
         elif verdict in TeamGrade.PASSING_VERDICTS:
             display = 'awaiting_completion' if readiness['ready'] else 'grading_incomplete'
-        elif grade.scope == TeamGrade.SCOPE_PIT and readiness['ready']:
+        elif not uses_verdict and readiness['ready']:
             display = 'awaiting_completion'
         elif readiness['panel_complete']:
-            display = 'awaiting_verdict' if schedule.scope == 'capstone' else 'grading_incomplete'
+            display = 'awaiting_verdict' if uses_verdict else 'grading_incomplete'
         elif readiness['panel_evaluators_submitted'] or grade.panel_score is not None:
             display = 'evaluating'
         else:
@@ -70,6 +75,6 @@ def schedule_progress(schedule):
     # Preserve an explicitly completed defense when its schedule is archived.
     # A submitted score or assessed attempt is not completion.
     result['is_completed'] = bool(grade and grade.status == TeamGrade.STATUS_PUBLISHED
-                                  and (grade.scope == TeamGrade.SCOPE_PIT or grade.result == 'passed'))
-    schedule._workflow_progress = result
+                                  and (not uses_verdict or grade.result == 'passed'))
+    setattr(schedule, cache_key, result)
     return result

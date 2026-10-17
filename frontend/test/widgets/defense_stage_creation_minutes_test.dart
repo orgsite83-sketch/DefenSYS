@@ -197,8 +197,10 @@ void main() {
             await tester.pumpAndSettle();
             await tester.tap(find.text('Before scheduled defense').last);
             await tester.pumpAndSettle();
+            await tester.ensureVisible(find.text('48 hours'));
             await tester.tap(find.text('48 hours'));
             await tester.pumpAndSettle();
+            await tester.ensureVisible(find.text('Required').last);
             await tester.tap(find.text('Required').last);
             await tester.pumpAndSettle();
 

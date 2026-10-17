@@ -138,24 +138,49 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(
-              Icons.linear_scale_rounded,
-              size: 16,
-              color: _isDark ? const Color(0xFFF87171) : DefensysTokens.maroon,
-            ),
-            const SizedBox(width: 7),
-            Text(
-              'Sequence Position in Pipeline',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: _textPrimaryColor,
-                letterSpacing: -0.2,
+            Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: _isDark
+                    ? const Color(0xFFF87171).withValues(alpha: 0.15)
+                    : DefensysTokens.maroon.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.linear_scale_rounded,
+                size: 17,
+                color: _isDark ? const Color(0xFFF87171) : DefensysTokens.maroon,
               ),
             ),
-            const Spacer(),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Sequence Position in Pipeline',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: _textPrimaryColor,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Determine the sequential execution slot of this defense milestone.',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: _textSecondaryColor,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4.5),
               decoration: BoxDecoration(
                 color: widget.isLocked
                     ? (_isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.25) : const Color(0xFFEFF6FF))
@@ -183,7 +208,7 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                         ? 'Position $clampedPos (Locked)'
                         : 'Position $clampedPos of $effectiveTotal',
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: 11.5,
                       fontWeight: FontWeight.w700,
                       color: widget.isLocked
                           ? (_isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8))
@@ -195,17 +220,17 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
             ),
           ],
         ),
-        const SizedBox(height: 5),
+        const SizedBox(height: 10),
 
         // Interactive Guide / Status Bar
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6.5),
           decoration: BoxDecoration(
             color: widget.isLocked
                 ? (_isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.25) : const Color(0xFFEFF6FF))
                 : _inputFillColor,
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: widget.isLocked
                   ? (_isDark ? const Color(0xFF3B82F6).withValues(alpha: 0.4) : const Color(0xFFBFDBFE))
@@ -216,12 +241,12 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
             children: [
               Icon(
                 widget.isLocked ? Icons.lock_outline_rounded : Icons.touch_app_rounded,
-                size: 13.5,
+                size: 14,
                 color: widget.isLocked
                     ? (_isDark ? const Color(0xFF60A5FA) : const Color(0xFF1D4ED8))
                     : (_isDark ? const Color(0xFFF87171) : DefensysTokens.maroon),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   widget.isLocked
@@ -229,7 +254,7 @@ class _PipelinePositionSelectorState extends State<PipelinePositionSelector> {
                           'This stage is finalized for the active semester. Its sequence position cannot be moved.')
                       : 'Drag the highlighted stage card, click any target slot, or use ◀ ▶ arrows to reposition.',
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 11.5,
                     fontWeight: widget.isLocked ? FontWeight.w600 : FontWeight.w500,
                     color: widget.isLocked
                         ? (_isDark ? const Color(0xFFBFDBFE) : const Color(0xFF1E40AF))

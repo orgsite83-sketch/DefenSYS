@@ -19,6 +19,8 @@ def clean_custom_code(raw_value):
 
 
 class StageDeliverable(models.Model):
+    from defense.document_policy import validate_file_policy
+    file_policy = models.JSONField(default=dict, blank=True, validators=[validate_file_policy])
     TYPE_PRE = 'pre'
     TYPE_POST = 'post'
 
@@ -118,6 +120,8 @@ class StageDeliverable(models.Model):
 
 
 class DefenseStage(models.Model):
+    from defense.document_policy import validate_concept_config
+    concept_config = models.JSONField(default=dict, blank=True, validators=[validate_concept_config])
     label = models.CharField(max_length=120, unique=True)
     code = models.SlugField(max_length=140, unique=True, blank=True)
     display_order = models.PositiveSmallIntegerField(default=1)

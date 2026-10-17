@@ -299,7 +299,7 @@ ParsedBulkCsvResult _parseMultiColumnTeamMatrix(
         }
         currentTeam = {
           'team_name': teamName,
-          'project_title': project.isNotEmpty ? project : teamName,
+          'project_title': project,
           'year_level': yearLevel,
           if (yearLevel.isNotEmpty) 'level': yearLevel == '4th Year' ? '4th Year Capstone' : '$yearLevel PIT',
           'member_ids': <String>[if (member.isNotEmpty) member],
@@ -822,7 +822,7 @@ ParsedBulkCsvResult parseTeamBulkCsv(String csv, {bool isSubBlock = false}) {
         }
         currentTeam = {
           'team_name': teamName,
-          'project_title': project.isNotEmpty ? project : teamName,
+          'project_title': project,
           'year_level': inferredYear,
           if (inferredYear.isNotEmpty)
             'level': inferredYear == '4th Year' ? '4th Year Capstone' : '$inferredYear PIT',

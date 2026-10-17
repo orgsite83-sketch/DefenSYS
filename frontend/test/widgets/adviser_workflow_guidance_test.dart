@@ -106,7 +106,7 @@ class _Schedules extends TeamDefenseNotifier {
   @override
   TeamDefenseState build() => TeamDefenseState(schedules: rows);
   @override
-  Future<void> fetch() async {}
+  Future<void> fetch({String? workspace}) async {}
 }
 
 class _Deliverables extends CapstoneDeliverablesNotifier {

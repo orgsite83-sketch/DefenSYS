@@ -63,6 +63,9 @@ def is_stage_ready(team, stage):
         semester=team.semester,
         defense_stage=stage,
     ).first()
+    from repository.deliverables.concepts import clearance_blocker
+    if clearance_blocker(team, stage):
+        return False
     if grade and getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
         return not grade.redefense_verification_required or bool(grade.redefense_verified_at)
     if grade and grade.verdict in ('failed', 'project_rejected'):
@@ -102,6 +105,11 @@ def was_stage_endorsed(team, stage):
     Unlike ``is_stage_ready`` (which matches only 'ready'), this also matches
     later lifecycle statuses such as 'scheduled', 'passed', etc.
     """
+    from repository.deliverables.concepts import enabled, clearance_valid
+    if enabled(stage):
+        return clearance_valid(team, stage)
+    if team.is_pit:
+        return bool(stage and team.ready_for_stage == stage.label)
     progress = get_stage_progress(team, stage)
     return bool(progress and (progress.status in _ENDORSED_STATUSES or (
         progress.status == TeamStageProgress.STATUS_FAILED and progress.ready_at)))

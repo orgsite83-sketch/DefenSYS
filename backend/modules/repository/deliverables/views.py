@@ -149,12 +149,10 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
         if requested_stage in stage_options
         else (stage_options[0] if stage_options else '')
     )
+    teams = [team_payload(team, selected_stage=stage, evaluator=request.user) for team in current]
     return {
-        'teams': [
-            team_payload(team, selected_stage=stage, evaluator=request.user)
-            for team in current
-        ],
-        'counts': counts_payload(current, selected_stage=stage),
+        'teams': teams,
+        'counts': counts_payload(current, selected_stage=stage, serialized_teams=teams),
         'stage_options': stage_options,
         'selected_stage': stage,
         'scope': scope,
@@ -170,6 +168,27 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
 
 def get_allowed_team(request, team_id):
     return get_object_or_404(team_queryset_for_user(request.user), pk=team_id)
+
+
+def deliverables_action_payload(request, team, stage_label):
+    """Opt-in row refresh; legacy clients retain the full list response."""
+    scope = 'pit' if team.is_pit else 'capstone'
+    selected_stage = request.query_params.get('stage_label') or stage_label
+    queryset = team_queryset_for_user(request.user)
+    if request.query_params.get('response_mode') == 'team':
+        # Re-read after the transaction: review/endorsement may update a different
+        # model instance and invalidate the pre-write prefetched submissions.
+        updated = get_object_or_404(queryset, pk=team.pk)
+        return {
+            'response_mode': 'team',
+            'team': team_payload(updated, selected_stage=selected_stage, evaluator=request.user),
+            'matches_filters': filter_teams(request, queryset.filter(pk=team.pk)).exists(),
+            'selected_stage': selected_stage,
+            'scope': scope,
+        }
+    return deliverables_payload(
+        request, filter_teams(request, queryset), selected_stage=selected_stage, scope=scope,
+    )
 
 
 def deliverable_error_response(exc):
@@ -211,14 +230,15 @@ class CapstoneDeliverableUploadView(APIView):
                 file_size=attrs.get('file_size', ''),
                 user=request.user,
                 file=uploaded_file,  # Pass the actual file
-                file_id=attrs.get('file_id'),  # Pass file_id
+                file_id=attrs.get('file_id'),
+                slot_key=attrs.get('slot_key', ''),
             )
         except (PermissionError, ValueError, ValidationError) as exc:
             return deliverable_error_response(exc)
         return Response(
             {
                 'submission_id': submission.id,
-                **deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'),
+                **deliverables_action_payload(request, team, attrs['stage_label']),
             },
             status=status.HTTP_200_OK,
         )
@@ -242,7 +262,7 @@ class CapstoneDeliverableRemoveView(APIView):
             remove_submission(team, attrs['stage_label'], attrs['deliverable_id'], file_id=attrs.get('file_id'))
         except (PermissionError, ValueError, ValidationError) as exc:
             return deliverable_error_response(exc)
-        return Response(deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'), status=status.HTTP_200_OK)
+        return Response(deliverables_action_payload(request, team, attrs['stage_label']), status=status.HTTP_200_OK)
 
 
 class CapstoneDeliverableEndorseView(APIView):
@@ -260,10 +280,10 @@ class CapstoneDeliverableEndorseView(APIView):
             return Response({'detail': 'You do not have permission to endorse deliverables for this team.'}, status=status.HTTP_403_FORBIDDEN)
             
         try:
-            endorse_team(team, attrs['stage_label'])
+            endorse_team(team, attrs['stage_label'], user=request.user)
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'), status=status.HTTP_200_OK)
+        return Response(deliverables_action_payload(request, team, attrs['stage_label']), status=status.HTTP_200_OK)
 
 
 class ReviewEndorseView(APIView):
@@ -285,8 +305,7 @@ class ReviewEndorseView(APIView):
             return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
         except (ValueError, ValidationError) as exc:
             return deliverable_error_response(exc)
-        return Response(deliverables_payload(request, selected_stage=attrs['stage_label'],
-                                             scope='pit' if team.is_pit else 'capstone'))
+        return Response(deliverables_action_payload(request, team, attrs['stage_label']))
 
 
 class CapstoneDeliverableUnendorseView(APIView):
@@ -307,7 +326,7 @@ class CapstoneDeliverableUnendorseView(APIView):
             unendorse_team(team, attrs['stage_label'])
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'), status=status.HTTP_200_OK)
+        return Response(deliverables_action_payload(request, team, attrs['stage_label']), status=status.HTTP_200_OK)
 
 
 class CompileWeeklyReportsView(APIView):
@@ -399,6 +418,7 @@ class CapstoneDeliverableReviewView(APIView):
                 feedback_val=attrs.get('feedback', ''),
                 reviewer_user=request.user,
                 clear_defense_revisions=attrs.get('clear_defense_revisions', False),
+                file_id=attrs.get('file_id'),
             )
         except PermissionError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
@@ -411,7 +431,7 @@ class CapstoneDeliverableReviewView(APIView):
             return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(
-            deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'),
+            deliverables_action_payload(request, team, attrs['stage_label']),
             status=status.HTTP_200_OK
         )
 

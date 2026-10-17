@@ -1857,11 +1857,7 @@ class _FacultyNavItemState extends State<_FacultyNavItem> {
   }
 
   void _handleTapUp(TapUpDetails _) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _isPressed && !widget.isActive) {
-        setState(() => _isPressed = false);
-      }
-    });
+    if (mounted) setState(() => _isPressed = false);
   }
 
   void _handleTap() {

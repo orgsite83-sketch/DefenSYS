@@ -1,3 +1,5 @@
+import 'package:defensys/widgets/repository/concept_workspace.dart';
+import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -210,7 +212,8 @@ class DefenseWorkflowPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (grade['scope'] != 'capstone') return const SizedBox.shrink();
+    final rawWorkflow = grade['workflow'] as Map? ?? {};
+    if (grade['scope'] != 'capstone' && rawWorkflow['concept_workflow'] == null) return const SizedBox.shrink();
     final user = ref.watch(authProvider).user ?? <String, dynamic>{};
     final workflow = Map<String, dynamic>.from(grade['workflow'] as Map? ?? {});
     final admin = user['role'] == 'admin' || user['is_superuser'] == true;
@@ -219,6 +222,7 @@ class DefenseWorkflowPanel extends ConsumerWidget {
     final adviser = admin || id != null && id == workflow['adviser_id'];
     final busy = ref.watch(gradeCenterProvider).isSaving;
     final verdict = grade['verdict']?.toString() ?? '';
+    final conceptWorkflow = workflow['concept_workflow'] as Map?;
     final failed = verdict == 'failed' || verdict == 'project_rejected';
     final revisions =
         verdict == 'approved_with_revisions' &&
@@ -234,18 +238,24 @@ class DefenseWorkflowPanel extends ConsumerWidget {
         : revisions
         ? 'Revision clearance pending'
         : redefense
-        ? 'Graded re-defense required'
+        ? (conceptWorkflow == null ? 'Graded re-defense required' : 'Concept re-defense · Attempt ${conceptWorkflow['round']}')
         : published
         ? 'Stage complete · eligible for this stage’s archiving'
         : workflow['passed_and_cleared'] == true
         ? 'Approved and cleared · finish required grading and stage completion'
         : 'Awaiting panel evaluations and the chair verdict';
     final explanation = failed
-        ? authorized
+        ? grade['scope'] == 'pit'
+              ? 'This concept hearing is closed. The recorded concepts, documents, and panel feedback remain in history.'
+              : authorized
               ? 'The authorized retake keeps adviser and peer grades. The previous failure remains in history.'
               : 'An admin must record an authorized recovery decision before another defense can be scheduled.'
         : revisions
-        ? 'Keep all grades and the existing adviser. Verify the corrections; schedule a compliance presentation if needed.'
+        ? grade['scope'] == 'pit'
+              ? 'Keep the hearing and its grades. Verify the required concept corrections before clearance.'
+              : 'Keep all grades and the existing adviser. Verify the corrections; schedule a compliance presentation if needed.'
+        : redefense && conceptWorkflow != null
+        ? '${conceptWorkflow['next_step']} Score carry-over follows the configured stage policy.'
         : redefense
         ? verificationPending
               ? 'The panel requested adviser verification of corrections before scheduling. The existing endorsement is retained.'
@@ -288,6 +298,7 @@ class DefenseWorkflowPanel extends ConsumerWidget {
             const SizedBox(height: 6),
             Text('Compliance review: ${grade['compliance_review_date']}'),
           ],
+          if (conceptWorkflow != null) DefensysShadcnScope(child: ConceptHistory(workflow: Map<String, dynamic>.from(conceptWorkflow))),
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,
@@ -295,14 +306,12 @@ class DefenseWorkflowPanel extends ConsumerWidget {
             children: [
               if (revisions && (chair || adviser) && !published) ...[
                 action('Verify and clear revisions', 'clear_revisions'),
-                action(
-                  'Schedule compliance review',
-                  'schedule_compliance_review',
-                ),
+                if (grade['scope'] == 'capstone')
+                  action('Schedule compliance review', 'schedule_compliance_review'),
               ],
-              if (redefense && verificationPending && adviser)
+              if (redefense && verificationPending && adviser && conceptWorkflow == null)
                 action('Verify required corrections', 'verify_redefense'),
-              if (failed && admin) ...[
+              if (failed && admin && grade['scope'] == 'capstone') ...[
                 if (verdict == 'failed' && !authorized)
                   action('Authorize another attempt', 'authorize_retake'),
                 action(
@@ -311,7 +320,7 @@ class DefenseWorkflowPanel extends ConsumerWidget {
                 ),
                 action('Keep failed / no further attempt', 'keep_blocked'),
               ],
-              if (admin && (authorized || redefense && !verificationPending))
+              if (admin && (authorized || redefense && !verificationPending && (conceptWorkflow == null || workflow['redefense_ready'] == true)))
                 FilledButton(
                   onPressed: busy
                       ? null

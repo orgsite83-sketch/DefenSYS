@@ -252,6 +252,27 @@ class DeliverableFormatInfo {
     this.badgeCode = 'DOC',
   });
 
+  String recommendedFileName(String suggestedName, {String? selectedFileName}) {
+    final suggested = suggestedName.trim();
+    if (suggested.isEmpty) return '';
+
+    final dot = suggested.lastIndexOf('.');
+    final suggestedExtension = dot > 0 ? suggested.substring(dot + 1) : '';
+    final selected = selectedFileName?.trim() ?? '';
+    final selectedDot = selected.lastIndexOf('.');
+    final selectedExtension = selectedDot > 0
+        ? selected.substring(selectedDot + 1)
+        : '';
+    var extension = suggestedExtension;
+    if (selectedExtension.isNotEmpty) {
+      extension = selectedExtension;
+    } else if (!extensions.contains(suggestedExtension.toLowerCase())) {
+      extension = extensions.first;
+    }
+    final base = dot > 0 ? suggested.substring(0, dot) : suggested;
+    return '$base.$extension';
+  }
+
   static DeliverableFormatInfo fromFileName(String fileName) {
     final clean = fileName.trim().toLowerCase();
     final dotIndex = clean.lastIndexOf('.');

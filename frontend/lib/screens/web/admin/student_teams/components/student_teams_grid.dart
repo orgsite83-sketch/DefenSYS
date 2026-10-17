@@ -16,6 +16,7 @@ int? _asInt(dynamic value) {
 }
 
 String _projectTitle(Map<String, dynamic> team) {
+  if (team['project_pending'] == true) return 'Project not selected';
   final title = team['project_title']?.toString();
   if (title != null && title.trim().isNotEmpty) {
     return title;

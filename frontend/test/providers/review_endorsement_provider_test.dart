@@ -11,7 +11,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   tearDown(resetApiHttpClientForTesting);
   test(
-    'combined review sends the displayed snapshot and refreshes after success',
+    'combined review sends the displayed snapshot and uses the returned list',
     () async {
       final requests = <http.Request>[];
       setApiHttpClientForTesting(
@@ -36,7 +36,8 @@ void main() {
         'stage_label': 'Concept Proposal',
         'review_token': 'displayed-files-token',
       });
-      expect(requests.last.method, 'GET');
+      expect(requests, hasLength(1));
+      expect(post.url.queryParameters['response_mode'], 'team');
       expect(container.read(capstoneDeliverablesProvider).error, isNull);
     },
   );

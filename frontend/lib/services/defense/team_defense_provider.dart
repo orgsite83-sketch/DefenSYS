@@ -31,17 +31,22 @@ final pitInstructorDefenseProvider =
 /// by its team, so multi-role users only see that team's defense records.
 class TeamDefenseNotifier extends Notifier<TeamDefenseState> {
   String get scope => 'capstone';
+  String? get defaultWorkspace => null;
 
   @override
   TeamDefenseState build() => const TeamDefenseState();
 
-  Future<void> fetch() async {
+  Future<void> fetch({String? workspace}) async {
     if (state.isLoading) return;
     state = TeamDefenseState(isLoading: true, schedules: state.schedules);
     try {
-      final uri = Uri.parse(
-        ApiConfig.defenseBoardUrl,
-      ).replace(queryParameters: {'scope': scope});
+      final uri = Uri.parse(ApiConfig.defenseBoardUrl).replace(
+        queryParameters: {
+          'scope': scope,
+          if (workspace ?? defaultWorkspace case final String selectedWorkspace)
+            'workspace': selectedWorkspace,
+        },
+      );
       final response = await ref.read(authenticatedHttpClientProvider).get(uri);
       if (!ref.mounted) return;
       if (response.statusCode != 200) {
@@ -76,4 +81,6 @@ class TeamDefenseNotifier extends Notifier<TeamDefenseState> {
 class PitInstructorDefenseNotifier extends TeamDefenseNotifier {
   @override
   String get scope => 'pit';
+  @override
+  String get defaultWorkspace => 'instructor';
 }

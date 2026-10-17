@@ -177,8 +177,11 @@ class DeliverableSubmission(models.Model):
                 ).first()
         self.full_clean()
         
-        # Extract PDF content if file exists and hasn't been extracted yet
-        if self.file and not self.extracted_text:
+        # Metadata reviews must not reopen/reprocess a stored file (including
+        # image-only PDFs and other formats that legitimately have no text).
+        update_fields = kwargs.get('update_fields')
+        process_file = update_fields is None or 'file' in update_fields
+        if process_file and self.file and not self.extracted_text:
             from .pdf_processor import extract_pdf_from_file_object
             try:
                 with self.file.open('rb') as stored:
@@ -214,7 +217,7 @@ class DeliverableSubmission(models.Model):
         Use the prefetched collection when available and break timestamp ties
         by ID so every consumer selects the same revision.
         """
-        return max(self.files.all(), key=lambda f: (f.uploaded_at, f.pk), default=None)
+        return max((f for f in self.files.all() if f.is_current), key=lambda f: (f.uploaded_at, f.pk), default=None)
 
     @property
     def file_url(self):
@@ -225,6 +228,14 @@ class DeliverableSubmission(models.Model):
 
 
 class DeliverableSubmissionFile(models.Model):
+    slot_key = models.CharField(max_length=100, default='primary')
+    revision = models.PositiveIntegerField(default=1)
+    is_current = models.BooleanField(default=True)
+    status = models.CharField(max_length=20, default='pending', choices=DeliverableSubmission.STATUS_CHOICES)
+    feedback = models.TextField(blank=True, default='')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='reviewed_deliverable_files')
     submission = models.ForeignKey(
         'DeliverableSubmission',
         related_name='files',
@@ -280,6 +291,8 @@ class DeliverableSubmissionFile(models.Model):
         app_label = 'repository'
         db_table = 'capstone_deliverables_deliverablesubmissionfile'
         ordering = ['uploaded_at']
+        constraints = [models.UniqueConstraint(fields=['submission', 'slot_key'],
+            condition=models.Q(is_current=True), name='unique_current_document_slot')]
 
     def clean(self):
         if not self.file_name.strip():
@@ -319,4 +332,41 @@ class DeliverableSubmissionFile(models.Model):
 
     def __str__(self):
         return f'{self.submission} - {self.file_name}'
+
+
+class ConceptRound(models.Model):
+    """A concept set and the immutable evidence presented in one hearing."""
+    team = models.ForeignKey('student_teams.StudentTeam', on_delete=models.CASCADE, related_name='concept_rounds')
+    defense_stage = models.ForeignKey('defense.DefenseStage', on_delete=models.PROTECT, null=True, blank=True)
+    pit_event_config = models.ForeignKey('defense.PitEventGradingConfig', on_delete=models.PROTECT, null=True, blank=True)
+    project_version = models.PositiveIntegerField(default=1)
+    number = models.PositiveIntegerField(default=1)
+    concepts = models.JSONField(default=list)
+    policy_snapshot = models.JSONField(default=dict, blank=True)
+    schedule = models.OneToOneField('defense.DefenseSchedule', null=True, blank=True,
+        on_delete=models.PROTECT, related_name='concept_round')
+    documents_snapshot = models.JSONField(default=list, blank=True)
+    verdict = models.CharField(max_length=30, blank=True, default='')
+    remarks = models.TextField(blank=True, default='')
+    replacement_required = models.BooleanField(default=False)
+    review_required = models.BooleanField(default=True)
+    endorsed_at = models.DateTimeField(null=True, blank=True)
+    endorsed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='endorsed_concept_rounds')
+    endorsement_snapshot = models.JSONField(default=list, blank=True)
+    override_reason = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = 'repository'
+        constraints = [
+            models.CheckConstraint(condition=(
+                models.Q(defense_stage__isnull=False, pit_event_config__isnull=True) |
+                models.Q(defense_stage__isnull=True, pit_event_config__isnull=False)), name='concept_round_one_context'),
+            models.UniqueConstraint(fields=['team', 'defense_stage', 'project_version', 'number'],
+                name='unique_team_concept_round'),
+            models.UniqueConstraint(fields=['team', 'pit_event_config', 'project_version', 'number'],
+                name='unique_team_pit_concept_round'),
+        ]
+        ordering = ['number', 'id']
 

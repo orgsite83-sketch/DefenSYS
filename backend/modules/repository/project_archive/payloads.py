@@ -181,8 +181,8 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
                 is_restricted=True
             ).exists()
 
-    latest_file = submission.latest_file
-    files = [latest_file] if latest_file else []
+    from repository.deliverables.documents import current_files
+    files = current_files(submission)
 
     if not files:
         entry_id = f'pit-deliverable-{submission.id}' if is_pit else f'capstone-{submission.id}'
@@ -234,13 +234,16 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
         return [payload]
 
     payloads = []
+    from repository.deliverables.services import definition_for
+    managed = bool((definition_for(team, submission.stage_label, submission.deliverable_id) or {}).get('file_policy'))
     for f in files:
+        review_status = f.status if managed else submission.status
         entry_id = f'pit-deliverable-{submission.id}-{f.id}' if is_pit else f'capstone-{submission.id}-{f.id}'
         status_display = {
             DeliverableSubmission.STATUS_ACCEPTED: 'Approved',
             DeliverableSubmission.STATUS_REJECTED: 'Needs Revision',
             DeliverableSubmission.STATUS_PENDING: 'Pending Review',
-        }.get(submission.status, (submission.status or 'Approved').title())
+        }.get(review_status, (review_status or 'pending').title())
         deliverable_type_label = 'Post-Defense' if is_post else 'Pre-Defense'
 
         canonical_name = ''
@@ -252,6 +255,7 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
                 submission.stage_label,
                 (submission.archive_semester or team.semester).label if (submission.archive_semester or team.semester) else '1st Semester',
                 deliverable_label=submission.label,
+                file_extension=f.file_name.rpartition('.')[2],
             )
 
         payload = {
@@ -280,7 +284,7 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
             'uploaded_by': display_name(submission.uploaded_by) or 'System',
             'uploaded_at': f.uploaded_at,
             'can_override': True,
-            'feedback': submission.feedback or '',
+            'feedback': (f.feedback if managed else submission.feedback) or '',
             'file_replacement_unlocked': submission.file_replacement_unlocked,
             'file_replacement_reason': submission.file_replacement_reason,
             'audit_trail': [],

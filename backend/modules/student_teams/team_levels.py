@@ -311,7 +311,7 @@ def prepare_bulk_row(
         # Use explicit CSV columns when available; fall back to row keys for backwards compat
         columns_to_check = set(csv_columns) if csv_columns else set(row.keys())
         normalized_columns = _normalize_csv_columns(columns_to_check)
-        pit_template = {'team_name', 'project_title', 'member_ids', 'leader_id'}
+        pit_template = {'team_name', 'member_ids', 'leader_id'}
         if is_pit_lead or (is_admin and is_pit_section_import):
             if normalized_columns & {'adviser_id', 'year_level'}:
                 return None, [
@@ -323,7 +323,7 @@ def prepare_bulk_row(
             )
             if not (is_pit_legacy or is_pit_client):
                 return None, [
-                    "Wrong Template: PIT import templates must contain 'team_name', 'project_title', 'member_ids', and 'leader_id' columns (or 'Team Name' and 'Team Members' for multi-row format)."
+                    "Wrong Template: PIT import templates must contain 'team_name', 'member_ids', and 'leader_id' columns (or 'Team Name' and 'Team Members' for multi-row format). Project/Module is optional."
                 ]
         elif is_admin:
             is_client_template = ('team_name' in normalized_columns or 'team name' in normalized_columns) and (

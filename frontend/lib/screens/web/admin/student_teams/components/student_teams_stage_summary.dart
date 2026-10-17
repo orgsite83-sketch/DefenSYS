@@ -7,6 +7,8 @@ import 'package:defensys/theme/defensys_tokens.dart';
 String? teamCurrentStageStatus(Map<String, dynamic> team) {
   final context = team['defense_context'];
   if (context is! Map) return null;
+  final workflow = context['concept_workflow'];
+  if (workflow is Map && workflow['enabled'] == true) return workflow['status']?.toString();
   final status = context['stage_status']?.toString().trim();
   return status == null || status.isEmpty ? null : status;
 }
@@ -17,17 +19,35 @@ String _stageStatusLabel(String? status) => switch (status) {
   'scheduled' => 'Scheduled',
   'grading' => 'Grading',
   'passed' => 'Stage passed',
-  'failed' => 'Needs follow-up',
+  'replacement_concepts_needed' => 'Replacement concepts needed',
+  'concepts_needed' => 'Concepts needed',
+  'concept_review_pending' => 'Adviser review pending',
+  'concept_endorsement_pending' => 'Awaiting endorsement',
+  'ready_to_schedule_redefense' => 'Ready for re-defense scheduling',
+  'ready_to_schedule' => 'Ready to schedule',
+  'approved' => 'Concept approved',
+  'approved_with_revisions' => 'Revisions required',
+  'project_rejected' => 'Project rejected',
+  'failed' => 'Failed',
   'archived' => 'Stage archived',
   _ => 'No stage update',
 };
 
 Color _stageStatusColor(String? status, bool isDark) => switch (status) {
   'ready' ||
+  'ready_to_schedule' ||
+  'ready_to_schedule_redefense' ||
   'scheduled' => isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
   'passed' ||
+  'approved' ||
   'archived' => isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857),
+  'project_rejected' ||
   'failed' => isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C),
+  'replacement_concepts_needed' ||
+  'concepts_needed' ||
+  'concept_review_pending' ||
+  'concept_endorsement_pending' ||
+  'approved_with_revisions' ||
   'grading' => isDark ? const Color(0xFFFCD34D) : const Color(0xFF92400E),
   _ => isDark ? DefensysTokens.textSecondaryDark : DefensysUi.steelGrey,
 };
@@ -39,7 +59,7 @@ Widget currentStageBadge(BuildContext context, Map<String, dynamic> team) {
   return Tooltip(
     message: status == null
         ? 'No progress update is recorded for this stage.'
-        : 'Progress for this team’s current defense stage.',
+        : ((team['defense_context'] as Map? ?? {})['concept_workflow'] as Map? ?? {})['next_step']?.toString() ?? 'Progress for this team’s current defense stage.',
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
@@ -82,7 +102,7 @@ class StudentTeamsSummaryCards extends StatelessWidget {
       return adviser == null || adviser.toString().trim().isEmpty;
     }).length;
     final ready = state.teams
-        .where((team) => teamCurrentStageStatus(team) == 'ready')
+        .where((team) => const {'ready', 'ready_to_schedule', 'ready_to_schedule_redefense'}.contains(teamCurrentStageStatus(team)))
         .length;
     final scheduled = state.teams
         .where((team) => teamCurrentStageStatus(team) == 'scheduled')

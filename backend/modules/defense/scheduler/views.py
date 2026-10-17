@@ -197,6 +197,7 @@ class PitEventConfigLookupView(APIView):
                 'peer_weight': 20,
                 'is_officially_complete': False,
                 'peer_grading_enabled': True,
+                'concept_config': {},
                 'archive_file_template': '',
                 'deliverables': [],
             }
@@ -331,6 +332,7 @@ class PitEventConfigLookupView(APIView):
                 archive_file_template=archive_file_template,
                 deliverables=deliverables,
                 peer_grading_enabled=peer_grading_enabled,
+                concept_config=request.data.get('concept_config'),
             )
             return Response({'config': pit_event_config_payload(config)}, status=status.HTTP_200_OK)
         except ValidationError as e:
@@ -860,7 +862,8 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
     progress = schedule_progress(schedule)
     unavailable_reason = grading_unavailable_reason(schedule, team_grade)
     is_capstone = schedule.scope == DefenseSchedule.SCOPE_CAPSTONE
-    verdict_reason = verdict_unavailable_reason(schedule, team_grade) if is_capstone else ''
+    uses_verdict = team_grade.uses_defense_verdict if team_grade else is_capstone
+    verdict_reason = verdict_unavailable_reason(schedule, team_grade) if uses_verdict else ''
     raw_weights = weights_for_schedule(schedule)
     grade_weights = _grade_weights_payload(schedule, raw_weights)
     panel_rubric = _panel_rubric_payload(schedule.rubric, grade_weights)
@@ -874,16 +877,16 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
     from grading.grades.models import GradeAttemptHistory
     attempt = team_grade or GradeAttemptHistory.objects.filter(schedule=schedule).select_related('verdict_by').order_by('-pk').first()
     if attempt:
-        verdict = (attempt.verdict or '') if is_capstone else ''
-        verdict_remarks = (attempt.verdict_remarks or '') if is_capstone else ''
-        if is_capstone and attempt.verdict_by:
+        verdict = (attempt.verdict or '') if uses_verdict else ''
+        verdict_remarks = (attempt.verdict_remarks or '') if uses_verdict else ''
+        if uses_verdict and attempt.verdict_by:
             verdict_by_name = (
                 f"{attempt.verdict_by.first_name} {attempt.verdict_by.last_name}".strip()
                 or attempt.verdict_by.username
             )
         revision_deadline = (
             attempt.revision_deadline.isoformat()
-            if is_capstone and attempt.revision_deadline
+            if uses_verdict and attempt.revision_deadline
             else None
         )
         attempt_count = (team_grade.attempt_count if team_grade else attempt.attempt_number) or 1
@@ -896,21 +899,22 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
         if item.get('is_defense_material', False) and item.get('uploaded')
     ]
     defense_materials = []
-    for item in raw_defense_materials:
-        sub = item.get('submission') or {}
-        file_url = sub.get('file_url') or item.get('file_url') or ''
-        file_name = sub.get('file_name') or item.get('file_name') or ''
-        file_size = sub.get('file_size') or item.get('file_size') or ''
-        name = item.get('label') or item.get('name') or 'Defense Material'
-        mat_entry = dict(item)
-        mat_entry.update({
-            'name': name,
-            'label': name,
-            'file_name': file_name,
-            'file_url': file_url,
-            'file_size': file_size,
-        })
-        defense_materials.append(mat_entry)
+    from repository.deliverables.models import ConceptRound
+    hearing = ConceptRound.objects.filter(schedule=schedule).first()
+    if hearing and hearing.verdict:
+        material_groups = [g for g in hearing.documents_snapshot if g.get('is_defense_material')]
+        for group in material_groups:
+            for file in group['files']:
+                name = group.get('document_labels', {}).get(file.get('slot_key'), group.get('label', 'Defense material'))
+                defense_materials.append({**file, 'name': name, 'label': name, 'is_defense_material': True})
+    else:
+        for item in raw_defense_materials:
+            sub = item.get('submission') or {}
+            files = sub.get('files') or [sub]
+            labels = {slot['key']: slot['label'] for slot in item.get('document_slots', [])}
+            for file in files:
+                name = labels.get(file.get('slot_key'), item.get('label') or 'Defense material')
+                defense_materials.append({**item, **file, 'name': name, 'label': name})
 
     leader_name = ''
     if getattr(team, 'leader', None):
@@ -972,8 +976,8 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
         'grading_available': not is_posted and not unavailable_reason,
         'grading_unavailable_reason': unavailable_reason,
         'evaluation_context': evaluation_context(schedule, team_grade),
-        'can_issue_verdict': is_capstone and is_chair and not verdict_reason,
-        'verdict_unavailable_reason': verdict_reason if is_capstone and is_chair else '',
+        'can_issue_verdict': uses_verdict and is_chair and not verdict_reason,
+        'verdict_unavailable_reason': verdict_reason if uses_verdict and is_chair else '',
         'submissions': submissions or [],
         'defense_materials': defense_materials,
         'is_chair': is_chair,
@@ -1389,7 +1393,9 @@ class DefenseScheduleVerdictView(APIView):
         try:
             team_grade = record_verdict(team_grade, actor=request.user, verdict=verdict,
                 remarks=verdict_remarks, deadline=parsed_deadline,
-                verification_required=drf_serializers.BooleanField().run_validation(request.data.get('redefense_verification_required', False)))
+                verification_required=drf_serializers.BooleanField().run_validation(request.data.get('redefense_verification_required', False)),
+                concept_decisions=request.data.get('concept_decisions'),
+                replacement_concepts_required=drf_serializers.BooleanField().run_validation(request.data.get('replacement_concepts_required', False)))
         except ValidationError as exc:
             return Response({'detail': ' '.join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
         except PermissionError as exc:

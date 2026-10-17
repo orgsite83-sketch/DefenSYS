@@ -47,6 +47,9 @@ class GradeBreakdownSerializer(serializers.ModelSerializer):
     student_id = serializers.IntegerField(source='student.id', read_only=True, allow_null=True)
     student_username = serializers.CharField(source='student.username', read_only=True, allow_null=True)
     student_name = serializers.SerializerMethodField()
+    remarks = serializers.SerializerMethodField()
+    panelist_key = serializers.SerializerMethodField()
+    evaluator_name = serializers.SerializerMethodField()
 
     class Meta:
         model = GradeBreakdown
@@ -60,6 +63,8 @@ class GradeBreakdownSerializer(serializers.ModelSerializer):
             'weight_snapshot',
             'normalized_score',
             'remarks',
+            'panelist_key',
+            'evaluator_name',
             'display_order',
             'student_id',
             'student_username',
@@ -68,6 +73,19 @@ class GradeBreakdownSerializer(serializers.ModelSerializer):
 
     def get_student_name(self, obj):
         return display_name(obj.student) if obj.student else None
+
+    def _identity(self, obj):
+        from .evaluator_identity import breakdown_identity
+        return breakdown_identity(obj, self.context.get('legacy_panel_submissions'))
+
+    def get_remarks(self, obj):
+        return self._identity(obj)['remarks']
+
+    def get_panelist_key(self, obj):
+        return self._identity(obj)['panelist_key']
+
+    def get_evaluator_name(self, obj):
+        return self._identity(obj)['evaluator_name']
 
 
 class StudentStageGradeSerializer(serializers.ModelSerializer):
@@ -258,25 +276,35 @@ class TeamGradeSerializer(serializers.ModelSerializer):
         rows = (
             [row for row in prefetched if not row.is_void]
             if prefetched is not None
-            else obj.breakdowns.filter(is_void=False).select_related('rubric', 'student')
+            else obj.breakdowns.filter(is_void=False).select_related('rubric', 'student', 'source_submission__panelist')
         )
         cache[obj.pk] = list(rows)
         self._breakdown_rows = cache
         return cache[obj.pk]
 
     def get_breakdowns(self, obj):
-        return GradeBreakdownSerializer(self._active_breakdowns(obj), many=True).data
+        return GradeBreakdownSerializer(self._active_breakdowns(obj), many=True,
+            context={'legacy_panel_submissions': self._legacy_panel_submissions(obj)}).data
+
+    def _legacy_panel_submissions(self, obj):
+        from .services import guest_panelist_remark_key
+        return {guest_panelist_remark_key(row.guest_name, row.guest_code): row
+                for row in self._panel_submissions(obj) if row.guest_code_id}
 
     def get_panel_evaluation_scores(self, obj):
-        from .services import _panelist_key_from_breakdown_remarks, panelist_percentage_from_breakdowns
+        from .services import panelist_percentage_from_breakdowns
+        from .evaluator_identity import breakdown_identity
+        legacy = self._legacy_panel_submissions(obj)
         groups = {}
         for row in self._active_breakdowns(obj):
             if row.evaluation_type == GradeBreakdown.EVAL_PANEL:
-                key = _panelist_key_from_breakdown_remarks(row.remarks)
+                key = breakdown_identity(row, legacy)['panelist_key']
+                if key is None:
+                    continue
                 groups.setdefault(key, []).append(row)
         values = []
         for key, rows in groups.items():
-            panelist_key = key.split(':', 1)[-1].strip() if ':' in key else key
+            panelist_key = key
             students = {row.student_id for row in rows if row.student_id is not None} or {None}
             for student_id in sorted(students, key=lambda value: value or 0):
                 selected = [row for row in rows if row.student_id in (None, student_id)]
@@ -309,10 +337,19 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             'peer': obj.peer_weight,
         }
 
+    def _panel_submissions(self, obj):
+        cache = getattr(self, '_submission_rows', {})
+        if obj.pk not in cache:
+            cache[obj.pk] = [row for row in obj.panelist_submissions.all()
+                             if not row.is_void and row.schedule_id == obj.schedule_id]
+            self._submission_rows = cache
+        return cache[obj.pk]
+
     def get_panelists(self, obj):
+        from .evaluator_identity import public_guest_name
         if not obj.schedule_id:
             return []
-        return [
+        panelists = [
             {
                 'id': assignment.panelist_id,
                 'username': assignment.panelist.username,
@@ -320,6 +357,23 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             }
             for assignment in obj.schedule.panel_assignments.all()
         ]
+        # Access expiry controls login, not membership of the assessment roster.
+        # Keep submitted identities after revocation and use IDs instead of access codes.
+        submitted_guests = {row.guest_code_id: row for row in self._panel_submissions(obj) if row.guest_code_id}
+        invitations = {str(item.pk): item for item in [
+            *obj.schedule.guest_invitations.all(), *obj.schedule.guest_panelist_codes.all(),
+        ]}
+        for guest_id in sorted(invitations.keys() | submitted_guests.keys()):
+            invitation = invitations.get(guest_id)
+            submission = submitted_guests.get(guest_id)
+            if not submission and (not invitation or not invitation.is_active):
+                continue
+            name = (invitation.evaluator.name if invitation and invitation.evaluator_id
+                    else invitation.guest_name if invitation else submission.guest_name)
+            # Older clients also use username as their column lookup key.
+            panelists.append({'id': None, 'username': f'guest:{guest_id}', 'name': public_guest_name(name),
+                              'panelist_key': f'guest:{guest_id}', 'is_external': True})
+        return panelists
 
     def get_published_by_name(self, obj):
         return display_name(obj.published_by)

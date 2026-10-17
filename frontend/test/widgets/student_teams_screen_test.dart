@@ -269,7 +269,7 @@ void main() {
     expect(find.text('Pending result'), findsNothing);
     await tester.tap(find.text('BSIT-4A'));
     await tester.pumpAndSettle();
-    expect(find.text('STAGE PROGRESS'), findsOneWidget);
+    expect(find.text('STAGE & DELIVERABLES'), findsOneWidget);
     expect(find.text('Ready to schedule'), findsNWidgets(2));
     expect(find.text('Stage passed'), findsOneWidget);
     expect(find.text('View'), findsNWidgets(4));

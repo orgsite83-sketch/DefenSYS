@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -519,6 +521,16 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                 if (config['panel_rubric_id'] == null) 'panel',
                 if (peerWeight > 0 && config['peer_rubric_id'] == null) 'peer',
               ];
+              final rubricStatus = Tooltip(
+                key: ValueKey('pit-event-rubric-status-$configId'),
+                triggerMode: TooltipTriggerMode.tap,
+                message: missingRubrics.isEmpty
+                    ? 'All required evaluation rubrics are linked.'
+                    : 'Attach ${missingRubrics.join(' and ')} evaluation rubric${missingRubrics.length == 1 ? '' : 's'}.',
+                child: missingRubrics.isEmpty
+                    ? const StatusBadge.success(label: 'Rubrics linked')
+                    : const StatusBadge.warning(label: 'Rubrics missing'),
+              );
 
             final eventName = config['event_name']?.toString() ?? '';
             final eventCode = config['event_code']?.toString() ?? '';
@@ -557,7 +569,8 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // Card Header Row: Title, Code, Status & Actions
-                  Row(
+                  LayoutBuilder(
+                    builder: (context, constraints) => Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
@@ -582,7 +595,8 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                                 ),
                                 if (eventCode.isNotEmpty) ...[
                                   const SizedBox(width: 6),
-                                  Container(
+                                  Flexible(
+                                    child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
                                       color: _fill,
@@ -591,12 +605,15 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                                     ),
                                     child: Text(
                                       eventCode,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         color: _muted,
                                         fontSize: 10.5,
                                         fontFamily: 'monospace',
                                         fontWeight: FontWeight.w600,
                                       ),
+                                    ),
                                     ),
                                   ),
                                 ],
@@ -658,8 +675,22 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                         ),
                       ),
                       const SizedBox(width: 8),
-                      _eventActions(config),
+                      if (constraints.maxWidth < 640)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            rubricStatus,
+                            const SizedBox(height: 6),
+                            _eventActions(config),
+                          ],
+                        )
+                      else ...[
+                        rubricStatus,
+                        const SizedBox(width: 8),
+                        _eventActions(config),
+                      ],
                     ],
+                    ),
                   ),
                   const SizedBox(height: 14),
                   // Dual Evaluation Weight Gauge Bar
@@ -749,44 +780,6 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                       ),
                     ],
                   ),
-                          if (missingRubrics.isNotEmpty) ...[
-                            const SizedBox(height: 10),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: DefensysTokens.goldOf(context)
-                                    .withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: DefensysTokens.goldOf(context)
-                                      .withValues(alpha: 0.45),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    LucideIcons.circleAlert,
-                                    size: 15,
-                                    color: DefensysTokens.goldOf(context),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'Attach ${missingRubrics.join(' and ')} evaluation rubric${missingRubrics.length == 1 ? '' : 's'}.',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: _ink,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
                           const SizedBox(height: 10),
                   // Expandable Deliverable Checklist Drawer
                   InkWell(
@@ -1260,6 +1253,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
   int _panelWeight = 80;
   int _peerWeight = 20;
   bool _peerGradingEnabled = true;
+  Map<String, dynamic> _conceptConfig = {};
 
   List<Map<String, dynamic>> _deliverables = [];
   Map<String, dynamic>? _selectedDeliverable;
@@ -1287,6 +1281,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     if (_panelWeight != initialPanelWeight) return true;
     if (_peerWeight != initialPeerWeight) return true;
     if (_peerGradingEnabled != normInitialPeerGrading) return true;
+    if (jsonEncode(_conceptConfig) != jsonEncode(widget.config?['concept_config'] ?? {})) return true;
 
     if (_deliverables.length != initialDelList.length) return true;
 
@@ -1309,6 +1304,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       if ((current['is_defense_material'] == true) != (initial['is_defense_material'] == true)) return true;
       if ((current['requirement_timing'] ?? 'scheduling') != (initial['requirement_timing'] ?? 'scheduling')) return true;
       if ((current['deadline_hours_before'] ?? 24) != (initial['deadline_hours_before'] ?? 24)) return true;
+      if (jsonEncode(current['file_policy'] ?? {}) != jsonEncode(initial['file_policy'] ?? {})) return true;
       if ((current['file_format'] ?? 'any') != (initial['file_format'] ?? 'any')) return true;
 
       final curTplCtrl = current['_templateController'] as TextEditingController?;
@@ -1358,6 +1354,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       _peerWeight = int.tryParse(widget.config!['peer_weight']?.toString() ?? '') ?? 20;
       final initialPeerGrading = widget.config!['peer_grading_enabled'];
       _peerGradingEnabled = initialPeerGrading is bool ? initialPeerGrading : true;
+      _conceptConfig = Map<String, dynamic>.from(widget.config!['concept_config'] as Map? ?? {});
 
       final delList = widget.config!['deliverables'] as List? ?? [];
       _deliverables = delList.map((item) {
@@ -1543,6 +1540,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
         'requirement_timing': d['requirement_timing'] ?? 'scheduling',
         'deadline_hours_before': d['deadline_hours_before'] ?? 24,
         'file_format': d['file_format'] ?? 'any',
+        'file_policy': d['file_policy'] ?? {},
       };
     }).toList();
 
@@ -1556,6 +1554,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       'panel_weight': _panelWeight,
       'peer_weight': _peerWeight,
       'peer_grading_enabled': _peerGradingEnabled,
+      'concept_config': _conceptConfig,
       'archive_file_template': _archiveFileTemplateController.text.trim(),
       'deliverables': deliverablesPayload,
     };
@@ -2321,7 +2320,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                     }
 
                     return Container(
-                      margin: const EdgeInsets.only(top: 12),
+                      margin: const EdgeInsets.only(top: 10),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF8FAFC),
@@ -2336,7 +2335,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               const Icon(Icons.tune_rounded, size: 14, color: Color(0xFF475569)),
                               const SizedBox(width: 6),
                               Text(
-                                isPost ? 'Advanced Post-Defense Rules & Archiving' : 'Advanced Timing & Panel Access',
+                                isPost ? 'Post-Defense Rules & Archiving' : 'Submission Timing & Access Settings',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
@@ -2348,17 +2347,6 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                           ),
                           const SizedBox(height: 10),
                           if (!isPost) ...[
-                            DefenseMaterialToggle(
-                              value: item['is_defense_material'] == true,
-                              enabled: !isLocked,
-                              onChanged: (value) {
-                                setState(() {
-                                  item['is_defense_material'] = value;
-                                });
-                                _markDirty();
-                              },
-                            ),
-                            const SizedBox(height: 8),
                             DeliverableTimingFields(
                               timing: item['requirement_timing']?.toString() ?? 'scheduling',
                               hoursBefore: int.tryParse(item['deadline_hours_before']?.toString() ?? '') ?? 24,
@@ -2371,6 +2359,31 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               },
                               onHoursChanged: (value) {
                                 setState(() => item['deadline_hours_before'] = value);
+                                _markDirty();
+                              },
+                            ),
+                            const SizedBox(height: 10),
+                            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                            const SizedBox(height: 10),
+                            DefenseMaterialToggle(
+                              value: item['is_defense_material'] == true,
+                              enabled: !isLocked,
+                              onChanged: (value) {
+                                setState(() {
+                                  item['is_defense_material'] = value;
+                                });
+                                _markDirty();
+                              },
+                            ),
+                            const SizedBox(height: 10),
+                            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                            const SizedBox(height: 8),
+                            DocumentPolicyEditor(
+                              value: Map<String, dynamic>.from(item['file_policy'] as Map? ?? {}),
+                              enabled: !isLocked,
+                              allowConcepts: !isPost && _conceptConfig['enabled'] == true,
+                              onChanged: (value) {
+                                setState(() => item['file_policy'] = value);
                                 _markDirty();
                               },
                             ),
@@ -2408,6 +2421,20 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               ],
                             ),
                             const SizedBox(height: 10),
+                            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                            const SizedBox(height: 8),
+                            DocumentPolicyEditor(
+                              value: Map<String, dynamic>.from(item['file_policy'] as Map? ?? {}),
+                              enabled: !isLocked,
+                              allowConcepts: false,
+                              onChanged: (value) {
+                                setState(() => item['file_policy'] = value);
+                                _markDirty();
+                              },
+                            ),
+                            const SizedBox(height: 10),
+                            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                            const SizedBox(height: 8),
                             RepositoryArchiveNamingPanel(
                               templateController: templateController,
                               deliverableLabel: labelController.text,
@@ -2918,6 +2945,19 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                   ),
                                 ],
                               ),
+                            ),
+                            const SizedBox(height: 16),
+                            ConceptSettings(
+                              value: _conceptConfig,
+                              enabled: !isLocked && pitYear.isNotEmpty,
+                              isPit: true,
+                              onChanged: (value) {
+                                setState(() {
+                                  _conceptConfig = value;
+                                  ensureConceptPapers(_deliverables, value);
+                                });
+                                _markDirty();
+                              },
                             ),
                           ],
                         ),

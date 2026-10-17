@@ -163,6 +163,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
   @override
   void didUpdateWidget(covariant StudentEventsTab oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.studentData?['team']?['id'] != widget.studentData?['team']?['id']) {
+      _selectedStageForView = widget.studentData?['team']?['currentStage']?.toString();
+    }
     if (oldWidget.subTabNotifier != widget.subTabNotifier) {
       oldWidget.subTabNotifier?.removeListener(_onSubTabNotifierChanged);
       widget.subTabNotifier?.addListener(_onSubTabNotifierChanged);

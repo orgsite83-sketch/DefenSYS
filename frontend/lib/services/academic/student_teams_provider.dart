@@ -404,6 +404,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
         
         body: jsonEncode({
           'teams': rows,
+            if (state.eventName != null && state.level.toUpperCase().contains('PIT')) 'event_name': state.eventName,
           'adviser_filter': adviserFilter,
           if (csvColumns != null) 'csv_columns': csvColumns,
           if (section != null) 'section': section,
@@ -451,6 +452,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
         
         body: jsonEncode({
           'teams': rows,
+            if (state.eventName != null && state.level.toUpperCase().contains('PIT')) 'event_name': state.eventName,
           'adviser_filter': adviserFilter,
           if (csvColumns != null) 'csv_columns': csvColumns,
           if (section != null) 'section': section,
@@ -511,6 +513,11 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
   }
 
   AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
+
+  Future<void> refreshAfterGeneration(int count) async {
+    _markDependentDataChanged();
+    await fetchTeams(successMessage: '$count teams created. Leaders can complete team setup in their portal.');
+  }
 
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {

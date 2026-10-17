@@ -1,4 +1,6 @@
 from django.urls import include, path
+from .formation_views import (TeamFormationView, TeamFormationCommitView, PitTeamPolicyView,
+                              MyTeamSetupView, TeamLeaderSetupView)
 
 from .views import (
     BulkImportTeamsPreviewView,
@@ -14,6 +16,11 @@ from .views import (
 
 
 urlpatterns = [
+    path('generation/', TeamFormationView.as_view(), name='team_formation'),
+    path('generation/create/', TeamFormationCommitView.as_view(), name='team_formation_create'),
+    path('generation/events/<int:event_id>/policy/', PitTeamPolicyView.as_view(), name='pit_team_policy'),
+    path('my-setup/', MyTeamSetupView.as_view(), name='my_team_setup'),
+    path('<int:team_id>/setup/', TeamLeaderSetupView.as_view(), name='team_leader_setup'),
     path('documents/', include('student_teams.documents.urls')),
     path('weekly-progress/', include('student_teams.weekly_progress.urls')),
     path('section-assignments/', SectionAssignmentListCreateView.as_view(), name='section_assignment_list_create'),

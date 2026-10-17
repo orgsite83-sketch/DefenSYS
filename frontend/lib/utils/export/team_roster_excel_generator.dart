@@ -83,7 +83,7 @@ List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone}) {
   final systemName = isCapstone ? 'Hospital Management System' : 'Societree';
   final projectManager = 'Juan Dela Cruz';
 
-  final projectColTitle = isCapstone ? 'Capstone Project' : 'PIT Project';
+  final projectColTitle = isCapstone ? 'Capstone Project (optional)' : 'PIT Project (optional)';
   final adviserColTitle = isCapstone ? 'Adviser' : 'Instructor';
 
   void setCell(int col, int row, String text, CellStyle style) {
@@ -158,7 +158,7 @@ List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone}) {
   // --- ROW 6 (row index 5 in 0-indexed) ---
   // Right: Table 2 Headers (Cols H to L, index 7 to 11)
   setCell(7, 5, 'Team Name', headerStyle);
-  setCell(8, 5, 'Module', headerStyle);
+  setCell(8, 5, 'Module (optional)', headerStyle);
   setCell(9, 5, 'Section', headerCenterStyle);
   setCell(10, 5, adviserColTitle, headerCenterStyle);
   setCell(11, 5, 'Team Members', headerStyle);
@@ -327,6 +327,7 @@ List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone}) {
     );
   }
 
+  setCell(1, 0, 'Project / Module is optional. Omit its column for the stage default (normally 3 proposals); enter an assigned title for one concept.', metaLabelStyle);
   final bytes = excel.save();
   return bytes ?? [];
 }

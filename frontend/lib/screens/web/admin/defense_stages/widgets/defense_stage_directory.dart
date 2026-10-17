@@ -5,6 +5,7 @@ import '../../../../../services/defense_stages_provider.dart';
 import '../../../../../theme/defensys_tokens.dart';
 import '../../../../../widgets/feedback/defensys_skeleton.dart';
 import '../../../../../widgets/shadcn/defensys_shadcn_scope.dart';
+import '../../../../../widgets/status_badge.dart';
 
 bool stageSetupLocked(Map<String, dynamic> stage) =>
     stage['is_locked'] == true || stage['status'] == 'locked';
@@ -547,52 +548,14 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
     final issues = stageSetupIssues(stage);
     final ready = issues.isEmpty;
     return Tooltip(
+      key: ValueKey('stage-setup-status-${stage['id']}'),
+      triggerMode: TooltipTriggerMode.tap,
       message: ready
           ? 'Required grading and deliverable settings are configured.'
           : issues.join('\n'),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: ready
-              ? (_dark
-                  ? DefensysTokens.success.withValues(alpha: .1)
-                  : const Color(0xFFF0FDF4))
-              : (_dark
-                  ? DefensysTokens.goldOf(context).withValues(alpha: .1)
-                  : const Color(0xFFFFFBEB)),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: ready
-                ? _success.withValues(alpha: 0.35)
-                : _warning.withValues(alpha: 0.35),
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              ready ? LucideIcons.circleCheck : LucideIcons.circleAlert,
-              size: 15,
-              color: ready ? _success : _warning,
-            ),
-            const SizedBox(width: 7),
-            Expanded(
-              child: Text(
-                ready
-                    ? 'Setup ready'
-                    : issues.first +
-                          (issues.length > 1
-                              ? ' (+${issues.length - 1} more)'
-                              : ''),
-                style: _small.copyWith(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: ready ? _success : _warning,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+      child: ready
+          ? const StatusBadge.success(label: 'Setup ready')
+          : const StatusBadge.warning(label: 'Setup incomplete'),
     );
   }
 
@@ -674,6 +637,8 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
             ],
           ),
         ),
+        const SizedBox(width: 12),
+        _readiness(stage),
       ],
     );
     return ShadCard(
@@ -719,8 +684,6 @@ class _DefenseStageDirectoryState extends State<DefenseStageDirectory> {
                 _metadataPill(LucideIcons.fileCheck, 'Signed minutes required'),
             ],
           ),
-          const SizedBox(height: 10),
-          _readiness(stage),
           if (stageSetupLocked(stage)) ...[
             const SizedBox(height: 10),
             _lockNotice(stage),

@@ -35,6 +35,52 @@ class ReviewEndorsementTests(APITestCase):
         PitEventDeliverable.objects.create(pit_event_config=event, deliverable_id='DECK', label='Pitch deck', required=True,
                                           requirement_timing='defense', file_format='presentation')
 
+    def assert_separate_review_and_endorsement(self):
+        paper = self.upload('PAPER', 'paper.docx')
+        payload = {'team_id': self.team.pk, 'stage_label': self.stage.label}
+        self.client.force_authenticate(self.adviser)
+
+        def endorse():
+            return self.client.post('/api/repository/deliverables/endorse/', payload, format='json')
+
+        def review(status, feedback=''):
+            return self.client.post('/api/repository/deliverables/review/', {
+                **payload, 'deliverable_id': 'PAPER', 'status': status, 'feedback': feedback,
+            }, format='json')
+
+        self.assertEqual(endorse().status_code, 400)
+        paper.refresh_from_db()
+        self.assertEqual(paper.status, 'pending')
+        self.assertEqual(review('accepted').status_code, 200)
+        self.team.refresh_from_db()
+        self.assertFalse(self.team.ready_for_stage)
+        self.assertTrue(required_complete(self.team, self.stage.label))
+
+        self.assertEqual(review('rejected', 'Clarify the architecture.').status_code, 200)
+        self.assertEqual(endorse().status_code, 400)
+        self.upload('PAPER', 'corrected.docx')
+        self.assertEqual(endorse().status_code, 400)
+        self.assertEqual(review('accepted').status_code, 200)
+        self.assertEqual(endorse().status_code, 200)
+        self.team.refresh_from_db()
+        paper.refresh_from_db()
+        self.assertEqual(self.team.ready_for_stage, self.stage.label)
+        self.assertEqual(paper.status, 'accepted')
+        self.assertEqual(paper.reviewed_by, self.adviser)
+        if self.team.is_capstone:
+            from student_teams.models import TeamStageProgress
+            progress = TeamStageProgress.objects.get(team=self.team, defense_stage=self.stage, semester=self.semester)
+            self.assertEqual(progress.updated_by, self.adviser)
+        self.assertFalse(SystemAuditLog.objects.filter(action='repository.review_and_endorse').exists())
+        self.assertEqual(stage_payload(self.team, self.stage.label)['materials_readiness']['submitted_total'], 0)
+
+    def test_capstone_reviews_files_before_separate_endorsement(self):
+        self.assert_separate_review_and_endorsement()
+
+    def test_pit_reviews_files_before_separate_endorsement(self):
+        self.make_pit()
+        self.assert_separate_review_and_endorsement()
+
     def test_pending_scheduling_files_are_approved_and_endorsed_together_for_both_tracks(self):
         for pit in (False, True):
             with self.subTest(pit=pit):

@@ -71,7 +71,7 @@ class _AdviserDashboardContentState
           yearLevel: '',
           section: '',
         );
-    ref.read(adviserDefenseProvider.notifier).fetch();
+    ref.read(adviserDefenseProvider.notifier).fetch(workspace: 'adviser');
     ref.read(adviserGradingProvider.notifier).fetchAll();
   }
 
@@ -205,19 +205,21 @@ class _AdviserDashboardContentState
     ),
   );
 
-  Widget _upcomingDefenses(
+  Widget _defenseCalendar(
     List<Map<String, dynamic>> schedules,
     Map<int, String> teamNames,
     bool loading,
     bool hasError,
   ) => DefenseScheduleCalendar(
-    title: 'Upcoming defenses',
-    subtitle: 'Select a date to see your teams’ defenses and materials.',
+    title: 'Defense Schedule',
+    subtitle:
+        'Your advisees only · Select a date to see defenses and materials.',
     schedules: schedules,
     teamNames: teamNames,
     loading: loading,
     hasError: hasError,
     onOpenDefense: widget.onOpenDefense,
+    onRefresh: _refresh,
   );
 
   Widget _teamList(
@@ -455,21 +457,6 @@ class _AdviserDashboardContentState
         ),
       );
     }
-    final now = DateTime.now();
-    final upcoming =
-        visibleSchedules.where((schedule) {
-          if (schedule['status'] != 'scheduled') return false;
-          final date = DateTime.tryParse(
-            schedule['scheduled_date']?.toString() ?? '',
-          );
-          return date != null &&
-              !date.isBefore(DateTime(now.year, now.month, now.day));
-        }).toList()..sort(
-          (a, b) => (a['scheduled_date']?.toString() ?? '').compareTo(
-            b['scheduled_date']?.toString() ?? '',
-          ),
-        );
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -528,8 +515,8 @@ class _AdviserDashboardContentState
         const SizedBox(height: 18),
         FacultyDashboardColumns(
           left: _teamList(advisedTeams, deliverablesById),
-          topRight: _upcomingDefenses(
-            upcoming,
+          topRight: _defenseCalendar(
+            visibleSchedules,
             teamNames,
             defense.isLoading,
             defense.error != null,

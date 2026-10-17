@@ -19,6 +19,26 @@ ADVISER_FILTER_WITH_ADVISER = 'with_adviser'
 ADVISER_FILTER_WITHOUT_ADVISER = 'without_adviser'
 
 
+def imported_concept_requirement(data):
+    """Resolve the same intent for preview and commit, before display-title fallbacks."""
+    from .concept_policy import context_key, contexts_for, resolve_policy
+    from .term_scope import get_active_semester
+    title = (data.get('project_title') or '').strip()
+    assignment = {'mode': 'assigned' if title else 'proposals',
+                  'assigned_title': title, 'project_version': 1}
+    candidate = StudentTeam(name=data['team_name'], project_title=title,
+        level=data.get('level', ''), year_level=data.get('year_level', ''),
+        section=data.get('section', ''), semester=get_active_semester(), concept_assignment=assignment)
+    stage = contexts_for(candidate).first()
+    if stage:
+        assignment['context_key'] = context_key(stage)
+    policy = resolve_policy(candidate, stage, use_round=False) if stage else {
+        'mode': assignment['mode'], 'required_count': 1 if title else 3, 'assigned_title': title}
+    label = ('Assigned module' if data.get('system_name') else 'Assigned project') if policy['mode'] == 'assigned' else 'Topic unassigned'
+    return assignment, {**policy, 'label': f'{label} · {policy["required_count"]} concept' +
+        ('' if policy['required_count'] == 1 else 's'), 'stage_label': stage.label if stage else None}
+
+
 PREFIX_PATTERNS = [
     r'associate\s+professor',
     r'assistant\s+professor',
@@ -449,18 +469,25 @@ def is_pit_bulk_row(data, user=None):
     return bool(user and user_is_pit_lead_only(user))
 
 
-def _existing_team_membership_issues(member_user_ids, *, team_name='', level=''):
+def _existing_team_membership_issues(member_user_ids, *, team_name='', level='', event_name=''):
     """Mirror StudentTeamWriteSerializer membership and duplicate-name checks."""
     issues = []
     if not member_user_ids:
         return issues
 
-    for student_id in member_user_ids:
+    from .term_scope import get_active_semester
+    from .membership_policy import allows_multiple, pit_event_memberships
+    semester = get_active_semester()
+    pit = 'PIT' in level.upper()
+    unrestricted = pit and allows_multiple(semester, event_name)
+    for student_id in ([] if unrestricted else member_user_ids):
+        memberships = TeamMembership.objects.filter(student_id=student_id, team__semester=semester)
+        if pit:
+            memberships = pit_event_memberships(memberships.filter(team__level__icontains='PIT'), event_name)
+        else:
+            memberships = memberships.filter(team__level__icontains='Capstone')
         membership = (
-            TeamMembership.objects.filter(
-                student_id=student_id,
-                team__semester__is_active=True,
-            )
+            memberships
             .select_related('team', 'student')
             .first()
         )
@@ -469,7 +496,7 @@ def _existing_team_membership_issues(member_user_ids, *, team_name='', level='')
         student_name = display_name(membership.student)
         issues.append(
             f'{student_name} is already assigned to team "{membership.team.name}". '
-            'A student can only be in one team at a time.'
+            'The selected membership policy allows one team in this context.'
         )
 
     if team_name and level:
@@ -618,9 +645,13 @@ def validate_bulk_team_row(
                 list(member_user_ids),
                 team_name=(data.get('team_name') or '').strip(),
                 level=(data.get('level') or '').strip(),
+                event_name=(data.get('current_defense_stage') or '').strip(),
             )
         )
 
+    concept_assignment, concept_requirement = imported_concept_requirement(data)
+    if concept_requirement['mode'] == 'assigned' and not concept_requirement.get('assigned_title'):
+        issues.append('This section requires one assigned concept. Supply this team’s project/module title.')
     adviser_filter_ok = True if pit_row else row_passes_adviser_filter(adviser_status, adviser_filter)
     ready = (
         not issues
@@ -643,6 +674,8 @@ def validate_bulk_team_row(
         'adviser': adviser,
         'member_ref_map': member_ref_map,
         'data': data,
+        'concept_assignment': concept_assignment,
+        'concept_requirement': concept_requirement,
     }
 
 
@@ -751,6 +784,7 @@ def preview_bulk_teams(
             'ready': result['ready'],
             'issues': result['issues'],
             'warnings': result.get('warnings', []),
+            'concept_requirement': result['concept_requirement'],
         })
 
         summary['total'] += 1
@@ -763,6 +797,13 @@ def preview_bulk_teams(
         if result['ready']:
             summary['ready'] += 1
 
+    sections = {}
+    for row in preview_rows:
+        policy = row.get('concept_requirement')
+        if policy:
+            counts = sections.setdefault(row.get('section', ''), {'assigned': 0, 'proposals': 0})
+            counts[policy['mode']] += 1
+    summary['concept_sections'] = sections
     return preview_rows, summary
 
 
@@ -804,6 +845,7 @@ def build_team_payload_from_row(result, user=None):
         'member_ids': [member_ref_map[item] for item in data['member_ids'] if item in member_ref_map],
         'leader_id': leader.id if leader else None,
         'adviser_id': None if pit_row else (adviser.id if adviser else None),
+        'current_defense_stage': data.get('current_defense_stage') or None,
     }
 
 

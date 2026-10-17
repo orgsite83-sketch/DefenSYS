@@ -471,6 +471,70 @@ void main() {
   });
 
   for (final faculty in [false, true]) {
+    for (final collapsed in [false, true]) {
+      testWidgets(
+        '${faculty ? 'faculty' : 'admin'} ${collapsed ? 'collapsed' : 'expanded'} sidebar clears pressed highlights when switching sections',
+        (tester) async {
+          final prefix = faculty ? '/faculty' : '/admin';
+          final container = await pumpWorkspace(
+            tester,
+            '$prefix/grade-center/grades/6?locked=1',
+            faculty: faculty,
+          );
+          final router = container.read(appRouterProvider);
+          if (collapsed) {
+            await tester.tap(find.byTooltip('Collapse sidebar'));
+            await tester.pumpAndSettle();
+          }
+
+          Finder navIcon(IconData icon) => find.byIcon(icon).first;
+
+          Color? navBackground(IconData icon) {
+            final item = find
+                .ancestor(
+                  of: navIcon(icon),
+                  matching: find.byType(GestureDetector),
+                )
+                .first;
+            final background = tester.widget<Container>(
+              find.descendant(of: item, matching: find.byType(Container)).first,
+            );
+            return (background.decoration! as BoxDecoration).color;
+          }
+
+          void expectSelection(IconData selected, IconData unselected) {
+            expect(navBackground(selected), const Color(0xFF7A110A));
+            expect(navBackground(unselected), isNot(const Color(0xFF7A110A)));
+          }
+
+          const grades = Icons.grade_rounded;
+          const board = Icons.view_agenda_rounded;
+          // Re-clicking the current section used to leave its pressed state set.
+          await tester.tap(navIcon(grades));
+          await tester.pumpAndSettle();
+          await tester.tap(navIcon(board));
+          await tester.pumpAndSettle();
+          expect(router.state.uri.path, '$prefix/defense-board');
+          expectSelection(board, grades);
+
+          await tester.tap(navIcon(board));
+          await tester.pumpAndSettle();
+          await tester.tap(navIcon(grades));
+          await tester.pumpAndSettle();
+          expect(
+            router.state.uri.toString(),
+            '$prefix/grade-center/grades/6?locked=1',
+          );
+          expectSelection(grades, board);
+
+          // The highlight also follows navigation that bypasses a sidebar tap.
+          router.go('$prefix/defense-board');
+          await tester.pumpAndSettle();
+          expectSelection(board, grades);
+        },
+      );
+    }
+
     testWidgets(
       '${faculty ? 'faculty' : 'admin'} team evaluation links preserve section navigation and return state',
       (tester) async {

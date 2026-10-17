@@ -46,7 +46,9 @@ def grading_unavailable_reason(schedule, grade=None):
 def verdict_unavailable_reason(schedule, grade=None):
     """Shared verdict readiness for assignment display and the submit endpoint."""
     if schedule.scope == DefenseSchedule.SCOPE_PIT:
-        return 'PIT events do not use official defense verdicts.'
+        from repository.deliverables.concepts import stage_for, enabled
+        if not enabled(stage_for(schedule.team, schedule.stage_label)):
+            return 'PIT events do not use official defense verdicts.'
     conflict = roster_unavailable_reason(schedule)
     if conflict:
         return f'{conflict} Ask an administrator to correct the panel before issuing a verdict.'

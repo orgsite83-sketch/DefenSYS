@@ -484,6 +484,10 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           _contextBadge('Row $rowNumber'),
+                          _contextBadge(
+                            '${(preview?['concept_requirement'] as Map?)?['label'] ?? (projectTitle.isEmpty ? 'Topic unassigned · Stage default concepts' : 'Assigned project/module · 1 concept')}',
+                            icon: Icons.description_outlined,
+                          ),
                           if (sectionValue.isNotEmpty)
                             _contextBadge('Sec: $sectionValue', icon: Icons.meeting_room_outlined),
                           if (adviserValue.isNotEmpty)

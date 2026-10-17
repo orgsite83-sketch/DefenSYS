@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:defensys/services/student_teams_provider.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
+import 'generate_teams_dialog.dart';
+import 'package:defensys/services/academic/team_formation_service.dart';
 
 int? _asInt(dynamic value) {
   if (value is int) return value;
@@ -17,6 +19,119 @@ Future<void> showCreateTeamModal({
   required bool isCapstoneAdmin,
   required bool isPitLeadManager,
   required String? pitLeadYear,
+  VoidCallback? onBulkImport,
+}) async {
+  final choice = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Create teams'),
+      content: SizedBox(
+        width: 520,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.groups_outlined),
+              title: const Text('Generate from students'),
+              subtitle: const Text(
+                'Randomize, group alphabetically, or reuse PIT team rosters by section.',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.pop(context, 'generate'),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.person_add_alt),
+              title: const Text('Create manually'),
+              subtitle: const Text('Choose members and a leader for one team.'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.pop(context, 'manual'),
+            ),
+            if (onBulkImport != null) ...[
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.upload_file_outlined),
+                title: const Text('Bulk import'),
+                subtitle: const Text(
+                  'Import prepared team rosters and existing project information.',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.pop(context, 'import'),
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+      ],
+    ),
+  );
+  if (!context.mounted) return;
+  if (choice == 'import') {
+    onBulkImport?.call();
+    return;
+  }
+  if (choice == 'manual') {
+    await showManualCreateTeamModal(
+      context: context,
+      ref: ref,
+      state: state,
+      isCapstoneAdmin: isCapstoneAdmin,
+      isPitLeadManager: isPitLeadManager,
+      pitLeadYear: pitLeadYear,
+    );
+  } else if (choice == 'generate') {
+    final pit = isPitLeadManager || state.level.toUpperCase().contains('PIT');
+    const supported = [
+      '1st Year PIT',
+      '2nd Year PIT',
+      '3rd Year PIT',
+      '3rd Year Capstone',
+      '4th Year Capstone',
+    ];
+    final levels = supported
+        .where(
+          (l) =>
+              l.contains(pit ? 'PIT' : 'Capstone') &&
+              (!isPitLeadManager || l == '$pitLeadYear PIT'),
+        )
+        .toList();
+    if (levels.isEmpty) return;
+    final defaultYear =
+        state.yearLevel ??
+        (pit
+            ? pitLeadYear
+            : (state.activeSemester?['label']?.toString().contains('1st') ==
+                      true
+                  ? '4th Year'
+                  : '3rd Year'));
+    final preferred = '$defaultYear ${pit ? 'PIT' : 'Capstone'}';
+    await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => GenerateTeamsDialog(
+        levels: levels,
+        initialLevel: levels.contains(state.level)
+            ? state.level
+            : (levels.contains(preferred) ? preferred : levels.first),
+        events: state.pitEvents,
+        initialSection: state.section,
+      ),
+    );
+  }
+}
+
+Future<void> showManualCreateTeamModal({
+  required BuildContext context,
+  required WidgetRef ref,
+  required StudentTeamsState state,
+  required bool isCapstoneAdmin,
+  required bool isPitLeadManager,
+  required String? pitLeadYear,
 }) async {
   const yearOptions = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
 
@@ -25,13 +140,18 @@ Future<void> showCreateTeamModal({
       : state.statuses;
   final name = TextEditingController();
   final projectTitle = TextEditingController();
-  final isFirstSem = state.activeSemester?['label']?.toString().toLowerCase().contains('1st') ?? false;
-  final isPitView = state.level.toUpperCase().contains('PIT') || isPitLeadManager;
+  final isFirstSem =
+      state.activeSemester?['label']?.toString().toLowerCase().contains(
+        '1st',
+      ) ??
+      false;
+  final isPitView =
+      state.level.toUpperCase().contains('PIT') || isPitLeadManager;
   final defaultYear = isPitLeadManager
       ? (pitLeadYear ?? '3rd Year')
       : (isPitView
-          ? (state.yearLevel ?? '1st Year')
-          : (isFirstSem ? '4th Year' : '3rd Year'));
+            ? (state.yearLevel ?? '1st Year')
+            : (isFirstSem ? '4th Year' : '3rd Year'));
   var yearLevel = defaultYear;
   if (!yearOptions.contains(yearLevel)) {
     yearLevel = defaultYear;
@@ -39,9 +159,12 @@ Future<void> showCreateTeamModal({
   var level = isPitView
       ? '$yearLevel PIT'
       : (yearLevel == '4th Year' || (yearLevel == '3rd Year' && !isFirstSem)
-          ? '$yearLevel Capstone'
-          : '$yearLevel PIT');
+            ? '$yearLevel Capstone'
+            : '$yearLevel PIT');
   String? selectedPitEvent = state.eventName;
+  var availableStudents = state.students;
+  var loadingStudents = false;
+  String? rosterError;
   var status = 'Pending';
   if (!statusOptions.contains(status)) {
     status = statusOptions.first;
@@ -49,6 +172,18 @@ Future<void> showCreateTeamModal({
   int? adviserId;
   final selectedMembers = <int>{};
   int? leaderId;
+
+  if (isPitView && selectedPitEvent != null) {
+    try {
+      final roster = await ref.read(teamFormationServiceProvider).options(level, selectedPitEvent);
+      availableStudents = (roster['students'] as List).where((s) => s['eligible'] == true)
+          .map((s) => Map<String, dynamic>.from(s as Map)).toList();
+    } catch (e) {
+      availableStudents = [];
+      rosterError = e.toString().replaceFirst('Exception: ', '');
+    }
+  }
+  if (!context.mounted) { name.dispose(); projectTitle.dispose(); return; }
 
   final saved = await showDialog<bool>(
     context: context,
@@ -66,9 +201,7 @@ Future<void> showCreateTeamModal({
                   children: [
                     TextField(
                       controller: name,
-                      decoration: const InputDecoration(
-                        labelText: 'Team Name',
-                      ),
+                      decoration: const InputDecoration(labelText: 'Team Name'),
                     ),
                     const SizedBox(height: 12),
                     TextField(
@@ -80,9 +213,7 @@ Future<void> showCreateTeamModal({
                     const SizedBox(height: 12),
                     if (isPitLeadManager)
                       InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: 'Program',
-                        ),
+                        decoration: const InputDecoration(labelText: 'Program'),
                         child: Text(
                           '$yearLevel PIT',
                           style: const TextStyle(fontWeight: FontWeight.w600),
@@ -90,11 +221,11 @@ Future<void> showCreateTeamModal({
                       )
                     else
                       InputDecorator(
-                        decoration: const InputDecoration(
-                          labelText: 'Program',
-                        ),
+                        decoration: const InputDecoration(labelText: 'Program'),
                         child: Text(
-                          level.contains('Capstone') ? 'Capstone · $yearLevel' : '$yearLevel PIT',
+                          level.contains('Capstone')
+                              ? 'Capstone · $yearLevel'
+                              : '$yearLevel PIT',
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ),
@@ -119,7 +250,8 @@ Future<void> showCreateTeamModal({
                       },
                     ),
                     const SizedBox(height: 12),
-                    if (!isPitLeadManager && level.toUpperCase().contains('CAPSTONE')) ...[
+                    if (!isPitLeadManager &&
+                        level.toUpperCase().contains('CAPSTONE')) ...[
                       DropdownButtonFormField<int?>(
                         initialValue: adviserId,
                         decoration: const InputDecoration(labelText: 'Adviser'),
@@ -165,11 +297,56 @@ Future<void> showCreateTeamModal({
                               );
                             }),
                           ],
-                          onChanged: (value) {
-                            setDialogState(() {
-                              selectedPitEvent = value;
-                            });
-                          },
+                          onChanged: loadingStudents
+                              ? null
+                              : (value) async {
+                                  setDialogState(() {
+                                    selectedPitEvent = value;
+                                    selectedMembers.clear();
+                                    leaderId = null;
+                                    loadingStudents = value != null;
+                                    rosterError = null;
+                                  });
+                                  if (value == null) {
+                                    setDialogState(
+                                      () => availableStudents = state.students,
+                                    );
+                                    return;
+                                  }
+                                  try {
+                                    final roster = await ref
+                                        .read(teamFormationServiceProvider)
+                                        .options(level, value);
+                                    if (!context.mounted) return;
+                                    setDialogState(
+                                      () => availableStudents =
+                                          (roster['students'] as List)
+                                              .where(
+                                                (s) => s['eligible'] == true,
+                                              )
+                                              .map(
+                                                (s) =>
+                                                    Map<String, dynamic>.from(
+                                                      s as Map,
+                                                    ),
+                                              )
+                                              .toList(),
+                                    );
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      setDialogState(() {
+                                        rosterError = e.toString();
+                                        availableStudents = [];
+                                      });
+                                    }
+                                  } finally {
+                                    if (context.mounted) {
+                                      setDialogState(
+                                        () => loadingStudents = false,
+                                      );
+                                    }
+                                  }
+                                },
                         ),
                         const SizedBox(height: 12),
                       ],
@@ -181,6 +358,14 @@ Future<void> showCreateTeamModal({
                         style: const TextStyle(fontWeight: FontWeight.w800),
                       ),
                     ),
+                    if (loadingStudents) const LinearProgressIndicator(),
+                    if (rosterError != null)
+                      Text(
+                        rosterError!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
                     const SizedBox(height: 8),
                     Container(
                       constraints: const BoxConstraints(maxHeight: 260),
@@ -191,11 +376,9 @@ Future<void> showCreateTeamModal({
                       ),
                       child: ListView(
                         shrinkWrap: true,
-                        children: state.students.map((student) {
+                        children: availableStudents.map((student) {
                           final studentId = _asInt(student['id'])!;
-                          final selected = selectedMembers.contains(
-                            studentId,
-                          );
+                          final selected = selectedMembers.contains(studentId);
                           return CheckboxListTile(
                             value: selected,
                             title: Text(
@@ -250,7 +433,10 @@ Future<void> showCreateTeamModal({
                       alignment: Alignment.centerLeft,
                       child: Text(
                         'Select up to 4 members. Use the medal button to choose the leader.',
-                        style: TextStyle(color: DefensysUi.steelGrey, fontSize: 12),
+                        style: TextStyle(
+                          color: DefensysUi.steelGrey,
+                          fontSize: 12,
+                        ),
                       ),
                     ),
                   ],
@@ -264,7 +450,8 @@ Future<void> showCreateTeamModal({
               ),
               ElevatedButton(
                 onPressed:
-                    selectedMembers.isEmpty ||
+                    loadingStudents ||
+                        selectedMembers.isEmpty ||
                         leaderId == null ||
                         name.text.trim().isEmpty
                     ? null
@@ -305,7 +492,9 @@ Future<void> showCreateTeamModal({
     'member_ids': selectedMembers.toList(),
     'adviser_id': isCapstone ? adviserId : null,
     'status': status,
-    if (!isCapstone && selectedPitEvent != null && selectedPitEvent!.trim().isNotEmpty)
+    if (!isCapstone &&
+        selectedPitEvent != null &&
+        selectedPitEvent!.trim().isNotEmpty)
       'current_defense_stage': selectedPitEvent!.trim(),
   };
 

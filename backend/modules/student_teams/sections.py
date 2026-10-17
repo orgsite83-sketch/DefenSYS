@@ -56,7 +56,13 @@ def section_context(user, team_id, *, lock=False):
     return team, teams, list(students), assignment.first()
 
 
-def section_payload(team, teams, students, assignment):
+def can_manage_concept_policies(user, team):
+    return bool(user and (user.is_superuser or user.role == 'admin' or
+                         (team.is_pit and getattr(user, 'is_pit_lead', False))))
+
+
+def section_payload(team, teams, students, assignment, *, actor=None):
+    from .section_concept_policies import policy_context_payload
     details = SectionAssignmentSerializer(assignment).data if assignment else {
         'section': team.section,
         'semester_id': team.semester_id,
@@ -69,6 +75,8 @@ def section_payload(team, teams, students, assignment):
         **details,
         'semester_label': team.semester.display_name,
         'team_count': len(teams),
+        'concept_contexts': policy_context_payload(team, teams, assignment),
+        'can_manage_concepts': can_manage_concept_policies(actor, team),
         'students': [
             {'id': student.pk, 'name': display_name(student), 'username': student.username}
             for student in students
@@ -99,12 +107,20 @@ def update_section(request, team_id, data):
         'section': old_section,
         'system_name': assignment.system_name if assignment else '',
         'project_manager_id': assignment.project_manager_id if assignment else None,
+        'concept_policies': assignment.concept_policies if assignment else {},
+        'team_concept_policies': {str(item.pk): item.concept_policies for item in teams},
     }
     if assignment is None:
         assignment = SectionAssignment(semester_id=team.semester_id, year_level=team.year_level)
     assignment.section = new_section
     assignment.system_name = data.get('system_name', assignment.system_name)
     assignment.project_manager_id = pm_id
+    if data.get('concept_policy_changes'):
+        if not can_manage_concept_policies(request.user, team):
+            raise PermissionDenied('Only an administrator or the scoped PIT Lead can change concept requirements and assignments.')
+        from .section_concept_policies import apply_policy_changes
+        apply_policy_changes(team, teams, assignment, data['concept_policy_changes'],
+            confirmed=data.get('confirm_concept_changes', False))
     assignment.save()
 
     team_ids = [item.pk for item in teams]
@@ -133,6 +149,8 @@ def update_section(request, team_id, data):
         new_values={
             **scope_values, 'section': new_section, 'system_name': assignment.system_name,
             'project_manager_id': pm_id,
+            'concept_policies': assignment.concept_policies,
+            'team_concept_policies': {str(item.pk): item.concept_policies for item in teams},
         },
     )
-    return section_payload(team, teams, students, assignment)
+    return section_payload(team, teams, students, assignment, actor=request.user)

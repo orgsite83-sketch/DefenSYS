@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/capstone_deliverables_provider.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/program_badge.dart';
+import '../../../widgets/student_team_setup_tasks.dart';
+import '../../../services/academic/student_team_selection_provider.dart';
 
 /// Screen 1: Academic Defense Overview & Student Team Workspace.
 /// Features clean, professional white surfaces, crisp hairline borders,
@@ -158,9 +160,10 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     final teamData = delivState.teams.firstOrNull;
 
     final teamName = team['name']?.toString() ?? 'Team Project';
-    final projectTitle = team['projectTitle']?.toString() ??
+    final rawProjectTitle = team['projectTitle']?.toString() ??
         team['project_title']?.toString() ??
-        'Untitled Project';
+        '';
+    final projectTitle = rawProjectTitle.trim().isEmpty ? 'Project not selected' : rawProjectTitle;
     final semester = team['semester']?.toString() ?? '';
     final schoolYear = team['schoolYear']?.toString() ?? '';
     final section = team['section']?.toString() ??
@@ -262,6 +265,18 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if ((studentData?['team_options'] as List? ?? []).length > 1) ...[
+          DropdownButtonFormField<int>(
+            key: ValueKey('student-team-${team['id']}'), initialValue: team['id'] as int,
+            isExpanded: true, decoration: const InputDecoration(labelText: 'Your team'),
+            items: (studentData!['team_options'] as List).map((t) => DropdownMenuItem<int>(
+              value: t['id'] as int, child: Text('${t['name']} · ${t['event_name'] == '' ? t['level'] : t['event_name']}',
+                  overflow: TextOverflow.ellipsis))).toList(),
+            onChanged: (id) => ref.read(studentTeamSelectionProvider.notifier).select(id),
+          ),
+          const SizedBox(height: 16),
+        ],
+        StudentTeamSetupTasks(onOpenRepository: () => onSelectTab?.call(1, subTabIndex: 1), onRefresh: onRefresh),
         // 1. TEAM & PROJECT OVERVIEW (CLEAN WHITE CARD)
         _buildTeamHeaderCard(
           teamName: teamName,

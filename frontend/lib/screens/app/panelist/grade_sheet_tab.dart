@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:defensys/utils/rubric_scoring.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:defensys/widgets/repository/concept_workspace.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'panelist_models.dart';
@@ -76,6 +77,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   String? _selectedVerdict;
   DateTime? _revisionDeadline;
   bool _redefenseVerificationRequired = false;
+  List<Map<String, dynamic>> _conceptDecisions = [];
   bool _isSubmittingVerdict = false;
   int _selectedStudentIndex = 0;
   String _identity(TeamData team) => json.encode([
@@ -169,6 +171,8 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       );
       _selectedVerdict = team.hasVerdict ? team.verdict : null;
       _redefenseVerificationRequired = team.redefenseVerificationRequired;
+      final conceptWorkflow = (team.workflowGrade?['workflow'] as Map? ?? {})['concept_workflow'] as Map?;
+      _conceptDecisions = ((conceptWorkflow?['hearing_concepts'] ?? conceptWorkflow?['concepts']) as List? ?? []).whereType<Map>().map((c) => Map<String, dynamic>.from(c)).toList();
       _revisionDeadline = team.revisionDeadline != null
           ? DateTime.tryParse(team.revisionDeadline!)
           : null;
@@ -529,7 +533,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
             _buildTeamEntry(team)
           else
             _buildEvaluationCard(team),
-          if (team.isCapstone && !team.isLockedByDate) ...[
+          if (team.usesDefenseVerdict && !team.isLockedByDate) ...[
             const SizedBox(height: 14),
             if (team.isChair)
               _buildChairVerdictCard(team)
@@ -1702,6 +1706,11 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               const SizedBox(height: 8),
 
               // Radio Options
+              if (_conceptDecisions.isNotEmpty) ...[
+                ConceptVerdictFields(concepts: _conceptDecisions, enabled: canEditVerdict,
+                  onChanged: (value) => setState(() => _conceptDecisions = value)),
+                const SizedBox(height: 14),
+              ],
               _verdictRadioOption(
                 enabled: canEditVerdict,
                 value: 'approved',
@@ -1727,7 +1736,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                 value: 'for_redefense',
                 title: 'For Re-defense',
                 description:
-                    'A new panel assessment is required. Retain adviser and peer grades and the prior endorsement.',
+                    _conceptDecisions.isNotEmpty ? 'A new concept hearing is required. The configured review and assessment policies apply.' : 'A new panel assessment is required. Retain adviser and peer grades and the prior endorsement.',
                 icon: Icons.replay_rounded,
                 color: const Color(0xFFEF4444),
               ),
@@ -1748,18 +1757,22 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                 value: 'project_rejected',
                 title: 'Project Rejected',
                 description:
-                    'The concept must be replaced after an admin records authorization. Keep the team and adviser.',
+                    team.isCapstone
+                        ? 'The concept must be replaced after an admin records authorization. Keep the team and adviser.'
+                        : 'The project is rejected. Choose For Re-defense when replacement concepts may be submitted.',
                 icon: Icons.block_outlined,
                 color: const Color(0xFFEF4444),
               ),
               if (isForRedefense)
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
-                  title: const Text(
-                    'Require adviser verification of corrections',
+                  title: Text(
+                    team.isCapstone ? 'Require adviser verification of corrections' : 'Require instructor review before re-defense',
                   ),
-                  subtitle: const Text(
-                    'Optional correction check before scheduling. No new adviser endorsement.',
+                  subtitle: Text(
+                    _conceptDecisions.isNotEmpty
+                        ? 'Require the current concept set to be reviewed and endorsed before the next hearing.'
+                        : 'Optional correction check before scheduling. No new adviser endorsement.',
                   ),
                   value: _redefenseVerificationRequired,
                   onChanged: canEditVerdict
@@ -2122,6 +2135,8 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         _isSubmittingVerdict) {
       return;
     }
+    final conceptError = conceptDecisionError(_conceptDecisions, _selectedVerdict!);
+    if (conceptError != null) { showValidationToast(context, conceptError); return; }
     final directives = _verdictRemarksController.text.trim();
     if ([
           'for_redefense',
@@ -2141,7 +2156,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         context,
         title: 'Issue Re-defense Verdict?',
         message:
-            'This attempt requires a new panel assessment. When the next attempt is scheduled, panel grades and the verdict reset; adviser and peer grades stay. ${_redefenseVerificationRequired ? 'The adviser must verify corrections before scheduling.' : 'No new adviser endorsement is required.'}',
+            _conceptDecisions.isNotEmpty ? 'This records the current hearing and prepares the next concept attempt. Replacement papers follow the configured review policy.' : 'This attempt requires a new panel assessment. When the next attempt is scheduled, panel grades and the verdict reset; adviser and peer grades stay. ${_redefenseVerificationRequired ? 'The adviser must verify corrections before scheduling.' : 'No new adviser endorsement is required.'}',
         confirmLabel: 'Issue Re-defense',
       );
       if (!confirmed || !mounted) return;
@@ -2182,6 +2197,8 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         'verdict': _selectedVerdict,
         'verdict_remarks': directives,
         'redefense_verification_required': _redefenseVerificationRequired,
+        if (_conceptDecisions.isNotEmpty) 'concept_decisions': _conceptDecisions,
+        'replacement_concepts_required': _conceptDecisions.isNotEmpty && _conceptDecisions.every((c) => c['decision'] == 'rejected'),
         if (_revisionDeadline != null &&
             _selectedVerdict == 'approved_with_revisions')
           'revision_deadline': DateFormat(
@@ -2216,7 +2233,9 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         if (_selectedVerdict == 'for_redefense') {
           showSuccessToast(
             context,
-            _redefenseVerificationRequired
+            _conceptDecisions.isNotEmpty
+                ? 'Concept hearing recorded. Complete the required papers and clearance before scheduling the next attempt.'
+                : _redefenseVerificationRequired
                 ? 'Re-defense recorded. Adviser verification is required before scheduling.'
                 : 'Re-defense recorded. Ready to schedule the next panel attempt.',
           );

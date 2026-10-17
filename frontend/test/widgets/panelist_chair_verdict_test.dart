@@ -13,6 +13,7 @@ TeamData _chairAssignment({
   bool ready = false,
   bool posted = false,
   bool chair = true,
+  bool pitConcepts = false,
   String? reason,
 }) => TeamData(
   name: 'Team AgriSense',
@@ -20,8 +21,23 @@ TeamData _chairAssignment({
   defenseDate: 'Concept Proposal',
   teamId: '1',
   scheduleId: '10',
-  scope: 'capstone',
-  isCapstone: true,
+  scope: pitConcepts ? 'pit' : 'capstone',
+  isCapstone: !pitConcepts,
+  workflowGrade: pitConcepts
+      ? {
+          'scope': 'pit',
+          'workflow': {
+            'concept_workflow': {
+              'enabled': true,
+              'round': 1,
+              'concepts': [
+                for (var i = 1; i <= 3; i++)
+                  {'key': 'c$i', 'title': 'PIT idea $i', 'decision': ''},
+              ],
+            },
+          },
+        }
+      : null,
   scheduledDate: TeamData.manilaToday,
   members: const ['Adrian'],
   memberDetails: const [TeamMember(id: '1', name: 'Adrian')],
@@ -64,6 +80,38 @@ void main() {
       );
       expect(_chairAssignment(posted: true).canIssueVerdict, isFalse);
     });
+
+    testWidgets(
+      'PIT concept chair receives concept decisions and waits for server permission',
+      (tester) async {
+        tester.view.physicalSize = const Size(800, 1400);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final waiting = _chairAssignment(pitConcepts: true, posted: true);
+        expect(waiting.panelWorkFinished, isFalse);
+        expect(waiting.canIssueVerdict, isFalse);
+        final team = _chairAssignment(
+          pitConcepts: true,
+          posted: true,
+          ready: true,
+        );
+        expect(team.canIssueVerdict, isTrue);
+        await pumpDefensysWidget(
+          tester,
+          GradeSheetTab(
+            teams: [team],
+            selectedTeamIndex: 0,
+            onTeamChanged: (_) {},
+          ),
+        );
+        expect(find.text('Panel Chair Official Verdict'), findsOneWidget);
+        expect(find.text('PIT idea 1'), findsOneWidget);
+        expect(find.text('PIT idea 2'), findsOneWidget);
+        expect(find.text('PIT idea 3'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
 
     for (final width in [390.0, 800.0]) {
       testWidgets(
@@ -274,8 +322,14 @@ void main() {
         await tester.tap(find.text('For Re-defense'));
         await tester.pumpAndSettle();
         expect(find.text('For Re-defense'), findsOneWidget);
-        expect(find.text('Require adviser verification of corrections'), findsOneWidget);
-        expect(tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value, isFalse);
+        expect(
+          find.text('Require adviser verification of corrections'),
+          findsOneWidget,
+        );
+        expect(
+          tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value,
+          isFalse,
+        );
       },
     );
 

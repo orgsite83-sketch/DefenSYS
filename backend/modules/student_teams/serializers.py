@@ -122,6 +122,8 @@ class StudentTeamSerializer(serializers.ModelSerializer):
             'id',
             'name',
             'project_title',
+            'setup_pending',
+            'project_pending',
             'project_version',
             'level',
             'year_level',
@@ -224,8 +226,16 @@ class StudentTeamSerializer(serializers.ModelSerializer):
         return None
 
     def get_defense_context(self, obj):
+        from repository.deliverables.concepts import stage_for, summary as concept_summary
         if obj.is_capstone:
             stage_label = obj.current_defense_stage or obj.ready_for_stage or None
+            if not stage_label:
+                if '_first_concept_stage' not in self.context:
+                    from defense.stages.models import DefenseStage
+                    first = DefenseStage.objects.filter(is_active=True).order_by('display_order', 'id').first()
+                    self.context['_first_concept_stage'] = first if first and first.concept_config.get('enabled') else None
+                first = self.context['_first_concept_stage']
+                stage_label = first.label if first else None
             stage_status = None
             if stage_label:
                 progress = next(
@@ -237,7 +247,14 @@ class StudentTeamSerializer(serializers.ModelSerializer):
                     None,
                 )
                 stage_status = progress.status if progress else None
+            from repository.deliverables.concepts import stage_for, summary as concept_summary
+            stages = self.context.setdefault('_concept_stage_cache', {})
+            if stage_label not in stages:
+                stages[stage_label] = stage_for(obj, stage_label) if stage_label else None
+            stage = stages[stage_label]
+            concept_workflow = concept_summary(obj, stage) if stage else None
             return {
+                'concept_workflow': concept_workflow,
                 'is_pit': False,
                 'current_stage': stage_label,
                 'ready_for_stage': obj.ready_for_stage,
@@ -256,18 +273,23 @@ class StudentTeamSerializer(serializers.ModelSerializer):
         if schedule:
             return {
                 'is_pit': True,
+                'concept_workflow': concept_summary(obj, stage_for(obj, schedule.stage_label)),
                 'event_label': (schedule.stage_label or '').strip(),
                 'scheduled_date': schedule.scheduled_date.isoformat() if schedule.scheduled_date else '',
             }
         if obj.current_defense_stage:
             return {
                 'is_pit': True,
+                'concept_workflow': concept_summary(obj, stage_for(obj, obj.current_defense_stage)),
                 'event_label': obj.current_defense_stage.strip(),
                 'scheduled_date': '',
             }
+        from defense.scheduler.event_scope import pit_events_for_team
+        first_concept_event = pit_events_for_team(obj).filter(concept_config__enabled=True).order_by('id').first()
         return {
             'is_pit': True,
-            'event_label': 'No PIT event scheduled',
+            'concept_workflow': concept_summary(obj, first_concept_event),
+            'event_label': first_concept_event.event_name if first_concept_event else 'No PIT event scheduled',
             'scheduled_date': '',
         }
 
@@ -456,12 +478,17 @@ class StudentTeamWriteSerializer(serializers.Serializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        self._lock_event(validated_data)
         member_ids = validated_data.pop('member_ids')
         self._lock_members(member_ids)
         reason = validated_data.pop('adviser_change_reason', '')
         team = StudentTeam.objects.create(
             name=validated_data['name'],
-            project_title=validated_data.get('project_title') or validated_data['name'],
+            project_title=(validated_data.get('project_title', '') if validated_data.get('setup_pending')
+                           else validated_data.get('project_title') or validated_data['name']),
+            setup_pending=validated_data.get('setup_pending', False),
+            project_pending=validated_data.get('setup_pending', False),
+            concept_assignment=validated_data.get('concept_assignment', {}),
             level=validated_data['level'],
             year_level=validated_data['year_level'],
             section=validated_data.get('section', ''),
@@ -488,6 +515,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
     @transaction.atomic
     def update(self, instance, validated_data):
         instance = StudentTeam.objects.select_for_update().get(pk=instance.pk)
+        self._lock_event(validated_data)
         adviser_id = getattr(validated_data.get('adviser'), 'pk', None)
         if instance.adviser_id != adviser_id:
             reason = adviser_assignment_conflict(instance, adviser_id)
@@ -499,6 +527,8 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         previous_adviser_id = instance.adviser_id
         instance.name = validated_data['name']
         instance.project_title = validated_data.get('project_title') or validated_data['name']
+        if validated_data.get('project_title'):
+            instance.project_pending = False
         instance.level = validated_data['level']
         instance.year_level = validated_data['year_level']
         instance.section = validated_data.get('section', '')
@@ -542,23 +572,26 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         list(User.objects.select_for_update().filter(pk__in=member_ids).order_by('pk'))
 
     @staticmethod
+    def _lock_event(data):
+        if 'PIT' in data.get('level', '').upper() and data.get('current_defense_stage'):
+            from defense.scheduler.models import PitEventGradingConfig
+            event = PitEventGradingConfig.objects.select_for_update().filter(
+                semester=data['semester'], event_name=data['current_defense_stage']).first()
+            if event and event.year_level != data['year_level']:
+                raise serializers.ValidationError({'current_defense_stage': 'Select an event from this PIT year level.'})
+
+    @staticmethod
     def _assert_members_available(member_ids, semester, level, event_name, team_id=None):
         conflicts = TeamMembership.objects.filter(
             student_id__in=member_ids, team__semester=semester,
         ).exclude(team_id=team_id)
         if 'PIT' in level.upper():
+            from .membership_policy import allows_multiple, pit_event_memberships
+            if allows_multiple(semester, event_name):
+                return
             conflicts = conflicts.filter(team__level__icontains='PIT')
             event_name = (event_name or '').strip()
-            if event_name:
-                conflicts = conflicts.filter(
-                    Q(team__current_defense_stage=event_name)
-                    | Q(team__defense_schedules__event_name=event_name)
-                )
-            else:
-                conflicts = conflicts.filter(
-                    Q(team__current_defense_stage__isnull=True)
-                    | Q(team__current_defense_stage='')
-                )
+            conflicts = pit_event_memberships(conflicts, event_name)
         else:
             conflicts = conflicts.filter(team__level__icontains='Capstone')
         conflict = conflicts.select_related('team', 'student').first()
@@ -602,6 +635,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
 class BulkTeamRowSerializer(serializers.Serializer):
     team_name = serializers.CharField(max_length=120)
     project_title = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    current_defense_stage = serializers.CharField(required=False, allow_blank=True, max_length=120)
     level = serializers.CharField(required=False, allow_blank=True, max_length=30)
     year_level = serializers.CharField(required=False, allow_blank=True, max_length=20)
     section = serializers.CharField(required=False, allow_blank=True, max_length=80)
@@ -694,6 +728,8 @@ class SectionDetailsWriteSerializer(serializers.Serializer):
     section = serializers.CharField(max_length=80)
     system_name = serializers.CharField(max_length=255, required=False, allow_blank=True)
     project_manager_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    concept_policy_changes = serializers.ListField(child=serializers.DictField(), required=False)
+    confirm_concept_changes = serializers.BooleanField(required=False, default=False)
 
     def validate_section(self, value):
         return ' '.join(value.split())

@@ -122,6 +122,18 @@ class PanelistOptionSerializer(serializers.ModelSerializer):
 
 
 class ScheduleTeamSerializer(serializers.ModelSerializer):
+    concept_workflows = serializers.SerializerMethodField()
+
+    def get_concept_workflows(self, obj):
+        if not obj.is_capstone:
+            from .event_scope import pit_events_for_team
+            from repository.deliverables.concepts import summary
+            return {config.event_name: summary(obj, config)
+                    for config in pit_events_for_team(obj).filter(concept_config__enabled=True)}
+        from repository.deliverables.concepts import summary
+        if '_concept_stages' not in self.context:
+            self.context['_concept_stages'] = list(DefenseStage.objects.filter(concept_config__enabled=True).prefetch_related('deliverables'))
+        return {stage.label: summary(obj, stage) for stage in self.context['_concept_stages']}
     leader_name = serializers.SerializerMethodField()
     adviser_name = serializers.SerializerMethodField()
     instructor_name = serializers.SerializerMethodField()
@@ -156,6 +168,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             'stage_progress',
             'stage_verdicts',
             'eligible_stages',
+            'concept_workflows',
             'project_version',
         ]
 
@@ -192,7 +205,8 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
         for grade in TeamGrade.objects.filter(team=obj, semester=obj.semester):
             if grade.status == TeamGrade.STATUS_PUBLISHED and grade.result == 'passed' and grade.defense_stage:
                 completed.add(grade.defense_stage.label)
-            elif grade.scope == TeamGrade.SCOPE_PIT and grade.status == TeamGrade.STATUS_PUBLISHED and grade.stage_label:
+            elif (grade.scope == TeamGrade.SCOPE_PIT and grade.status == TeamGrade.STATUS_PUBLISHED
+                    and grade.stage_label and (not grade.uses_defense_verdict or grade.result == 'passed')):
                 completed.add(grade.stage_label)
         return sorted(list(completed))
 
@@ -210,8 +224,8 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
         redefense = set()
         completed = set(self.get_completed_stages(obj))
         for grade in TeamGrade.objects.filter(team=obj, semester=obj.semester):
-            if getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE and grade.defense_stage:
-                label = grade.defense_stage.label
+            if getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE and grade.uses_defense_verdict:
+                label = grade.stage_label
                 if label not in completed:
                     redefense.add(label)
         return sorted(list(redefense))
@@ -291,6 +305,14 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             data['ready_for_stage'] = None
         if not data.get('ready_for_stage') and redefense:
             data['ready_for_stage'] = next(iter(redefense))
+        if instance.is_pit and data.get('concept_workflows'):
+            from .event_scope import pit_events_for_team
+            from repository.deliverables.concepts import pit_ready
+            for config in pit_events_for_team(instance).filter(concept_config__enabled=True):
+                if pit_ready(instance, config):
+                    data['ready_for_stage'] = config.event_name
+                elif data.get('ready_for_stage') == config.event_name:
+                    data['ready_for_stage'] = None
         if instance.is_capstone:
             data['ready_for_stage'] = next(iter(data['eligible_stages']), None)
             eligible = set(data['eligible_stages'])
@@ -1064,7 +1086,11 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
             if team.year_level != attrs['pit_event_config'].year_level:
                 raise serializers.ValidationError({'team_id': 'Team does not belong to this PIT event year level.'})
             config = get_pit_event_config(attrs['semester'], attrs['event_name'])
-            if pit_endorsement_required(config):
+            from repository.deliverables.concepts import enabled, pit_ready
+            if enabled(config):
+                if not pit_ready(team, config):
+                    raise serializers.ValidationError({'team_id': 'Complete the current concept set and required instructor clearance before scheduling.'})
+            elif pit_endorsement_required(config):
                 if (team.ready_for_stage or '').strip().lower() != attrs['event_name'].strip().lower():
                     raise serializers.ValidationError({'team_id': f'Team {team.name} is not endorsed for {attrs["event_name"]}.'})
         return team
@@ -1100,7 +1126,9 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
                 event_name__iexact=attrs['event_name'],
                 status=DefenseSchedule.STATUS_DONE,
             )
-            if done_qs.exists():
+            from repository.deliverables.concepts import enabled, pit_ready
+            repeat_concepts = enabled(attrs['pit_event_config']) and pit_ready(attrs['team'], attrs['pit_event_config'])
+            if done_qs.exists() and not repeat_concepts:
                 raise serializers.ValidationError({'team_id': f'Team {attrs["team"].name} has already completed this PIT event.'})
 
     def _sync_panelists(self, schedule, panelists, chair_panelist_id=None):
@@ -1290,7 +1318,12 @@ class GenerateSchedulePlanSerializer(SchedulePlanSerializer):
 
     def _ready_teams(self, attrs):
         queryset = StudentTeam.objects.select_related('semester', 'leader', 'adviser').filter(semester=attrs['semester'])
-        scheduled_team_ids = set(self._context_filter(attrs).values_list('team_id', flat=True))
+        scheduled = self._context_filter(attrs)
+        from repository.deliverables.concepts import enabled, pit_ready
+        concept_event = attrs['scope'] == DefenseSchedule.SCOPE_PIT and enabled(attrs['pit_event_config'])
+        if concept_event:
+            scheduled = scheduled.filter(status=DefenseSchedule.STATUS_SCHEDULED)
+        scheduled_team_ids = set(scheduled.values_list('team_id', flat=True))
 
         if attrs['scope'] == DefenseSchedule.SCOPE_CAPSTONE:
             ready_ids = get_ready_teams(attrs['semester'], attrs['defense_stage']).values_list('id', flat=True)
@@ -1304,10 +1337,11 @@ class GenerateSchedulePlanSerializer(SchedulePlanSerializer):
             queryset = queryset.exclude(year_level='3rd Year', semester__label=Semester.SECOND)
 
             config = get_pit_event_config(attrs['semester'], attrs['event_name'])
-            if pit_endorsement_required(config):
+            if pit_endorsement_required(config) and not concept_event:
                 queryset = queryset.filter(ready_for_stage__iexact=attrs['event_name'])
 
-        return list(queryset.exclude(pk__in=scheduled_team_ids).order_by('name'))
+        teams = list(queryset.exclude(pk__in=scheduled_team_ids).order_by('name'))
+        return [team for team in teams if pit_ready(team, attrs['pit_event_config'])] if concept_event else teams
 
 
 class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
@@ -1352,7 +1386,11 @@ class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
                 if team.year_level != attrs['pit_event_config'].year_level:
                     raise serializers.ValidationError({'slots': 'A team is outside this PIT event year level.'})
                 config = get_pit_event_config(attrs['semester'], attrs['event_name'])
-                if pit_endorsement_required(config):
+                from repository.deliverables.concepts import enabled, pit_ready
+                if enabled(config):
+                    if not pit_ready(team, config):
+                        raise serializers.ValidationError({'slots': f'{team.name} needs current concept papers and instructor clearance.'})
+                elif pit_endorsement_required(config):
                     if (team.ready_for_stage or '').strip().lower() != attrs['event_name'].strip().lower():
                         raise serializers.ValidationError({'slots': f'{team.name} is not endorsed for {attrs["event_name"]}.'})
 
@@ -1387,7 +1425,8 @@ class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
                     event_name__iexact=attrs['event_name'],
                     status=DefenseSchedule.STATUS_DONE,
                 )
-                if done_existing.exists():
+                repeat_concepts = enabled(config) and pit_ready(team, config)
+                if done_existing.exists() and not repeat_concepts:
                     raise serializers.ValidationError({'slots': f'{team.name} has already completed this PIT event.'})
 
         attrs['teams'] = [team_map[team_id] for team_id in team_ids]

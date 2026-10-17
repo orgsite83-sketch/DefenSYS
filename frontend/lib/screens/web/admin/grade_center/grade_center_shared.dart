@@ -3,6 +3,8 @@ import 'grade_correction_dialog.dart';
 import 'grade_group_completion_summary.dart';
 import 'incomplete_grading_dialog.dart';
 import 'package:flutter/material.dart';
+import 'package:defensys/widgets/repository/concept_workspace.dart';
+import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../services/grade_center_provider.dart';
@@ -599,20 +601,20 @@ List<AggregatedCriterion> aggregateBreakdowns(
         studentNamesSet.add('Student #$studentId');
       }
 
-      final raw = row['remarks']?.toString() ?? '';
+      final raw = publicEvaluationText(row['remarks']?.toString() ?? '');
       final lines = raw.split('\n');
       final firstLine = lines.first.trim();
       final rest = lines.sublist(1).join('\n').trim();
 
-      String evaluatorName = '';
-      if (firstLine.startsWith('Panelist:')) {
+      String evaluatorName = publicEvaluationText(row['evaluator_name']?.toString() ?? '');
+      if (evaluatorName.isEmpty && firstLine.startsWith('Panelist:')) {
         final key = firstLine.substring('Panelist:'.length).trim();
         evaluatorName =
             panelistMap[key] ??
             (key.isNotEmpty ? 'Panelist $key' : 'Panelist #$unnamedIndex');
-      } else if (firstLine.startsWith('Guest panelist:')) {
-        evaluatorName = firstLine.substring('Guest panelist:'.length).trim();
-      } else if (firstLine.isNotEmpty && rest.isEmpty) {
+      } else if (evaluatorName.isEmpty && firstLine.startsWith('Guest panelist:')) {
+        evaluatorName = legacyExternalEvaluatorName(firstLine.substring('Guest panelist:'.length).trim());
+      } else if (evaluatorName.isEmpty && firstLine.isNotEmpty && rest.isEmpty) {
         if (!firstLine.toLowerCase().startsWith('panelist:')) {
           evaluatorName = 'Evaluator #$unnamedIndex';
         }
@@ -4603,6 +4605,8 @@ class GradeCenterActions {
     String selectedVerdict = grade['verdict']?.toString() ?? 'approved';
     if (selectedVerdict.isEmpty) selectedVerdict = 'approved';
     bool verificationRequired = grade['redefense_verification_required'] == true;
+    final conceptWorkflow = (grade['workflow'] as Map? ?? {})['concept_workflow'] as Map?;
+    var conceptDecisions = ((conceptWorkflow?['hearing_concepts'] ?? conceptWorkflow?['concepts']) as List? ?? []).whereType<Map>().map((c) => Map<String, dynamic>.from(c)).toList();
     final remarksController = TextEditingController(
       text: grade['verdict_remarks']?.toString() ?? '',
     );
@@ -4662,6 +4666,10 @@ class GradeCenterActions {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    if (conceptDecisions.isNotEmpty) ...[
+                      ConceptVerdictFields(concepts: conceptDecisions, onChanged: (value) => setState(() => conceptDecisions = value)),
+                      const SizedBox(height: 16),
+                    ],
                     const Text(
                       'OFFICIAL VERDICT',
                       style: TextStyle(
@@ -4759,8 +4767,12 @@ class GradeCenterActions {
                     if (selectedVerdict == 'for_redefense')
                       CheckboxListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: const Text('Require adviser verification of corrections'),
-                        subtitle: const Text('Optional panel condition. Existing adviser assignment and endorsement are retained.'),
+                        title: Text(grade['scope'] == 'pit'
+                            ? 'Require instructor review before re-defense'
+                            : 'Require adviser verification of corrections'),
+                        subtitle: Text(conceptWorkflow != null
+                            ? 'Require review and endorsement of the current concept set before the next hearing.'
+                            : 'Optional panel condition. Existing adviser assignment and endorsement are retained.'),
                         value: verificationRequired,
                         onChanged: (value) => setState(() => verificationRequired = value ?? false),
                       ),
@@ -4798,7 +4810,11 @@ class GradeCenterActions {
                 child: const Text('Cancel'),
               ),
               ElevatedButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
+                onPressed: () {
+                  final error = conceptDecisionError(conceptDecisions, selectedVerdict);
+                  if (error != null) { showValidationToast(context, error); return; }
+                  Navigator.pop(dialogContext, true);
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.maroon,
                   foregroundColor: Colors.white,
@@ -4832,6 +4848,8 @@ class GradeCenterActions {
           remarks: remarks,
           revisionDeadline: deadlineStr,
           redefenseVerificationRequired: verificationRequired,
+          conceptDecisions: conceptWorkflow == null ? null : conceptDecisions,
+          replacementConceptsRequired: conceptDecisions.isNotEmpty && conceptDecisions.every((c) => c['decision'] == 'rejected'),
         );
   }
 
@@ -4866,4 +4884,55 @@ class GradeCenterActions {
     }
     await ref.read(gradeCenterProvider.notifier).publishGrade(gradeId);
   }
+}
+
+/// Hide credentials from previously cached display text as well as new responses.
+String publicEvaluationText(String value) => value
+    .replaceAll(RegExp(r'\s*\(DEF-[A-Z0-9]+\)', caseSensitive: false), '')
+    .replaceAll(RegExp(r'\bDEF-[A-Z0-9]+\b', caseSensitive: false), '[redacted]');
+
+String legacyExternalEvaluatorName(String value) => publicEvaluationText(
+  value.replaceFirst(RegExp(r'\s+\([^()]*\)$'), ''),
+).trim();
+
+/// Assigned evaluators remain visible before they submit. Modern score keys use
+/// stable invitation IDs, so renewing access does not create a second column.
+List<Map<String, String>> gradePanelistColumns(Map<String, dynamic> grade) {
+  final columns = <String, String>{};
+  for (final item in (grade['panelists'] as List? ?? const [])) {
+    if (item is! Map) continue;
+    final key = (item['panelist_key'] ?? item['username'])?.toString().trim() ?? '';
+    final name = publicEvaluationText(item['name']?.toString().trim() ?? '');
+    if (key.isNotEmpty) columns[key] = name.isEmpty ? publicEvaluationText(key) : name;
+  }
+  final scores = grade['panel_evaluation_scores'];
+  if (scores is List) {
+    for (final item in scores.whereType<Map>()) {
+      final key = item['panelist_key']?.toString().trim() ?? '';
+      if (key.isNotEmpty) {
+        columns.putIfAbsent(key, () => key.startsWith('guest:') || key.startsWith('legacy-guest:')
+            ? 'External evaluator' : publicEvaluationText('Panelist $key'));
+      }
+    }
+  } else {
+    // Compatibility for older API responses without normalized evaluator keys.
+    for (final item in (grade['breakdowns'] as List? ?? const []).whereType<Map>()) {
+      if (item['evaluation_type'] != 'panel') continue;
+      final recordedKey = item['panelist_key']?.toString() ?? '';
+      if (recordedKey.isNotEmpty) {
+        columns.putIfAbsent(recordedKey, () => publicEvaluationText(item['evaluator_name']?.toString() ?? 'Evaluator'));
+        continue;
+      }
+      final line = (item['remarks']?.toString() ?? '').split('\n').first.trim();
+      for (final prefix in ['Panelist:', 'Guest panelist:']) {
+        if (!line.startsWith(prefix)) continue;
+        final key = line.substring(prefix.length).trim();
+        if (key.isNotEmpty) {
+          columns.putIfAbsent(key, () => prefix == 'Panelist:'
+              ? publicEvaluationText('Panelist $key') : legacyExternalEvaluatorName(key));
+        }
+      }
+    }
+  }
+  return columns.entries.map((entry) => {'key': entry.key, 'name': entry.value}).toList();
 }

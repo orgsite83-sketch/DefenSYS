@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
 import '../session/session_expired.dart';
+import '../academic/student_team_selection_provider.dart';
 
 final dashboardProvider =
     NotifierProvider.family<DashboardNotifier, DashboardState, String>(
@@ -41,6 +42,7 @@ class DashboardNotifier extends Notifier<DashboardState> {
   DashboardNotifier(this.role);
 
   final String role;
+  int _requestRevision = 0;
 
   @override
   DashboardState build() {
@@ -52,6 +54,7 @@ class DashboardNotifier extends Notifier<DashboardState> {
   AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
 
   Future<void> fetchDashboardData({bool silent = false}) async {
+    final revision = ++_requestRevision;
     final hasData = state.data != null;
     if (!silent || !hasData) {
       state = state.copyWith(isLoading: true, isRefreshing: false, error: null);
@@ -61,7 +64,11 @@ class DashboardNotifier extends Notifier<DashboardState> {
 
     try {
       final url = '$baseUrl/$role/';
-      final response = await _client.get(Uri.parse(url));
+      final selectedTeam = role == 'student' ? ref.read(studentTeamSelectionProvider) : null;
+      final response = await _client.get(Uri.parse(url).replace(queryParameters: {
+        if (selectedTeam != null) 'team_id': '$selectedTeam',
+      }));
+      if (!ref.mounted || revision != _requestRevision) return;
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -81,6 +88,7 @@ class DashboardNotifier extends Notifier<DashboardState> {
     } on SessionExpiredException {
       rethrow;
     } catch (e) {
+      if (!ref.mounted || revision != _requestRevision) return;
       state = state.copyWith(
         isLoading: false,
         isRefreshing: false,

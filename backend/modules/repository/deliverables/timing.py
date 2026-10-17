@@ -120,6 +120,9 @@ def material_row_state(definition, submission, schedule, *, now=None, grades_loc
     now = now or timezone.now()
     deadline = deadline_for(definition, schedule)
     valid = valid_material(submission)
+    if definition.get('file_policy'):
+        from .documents import completeness
+        valid = valid and completeness(submission, definition, stage=schedule.defense_stage if schedule else None)
     grades_locked = bool(schedule and (material_grades_locked(schedule) if grades_locked is None else grades_locked))
     late_active = late_upload_window_active(schedule, now=now, grades_locked=grades_locked)
     has_file = bool(submission and submission.file)

@@ -1,4 +1,6 @@
 import 'package:defensys/theme/defensys_tokens.dart';
+import 'package:defensys/models/team_workflow_status.dart';
+import 'package:defensys/widgets/repository/workflow_status_style.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -546,6 +548,8 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
         DeliverablesTriageHelper.computeCounts(widget.state.teams);
     final allCount = counts[TeamTriageFilter.all] ?? widget.state.teams.length;
     final needsReviewCount = counts[TeamTriageFilter.needsReview] ?? 0;
+    final endorsementCount = counts[TeamTriageFilter.awaitingEndorsement] ?? 0;
+    final attentionStyle = WorkflowStatusStyle.of(context, WorkflowStatusTone.attention);
     final readyCount = counts[TeamTriageFilter.readyForDefense] ?? 0;
     final overdueCount = counts[TeamTriageFilter.overdue] ?? 0;
 
@@ -564,14 +568,19 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
             _buildTriageChip(
               filter: TeamTriageFilter.needsReview,
               label: 'Needs Review ($needsReviewCount)',
-              dotColor: const Color(0xFFEF4444),
+              dotColor: attentionStyle.foreground,
+            ),
+            _buildTriageChip(
+              filter: TeamTriageFilter.awaitingEndorsement,
+              label: 'Awaiting endorsement ($endorsementCount)',
+              dotColor: attentionStyle.foreground,
             ),
             _buildTriageChip(
               filter: TeamTriageFilter.readyForDefense,
               label: widget.state.scope == 'pit'
                   ? 'Ready to Schedule ($readyCount)'
                   : 'Ready for Defense ($readyCount)',
-              dotColor: const Color(0xFF10B981),
+              dotColor: WorkflowStatusStyle.of(context, WorkflowStatusTone.success).foreground,
             ),
             _buildTriageChip(
               filter: TeamTriageFilter.overdue,
@@ -580,8 +589,16 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
                   : widget.isAdviser
                       ? 'Missing Requirements ($overdueCount)'
                       : 'Missing / Overdue ($overdueCount)',
-              dotColor: const Color(0xFFF59E0B),
+              dotColor: attentionStyle.foreground,
             ),
+            if (widget.state.scope == 'capstone') for (final entry in const {
+              TeamTriageFilter.replacementConcepts: 'Replacement concepts',
+              TeamTriageFilter.adviserReview: 'Concept review',
+              TeamTriageFilter.readyRedefense: 'Schedule re-defense',
+              TeamTriageFilter.redefenseScheduled: 'Re-defense scheduled',
+              TeamTriageFilter.failed: 'Failed / rejected',
+            }.entries) _buildTriageChip(label: '${entry.value} (${counts[entry.key] ?? 0})', filter: entry.key),
+
           ],
         );
 

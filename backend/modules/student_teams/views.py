@@ -121,6 +121,8 @@ def options_payload(team_id=None, team_level=None, user=None, include_roster_opt
         for cfg in pit_configs:
             ev_year = cfg.year_level
             pit_events.append({
+                'id': cfg.pk,
+                'team_membership_policy': cfg.team_membership_policy,
                 'event_name': cfg.event_name,
                 'event_code': cfg.event_code,
                 'year_level': ev_year,
@@ -143,19 +145,26 @@ def options_payload(team_id=None, team_level=None, user=None, include_roster_opt
     students = User.objects.filter(role='student', is_active=True).order_by('username')
     
     # Filter out students based on team level and event
-    is_pit_filter = bool(team_level and 'PIT' in team_level.upper())
+    is_pit_filter = bool(team_level and 'PIT' in team_level.upper()) or user_is_pit_lead_only(user)
     if team_id:
-        # Get students who are NOT in any team OR are in the current team being edited
-        students = students.filter(
-            Q(team_memberships__isnull=True) | Q(team_memberships__team_id=team_id)
-        ).distinct()
+        from .membership_policy import allows_multiple, pit_event_memberships
+        current_team = StudentTeam.objects.filter(pk=team_id).first()
+        assigned = TeamMembership.objects.filter(team__semester=active).exclude(team_id=team_id)
+        if is_pit_filter:
+            current_event = current_team.current_defense_stage if current_team else event_name
+            assigned = pit_event_memberships(assigned.filter(team__level__icontains='PIT'), current_event)
+            if allows_multiple(active, current_event):
+                assigned = assigned.none()
+        else:
+            assigned = assigned.filter(team__level__icontains='Capstone')
+        students = students.exclude(pk__in=assigned.values('student_id')).distinct()
     elif is_pit_filter and event_name:
         # For a specific PIT event, only exclude students already in a team for that same event
-        students = students.exclude(
-            team_memberships__team__semester=active,
-            team_memberships__team__level__icontains='PIT',
-            team_memberships__team__current_defense_stage=event_name,
-        ).distinct()
+        from .membership_policy import allows_multiple, pit_event_memberships
+        if not allows_multiple(active, event_name):
+            assigned = pit_event_memberships(TeamMembership.objects.filter(
+                team__semester=active, team__level__icontains='PIT'), event_name)
+            students = students.exclude(pk__in=assigned.values('student_id')).distinct()
     elif is_pit_filter:
         # General PIT: exclude students who belong to unassigned PIT teams
         students = students.exclude(
@@ -480,6 +489,22 @@ def _reject_capstone_bulk_import_if_closed(user, *, section=''):
     return None
 
 
+def _bulk_rows_for_event(request, rows):
+    """Event context is selected in the UI, separate from CSV columns."""
+    event_name = request.data.get('event_name', '')
+    if not event_name:
+        return rows
+    from defense.scheduler.event_scope import pit_events_for_user, require_event_management
+    from rest_framework.exceptions import ValidationError
+    event = pit_events_for_user(request.user, semester=active_semester()).filter(event_name=event_name).first()
+    if not event:
+        raise ValidationError({'event_name': 'Choose an accessible PIT event in the active term.'})
+    require_event_management(request.user, event)
+    if event.is_officially_complete:
+        raise ValidationError('Completed PIT events are read-only.')
+    return [{**row, 'current_defense_stage': event.event_name} if isinstance(row, dict) else row for row in rows]
+
+
 class BulkImportTeamsPreviewView(APIView):
     permission_classes = [CanManageTeams]
 
@@ -492,6 +517,8 @@ class BulkImportTeamsPreviewView(APIView):
         rows = request.data.get('teams', [])
         if not isinstance(rows, list):
             return Response({'detail': 'teams must be a list.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        rows = _bulk_rows_for_event(request, rows)
 
         adviser_filter = _normalize_adviser_filter(request.data.get('adviser_filter'))
         csv_columns = request.data.get('csv_columns')
@@ -545,6 +572,8 @@ class BulkImportTeamsView(APIView):
         rows = request.data.get('teams', [])
         if not isinstance(rows, list):
             return Response({'detail': 'teams must be a list.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        rows = _bulk_rows_for_event(request, rows)
 
         system_name = request.data.get('system_name', '').strip()
         pm_name = request.data.get('project_manager', '').strip()
@@ -682,7 +711,7 @@ class BulkImportTeamsView(APIView):
             # Commit the section instructor with the team so failed rows cannot
             # create assignments, and PIT imports never promote a project adviser.
             with transaction.atomic():
-                team = serializer.save()
+                team = serializer.save(concept_assignment=result['concept_assignment'])
                 if result['instructor'] is not None:
                     SectionInstructorAssignment.objects.update_or_create(
                         faculty=result['instructor'],
@@ -713,7 +742,7 @@ class SectionDetailsView(APIView):
     def get(self, request, team_id):
         from .sections import section_context, section_payload
 
-        return Response(section_payload(*section_context(request.user, team_id)))
+        return Response(section_payload(*section_context(request.user, team_id), actor=request.user))
 
     def patch(self, request, team_id):
         from .sections import update_section

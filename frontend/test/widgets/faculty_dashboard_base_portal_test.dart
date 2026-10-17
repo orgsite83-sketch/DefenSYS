@@ -122,12 +122,12 @@ class _FakeAdviserDeliverablesNotifier extends CapstoneDeliverablesNotifier {
 
 class _FakeAdviserDefenseNotifier extends AdviserDefenseNotifier {
   @override
-  Future<void> fetch() async {}
+  Future<void> fetch({String? workspace}) async {}
 }
 
 class _FakePitInstructorDefenseNotifier extends PitInstructorDefenseNotifier {
   @override
-  Future<void> fetch() async {}
+  Future<void> fetch({String? workspace}) async {}
 }
 
 void main() {

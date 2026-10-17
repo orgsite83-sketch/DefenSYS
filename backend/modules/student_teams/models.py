@@ -43,8 +43,13 @@ class StudentTeam(models.Model):
     )
 
     name = models.CharField(max_length=120)
-    project_title = models.CharField(max_length=255)
+    project_title = models.CharField(max_length=255, blank=True)
+    setup_pending = models.BooleanField(default=False)
+    project_pending = models.BooleanField(default=False)
     project_version = models.PositiveIntegerField(default=1)
+    # Import intent is independent of the title eventually selected by a panel.
+    concept_assignment = models.JSONField(default=dict, blank=True)
+    concept_policies = models.JSONField(default=dict, blank=True)
     level = models.CharField(max_length=30, choices=LEVEL_CHOICES)
     year_level = models.CharField(max_length=20)
     section = models.CharField(max_length=80, blank=True, default='')
@@ -106,7 +111,7 @@ class StudentTeam(models.Model):
                     raise ValidationError({'adviser': reason})
 
     def save(self, *args, **kwargs):
-        if not self.project_title:
+        if not self.project_title and not self.project_pending:
             self.project_title = self.name
         self.full_clean()
         super().save(*args, **kwargs)
@@ -149,6 +154,7 @@ class SectionAssignment(models.Model):
     )
     year_level = models.CharField(max_length=20)
     system_name = models.CharField(max_length=255, blank=True, default='')
+    concept_policies = models.JSONField(default=dict, blank=True)
     project_manager = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,

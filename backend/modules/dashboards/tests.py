@@ -17,7 +17,7 @@ User = get_user_model()
 
 
 class DashboardApiTests(APITestCase):
-    def test_schedule_planner_groups_complete_sessions_and_scopes_pit_leads(self):
+    def test_schedule_planner_shares_bookings_but_scopes_record_access(self):
         admin = User.objects.create_user(username='planner-admin', password='pass12345', role='admin')
         pit_lead = User.objects.create_user(
             username='planner-lead', password='pass12345', role='faculty',
@@ -64,6 +64,8 @@ class DashboardApiTests(APITestCase):
         pit = next(item for item in response.data['sessions'] if item['scope'] == 'pit')
         self.assertEqual(pit['team_count'], 6)
         self.assertEqual(pit['session_id'], str(session_id))
+        self.assertEqual(pit['year_levels'], ['3rd Year'])
+        self.assertTrue(pit['can_open'])
         self.assertEqual(len(pit['time_blocks']), 2)
         self.assertEqual(pit['time_blocks'][0]['start'], '2026-10-14T08:00')
         self.assertEqual(pit['time_blocks'][0]['end'], '2026-10-14T12:00')
@@ -71,8 +73,13 @@ class DashboardApiTests(APITestCase):
         self.client.force_authenticate(user=pit_lead)
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.data['sessions']), 1)
-        self.assertEqual(response.data['sessions'][0]['scope'], 'pit')
+        self.assertEqual(len(response.data['sessions']), 2)
+        own = next(item for item in response.data['sessions'] if item['scope'] == 'pit')
+        other = next(item for item in response.data['sessions'] if item['scope'] == 'capstone')
+        self.assertTrue(own['can_open'])
+        self.assertFalse(other['can_open'])
+        self.assertEqual(other['year_levels'], ['3rd Year'])
+        self.assertNotIn('team_ids', other)
 
         self.client.force_authenticate(user=ordinary)
         self.assertEqual(self.client.get(url).status_code, 403)

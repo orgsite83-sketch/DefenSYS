@@ -39,7 +39,7 @@ class _ScheduledDefenseNotifier extends AdviserDefenseNotifier {
   );
 
   @override
-  Future<void> fetch() async {}
+  Future<void> fetch({String? workspace}) async {}
 }
 
 class _PublishedGradeNotifier extends AdviserGradingNotifier {
@@ -102,7 +102,7 @@ class _DashboardDeliverablesNotifier extends CapstoneDeliverablesNotifier {
 class _UpcomingDefenseNotifier extends AdviserDefenseNotifier {
   @override
   AdviserDefenseState build() {
-    final date = DateTime.now().add(const Duration(days: 7));
+    final date = DateTime.now();
     final scheduledDate =
         '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
     return AdviserDefenseState(
@@ -133,7 +133,7 @@ class _UpcomingDefenseNotifier extends AdviserDefenseNotifier {
   }
 
   @override
-  Future<void> fetch() async {}
+  Future<void> fetch({String? workspace}) async {}
 }
 
 void main() {
@@ -161,7 +161,11 @@ void main() {
                     'stage_label': 'Concept Proposal',
                     'deliverables_configured': true,
                     'required_complete': true,
-                    'endorsement_review': {'can_review_and_endorse': true, 'review_token': 'reviewed-files', 'files': []},
+                    'endorsement_review': {
+                      'can_review_and_endorse': true,
+                      'review_token': 'reviewed-files',
+                      'files': [],
+                    },
                     'endorsed': true,
                     'archive_unlocked': false,
                     'pre': [],
@@ -295,14 +299,14 @@ void main() {
 
     expect(find.text('My actions'), findsOneWidget);
     expect(find.text('Quick Actions'), findsNothing);
-    expect(find.text('Upcoming defenses'), findsOneWidget);
+    expect(find.text('Defense Schedule'), findsOneWidget);
     expect(
       tester.getTopLeft(find.text('My teams')).dx,
-      lessThan(tester.getTopLeft(find.text('Upcoming defenses')).dx),
+      lessThan(tester.getTopLeft(find.text('Defense Schedule')).dx),
     );
     expect(
       tester.getTopLeft(find.text('My actions')).dy,
-      greaterThan(tester.getTopLeft(find.text('Upcoming defenses')).dy),
+      greaterThan(tester.getTopLeft(find.text('Defense Schedule')).dy),
     );
     expect(find.text('1 to endorse'), findsOneWidget);
     expect(find.textContaining('Room 301'), findsOneWidget);
@@ -384,10 +388,17 @@ void main() {
     );
     expect(
       tester.getTopLeft(find.text('Export team summary')).dy,
-      closeTo(tester.getTopLeft(find.descendant(
-        of: find.byKey(const Key('adviser-team-summary')),
-        matching: find.text('Awaiting requirements'),
-      )).dy, 16),
+      closeTo(
+        tester
+            .getTopLeft(
+              find.descendant(
+                of: find.byKey(const Key('adviser-team-summary')),
+                matching: find.text('Awaiting files'),
+              ),
+            )
+            .dy,
+        16,
+      ),
     );
     final summary = find.byKey(const Key('adviser-team-summary'));
     expect(summary, findsOneWidget);
@@ -421,12 +432,12 @@ void main() {
     expect(find.text('Download grade report'), findsOneWidget);
     expect(
       find.textContaining(
-        'Upload the required scheduling files before review.',
+        'The team needs to upload the required before-endorsement files.',
       ),
       findsOneWidget,
     );
     final pendingEndorseButton = find.ancestor(
-      of: find.text('Review & endorse'),
+      of: find.text('Endorse team'),
       matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
     );
     expect(
@@ -470,7 +481,11 @@ void main() {
                     'stage_label': 'Concept Proposal',
                     'deliverables_configured': true,
                     'required_complete': true,
-                    'endorsement_review': {'can_review_and_endorse': true, 'review_token': 'reviewed-files', 'files': []},
+                    'endorsement_review': {
+                      'can_review_and_endorse': true,
+                      'review_token': 'reviewed-files',
+                      'files': [],
+                    },
                     'required_total': 1,
                     'required_uploaded': 1,
                     'pre': [
@@ -515,7 +530,7 @@ void main() {
     );
 
     final endorseButton = find.ancestor(
-      of: find.text('Review & endorse'),
+      of: find.text('Endorse team'),
       matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
     );
     final summary = find.byKey(const Key('adviser-team-summary'));
@@ -525,10 +540,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.descendant(
-        of: summary,
-        matching: find.text('Ready for review'),
-      ),
+      find.descendant(of: summary, matching: find.text('Awaiting endorsement')),
       findsOneWidget,
     );
     expect(tester.widget<ElevatedButton>(endorseButton).onPressed, isNotNull);
@@ -546,11 +558,11 @@ void main() {
       findsOneWidget,
     );
     expect(
-      tester.getTopLeft(find.text('Ready for review').last).dx,
+      tester.getTopLeft(find.text('Awaiting endorsement').last).dx,
       greaterThan(tester.getTopLeft(find.text('Team BioPulse').last).dx + 150),
     );
     expect(
-      tester.getTopLeft(find.text('Ready for review').last).dy,
+      tester.getTopLeft(find.text('Awaiting endorsement').last).dy,
       lessThan(tester.getTopLeft(endorseButton).dy),
     );
     expect(
@@ -559,7 +571,7 @@ void main() {
     );
     await tester.tap(endorseButton);
     await tester.pumpAndSettle();
-    expect(find.text('Review & endorse'), findsNWidgets(2));
+    expect(find.text('Endorse team'), findsNWidgets(2));
     expect(
       find.textContaining('remain due by their scheduled deadline'),
       findsOneWidget,
@@ -588,7 +600,11 @@ void main() {
               'stage_label': 'Concept Proposal',
               'deliverables_configured': true,
               'required_complete': true,
-                    'endorsement_review': {'can_review_and_endorse': true, 'review_token': 'reviewed-files', 'files': []},
+              'endorsement_review': {
+                'can_review_and_endorse': true,
+                'review_token': 'reviewed-files',
+                'files': [],
+              },
               'endorsed': true,
               'stage_status_detail': 'endorsed',
               'pre': [],
@@ -598,7 +614,11 @@ void main() {
               'stage_label': 'Project Proposal',
               'deliverables_configured': true,
               'required_complete': true,
-                    'endorsement_review': {'can_review_and_endorse': true, 'review_token': 'reviewed-files', 'files': []},
+              'endorsement_review': {
+                'can_review_and_endorse': true,
+                'review_token': 'reviewed-files',
+                'files': [],
+              },
               'endorsed': false,
               'required_total': 1,
               'required_uploaded': 1,
@@ -623,7 +643,11 @@ void main() {
               'stage_label': 'Concept Proposal',
               'deliverables_configured': true,
               'required_complete': true,
-                    'endorsement_review': {'can_review_and_endorse': true, 'review_token': 'reviewed-files', 'files': []},
+              'endorsement_review': {
+                'can_review_and_endorse': true,
+                'review_token': 'reviewed-files',
+                'files': [],
+              },
               'endorsed': true,
               'stage_status_detail': 'endorsed',
               'pre': [],
@@ -665,20 +689,20 @@ void main() {
       ],
     );
 
-    expect(find.text('Review & endorse'), findsNothing);
+    expect(find.text('Endorse team'), findsNothing);
     await tester.tap(find.text('Switch stage'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Ready for review'), findsNWidgets(2));
-    expect(find.text('Awaiting requirements'), findsOneWidget);
+    expect(find.text('Awaiting endorsement'), findsNWidgets(2));
+    expect(find.text('Awaiting files'), findsOneWidget);
     expect(find.text('Project Brief'), findsOneWidget);
     expect(find.text('Concept Proposal'), findsNothing);
 
     await tester.tap(find.text('Team Two').first);
     await tester.pumpAndSettle();
-    expect(find.text('Awaiting requirements'), findsNWidgets(2));
+    expect(find.text('Awaiting files'), findsNWidgets(2));
     final endorseButton = find.ancestor(
-      of: find.text('Review & endorse'),
+      of: find.text('Endorse team'),
       matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
     );
     expect(tester.widget<ElevatedButton>(endorseButton).onPressed, isNull);
@@ -724,7 +748,11 @@ void main() {
                     'stage_label': 'Concept Proposal',
                     'deliverables_configured': true,
                     'required_complete': true,
-                    'endorsement_review': {'can_review_and_endorse': true, 'review_token': 'reviewed-files', 'files': []},
+                    'endorsement_review': {
+                      'can_review_and_endorse': true,
+                      'review_token': 'reviewed-files',
+                      'files': [],
+                    },
                     'endorsed': false,
                     'pre': [],
                     'post': [],

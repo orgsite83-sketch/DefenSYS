@@ -66,7 +66,7 @@ class _Defense extends AdviserDefenseNotifier {
   );
 
   @override
-  Future<void> fetch() async {
+  Future<void> fetch({String? workspace}) async {
     refreshes++;
     state = AdviserDefenseState(
       schedules: [

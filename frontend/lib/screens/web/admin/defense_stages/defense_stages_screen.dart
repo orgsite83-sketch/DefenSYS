@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
@@ -223,13 +224,15 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
   }
 
   InputDecoration _dialogInputDecoration({
-    required String labelText,
+    String? labelText,
     String? hintText,
     String? helperText,
     String? errorText,
     Widget? prefixIcon,
     Widget? suffixIcon,
+    Color? fillColor,
   }) {
+    final effectiveFill = fillColor ?? Colors.white;
     return InputDecoration(
       labelText: labelText,
       hintText: hintText,
@@ -237,6 +240,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       errorText: errorText,
       prefixIcon: prefixIcon,
       suffixIcon: suffixIcon,
+      isDense: true,
       labelStyle: const TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w600,
@@ -251,15 +255,15 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         color: AppColors.textSecondary,
       ),
       filled: true,
-      fillColor: const Color(0xFFF8FAFC),
+      fillColor: effectiveFill,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
@@ -272,6 +276,179 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
+      ),
+    );
+  }
+
+  Widget _buildDialogFormField({
+    required String label,
+    required Widget child,
+    String? badge,
+    Color? badgeColor,
+    String? helperText,
+    String? tooltip,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                    letterSpacing: -0.1,
+                  ),
+                ),
+                if (tooltip != null) ...[
+                  const SizedBox(width: 4),
+                  Tooltip(
+                    message: tooltip,
+                    child: const Icon(
+                      Icons.help_outline_rounded,
+                      size: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            if (badge != null)
+              Text(
+                badge,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
+                  color: badgeColor ?? AppColors.textSecondary,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 7),
+        child,
+        if (helperText != null) ...[
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Icon(
+                Icons.info_outline_rounded,
+                size: 12.5,
+                color: AppColors.textSecondary,
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  helperText,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.textSecondary,
+                    height: 1.25,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildDialogPublishedStageBanner({
+    required bool isActive,
+    required bool isLocked,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: isActive ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isActive ? const Color(0xFFBBF7D0) : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: isActive ? const Color(0xFFDCFCE7) : const Color(0xFFE2E8F0),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isActive ? Icons.check_circle_rounded : Icons.visibility_off_rounded,
+              size: 19,
+              color: isActive ? const Color(0xFF16A34A) : AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 6,
+                  runSpacing: 2,
+                  children: [
+                    const Text(
+                      'Published Stage',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: isActive ? const Color(0xFFDCFCE7) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                        border: Border.all(
+                          color: isActive ? const Color(0xFF86EFAC) : const Color(0xFFCBD5E1),
+                        ),
+                      ),
+                      child: Text(
+                        isActive ? 'Active' : 'Draft',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: isActive ? const Color(0xFF15803D) : AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 1),
+                const Text(
+                  'When active, this stage is part of the live capstone defense sequence.',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Switch(
+            value: isActive,
+            activeTrackColor: AppColors.maroon,
+            onChanged: isLocked ? null : onChanged,
+          ),
+        ],
       ),
     );
   }
@@ -1214,7 +1391,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                     }
 
                     return Container(
-                      margin: const EdgeInsets.only(top: 12),
+                      margin: const EdgeInsets.only(top: 10),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF8FAFC),
@@ -1229,7 +1406,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                               const Icon(Icons.tune_rounded, size: 14, color: Color(0xFF475569)),
                               const SizedBox(width: 6),
                               Text(
-                                isPost ? 'Advanced Post-Defense Rules & Archiving' : 'Advanced Timing & Panel Access',
+                                isPost ? 'Post-Defense Rules & Archiving' : 'Submission Timing & Access Settings',
                                 style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
@@ -1240,13 +1417,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                           ),
                           const SizedBox(height: 10),
                           if (!isPost) ...[
-                            DefenseMaterialToggle(
-                              value: item['is_defense_material'] == true,
-                              onChanged: (value) => setDialogState(() {
-                                item['is_defense_material'] = value;
-                              }),
-                            ),
-                            const SizedBox(height: 8),
                             DeliverableTimingFields(
                               timing: item['requirement_timing']?.toString() ?? 'scheduling',
                               hoursBefore: int.tryParse(item['deadline_hours_before']?.toString() ?? '') ?? 24,
@@ -1255,8 +1425,36 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                               onTimingChanged: (value) => setDialogState(() => item['requirement_timing'] = value),
                               onHoursChanged: (value) => setDialogState(() => item['deadline_hours_before'] = value),
                             ),
+                            const SizedBox(height: 10),
+                            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                            const SizedBox(height: 10),
+                            DefenseMaterialToggle(
+                              value: item['is_defense_material'] == true,
+                              onChanged: (value) => setDialogState(() {
+                                item['is_defense_material'] = value;
+                              }),
+                            ),
+                            const SizedBox(height: 10),
+                            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                            const SizedBox(height: 8),
+                            DocumentPolicyEditor(
+                              value: Map<String, dynamic>.from(item['file_policy'] as Map? ?? {}),
+                              allowConcepts: !isPost,
+                              onChanged: (value) => setDialogState(() => item['file_policy'] = value),
+                            ),
                           ],
                           if (isPost) ...[
+                            StageVerdictConditionChoices(
+                              value: item['verdict_condition']?.toString() == 'revisions_only'
+                                  ? 'revisions_only'
+                                  : 'all_pass',
+                              onChanged: (value) => setDialogState(() {
+                                item['verdict_condition'] = value;
+                              }),
+                            ),
+                            const SizedBox(height: 10),
+                            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                            const SizedBox(height: 10),
                             Row(
                               children: [
                                 DefensysShadcnScope(
@@ -1286,15 +1484,16 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                               ],
                             ),
                             const SizedBox(height: 10),
-                            StageVerdictConditionChoices(
-                              value: item['verdict_condition']?.toString() == 'revisions_only'
-                                  ? 'revisions_only'
-                                  : 'all_pass',
-                              onChanged: (value) => setDialogState(() {
-                                item['verdict_condition'] = value;
-                              }),
+                            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                            const SizedBox(height: 8),
+                            DocumentPolicyEditor(
+                              value: Map<String, dynamic>.from(item['file_policy'] as Map? ?? {}),
+                              allowConcepts: false,
+                              onChanged: (value) => setDialogState(() => item['file_policy'] = value),
                             ),
                             const SizedBox(height: 10),
+                            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                            const SizedBox(height: 8),
                             RepositoryArchiveNamingPanel(
                               templateController: templateController,
                               deliverableLabel: labelController.text,
@@ -1412,9 +1611,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     final peerCtrl = TextEditingController(text: '20');
     var isActive = setup?['is_active'] == true;
     var isPresentationOnly = setup?['is_presentation_only'] == true;
-    bool? minutesRequired = setup?['minutes_required'] is bool
-        ? setup!['minutes_required'] as bool : null;
-    bool minutesChoiceError = false;
+    var conceptConfig = Map<String, dynamic>.from(setup?['concept_config'] as Map? ?? {});
+    bool minutesRequired = setup?['minutes_required'] is bool
+        ? setup!['minutes_required'] as bool : true;
     final minutesNumber = TextEditingController(
       text: setup?['minutes_deliverable_id']?.toString() ?? 'MINUTES',
     );
@@ -1472,6 +1671,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         'is_active': isActive,
         'is_presentation_only': isPresentationOnly,
         'minutes_required': minutesRequired,
+        'concept_config': conceptConfig,
         'minutes_deliverable_id': minutesNumber.text,
         'minutes_deliverable_label': minutesName.text,
         'deliverables': deliverables,
@@ -1705,39 +1905,136 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                               Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(
-                                        flex: 3,
+                                  // 1. Stage Identity (Name & Code)
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final isWide = constraints.maxWidth >= 600;
+                                      final nameField = _buildDialogFormField(
+                                        label: 'Stage Name',
+                                        badge: 'Required',
+                                        badgeColor: AppColors.maroon,
                                         child: TextField(
                                           controller: label,
+                                          style: const TextStyle(
+                                            color: AppColors.textPrimary,
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                           decoration: _dialogInputDecoration(
-                                            labelText: 'Stage Name',
                                             hintText: 'e.g. Concept Proposal, Colloquium, Final Defense',
                                           ),
                                           onChanged: (_) => setDialogState(() {}),
                                         ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        flex: 2,
+                                      );
+
+                                      final codeField = _buildDialogFormField(
+                                        label: 'Stage Code',
+                                        badge: 'System Identifier',
                                         child: TextField(
                                           controller: codeCtrl,
+                                          style: const TextStyle(
+                                            color: AppColors.textPrimary,
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.w600,
+                                          ),
                                           decoration: _dialogInputDecoration(
-                                            labelText: 'Stage Code',
-                                            hintText: 'e.g. CAPS101',
-                                            helperText: 'Unique system identifier',
+                                            hintText: 'e.g. concept-proposal',
+                                            prefixIcon: const Icon(
+                                              Icons.tag_rounded,
+                                              size: 16,
+                                              color: Color(0xFF64748B),
+                                            ),
+                                          ),
+                                          onChanged: (_) => setDialogState(() {}),
+                                        ),
+                                      );
+
+                                      if (!isWide) {
+                                        return Column(
+                                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                                          children: [
+                                            nameField,
+                                            const SizedBox(height: 14),
+                                            codeField,
+                                          ],
+                                        );
+                                      }
+
+                                      return Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(flex: 3, child: nameField),
+                                          const SizedBox(width: 14),
+                                          Expanded(flex: 2, child: codeField),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(height: 14),
+
+                                  // 2. Stage Description & Publication Status
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final isWide = constraints.maxWidth >= 600;
+                                      final descField = _buildDialogFormField(
+                                        label: 'Stage Description',
+                                        badge: 'Optional',
+                                        child: TextField(
+                                          controller: description,
+                                          minLines: 2,
+                                          maxLines: 2,
+                                          style: const TextStyle(
+                                            color: AppColors.textPrimary,
+                                            fontSize: 13.5,
+                                            height: 1.35,
+                                          ),
+                                          decoration: _dialogInputDecoration(
+                                            hintText: 'Provide brief guidance or objectives for this defense milestone...',
                                           ),
                                         ),
-                                      ),
-                                    ],
+                                      );
+
+                                      final publishedField = _buildDialogFormField(
+                                        label: 'Publication Status',
+                                        badge: isActive ? 'Active' : 'Draft',
+                                        badgeColor: isActive ? const Color(0xFF16A34A) : AppColors.textSecondary,
+                                        child: _buildDialogPublishedStageBanner(
+                                          isActive: isActive,
+                                          isLocked: stageIsLocked,
+                                          onChanged: (val) {
+                                            setDialogState(() => isActive = val);
+                                          },
+                                        ),
+                                      );
+
+                                      if (!isWide) {
+                                        return Column(
+                                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                                          children: [
+                                            descField,
+                                            const SizedBox(height: 14),
+                                            publishedField,
+                                          ],
+                                        );
+                                      }
+
+                                      return Row(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Expanded(flex: 3, child: descField),
+                                          const SizedBox(width: 14),
+                                          Expanded(flex: 2, child: publishedField),
+                                        ],
+                                      );
+                                    },
                                   ),
                                   const SizedBox(height: 16),
+
+                                  // 3. Sequence Position in Pipeline
                                   Container(
-                                    padding: const EdgeInsets.all(12),
+                                    padding: const EdgeInsets.all(14),
                                     decoration: BoxDecoration(
-                                      color: Colors.white,
+                                      color: const Color(0xFFF8FAFC),
                                       borderRadius: BorderRadius.circular(10),
                                       border: Border.all(color: const Color(0xFFE2E8F0)),
                                     ),
@@ -1757,56 +2054,29 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 16),
+
+                                  // 4. Session Documentation Policy
+                                  const Text(
+                                    'Stage policies',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
                                   StageMinutesSettings(
                                     requiredMinutes: minutesRequired,
-                                    errorText: minutesChoiceError
-                                        ? 'Choose Signed minutes required or Minutes not required.' : null,
                                     enabled: !stageIsLocked,
-                                    onChanged: (value) => setDialogState(() {
-                                      minutesRequired = value;
-                                      minutesChoiceError = false;
-                                    }),
+                                    onChanged: (value) => setDialogState(() => minutesRequired = value),
                                   ),
-                                  const SizedBox(height: 20),
-                                  TextField(
-                                    controller: description,
-                                    minLines: 2,
-                                    maxLines: 3,
-                                    decoration: _dialogInputDecoration(
-                                      labelText: 'Stage Description (Optional)',
-                                      hintText: 'Provide brief guidance or objectives for this defense milestone...',
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF8FAFC),
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                                    ),
-                                    child: SwitchListTile(
-                                      contentPadding: EdgeInsets.zero,
-                                      title: const Text(
-                                        'Published Stage',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 13.5,
-                                          color: AppColors.textPrimary,
-                                        ),
-                                      ),
-                                      subtitle: const Text(
-                                        'Published stages are available in defense scheduling. Leave unpublished while preparing setup.',
-                                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                                      ),
-                                      activeTrackColor: AppColors.maroon,
-                                      value: isActive,
-                                      onChanged: (value) {
-                                        setDialogState(() {
-                                          isActive = value;
-                                        });
-                                      },
-                                    ),
+                                  const SizedBox(height: 14),
+
+                                  // 5. Concept Settings
+                                  ConceptSettings(
+                                    value: conceptConfig,
+                                    enabled: !stageIsLocked,
+                                    onChanged: (value) => setDialogState(() => conceptConfig = value),
                                   ),
                                 ],
                               ),
@@ -2279,11 +2549,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                     showValidationToast(context, 'Please enter a stage name before proceeding.');
                                     return;
                                   }
-                                  if (activeTab == 0 && minutesRequired == null) {
-                                    setDialogState(() => minutesChoiceError = true);
-                                    showValidationToast(context, 'Choose whether signed minutes are required.');
-                                    return;
-                                  }
                                   if (activeTab == 1 && !editing && total != 100) {
                                     showValidationToast(context, 'Panel, Adviser, and Peer weights must total 100%.');
                                     return;
@@ -2304,14 +2569,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                               ElevatedButton.icon(
                                 onPressed: savingDraft ? null : () async {
                                   final stageName = label.text.trim();
-                                  if (minutesRequired == null) {
-                                    setDialogState(() {
-                                      activeTab = 0;
-                                      minutesChoiceError = true;
-                                    });
-                                    showValidationToast(context, 'Choose whether signed minutes are required.');
-                                    return;
-                                  }
                                   if (stageName.isEmpty) {
                                     setDialogState(() => activeTab = 0);
                                     showValidationToast(context, 'Enter a stage name.');
@@ -2430,6 +2687,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       'is_active': isActive,
       'is_presentation_only': isPresentationOnly,
       'minutes_required': minutesRequired,
+      'concept_config': conceptConfig,
       'minutes_deliverable_id': minutesNumber.text.trim(),
       'minutes_deliverable_label': minutesName.text.trim(),
       'deliverables': isPresentationOnly ? [] : deliverables,

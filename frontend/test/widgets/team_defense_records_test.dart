@@ -19,7 +19,7 @@ class _Defenses extends TeamDefenseNotifier {
   TeamDefenseState build() =>
       TeamDefenseState(schedules: records, error: error);
   @override
-  Future<void> fetch() async {
+  Future<void> fetch({String? workspace}) async {
     refreshes++;
   }
 }

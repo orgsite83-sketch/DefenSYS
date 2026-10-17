@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 
 from academic_period_management.models import Semester
 from defense.scheduler.models import DefenseSchedule
@@ -13,6 +13,7 @@ from student_teams.models import StudentTeam
 from student_teams.services import is_stage_ready, mark_stage_locked, mark_stage_ready, was_stage_endorsed
 from .models import DeliverableSubmission
 from .timing import due_before_defense, scheduling_requirement
+from .concepts import stage_for as document_context
 
 
 class DynamicStageOptionsList(list):
@@ -74,6 +75,7 @@ def get_deliverable_definitions(stage_label):
                 'is_defense_material': getattr(d, 'is_defense_material', False),
                 'verdict_condition': getattr(d, 'verdict_condition', 'all_pass'),
                 'file_format': getattr(d, 'file_format', 'any') or 'any',
+                'file_policy': getattr(d, 'file_policy', {}) or {},
             }
             for d in deliverables
             if (d.deliverable_id or '').strip()
@@ -91,7 +93,17 @@ def get_deliverable_definitions_for_team(team, stage_label):
     """Load deliverable definitions configured for a Capstone stage or PIT event."""
     if not team or not stage_label:
         return []
-    return get_deliverable_definitions_for_scope('capstone' if team.is_capstone else 'pit', team.semester_id, stage_label, year_level=team.year_level)
+    definitions = get_deliverable_definitions_for_scope('capstone' if team.is_capstone else 'pit', team.semester_id, stage_label, year_level=team.year_level)
+    if any((d.get('file_policy') or {}).get('mode') == 'concepts' for d in definitions):
+        from student_teams.concept_policy import resolve_policy
+        stage = document_context(team, stage_label)
+        if not stage or not stage.concept_config.get('enabled'):
+            return [d for d in definitions if (d.get('file_policy') or {}).get('mode') != 'concepts']
+        policy = resolve_policy(team, stage)
+        for definition in definitions:
+            if (definition.get('file_policy') or {}).get('mode') == 'concepts':
+                definition['concept_policy'] = policy
+    return definitions
 
 
 def get_deliverable_definitions_for_scope(scope, semester_id, stage_label, *, year_level=None):
@@ -122,6 +134,7 @@ def get_deliverable_definitions_for_scope(scope, semester_id, stage_label, *, ye
             'is_defense_material': getattr(d, 'is_defense_material', False),
             'verdict_condition': 'all_pass',
             'file_format': getattr(d, 'file_format', 'any') or 'any',
+            'file_policy': getattr(d, 'file_policy', {}) or {},
         }
         for d in config.deliverables.all().order_by('display_order', 'deliverable_id')
         if (d.deliverable_id or '').strip()
@@ -311,7 +324,9 @@ def team_queryset_for_user(user, *, include_pit_lead=True):
         .prefetch_related(
             'memberships',
             'memberships__student',
-            'deliverable_submissions',
+            Prefetch('deliverable_submissions', queryset=DeliverableSubmission.objects.select_related(
+                'uploaded_by', 'reviewed_by',
+            ).defer('extracted_text', 'topics', 'summary', 'classification').prefetch_related('files')),
         )
     )
 
@@ -350,6 +365,7 @@ def filter_teams(request, queryset):
     search = request.query_params.get('search', '').strip()
     status_filter = request.query_params.get('status', '').strip()
     year_level = request.query_params.get('year_level', '').strip()
+    section = request.query_params.get('section', '').strip()
     team_id = request.query_params.get('team_id', '').strip()
 
     if team_id:
@@ -357,6 +373,9 @@ def filter_teams(request, queryset):
 
     if year_level:
         queryset = queryset.filter(year_level=year_level)
+
+    if section:
+        queryset = queryset.filter(section=section)
 
     if search:
         queryset = queryset.filter(
@@ -423,7 +442,9 @@ def archive_unlocked(team, stage_label, deliverable_type='post'):
         team=team,
         semester=team.semester,
     ).order_by('-updated_at', '-id').first()
-    if stage_grade and stage_grade.is_capstone:
+    if stage_grade and stage_grade.uses_defense_verdict:
+        if stage_grade.scope == 'pit' and not stage_grade.verdict:
+            return False
         if getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
             return False
         if getattr(stage_grade, 'result', '') == 'failed':
@@ -453,7 +474,8 @@ def archive_unlocked(team, stage_label, deliverable_type='post'):
 def submissions_for(team, stage_label):
     return {
         submission.deliverable_id: submission
-        for submission in DeliverableSubmission.objects.filter(team=team, stage_label=stage_label)
+        for submission in team.deliverable_submissions.all()
+        if submission.stage_label == stage_label
     }
 
 
@@ -497,8 +519,11 @@ def required_complete(team, stage_label):
     ]
     if not required_items:
         return True
+    from .documents import completeness
+    stage = document_context(team, stage_label)
     return all(
-        item['id'] in submitted
+        completeness(submitted.get(item['id']), item, accepted=True, stage=stage)
+        and item['id'] in submitted
         and submitted[item['id']].status == DeliverableSubmission.STATUS_ACCEPTED
         for item in required_items
     )
@@ -587,6 +612,7 @@ def compute_stage_status_detail(team, stage_label, configured, archive_required_
         scope=DefenseSchedule.SCOPE_CAPSTONE if is_capstone else DefenseSchedule.SCOPE_PIT,
         team=team,
         project_version=team.project_version,
+        semester=team.semester,
         status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE]
     )
     if stage_obj:
@@ -624,7 +650,7 @@ def compute_stage_status_detail(team, stage_label, configured, archive_required_
     ).order_by('-updated_at', '-id').first()
     has_panel_scored = bool(stage_grade and stage_grade.panel_score is not None)
 
-    if is_capstone and stage_grade:
+    if stage_grade and stage_grade.uses_defense_verdict:
         if stage_grade.verdict in ('failed', 'project_rejected'):
             return stage_grade.verdict
         if stage_grade.verdict == 'for_redefense':
@@ -709,7 +735,7 @@ def is_stage_defense_done(team, stage_label):
     if stage_grade:
         if is_capstone:
             is_officially_complete = is_officially_complete and stage_grade.status == TeamGrade.STATUS_PUBLISHED
-        if is_capstone and getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
+        if stage_grade.uses_defense_verdict and getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
             return False
         if is_capstone and getattr(stage_grade, 'result', '') == 'failed':
             return False
@@ -771,9 +797,18 @@ def ensure_submission_editable(team, stage_label, deliverable_type, submission=N
         if submission.status == DeliverableSubmission.STATUS_REJECTED:
             # An explicit revision request reopens only this submission, including past stages.
             return
+        if definition and definition.get('file_policy') and submission.revision_review_unlocked:
+            from .documents import current_files
+            if any(f.status == 'rejected' for f in current_files(submission)):
+                return
 
     if submission and submission.status == DeliverableSubmission.STATUS_ACCEPTED:
-        if not (is_redefense and deliverable_type == DeliverableSubmission.TYPE_PRE):
+        from .documents import current_files
+        grouped_corrections = bool(definition and definition.get('file_policy') and any(f.status == 'rejected' for f in current_files(submission)))
+        grouped_draft = bool(definition and (definition.get('file_policy') or {}).get('mode') in ('named', 'multiple', 'concepts')
+            and not is_stage_defense_done(team, stage_label)
+            and not (was_stage_endorsed(team, defense_stage_for_label(stage_label)) if team.is_capstone else team.ready_for_stage == stage_label))
+        if not grouped_corrections and not grouped_draft and not (is_redefense and deliverable_type == DeliverableSubmission.TYPE_PRE):
             raise PermissionError(
                 'Accepted deliverables are locked. Reopen the submission for revision before changing its file.'
             )
@@ -817,6 +852,7 @@ def stage_payload(team, stage_label, evaluator=None):
     submitted = submissions_for(team, stage_label)
     definitions = get_deliverable_definitions_for_team(team, stage_label)
     unlocked = archive_unlocked(team, stage_label)
+    from .documents import slots_for as document_slots_for, completeness as document_completeness
     rows = []
 
     from repository.project_archive.services import resolve_archive_file_template, _deliverable_slug
@@ -839,6 +875,7 @@ def stage_payload(team, stage_label, evaluator=None):
         scope=DefenseSchedule.SCOPE_CAPSTONE if is_capstone else DefenseSchedule.SCOPE_PIT,
         team=team,
         project_version=team.project_version,
+        semester=team.semester,
         status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE]
     )
     if stage_obj:
@@ -876,6 +913,11 @@ def stage_payload(team, stage_label, evaluator=None):
     admin_unlocked_post = is_stage_unlocked_by_admin(team, stage_label, deliverable_type='post') or is_stage_unlocked_by_admin(team, stage_label)
     can_faculty_review_pre = ((not is_endorsed and not is_defense_done) or admin_unlocked_pre)
     can_faculty_review_post = is_defense_done
+    from .concepts import latest_round, enabled as concepts_enabled
+    concept_context = document_context(team, stage_label)
+    open_concepts = latest_round(team, concept_context)
+    if open_concepts and not open_concepts.schedule_id:
+        can_faculty_review_pre = True
 
     can_cancel_endorsement = bool(
         is_endorsed
@@ -950,6 +992,9 @@ def stage_payload(team, stage_label, evaluator=None):
             can_review_item = can_faculty_review_post and (
                 submission is None or submission.status != DeliverableSubmission.STATUS_ACCEPTED
             )
+            if submission and item.get('file_policy') and can_faculty_review_post:
+                from .documents import current_files
+                can_review_item = any(f.status != 'accepted' for f in current_files(submission))
         else:
             can_review_item = can_faculty_review_pre or bool(submission and submission.revision_review_unlocked)
         
@@ -961,6 +1006,8 @@ def stage_payload(team, stage_label, evaluator=None):
                 stage_label,
                 semester_label,
                 deliverable_label=item['label'],
+                file_format=item.get('file_format', 'any'),
+                file_extension=submission.file_name.rpartition('.')[2] if submission else '',
             )
             if suggested in used_vault_names:
                 import os
@@ -988,8 +1035,10 @@ def stage_payload(team, stage_label, evaluator=None):
             'type': item['type'],
             'archive_note': item.get('archive_note', ''),
             'file_format': item.get('file_format', 'any'),
+            'file_policy': item.get('file_policy', {}),
+            'document_slots': document_slots_for(item, stage=concept_context),
             'suggested_file_name': suggested,
-            'uploaded': submission is not None,
+            'uploaded': document_completeness(submission, item, stage=concept_context) if item.get('file_policy') else submission is not None,
             'locked': not can_upload,
             'can_upload': can_upload,
             'is_defense_material': is_defense_material,
@@ -1028,6 +1077,8 @@ def stage_payload(team, stage_label, evaluator=None):
 
     # Resolve stage-scoped schedule
     stage_sched = active_schedules.order_by('-scheduled_date', '-start_time', '-id').first()
+    from defense.scheduler.progress import schedule_progress
+    assessment_progress = schedule_progress(stage_sched, reconcile_status=False) if stage_sched else None
     schedule_data = None
     if stage_sched:
         panelists_list = []
@@ -1087,10 +1138,14 @@ def stage_payload(team, stage_label, evaluator=None):
     from grading.grades.availability import peer_grading_unavailable_reason
     stage_peer_reason = peer_grading_unavailable_reason(stage_grade)
 
+    from .concepts import payload as concept_payload
+    concept_workflow = concept_payload(team, concept_context)
     from .endorsement import endorsement_review
     review = endorsement_review(team, stage_label, definitions=definitions, submitted=submitted)
     return {
         'stage_label': stage_label,
+        'concept_workflow': concept_workflow,
+        'assessment_progress': assessment_progress,
         'endorsement_review': review,
         'peer_eval_unavailable_reason': stage_peer_reason,
         'deliverables_configured': configured,
@@ -1152,23 +1207,15 @@ def submission_payload(submission):
     if submission is None:
         return None
         
-    latest_file = submission.latest_file
-    files_list = [latest_file] if latest_file else []
+    from .documents import current_files, file_payload
+    files_data = [file_payload(f) for f in current_files(submission)]
+    history_data = [file_payload(f) for f in submission.files.all() if not f.is_current]
 
-    files_data = []
-    for f in files_list:
-        files_data.append({
-            'id': f.id,
-            'file_name': f.file_name,
-            'file_size': f.file_size,
-            'file_url': f.file.url if f.file else None,
-            'uploaded_at': f.uploaded_at,
-        })
-        
     return {
         'id': submission.id,
         'deliverable_id': submission.deliverable_id,
         'files': files_data,
+        'file_history': history_data,
         'file_name': files_data[0]['file_name'] if files_data else (getattr(submission, 'file_name', '') or ''),
         'file_size': files_data[0]['file_size'] if files_data else (getattr(submission, 'file_size', '') or ''),
         'file_url': files_data[0]['file_url'] if files_data else (submission.file.url if getattr(submission, 'file', None) and submission.file else None),
@@ -1219,8 +1266,10 @@ def team_payload(team, selected_stage=None, evaluator=None):
         selected = configured_stage_labels[0]
     selected_payload = next(
         (item for item in stages if item['stage_label'] == selected),
-        stage_payload(team, selected, evaluator=evaluator) if selected else stage_payload(team, '', evaluator=evaluator),
+        None,
     )
+    if selected_payload is None:
+        selected_payload = stage_payload(team, selected or '', evaluator=evaluator)
 
     # Fetch team members list
     members = [
@@ -1254,7 +1303,7 @@ def team_payload(team, selected_stage=None, evaluator=None):
             ).order_by('-updated_at', '-id').first()
 
         if grade_obj:
-            student_grades = StudentStageGrade.objects.filter(team_grade=grade_obj)
+            student_grades = StudentStageGrade.objects.filter(team_grade=grade_obj).select_related('student')
             peer_per_student = [
                 {
                     'student_id': sg.student.id,
@@ -1298,6 +1347,8 @@ def team_payload(team, selected_stage=None, evaluator=None):
         'id': team.id,
         'name': team.name,
         'project_title': team.project_title,
+        'setup_pending': team.setup_pending,
+        'project_pending': team.project_pending,
         'project_version': team.project_version,
         'semester_id': team.semester_id,
         'level': team.level,
@@ -1314,12 +1365,46 @@ def team_payload(team, selected_stage=None, evaluator=None):
         'leader_name': display_name(team.leader),
         'member_count': team.memberships.count(),
         'submitted_count': team.deliverable_submissions.count(),
+        'counts': team_counts_payload(team, selected_payload),
         'members': members,
         'grade': grade_payload,
     }
 
 
-def counts_payload(teams, selected_stage=None):
+def team_counts_payload(team, stage):
+    """The team's contribution to list counts, using the serialized stage facts."""
+    status = stage['status']
+    ready = status in ('endorsed', 'complete')
+    missing = status in ('missing', 'needs_revision')
+    pending = status == 'pending_review'
+    if not (ready or missing or pending) and team.ready_for_stage:
+        ready = True
+    submissions = list(team.deliverable_submissions.all())
+    return {
+        'teams': 1,
+        'ready': int(ready),
+        'missing_requirements': int(missing),
+        'pending_review': int(pending),
+        'submitted_files': len(submissions),
+        'archive_files': sum(
+            submission.deliverable_type == DeliverableSubmission.TYPE_POST
+            and submission.status == DeliverableSubmission.STATUS_ACCEPTED
+            for submission in submissions
+        ),
+        'deliverables_configured': stage['deliverables_configured'],
+    }
+
+
+def counts_payload(teams, selected_stage=None, *, serialized_teams=None):
+    if serialized_teams is not None:
+        contributions = [team['counts'] for team in serialized_teams]
+        return {
+            **{key: sum(row[key] for row in contributions) for key in (
+                'teams', 'ready', 'missing_requirements', 'pending_review',
+                'submitted_files', 'archive_files',
+            )},
+            'deliverables_configured': any(row['deliverables_configured'] for row in contributions),
+        }
     team_list = list(teams)
     submitted_total = sum(team.deliverable_submissions.count() for team in team_list)
     
@@ -1360,7 +1445,7 @@ def counts_payload(teams, selected_stage=None):
 
 
 @transaction.atomic
-def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, user, file=None, file_id=None):
+def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, user, file=None, file_id=None, slot_key=''):
     team = StudentTeam.objects.select_for_update().get(pk=team.pk)
     deliverable_id = (deliverable_id or '').strip()
     if not team.is_capstone and not team.is_pit:
@@ -1427,52 +1512,19 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
             'uploaded_by', 'uploaded_at',
         ])
 
-    # Create/update file in DeliverableSubmissionFile
-    from django.core.files.base import ContentFile
-    from repository.deliverables.models import DeliverableSubmissionFile
-
-    file_obj = None
-    if file_id:
-        file_obj = submission.files.filter(id=file_id).first()
-        
-    if not file_obj and file:
-        file_obj = submission.files.filter(file_name=file_name.strip()).first()
-
-    if not file_obj and submission.files.exists():
-        # Overwrite existing primary file for single-file deliverables rather than creating duplicate file rows!
-        file_obj = submission.files.order_by('uploaded_at').first()
-        # Clean up any secondary duplicate files if they exist from past uploads
-        for extra in submission.files.exclude(id=file_obj.id):
-            delete_repository_file_on_commit(extra.file)
-            extra.delete()
-
-    target_file_name = replacement_file_name(file_name.strip())
-    if file_obj and file_obj.file and file is not None:
-        delete_repository_file_on_commit(file_obj.file)
-
-    if file_obj:
-        file_obj.file_name = file_name.strip()
-        file_obj.file_size = (file_size or '').strip()
-        if file is not None:
-            file_obj.file = ContentFile(file.read(), name=target_file_name)
-            file_obj.extracted_text = ''
-            file_obj.topics = []
-            file_obj.summary = ''
-            file_obj.category = ''
-            file_obj.category_confidence = None
-        file_obj.save()
-    else:
-        file_obj = DeliverableSubmissionFile(
-            submission=submission,
-            file_name=file_name.strip(),
-            file_size=(file_size or '').strip(),
-        )
-        if file is not None:
-            file_obj.file = ContentFile(file.read(), name=target_file_name)
-        file_obj.save()
+    from .documents import store_revision, sync_submission
+    stage = document_context(team, stage_label)
+    from .concepts import enabled, get_round
+    if enabled(stage):
+        get_round(team, stage)
+    store_revision(submission, definition, file=file, file_name=file_name, file_size=file_size,
+        slot_key=slot_key, file_id=file_id, preserve_approval=is_approved_replacement, stage=stage)
+    sync_submission(submission, definition, stage)
+    from .concepts import invalidate_clearance
+    invalidate_clearance(team, stage_label, deliverable_id)
 
     # Sync latest file to the parent submission for backward compatibility
-    latest_file = submission.files.order_by('-uploaded_at').first()
+    latest_file = submission.latest_file
     if latest_file:
         submission.file_name = latest_file.file_name
         submission.file_size = latest_file.file_size
@@ -1537,6 +1589,20 @@ def remove_submission(team, stage_label, deliverable_id, file_id=None):
         team, stage_label, submission.deliverable_type, submission,
     )
 
+    if definition and definition.get('file_policy'):
+        from .documents import sync_submission
+        targets = submission.files.filter(is_current=True)
+        if file_id:
+            targets = targets.filter(pk=file_id)
+        deleted = targets.update(is_current=False)
+        submission._prefetched_objects_cache = {}
+        sync_submission(submission, definition, document_context(team, stage_label))
+        from .concepts import invalidate_clearance
+        invalidate_clearance(team, stage_label, deliverable_id)
+        if hasattr(team, '_prefetched_objects_cache'):
+            team._prefetched_objects_cache.pop('deliverable_submissions', None)
+        return deleted
+
     deleted = 0
     if file_id:
         file_to_delete = submission.files.filter(id=file_id).first()
@@ -1550,7 +1616,7 @@ def remove_submission(team, stage_label, deliverable_id, file_id=None):
             submission.delete()
         else:
             # Sync backward compatibility fields with the remaining latest file
-            latest_file = submission.files.order_by('-uploaded_at').first()
+            latest_file = submission.latest_file
             submission.file_name = latest_file.file_name
             submission.file_size = latest_file.file_size
             submission.file = latest_file.file
@@ -1596,10 +1662,14 @@ def endorse_team(team, stage_label, user=None):
         if stage is None:
             raise ValueError('Defense stage does not exist.')
         try:
+            from .concepts import endorse as endorse_concepts
+            endorse_concepts(team, stage, user)
             mark_stage_ready(team, stage, user=user)
         except ValidationError as exc:
             raise ValueError(' '.join(exc.messages)) from exc
     else:
+        from .concepts import endorse as endorse_concepts
+        endorse_concepts(team, document_context(team, stage_label), user)
         team.ready_for_stage = stage_label
         team.save(update_fields=['ready_for_stage', 'updated_at'])
     return team
@@ -1638,11 +1708,13 @@ def unendorse_team(team, stage_label):
         if team.ready_for_stage == stage_label:
             team.ready_for_stage = None
             team.save(update_fields=['ready_for_stage', 'updated_at'])
+        from .concepts import invalidate_clearance
+        invalidate_clearance(team, stage_label)
     return team
 
 
 @transaction.atomic
-def review_submission(team, stage_label, deliverable_id, status_val, feedback_val, reviewer_user, clear_defense_revisions=False):
+def review_submission(team, stage_label, deliverable_id, status_val, feedback_val, reviewer_user, clear_defense_revisions=False, file_id=None):
     team = StudentTeam.objects.select_for_update().get(pk=team.pk)
     definition = definition_for(team, stage_label, deliverable_id)
     if definition and definition.get('source') == 'defense_minutes':
@@ -1665,17 +1737,25 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
     if not is_admin and getattr(reviewer_user, 'role', None) != 'faculty':
         raise PermissionError('Only assigned faculty or an Admin can review deliverables.')
     is_defense_done = is_stage_defense_done(team, stage_label)
+    from .concepts import latest_round, stage_for
+    concept_round = latest_round(team, stage_for(team, stage_label))
+    if concept_round and not concept_round.schedule_id:
+        is_defense_done = False
     is_post = submission.deliverable_type == DeliverableSubmission.TYPE_POST
     admin_unlocked = is_stage_unlocked_by_admin(team, stage_label, deliverable_type=submission.deliverable_type)
 
-    if is_post and submission.status == DeliverableSubmission.STATUS_ACCEPTED:
+    current_target = submission.files.filter(pk=file_id, is_current=True).first() if file_id else None
+    reviewing_pending_attachment = bool(definition and definition.get('file_policy') and current_target and current_target.status != 'accepted')
+    if is_post and submission.status == DeliverableSubmission.STATUS_ACCEPTED and not reviewing_pending_attachment:
         raise PermissionError('This file is already in the archive. An Admin must reopen it for revision.')
     if is_post and status_val == DeliverableSubmission.STATUS_ACCEPTED and not is_defense_done:
         raise PermissionError('Post-defense files can be approved only after this defense is complete.')
 
     if not is_post:
-        stage = defense_stage_for_label(stage_label) if team.is_capstone else None
+        stage = document_context(team, stage_label)
         endorsed = was_stage_endorsed(team, stage) if stage else team.ready_for_stage == stage_label
+        if concept_round and not concept_round.schedule_id:
+            endorsed = False
         if endorsed and not (admin_unlocked or submission.revision_review_unlocked or (definition and due_before_defense(definition))):
             raise PermissionError('Cancel endorsement or ask an Admin to unlock pre-defense review first.')
 
@@ -1687,6 +1767,9 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
     if is_post and status_val == DeliverableSubmission.STATUS_REJECTED and not (feedback_val or '').strip():
         raise ValueError('Explain what the team must correct before requesting a post-defense revision.')
 
+    from .documents import review_files
+    stage = document_context(team, stage_label)
+    review_files(submission, definition or {}, status_val, feedback_val or '', reviewer_user, file_id=file_id, stage=stage)
     submission.status = status_val
     submission.feedback = (feedback_val or '').strip()
     submission.reviewed_by = reviewer_user
@@ -1694,7 +1777,17 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
     submission.revision_review_unlocked = not is_post and status_val == DeliverableSubmission.STATUS_REJECTED
     submission.file_replacement_unlocked = False
     submission.file_replacement_reason = ''
-    submission.save()
+    submission.save(update_fields=[
+        'status', 'feedback', 'reviewed_by', 'reviewed_at',
+        'revision_review_unlocked', 'file_replacement_unlocked', 'file_replacement_reason',
+    ])
+
+    if definition and definition.get('file_policy'):
+        from .documents import sync_submission
+        sync_submission(submission, definition, stage)
+    if status_val == DeliverableSubmission.STATUS_REJECTED:
+        from .concepts import invalidate_clearance
+        invalidate_clearance(team, stage_label, deliverable_id)
 
     if is_post and status_val == DeliverableSubmission.STATUS_ACCEPTED:
         from grading.grades.models import TeamGrade

@@ -141,25 +141,17 @@ class _GradeCenterTeamDetailScreenState
     final user = ref.watch(authProvider).user;
     final canCorrect = gradeIdValue != null && (user?['role'] == 'admin' || user?['is_superuser'] == true);
     final canEdit = !widget.isLocked && gradeIdValue != null;
+    final workflow = grade['workflow'] as Map? ?? {};
+    final usesVerdict = !isPit || workflow['concept_workflow'] != null;
+    final canIssuePitVerdict = user?['role'] == 'admin' || user?['is_superuser'] == true ||
+        asInt(user?['id']) == asInt(workflow['chair_id']) && asInt(user?['id']) != null;
 
     final panelWeight = asDouble(weightText(grade, 'panel')) ?? (isPit ? 70.0 : 50.0);
     final adviserWeight = asDouble(weightText(grade, 'adviser')) ?? (isPit ? 0.0 : 30.0);
     final peerWeight = asDouble(weightText(grade, 'peer')) ?? (isPit ? 30.0 : 20.0);
 
-    // Build panelist lookup map
-    final panelistList = grade['panelists'] is List ? (grade['panelists'] as List) : [];
-    final panelistMap = <String, String>{};
-    for (final p in panelistList) {
-      if (p is Map) {
-        final u = p['username']?.toString().trim();
-        final n = p['name']?.toString().trim();
-        if (u != null && n != null && u.isNotEmpty && n.isNotEmpty) {
-          panelistMap[u] = n;
-        }
-      }
-    }
-
-    final panelists = _extractPanelists(grade, breakdowns, panelistMap);
+    final panelists = _extractPanelists(grade);
+    final panelistMap = {for (final panelist in panelists) panelist.key: panelist.displayName};
 
     // Build unified student list
     final members = grade['members'] is List ? (grade['members'] as List) : [];
@@ -358,7 +350,7 @@ class _GradeCenterTeamDetailScreenState
                   child: const Text('Correct a score'),
                 )),
               ],
-              if (!isPit && canEdit) ...[
+              if (usesVerdict && canEdit && (!isPit || canIssuePitVerdict)) ...[
                 const SizedBox(width: 8),
                 ElevatedButton.icon(
                   onPressed: () => GradeCenterActions.showVerdictDialog(
@@ -1893,18 +1885,18 @@ class _GradeCenterTeamDetailScreenState
                   final idx = e.key + 1;
                   final row = e.value;
                   final score = asDouble(row['score']) ?? 0.0;
-                  final raw = row['remarks']?.toString() ?? '';
+                  final raw = publicEvaluationText(row['remarks']?.toString() ?? '');
                   final lines = raw.split('\n');
                   final firstLine = lines.first.trim();
                   final rest = lines.sublist(1).join('\n').trim();
 
-                  String evalName = '';
-                  if (firstLine.startsWith('Panelist:')) {
+                  String evalName = publicEvaluationText(row['evaluator_name']?.toString() ?? '');
+                  if (evalName.isEmpty && firstLine.startsWith('Panelist:')) {
                     final key = firstLine.substring('Panelist:'.length).trim();
                     evalName = panelistMap[key] ?? (key.isNotEmpty ? 'Panelist $key' : 'Panelist #$idx');
-                  } else if (firstLine.startsWith('Guest panelist:')) {
-                    evalName = firstLine.substring('Guest panelist:'.length).trim();
-                  } else if (firstLine.isNotEmpty && lines.length == 1 && !firstLine.toLowerCase().startsWith('panelist:')) {
+                  } else if (evalName.isEmpty && firstLine.startsWith('Guest panelist:')) {
+                    evalName = legacyExternalEvaluatorName(firstLine.substring('Guest panelist:'.length).trim());
+                  } else if (evalName.isEmpty && firstLine.isNotEmpty && lines.length == 1 && !firstLine.toLowerCase().startsWith('panelist:')) {
                     evalName = firstLine;
                   }
 
@@ -2253,47 +2245,10 @@ class _GradeCenterTeamDetailScreenState
     );
   }
 
-  List<_PanelistColumnDef> _extractPanelists(
-    Map<String, dynamic> grade,
-    List<Map<String, dynamic>> breakdowns,
-    Map<String, String> panelistMap,
-  ) {
-    final result = <_PanelistColumnDef>[];
-    final seenKeys = <String>{};
-
-    final panelistList = grade['panelists'] is List ? (grade['panelists'] as List) : [];
-    for (final p in panelistList) {
-      if (p is Map) {
-        final u = p['username']?.toString().trim() ?? '';
-        final n = p['name']?.toString().trim() ?? '';
-        if (u.isNotEmpty && !seenKeys.contains(u)) {
-          seenKeys.add(u);
-          result.add(_PanelistColumnDef(key: u, displayName: n.isNotEmpty ? n : u));
-        }
-      }
-    }
-
-    for (final b in breakdowns) {
-      if (b['evaluation_type'] != 'panel') continue;
-      final raw = b['remarks']?.toString() ?? '';
-      final firstLine = raw.split('\n').first.trim();
-      if (firstLine.startsWith('Panelist:')) {
-        final key = firstLine.substring('Panelist:'.length).trim();
-        if (key.isNotEmpty && !seenKeys.contains(key)) {
-          seenKeys.add(key);
-          final name = panelistMap[key] ?? 'Panelist $key';
-          result.add(_PanelistColumnDef(key: key, displayName: name));
-        }
-      } else if (firstLine.startsWith('Guest panelist:')) {
-        final key = firstLine.substring('Guest panelist:'.length).trim();
-        if (key.isNotEmpty && !seenKeys.contains(key)) {
-          seenKeys.add(key);
-          result.add(_PanelistColumnDef(key: key, displayName: key));
-        }
-      }
-    }
-
-    return result;
+  List<_PanelistColumnDef> _extractPanelists(Map<String, dynamic> grade) {
+    return gradePanelistColumns(grade).map((column) => _PanelistColumnDef(
+      key: column['key']!, displayName: column['name']!,
+    )).toList();
   }
 
   double? _getPanelistScoreForStudent({
@@ -2311,7 +2266,9 @@ class _GradeCenterTeamDetailScreenState
       final raw = b['remarks']?.toString() ?? '';
       final firstLine = raw.split('\n').first.trim();
       bool isMatch = false;
-      if (firstLine.startsWith('Panelist:')) {
+      if (b['panelist_key'] != null) {
+        isMatch = b['panelist_key'] == panelistKey;
+      } else if (firstLine.startsWith('Panelist:')) {
         final key = firstLine.substring('Panelist:'.length).trim();
         isMatch = key == panelistKey;
       } else if (firstLine.startsWith('Guest panelist:')) {

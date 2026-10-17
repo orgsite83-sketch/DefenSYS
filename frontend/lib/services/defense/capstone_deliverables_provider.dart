@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -97,10 +98,14 @@ class CapstoneDeliverablesState {
   }
 
   bool get hasPendingPreDeliverables =>
-      StudentTaskBadgeHelper.hasPendingPreDeliverables(currentTeamSelectedStage);
+      StudentTaskBadgeHelper.hasPendingPreDeliverables(
+        currentTeamSelectedStage,
+      );
 
   bool get hasPendingPostDeliverables =>
-      StudentTaskBadgeHelper.hasPendingPostDeliverables(currentTeamSelectedStage);
+      StudentTaskBadgeHelper.hasPendingPostDeliverables(
+        currentTeamSelectedStage,
+      );
 
   bool get hasPendingDeliverables =>
       hasPendingPreDeliverables || hasPendingPostDeliverables;
@@ -117,16 +122,21 @@ class StudentTaskBadgeHelper {
       return false;
     }
     final uploaded = item['uploaded'] == true;
-    final submission = item['submission'] as Map<String, dynamic>? ??
-        (item['submission'] is Map ? Map<String, dynamic>.from(item['submission'] as Map) : null);
+    final submission =
+        item['submission'] as Map<String, dynamic>? ??
+        (item['submission'] is Map
+            ? Map<String, dynamic>.from(item['submission'] as Map)
+            : null);
     final status = submission?['status']?.toString();
     final isRejected = status == 'rejected' || status == 'Needs Revision';
-    if (item['type'] == 'pre' && status == 'accepted' &&
+    if (item['type'] == 'pre' &&
+        status == 'accepted' &&
         submission?['file_replacement_unlocked'] == true) {
       return true;
     }
     if (item['required'] != true) return false;
-    if (item['requirement_timing'] == 'defense' && item['materials_submitted'] is bool) {
+    if (item['requirement_timing'] == 'defense' &&
+        item['materials_submitted'] is bool) {
       return item['materials_submitted'] != true;
     }
 
@@ -158,7 +168,8 @@ class StudentTaskBadgeHelper {
   /// Counts pending required post-defense deliverables for a stage.
   static int pendingPostDeliverablesCount(Map<String, dynamic>? stage) {
     if (stage == null) return 0;
-    final isUnlocked = stage['vault_unlocked'] == true ||
+    final isUnlocked =
+        stage['vault_unlocked'] == true ||
         stage['archive_unlocked'] == true ||
         stage['post_unlocked'] == true;
     if (!isUnlocked) return 0;
@@ -190,7 +201,8 @@ class StudentTaskBadgeHelper {
   /// Checks if peer evaluations are enabled and there are pending evaluations for teammates.
   static bool hasPendingPeerEval(Map<String, dynamic>? studentData) {
     if (studentData == null) return false;
-    final peerEvalAllowed = studentData['peerEvalEnabled'] == true ||
+    final peerEvalAllowed =
+        studentData['peerEvalEnabled'] == true ||
         studentData['peer_eval_enabled'] == true;
     if (!peerEvalAllowed) return false;
 
@@ -204,9 +216,12 @@ class StudentTaskBadgeHelper {
     var mySubmissions = (studentData['myPeerSubmissions'] as List? ?? [])
         .cast<Map<String, dynamic>>();
     if (mySubmissions.isEmpty) {
-      final stages = (studentData['stages'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final stages =
+          (studentData['stages'] as List?)?.cast<Map<String, dynamic>>() ?? [];
       for (final s in stages) {
-        final stageSubs = (s['my_peer_submissions'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        final stageSubs =
+            (s['my_peer_submissions'] as List?)?.cast<Map<String, dynamic>>() ??
+            [];
         if (stageSubs.isNotEmpty) {
           mySubmissions = stageSubs;
           break;
@@ -216,11 +231,17 @@ class StudentTaskBadgeHelper {
 
     final evaluatedKeys = <String>{};
     for (final sub in mySubmissions) {
-      final id = sub['evaluateeId']?.toString() ?? sub['evaluatee_id']?.toString();
+      final id =
+          sub['evaluateeId']?.toString() ?? sub['evaluatee_id']?.toString();
       if (id != null && id.isNotEmpty) {
         evaluatedKeys.add(id);
       }
-      final name = (sub['evaluateeName']?.toString() ?? sub['evaluatee_name']?.toString() ?? '').trim().toLowerCase();
+      final name =
+          (sub['evaluateeName']?.toString() ??
+                  sub['evaluatee_name']?.toString() ??
+                  '')
+              .trim()
+              .toLowerCase();
       if (name.isNotEmpty) {
         evaluatedKeys.add(name);
       }
@@ -229,7 +250,8 @@ class StudentTaskBadgeHelper {
     return members.any((m) {
       final mId = m['id']?.toString() ?? '';
       final mName = (m['name']?.toString() ?? '').trim().toLowerCase();
-      final isEvaluated = (mId.isNotEmpty && evaluatedKeys.contains(mId)) ||
+      final isEvaluated =
+          (mId.isNotEmpty && evaluatedKeys.contains(mId)) ||
           (mName.isNotEmpty && evaluatedKeys.contains(mName));
       return !isEvaluated;
     });
@@ -240,7 +262,8 @@ class StudentTaskBadgeHelper {
     Map<String, dynamic>? selectedStage,
     Map<String, dynamic>? studentData,
   }) {
-    final hasDeliverables = hasPendingPreDeliverables(selectedStage) ||
+    final hasDeliverables =
+        hasPendingPreDeliverables(selectedStage) ||
         hasPendingPostDeliverables(selectedStage);
     final hasPeer = hasPendingPeerEval(studentData);
     return hasDeliverables || hasPeer;
@@ -249,6 +272,17 @@ class StudentTaskBadgeHelper {
 
 class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
   static String get baseUrl => ApiConfig.capstoneDeliverablesUrl;
+  int _requestVersion = 0;
+  bool _actionInFlight = false;
+
+  Map<String, String> get _viewParameters => {
+    if (state.search.trim().isNotEmpty) 'search': state.search.trim(),
+    if (state.selectedStage.isNotEmpty) 'stage_label': state.selectedStage,
+    if (state.status.isNotEmpty) 'status': state.status,
+    'scope': state.scope,
+    if (state.yearLevel?.isNotEmpty == true) 'year_level': state.yearLevel!,
+    if (state.section?.isNotEmpty == true) 'section': state.section!,
+  };
 
   @override
   CapstoneDeliverablesState build() {
@@ -266,6 +300,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     String? section,
     String? successMessage,
   }) async {
+    final requestVersion = ++_requestVersion;
     final nextSearch = search ?? state.search;
     final nextStage = selectedStage ?? state.selectedStage;
     final nextStatus = status ?? state.status;
@@ -275,7 +310,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
 
     state = state.copyWith(
       isLoading: state.teams.isEmpty,
-      isSaving: false,
+      isSaving: _actionInFlight,
       search: nextSearch,
       selectedStage: nextStage,
       status: nextStatus,
@@ -293,11 +328,14 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
           if (nextStage.isNotEmpty) 'stage_label': nextStage,
           if (nextStatus.isNotEmpty) 'status': nextStatus,
           if (nextScope.isNotEmpty) 'scope': nextScope,
-          if (nextYearLevel != null && nextYearLevel.isNotEmpty) 'year_level': nextYearLevel,
-          if (nextSection != null && nextSection.isNotEmpty) 'section': nextSection,
+          if (nextYearLevel != null && nextYearLevel.isNotEmpty)
+            'year_level': nextYearLevel,
+          if (nextSection != null && nextSection.isNotEmpty)
+            'section': nextSection,
         },
       );
       final response = await _client.get(uri);
+      if (requestVersion != _requestVersion) return;
 
       if (response.statusCode == 200) {
         _applyPayload(
@@ -309,15 +347,56 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
 
       state = state.copyWith(
         isLoading: false,
-        isSaving: false,
+        isSaving: _actionInFlight,
         error: _errorFromResponse(response),
       );
     } catch (e) {
+      if (requestVersion != _requestVersion) return;
       state = state.copyWith(
         isLoading: false,
-        isSaving: false,
+        isSaving: _actionInFlight,
         error: 'Connection error: $e',
       );
+    }
+  }
+
+  Future<bool> conceptAction(int teamId, String stageLabel, String action,
+      {List<Map<String, dynamic>>? concepts, String? reason}) => _postAction('concepts', {
+    'team_id': teamId, 'stage_label': stageLabel, 'action': action,
+    if (concepts != null) 'concepts': concepts,
+    if (reason != null) 'reason': reason,
+  }, successMessage: 'Concept workflow updated.');
+
+  Future<bool> uploadDocument({required int teamId, required String stageLabel,
+      required String deliverableId, required String slotKey, required String filename,
+      required Uint8List bytes, int? fileId}) async {
+    if (_actionInFlight) return false;
+    _actionInFlight = true;
+    final version = ++_requestVersion;
+    state = state.copyWith(isSaving: true, clearError: true);
+    try {
+      final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/upload/').replace(
+        queryParameters: {..._viewParameters, 'response_mode': 'team'}));
+      request.fields.addAll({'team_id': '$teamId', 'stage_label': stageLabel,
+        'deliverable_id': deliverableId, 'slot_key': slotKey, 'file_name': filename,
+        'file_size': '${bytes.length} B', if (fileId != null) 'file_id': '$fileId'});
+      request.files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
+      final response = await http.Response.fromStream(await _client.sendAuthenticated(request, retryOn401: false));
+      if (response.statusCode != 200) {
+        state = state.copyWith(error: _errorFromResponse(response));
+        return false;
+      }
+      final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+      if (version != _requestVersion || !_applyTeamPayload(payload, successMessage: 'Document uploaded.')) {
+        await fetchDeliverables(successMessage: 'Document uploaded.');
+      }
+      return true;
+    } catch (error) {
+      state = state.copyWith(error: 'Could not upload the document: $error');
+      return false;
+    } finally {
+      _actionInFlight = false;
+      state = state.copyWith(isSaving: false);
     }
   }
 
@@ -344,12 +423,20 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     }, successMessage: 'Team endorsed for defense scheduling.');
   }
 
-  Future<bool> reviewAndEndorseTeam(int teamId, String stageLabel, String reviewToken) async {
-    return _postAction('review-endorse', {
-      'team_id': teamId,
-      'stage_label': stageLabel,
-      'review_token': reviewToken,
-    }, successMessage: 'Scheduling files approved and team endorsed.');
+  Future<bool> reviewAndEndorseTeam(
+    int teamId,
+    String stageLabel,
+    String reviewToken,
+  ) async {
+    return _postAction(
+      'review-endorse',
+      {
+        'team_id': teamId,
+        'stage_label': stageLabel,
+        'review_token': reviewToken,
+      },
+      successMessage: 'Scheduling files approved and team endorsed.',
+    );
   }
 
   Future<bool> unendorseTeam(int teamId, String stageLabel) async {
@@ -366,17 +453,23 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     required String status,
     String? feedback,
     bool clearDefenseRevisions = false,
+    int? fileId,
   }) async {
-    return _postAction('review', {
-      'team_id': teamId,
-      'stage_label': stageLabel,
-      'deliverable_id': deliverableId,
-      'status': status,
-      if (feedback != null) 'feedback': feedback,
-      if (clearDefenseRevisions) 'clear_defense_revisions': true,
-    }, successMessage: clearDefenseRevisions
-        ? 'Deliverable approved & defense revisions cleared.'
-        : 'Deliverable review status updated.');
+    return _postAction(
+      'review',
+      {
+        'team_id': teamId,
+        'stage_label': stageLabel,
+        'deliverable_id': deliverableId,
+        'status': status,
+        if (fileId != null) 'file_id': fileId,
+        if (feedback != null) 'feedback': feedback,
+        if (clearDefenseRevisions) 'clear_defense_revisions': true,
+      },
+      successMessage: clearDefenseRevisions
+          ? 'Deliverable approved & defense revisions cleared.'
+          : 'Deliverable review status updated.',
+    );
   }
 
   Future<bool> unlockDeliverables({
@@ -402,18 +495,29 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     if (targetState != null) payload['target_state'] = targetState;
     if (deliverableId != null) payload['deliverable_id'] = deliverableId;
 
-    return _postAction('unlock', payload, successMessage: 'Deliverable submission unlock status updated.');
+    return _postAction(
+      'unlock',
+      payload,
+      successMessage: 'Deliverable submission unlock status updated.',
+    );
   }
 
   Future<Map<String, dynamic>?> fetchStageAccess({
-    String scope = 'global', String programScope = 'capstone', int? teamId, String? yearLevel,
+    String scope = 'global',
+    String programScope = 'capstone',
+    int? teamId,
+    String? yearLevel,
   }) async {
     try {
-      final uri = Uri.parse('$baseUrl/stage-access/').replace(queryParameters: {
-        'scope': scope, 'program_scope': programScope,
-        if (teamId != null) 'team_id': '$teamId',
-        if (yearLevel != null && yearLevel.isNotEmpty) 'year_level': yearLevel,
-      });
+      final uri = Uri.parse('$baseUrl/stage-access/').replace(
+        queryParameters: {
+          'scope': scope,
+          'program_scope': programScope,
+          if (teamId != null) 'team_id': '$teamId',
+          if (yearLevel != null && yearLevel.isNotEmpty)
+            'year_level': yearLevel,
+        },
+      );
       final response = await _client.get(uri);
       if (response.statusCode == 200) {
         return Map<String, dynamic>.from(jsonDecode(response.body));
@@ -430,6 +534,17 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     Map<String, dynamic> payload, {
     required String successMessage,
   }) async {
+    if (_actionInFlight) return false;
+    _actionInFlight = true;
+    final requestVersion = ++_requestVersion;
+    final queryParameters = _viewParameters;
+    final refreshTeam = const {
+      'review',
+      'endorse',
+      'review-endorse',
+      'concepts',
+      'unendorse',
+    }.contains(action);
     state = state.copyWith(
       isSaving: true,
       clearError: true,
@@ -438,13 +553,31 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
 
     try {
       final response = await _client.post(
-        Uri.parse('$baseUrl/$action/'),
+        Uri.parse('$baseUrl/$action/').replace(
+          queryParameters: {
+            ...queryParameters,
+            if (refreshTeam) 'response_mode': 'team',
+          },
+        ),
 
         body: jsonEncode(payload),
       );
 
       if (response.statusCode == 200) {
-        await fetchDeliverables(successMessage: successMessage);
+        final result = Map<String, dynamic>.from(jsonDecode(response.body));
+        if (requestVersion != _requestVersion) {
+          // A stage/filter changed during the write. Load its current snapshot
+          // instead of merging a row from the old view.
+          await fetchDeliverables(successMessage: successMessage);
+        } else if (result['response_mode'] == 'team') {
+          if (!_applyTeamPayload(result, successMessage: successMessage)) {
+            await fetchDeliverables(successMessage: successMessage);
+          }
+        } else if (result['teams'] is List) {
+          _applyPayload(result, successMessage: successMessage);
+        } else {
+          await fetchDeliverables(successMessage: successMessage);
+        }
         return true;
       }
 
@@ -456,7 +589,57 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     } catch (e) {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');
       return false;
+    } finally {
+      _actionInFlight = false;
+      state = state.copyWith(isSaving: false);
     }
+  }
+
+  bool _applyTeamPayload(
+    Map<String, dynamic> payload, {
+    required String successMessage,
+  }) {
+    if (payload['team'] is! Map || payload['scope'] != state.scope) {
+      return false;
+    }
+    final updated = Map<String, dynamic>.from(payload['team']);
+    final teams = [...state.teams];
+    final index = teams.indexWhere((team) => team['id'] == updated['id']);
+    if (payload['matches_filters'] == false) {
+      if (index >= 0) teams.removeAt(index);
+    } else if (index >= 0) {
+      teams[index] = updated;
+    } else {
+      // No loaded list means a complete fetch is needed to include other teams.
+      return false;
+    }
+    if (teams.any((team) => team['counts'] is! Map)) return false;
+    final contributions = teams.map((team) => team['counts'] as Map).toList();
+    state = state.copyWith(
+      teams: teams,
+      counts: {
+        for (final key in const [
+          'teams',
+          'ready',
+          'missing_requirements',
+          'pending_review',
+          'submitted_files',
+          'archive_files',
+        ])
+          key: contributions.fold<int>(
+            0,
+            (sum, row) => sum + (row[key] as num).toInt(),
+          ),
+        'deliverables_configured': contributions.any(
+          (row) => row['deliverables_configured'] == true,
+        ),
+      },
+      isLoading: false,
+      isSaving: _actionInFlight,
+      message: successMessage,
+      clearError: true,
+    );
+    return true;
   }
 
   AuthenticatedHttpClient get _client =>
@@ -465,7 +648,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     state = state.copyWith(
       isLoading: false,
-      isSaving: false,
+      isSaving: _actionInFlight,
       teams: _readMapList(payload['teams']),
       stageOptions: _readStringList(payload['stage_options']),
       statuses: _readMapList(payload['statuses']),

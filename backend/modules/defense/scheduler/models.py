@@ -4,6 +4,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from defense.deliverable_timing import TIMING_CHOICES, TIMING_SCHEDULING
+from defense.document_policy import validate_concept_config
 
 
 class PanelistEvaluationDraft(models.Model):
@@ -396,6 +397,12 @@ class PitEventGradingConfig(models.Model):
     peer_weight = models.PositiveSmallIntegerField(default=20)
     is_officially_complete = models.BooleanField(default=False)
     peer_grading_enabled = models.BooleanField(default=False)
+    team_membership_policy = models.CharField(
+        max_length=20, default='single',
+        choices=[('single', 'One team per student'), ('multiple', 'Multiple teams per student')],
+    )
+    concept_config = models.JSONField(blank=True, default=dict,
+        validators=[validate_concept_config])
     archive_file_template = models.CharField(
         max_length=255,
         blank=True,
@@ -473,6 +480,10 @@ class PitEventGradingConfig(models.Model):
     def __str__(self):
         return f'{self.event_name} ({self.semester})'
 
+    @property
+    def label(self):
+        return self.event_name
+
 
 def unique_pit_event_code(raw_value_or_name, semester=None, instance_id=None, is_custom=False):
     from defense.stages.models import clean_custom_code
@@ -504,6 +515,8 @@ def unique_pit_event_code(raw_value_or_name, semester=None, instance_id=None, is
 
 
 class PitEventDeliverable(models.Model):
+    from defense.document_policy import validate_file_policy
+    file_policy = models.JSONField(default=dict, blank=True, validators=[validate_file_policy])
     TYPE_PRE = 'pre'
     TYPE_POST = 'post'
 

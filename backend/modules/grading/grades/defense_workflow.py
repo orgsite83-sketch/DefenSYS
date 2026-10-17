@@ -18,7 +18,7 @@ def is_chair(grade, user):
 
 
 def passed_and_cleared(grade):
-    if grade.scope == TeamGrade.SCOPE_PIT:
+    if not grade.uses_defense_verdict:
         return grade.result == 'passed'
     if grade.verdict == TeamGrade.VERDICT_APPROVED:
         return True
@@ -55,14 +55,14 @@ def audit(grade, actor, action, **values):
 
 
 @transaction.atomic
-def record_verdict(grade, *, actor, verdict, remarks='', deadline=None, verification_required=False):
+def record_verdict(grade, *, actor, verdict, remarks='', deadline=None, verification_required=False, concept_decisions=None, replacement_concepts_required=False):
     StudentTeam.objects.select_for_update().get(pk=grade.team_id)
     if grade.schedule_id:
         from defense.scheduler.models import DefenseSchedule
         DefenseSchedule.objects.select_for_update().get(pk=grade.schedule_id)
     grade = TeamGrade.objects.select_for_update(of=('self',)).select_related('team', 'schedule', 'semester').get(pk=grade.pk)
     require_current(grade)
-    if grade.scope != TeamGrade.SCOPE_CAPSTONE:
+    if not grade.uses_defense_verdict:
         raise ValidationError('PIT events do not use official defense verdicts.')
     if not (is_admin(actor) or is_chair(grade, actor)):
         raise PermissionError('Only the panel chair or an administrator can record a verdict.')
@@ -92,6 +92,8 @@ def record_verdict(grade, *, actor, verdict, remarks='', deadline=None, verifica
     grade.redefense_verification_required = bool(verification_required and verdict == TeamGrade.VERDICT_FOR_REDEFENSE)
     grade.redefense_verified_at = None
     grade.redefense_verified_by = None
+    from repository.deliverables.concepts import record_outcome
+    record_outcome(grade, concept_decisions, replacement_required=replacement_concepts_required)
     grade.save()
     if grade.schedule_id and grade.schedule.status == 'scheduled':
         from defense.scheduler.services import transition_schedule_status
@@ -110,13 +112,23 @@ def workflow_payload(grade):
     from defense.scheduler.models import DefenseSchedule
     authorization = recovery_for(grade.team, grade.defense_stage) if grade.defense_stage_id else None
     records = grade.team.recovery_authorizations.select_related('authorized_by', 'defense_stage', 'semester')
+    from repository.deliverables.concepts import payload as concept_payload, clearance_blocker, context_for_grade
+    concept_context = context_for_grade(grade)
+    concept_workflow = concept_payload(grade.team, concept_context)
+    if concept_workflow and grade.schedule_id:
+        from repository.deliverables.models import ConceptRound
+        hearing = ConceptRound.objects.filter(schedule_id=grade.schedule_id).first()
+        if hearing:
+            concept_workflow['hearing_concepts'] = hearing.concepts
+            concept_workflow['hearing_round'] = hearing.number
     return {
+        'concept_workflow': concept_workflow,
         'chair_id': grade.schedule.panel_assignments.filter(is_chair=True).values_list('panelist_id', flat=True).first() if grade.schedule_id else None,
         'adviser_id': grade.team.adviser_id,
         'passed_and_cleared': passed_and_cleared(grade),
         'revisions_pending': grade.verdict == 'approved_with_revisions' and not grade.revisions_cleared_at,
         'retake_authorized': bool(authorization),
-        'redefense_ready': (grade.verdict == 'for_redefense' or bool(authorization)) and (
+        'redefense_ready': not clearance_blocker(grade.team, concept_context) and (grade.verdict == 'for_redefense' or bool(authorization)) and (
             not grade.redefense_verification_required or bool(grade.redefense_verified_at)),
         'previous_projects': [{'version': g.project_version, 'title': g.project_title_snapshot,
                                'grade_id': g.pk, 'stage_label': g.stage_label, 'verdict': g.verdict}
@@ -146,8 +158,10 @@ def apply_workflow_action(grade, *, actor, action, reason='', project_title='', 
     team = StudentTeam.objects.select_for_update().get(pk=grade.team_id)
     grade = TeamGrade.objects.select_for_update(of=('self',)).select_related('team', 'defense_stage', 'semester').get(pk=grade.pk)
     require_current(grade)
-    if grade.scope != TeamGrade.SCOPE_CAPSTONE:
+    if not grade.uses_defense_verdict:
         raise ValidationError('Recovery and revision clearance apply to Capstone defenses.')
+    if grade.scope == TeamGrade.SCOPE_PIT and action not in ('clear_revisions', 'verify_redefense'):
+        raise ValidationError('PIT concept hearings support revision clearance and concept re-defense only.')
     is_assigned_adviser = bool(team.adviser_id and team.adviser_id == actor.pk)
     if action in ('clear_revisions', 'schedule_compliance_review'):
         if not (is_admin(actor) or is_chair(grade, actor) or is_assigned_adviser):

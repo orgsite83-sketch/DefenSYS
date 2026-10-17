@@ -7,20 +7,36 @@ import 'package:go_router/go_router.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../../config/api_config.dart';
+import '../../../models/defense_workflow_labels.dart';
 import '../../../services/network/authenticated_client.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/shadcn/defensys_shadcn_scope.dart';
 
-/// Dashboard calendar shared by the administrator and PIT lead workspaces.
+/// Shared dashboard calendar, with optional permission-scoped team records.
 class DashboardSchedulePlanner extends ConsumerStatefulWidget {
   const DashboardSchedulePlanner({
     super.key,
     required this.workspace,
     this.refreshToken,
+    this.providedSessions,
+    this.loading = false,
+    this.errorMessage,
+    this.onRetry,
+    this.onOpenTeam,
+    this.description =
+        'Shared calendar · Check room and time before scheduling.',
   });
 
   final String workspace;
   final Object? refreshToken;
+  final List<Map<String, dynamic>>? providedSessions;
+  final bool loading;
+  final String? errorMessage;
+  final VoidCallback? onRetry;
+  final void Function(int teamId, String stageLabel)? onOpenTeam;
+  final String description;
+
+  bool get isPersonal => providedSessions != null;
 
   @override
   ConsumerState<DashboardSchedulePlanner> createState() =>
@@ -59,16 +75,32 @@ class _DashboardSchedulePlannerState
     super.initState();
     final now = DateTime.now();
     _focusDay = DateTime(now.year, now.month, now.day);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    if (widget.isPersonal) {
+      _readProvidedSessions();
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    }
   }
 
   @override
   void didUpdateWidget(covariant DashboardSchedulePlanner oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.isPersonal) {
+      _readProvidedSessions();
+      return;
+    }
     if (oldWidget.refreshToken != widget.refreshToken ||
-        oldWidget.workspace != widget.workspace) {
+        oldWidget.workspace != widget.workspace ||
+        oldWidget.isPersonal) {
       _load();
     }
+  }
+
+  void _readProvidedSessions() {
+    _sessions = widget.providedSessions ?? const [];
+    _loading = widget.loading;
+    _error = widget.errorMessage;
+    ++_requestVersion;
   }
 
   DateTime get _periodStart {
@@ -90,6 +122,10 @@ class _DashboardSchedulePlannerState
 
   Future<void> _load() async {
     if (!mounted) return;
+    if (widget.isPersonal) {
+      setState(_readProvidedSessions);
+      return;
+    }
     final version = ++_requestVersion;
     setState(() {
       _loading = true;
@@ -154,6 +190,14 @@ class _DashboardSchedulePlannerState
   }
 
   void _openSession(Map<String, dynamic> session) {
+    if (!_canOpenSession(session)) return;
+    if (widget.isPersonal) {
+      widget.onOpenTeam!(
+        session['team_id'] as int,
+        session['event_name'].toString(),
+      );
+      return;
+    }
     context.go(
       Uri(
         path: '/${widget.workspace}/defense-board',
@@ -169,8 +213,69 @@ class _DashboardSchedulePlannerState
   List<Map<String, dynamic>> _onDay(DateTime day) =>
       _sessions.where((session) => session['date'] == _iso(day)).toList();
 
+  bool _canOpenSession(Map<String, dynamic> session) => widget.isPersonal
+      ? widget.onOpenTeam != null &&
+            session['team_id'] is int &&
+            session['can_open'] == true
+      : widget.workspace == 'admin' || session['can_open'] == true;
+
   String _dayLabel(DateTime day) =>
       '${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][day.weekday - 1]}, ${_months[day.month - 1]} ${day.day}, ${day.year}';
+
+  bool _isPastDay(DateTime day) {
+    final now = DateTime.now();
+    return day.isBefore(DateTime(now.year, now.month, now.day));
+  }
+
+  Map<String, int> _statusCounts(Map<String, dynamic> session) {
+    final raw = session['status_counts'] as Map?;
+    return raw == null
+        ? {'scheduled': (session['team_count'] as num?)?.toInt() ?? 0}
+        : raw.map(
+            (key, value) => MapEntry(key.toString(), (value as num).toInt()),
+          );
+  }
+
+  bool _wasScheduled(Map<String, dynamic> session) =>
+      _isPastDay(DateTime.parse(session['date'].toString())) ||
+      (_statusCounts(session)['scheduled'] ?? 0) == 0;
+
+  String _cohortLabel(Map<String, dynamic> session) {
+    final years = (session['year_levels'] as List? ?? []).join(' / ');
+    final program = session['scope'] == 'pit' ? 'PIT' : 'Capstone';
+    return years.isEmpty ? program : '$years $program';
+  }
+
+  String _statusLabel(Map<String, dynamic> session) {
+    final display = session['display_status']?.toString();
+    if (widget.isPersonal && display != null && display.isNotEmpty) {
+      if (display == 'scheduled') {
+        return _wasScheduled(session) ? 'Past schedule' : 'Booked';
+      }
+      return defenseProgressLabel(display);
+    }
+    final counts = _statusCounts(session);
+    final populated = counts.entries.where((entry) => entry.value > 0).toList();
+    if (populated.length == 1) {
+      return switch (populated.single.key) {
+        'completed' => 'Completed',
+        'archived' => 'Archived',
+        'assessed' => 'Attempt assessed',
+        _ => _wasScheduled(session) ? 'Past schedule' : 'Booked',
+      };
+    }
+    return populated
+        .map((entry) {
+          final label = switch (entry.key) {
+            'completed' => 'completed',
+            'archived' => 'archived',
+            'assessed' => 'assessed',
+            _ => _wasScheduled(session) ? 'awaiting evaluation' : 'scheduled',
+          };
+          return '${entry.value} $label';
+        })
+        .join(' · ');
+  }
 
   String _timeLabel(String raw) {
     final parsed = DateTime.tryParse(raw);
@@ -199,6 +304,19 @@ class _DashboardSchedulePlannerState
         .join(', then ');
   }
 
+  String _venueSummary(Map<String, dynamic> session) {
+    final venues = (session['venues'] as List? ?? []).whereType<Map>().toList();
+    if (venues.isEmpty) {
+      return 'in ${session['room']} from ${_timeBlocks(session)}';
+    }
+    return venues
+        .map(
+          (venue) =>
+              'in ${venue['room']} from ${_timeBlocks(venue.cast<String, dynamic>())}',
+        )
+        .join('; ');
+  }
+
   Widget _dayCell(DateTime day, {required bool outsideMonth}) {
     final sessions = _onDay(day);
     final scopes = sessions.map((session) => session['scope']).toSet();
@@ -214,7 +332,7 @@ class _DashboardSchedulePlannerState
       child: Semantics(
         button: true,
         label:
-            '${_dayLabel(day)}, ${sessions.length} ${sessions.length == 1 ? 'session' : 'sessions'}. Show session summaries',
+            '${_dayLabel(day)}, ${sessions.length} ${widget.isPersonal ? 'defenses' : 'sessions'}. Show summaries',
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -302,10 +420,15 @@ class _DashboardSchedulePlannerState
       (index) => _periodStart.add(Duration(days: index)),
     );
     final daySessions = _onDay(_focusDay);
-    final teams = daySessions.fold<int>(
-      0,
-      (sum, session) => sum + ((session['team_count'] as num?)?.toInt() ?? 0),
-    );
+    final isPastDay = _isPastDay(_focusDay);
+    final teams = widget.isPersonal
+        ? daySessions.map((session) => session['team_id']).toSet().length
+        : daySessions.fold<int>(
+            0,
+            (sum, session) =>
+                sum + ((session['team_count'] as num?)?.toInt() ?? 0),
+          );
+    final noun = widget.isPersonal ? 'defense' : 'session';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
@@ -351,31 +474,47 @@ class _DashboardSchedulePlannerState
               ],
             ),
             const SizedBox(height: 6),
-            Row(
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 8,
               children: [
-                (_monthView ? ShadButton.outline : ShadButton.secondary)(
-                  size: ShadButtonSize.sm,
-                  onPressed: () => _setMode(false),
-                  child: const Text('Week'),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    (_monthView ? ShadButton.outline : ShadButton.secondary)(
+                      size: ShadButtonSize.sm,
+                      onPressed: () => _setMode(false),
+                      child: const Text('Week'),
+                    ),
+                    const SizedBox(width: 6),
+                    (_monthView ? ShadButton.secondary : ShadButton.outline)(
+                      size: ShadButtonSize.sm,
+                      onPressed: () => _setMode(true),
+                      child: const Text('Month'),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 6),
-                (_monthView ? ShadButton.secondary : ShadButton.outline)(
-                  size: ShadButtonSize.sm,
-                  onPressed: () => _setMode(true),
-                  child: const Text('Month'),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _dot(_pit),
+                    Text('PIT', style: TextStyle(color: muted, fontSize: 11)),
+                    const SizedBox(width: 8),
+                    _dot(_capstone),
+                    Text(
+                      'Capstone',
+                      style: TextStyle(color: muted, fontSize: 11),
+                    ),
+                  ],
                 ),
-                const Spacer(),
-                _dot(_pit),
-                Text('PIT', style: TextStyle(color: muted, fontSize: 11)),
-                if (widget.workspace == 'admin') ...[
-                  const SizedBox(width: 8),
-                  _dot(_capstone),
-                  Text(
-                    'Capstone',
-                    style: TextStyle(color: muted, fontSize: 11),
-                  ),
-                ],
               ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              widget.description,
+              style: TextStyle(color: muted, fontSize: 11, height: 1.4),
             ),
             const SizedBox(height: 12),
             Row(
@@ -409,12 +548,29 @@ class _DashboardSchedulePlannerState
             const SizedBox(height: 12),
             Divider(color: DefensysTokens.borderOf(context), height: 1),
             const SizedBox(height: 12),
+            if (isPastDay) ...[
+              Row(
+                children: [
+                  Icon(Icons.history_rounded, size: 14, color: muted),
+                  const SizedBox(width: 5),
+                  Text(
+                    'Schedule history',
+                    style: TextStyle(
+                      color: muted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+            ],
             Text(
               _loading
                   ? 'Loading sessions for ${_dayLabel(_focusDay)}…'
                   : _error != null
                   ? 'Schedule for ${_dayLabel(_focusDay)} is unavailable.'
-                  : '${_dayLabel(_focusDay)}: ${daySessions.length} ${daySessions.length == 1 ? 'session is' : 'sessions are'} scheduled${daySessions.isEmpty ? '.' : ' for $teams ${teams == 1 ? 'team' : 'teams'}.'}',
+                  : '${_dayLabel(_focusDay)}: ${daySessions.length} ${daySessions.length == 1 ? '$noun ${isPastDay ? 'was' : 'is'}' : '${noun}s ${isPastDay ? 'were' : 'are'}'} scheduled${daySessions.isEmpty ? '.' : ' for $teams ${teams == 1 ? 'team' : 'teams'}.'}',
               style: TextStyle(
                 color: ink,
                 fontSize: 12.5,
@@ -435,14 +591,16 @@ class _DashboardSchedulePlannerState
                   ),
                   ShadButton.outline(
                     size: ShadButtonSize.sm,
-                    onPressed: _load,
+                    onPressed: widget.onRetry ?? _load,
                     child: const Text('Retry'),
                   ),
                 ],
               )
             else if (daySessions.isEmpty)
               Text(
-                'No sessions scheduled for this day.',
+                isPastDay
+                    ? 'No ${noun}s were scheduled for this day.'
+                    : 'No ${noun}s scheduled for this day.',
                 style: TextStyle(color: muted, fontSize: 12),
               )
             else
@@ -456,7 +614,9 @@ class _DashboardSchedulePlannerState
                     borderRadius: BorderRadius.circular(9),
                     child: InkWell(
                       key: ValueKey('planner-session-${session['session_id']}'),
-                      onTap: () => _openSession(session),
+                      onTap: _canOpenSession(session)
+                          ? () => _openSession(session)
+                          : null,
                       borderRadius: BorderRadius.circular(9),
                       child: Container(
                         padding: const EdgeInsets.all(12),
@@ -473,21 +633,65 @@ class _DashboardSchedulePlannerState
                         child: Row(
                           children: [
                             Expanded(
-                              child: Text(
-                                '${session['event_name']} has ${session['team_count']} ${session['team_count'] == 1 ? 'team' : 'teams'} scheduled in ${session['room']} from ${_timeBlocks(session)}.',
-                                style: TextStyle(
-                                  color: ink,
-                                  fontSize: 12.5,
-                                  height: 1.4,
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${_cohortLabel(session)} · ${_statusLabel(session)}',
+                                    style: TextStyle(
+                                      color: muted,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    widget.isPersonal
+                                        ? '${session['team_name']} ${_wasScheduled(session) ? 'was' : 'is'} scheduled for ${session['event_name']} ${_venueSummary(session)}.'
+                                        : '${session['event_name']} ${_wasScheduled(session) ? 'had' : 'has'} ${session['team_count']} ${session['team_count'] == 1 ? 'team' : 'teams'} scheduled ${_venueSummary(session)}.',
+                                    style: TextStyle(
+                                      color: ink,
+                                      fontSize: 12.5,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                  if (session['materials_readiness']
+                                      case final Map materials
+                                      when (materials['required_total']
+                                                  as num? ??
+                                              0) >
+                                          0) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${materials['submitted_total'] ?? 0}/${materials['required_total']} defense materials uploaded',
+                                      style: TextStyle(
+                                        color: muted,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                  if (!_canOpenSession(session)) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Other cohort · For planning',
+                                      style: TextStyle(
+                                        color: muted,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            Icon(
-                              Icons.arrow_forward_rounded,
-                              size: 16,
-                              color: muted,
-                            ),
+                            if (_canOpenSession(session)) ...[
+                              const SizedBox(width: 8),
+                              Icon(
+                                Icons.arrow_forward_rounded,
+                                size: 16,
+                                color: muted,
+                              ),
+                            ],
                           ],
                         ),
                       ),

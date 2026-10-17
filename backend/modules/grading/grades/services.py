@@ -197,15 +197,15 @@ def panelist_result_payload(team_grade, panelist_key):
             'peer': peer_w,
             **({'adviser': team_grade.adviser_weight} if team_grade.is_capstone and team_grade.adviser_weight else {}),
         },
-        'verdict': (team_grade.verdict or '') if team_grade.is_capstone else '',
-        'verdict_remarks': (team_grade.verdict_remarks or '') if team_grade.is_capstone else '',
+        'verdict': (team_grade.verdict or '') if team_grade.uses_defense_verdict else '',
+        'verdict_remarks': (team_grade.verdict_remarks or '') if team_grade.uses_defense_verdict else '',
         'verdict_by_name': (
             f"{team_grade.verdict_by.first_name} {team_grade.verdict_by.last_name}".strip()
             or team_grade.verdict_by.username
-        ) if team_grade.is_capstone and team_grade.verdict_by else '',
+        ) if team_grade.uses_defense_verdict and team_grade.verdict_by else '',
         'revision_deadline': (
             team_grade.revision_deadline.isoformat()
-            if team_grade.is_capstone and team_grade.revision_deadline
+            if team_grade.uses_defense_verdict and team_grade.revision_deadline
             else None
         ),
         'attempt_count': team_grade.attempt_count or 1,
@@ -1227,6 +1227,8 @@ class GradeContextService:
     def get_or_create_for_schedule(schedule, *, repair_placeholders=True):
         # Serialize attempt replacement with recovery and verdict changes.
         StudentTeam.objects.select_for_update().get(pk=schedule.team_id)
+        from repository.deliverables.concepts import bind_schedule
+        bind_schedule(schedule)
         stage_label = schedule.stage_label or 'Defense'
         weights = weights_for_schedule(schedule)
         grade, identity = _lookup_grade_for_schedule(schedule, stage_label)
@@ -1260,11 +1262,20 @@ class GradeContextService:
                 grade.attempt_count = (grade.attempt_count or 1) + 1
                 grade.panel_score = None
                 grade.panel_score_is_override = False
-                if grade.scope != TeamGrade.SCOPE_CAPSTONE:
+                from repository.deliverables.concepts import stage_for, enabled
+                concept_context = stage_for(schedule.team, schedule.stage_label)
+                concept_reassessment = bool(enabled(concept_context)
+                    and concept_context.concept_config.get('score_carryover', 'reassess') == 'reassess')
+                if (grade.scope != TeamGrade.SCOPE_CAPSTONE and not enabled(concept_context)) or concept_reassessment:
                     grade.adviser_score = None
                     grade.adviser_score_is_override = False
                     grade.peer_score = None
                     grade.peer_score_is_override = False
+                if concept_reassessment:
+                    from .models import PeerEvaluationSubmission
+                    PeerEvaluationSubmission.objects.filter(team_grade=grade).update(is_void=True)
+                    grade.breakdowns.filter(evaluation_type__in=['adviser', 'peer']).update(is_void=True)
+                    grade.student_grades.update(adviser_score=None, peer_score=None)
                 grade.breakdowns.filter(evaluation_type='panel').update(is_void=True)
                 grade.student_grades.update(panel_score=None, final_grade=None)
                 grade.final_grade = None
@@ -1427,11 +1438,11 @@ class GradeContextService:
             raise ValidationError({'status': 'Only complete grades can be finalized for archive.'})
         if not team_grading_readiness(grade, grade.semester, grade.scope)['ready']:
             raise ValidationError('Complete every required evaluator before finalizing this defense.')
-        verdict = grade.verdict if grade.scope == TeamGrade.SCOPE_CAPSTONE else ''
+        verdict = grade.verdict if grade.uses_defense_verdict else ''
         from .defense_workflow import passed_and_cleared
-        if grade.scope == TeamGrade.SCOPE_CAPSTONE and not passed_and_cleared(grade):
+        if grade.uses_defense_verdict and not passed_and_cleared(grade):
             raise ValidationError({'status': 'Defense approval and required revision clearance are needed before archiving.'})
-        if grade.scope == TeamGrade.SCOPE_CAPSTONE and grade.defense_stage_id:
+        if grade.uses_defense_verdict:
             from repository.deliverables.services import post_deliverables_complete
             lbl = grade.defense_stage.label if grade.defense_stage_id else grade.stage_label
             if not post_deliverables_complete(grade.team, lbl):
@@ -1476,7 +1487,7 @@ class GradeContextService:
     def publish(grade, user=None):
         from .defense_workflow import require_current, passed_and_cleared
         require_current(grade)
-        if grade.scope == TeamGrade.SCOPE_CAPSTONE and not (
+        if grade.uses_defense_verdict and not (
             passed_and_cleared(grade) or grade.verdict in (TeamGrade.VERDICT_FAILED, TeamGrade.VERDICT_PROJECT_REJECTED)
         ):
             raise ValidationError('Record the panel verdict and resolve re-defense or revision clearance before publishing.')
@@ -1518,7 +1529,9 @@ class GradeContextService:
             grades = grades.filter(pit_event_config_id=pit_event_config_id)
         elif stage_label:
             grades = grades.filter(stage_label=stage_label)
-        return grades.order_by('-updated_at').first()
+        from .defense_workflow import passed_and_cleared
+        return next((grade for grade in grades.order_by('-updated_at')
+                     if not grade.uses_defense_verdict or passed_and_cleared(grade)), None)
 
 def _sync_grade_for_schedule(schedule, *, repair_placeholders=True):
     return GradeContextService.get_or_create_for_schedule(
@@ -1926,6 +1939,16 @@ def _apply_team_result_from_grade(grade):
         mark_stage_result(grade, user=grade.published_by)
         return
 
+    if grade.uses_defense_verdict:
+        from .defense_workflow import passed_and_cleared
+        next_status = (StudentTeam.STATUS_FAILED if grade.verdict in ('failed', 'project_rejected')
+                       else StudentTeam.STATUS_APPROVED if passed_and_cleared(grade)
+                       else StudentTeam.STATUS_PENDING)
+        if grade.team.status != next_status:
+            grade.team.status = next_status
+            grade.team.save(update_fields=['status', 'updated_at'])
+        return
+
     # PIT retains the latest event's score indicator. Eligibility must never
     # depend on it, and it is not the student's actual semester grade.
     next_status = (
@@ -2104,7 +2127,7 @@ def cohort_grading_teams_for_group(
         readiness = team_grading_readiness(grade, semester, scope, config)
         missing = list(readiness['missing_components'])
         is_post_complete = True
-        if scope == TeamGrade.SCOPE_CAPSTONE:
+        if grade.uses_defense_verdict:
             if not grade.verdict:
                 missing.append('verdict')
             elif grade.verdict == TeamGrade.VERDICT_FOR_REDEFENSE:
@@ -2315,13 +2338,13 @@ def _auto_finalize_passed_grades_in_queryset(grades, user=None):
         if not grade.is_complete:
             skipped_incomplete += 1
             continue
-        verdict = grade.verdict if grade.scope == TeamGrade.SCOPE_CAPSTONE else ''
+        verdict = grade.verdict if grade.uses_defense_verdict else ''
         from .defense_workflow import passed_and_cleared
-        if grade.scope == TeamGrade.SCOPE_CAPSTONE and not passed_and_cleared(grade):
+        if grade.uses_defense_verdict and not passed_and_cleared(grade):
             _apply_team_result_from_grade(grade)
             skipped_below_threshold += 1
             continue
-        if grade.scope == TeamGrade.SCOPE_CAPSTONE and grade.defense_stage_id:
+        if grade.uses_defense_verdict:
             from repository.deliverables.services import post_deliverables_complete
             lbl = grade.defense_stage.label if grade.defense_stage_id else grade.stage_label
             if not post_deliverables_complete(grade.team, lbl):
@@ -2387,11 +2410,11 @@ def maybe_auto_finalize_passed_grade(grade, user=None):
     grade.recalculate()
     if grade.status in TeamGrade.LOCKED_STATUSES:
         return grade
-    verdict = grade.verdict if grade.scope == TeamGrade.SCOPE_CAPSTONE else ''
+    verdict = grade.verdict if grade.uses_defense_verdict else ''
     from .defense_workflow import passed_and_cleared
-    if grade.scope == TeamGrade.SCOPE_CAPSTONE and not passed_and_cleared(grade):
+    if grade.uses_defense_verdict and not passed_and_cleared(grade):
         return grade
-    if grade.scope == TeamGrade.SCOPE_CAPSTONE and grade.defense_stage_id:
+    if grade.uses_defense_verdict:
         from repository.deliverables.services import post_deliverables_complete
         lbl = grade.defense_stage.label if grade.defense_stage_id else grade.stage_label
         if not post_deliverables_complete(grade.team, lbl):

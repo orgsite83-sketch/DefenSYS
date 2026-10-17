@@ -21,7 +21,8 @@ def endorsement_blocker(team, stage_label):
 
     if not team.semester_id or not team.semester.is_active:
         return 'Only teams in the active semester can be reviewed and endorsed.'
-    stage = defense_stage_for_label(stage_label) if team.is_capstone else None
+    from .concepts import stage_for
+    stage = stage_for(team, stage_label)
     endorsed = was_stage_endorsed(team, stage) if stage else team.ready_for_stage == stage_label
     if endorsed:
         return 'This team is already endorsed.'
@@ -29,12 +30,15 @@ def endorsement_blocker(team, stage_label):
         team=team, project_version=team.project_version, semester=team.semester,
         status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE],
     )
-    schedules = schedules.filter(defense_stage=stage, scope='capstone') if stage else schedules.filter(event_name__iexact=stage_label, scope='pit')
-    if schedules.exists() or is_stage_defense_done(team, stage_label):
+    schedules = schedules.filter(defense_stage=stage, scope='capstone') if team.is_capstone else schedules.filter(event_name__iexact=stage_label, scope='pit')
+    from .concepts import latest_round
+    current = latest_round(team, stage)
+    preparing_next = bool(current and current.number > 1 and not current.schedule_id)
+    if not preparing_next and (schedules.exists() or is_stage_defense_done(team, stage_label)):
         return 'This defense is already scheduled or complete.'
     config = (StageGradingConfig.objects.filter(defense_stage=stage, semester=team.semester)
-              if stage else PitEventGradingConfig.objects.filter(event_name__iexact=stage_label, semester=team.semester, year_level=team.year_level))
-    if config.filter(is_officially_complete=True).exists():
+              if team.is_capstone else PitEventGradingConfig.objects.filter(event_name__iexact=stage_label, semester=team.semester, year_level=team.year_level))
+    if not preparing_next and config.filter(is_officially_complete=True).exists():
         return 'This stage is officially complete.'
     return ''
 
@@ -53,7 +57,11 @@ def endorsement_review(team, stage_label, *, definitions=None, submitted=None):
         reason = reason or 'This PIT event does not require endorsement.'
     for item in required:
         submission = submitted.get(item['id'])
-        has_file = bool(submission and submission.file)
+        from .documents import completeness, current_files
+        from .services import defense_stage_for_label
+        from .concepts import stage_for
+        stage = stage_for(team, stage_label)
+        has_file = bool(submission and submission.file) and completeness(submission, item, stage=stage)
         files.append({'id': item['id'], 'label': item['label'],
                       'file_name': submission.file_name if has_file else '',
                       'status': submission.status if submission else 'missing'})
@@ -70,10 +78,15 @@ def endorsement_review(team, stage_label, *, definitions=None, submitted=None):
                 'status': submission.status,
                 'replacement': submission.file_replacement_unlocked,
                 'revision': submission.revision_review_unlocked,
+                'documents': [(f.pk, f.revision, f.status) for f in current_files(submission)],
             },
         })
     review_snapshot = {'team': team.pk, 'project_version': team.project_version,
                        'semester': team.semester_id, 'stage': stage_label, 'files': snapshot}
+    from .concepts import stage_for, latest_round
+    concept_round = latest_round(team, stage_for(team, stage_label))
+    if concept_round:
+        review_snapshot['concepts'] = {'round': concept_round.number, 'titles': concept_round.concepts}
     return {
         'can_review_and_endorse': not reason,
         'reason': reason,

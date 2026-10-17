@@ -111,8 +111,8 @@ void main() {
     expect(find.text('Configure Rubrics'), findsOneWidget);
     expect(find.text('PIT Events Setup'), findsOneWidget);
 
-    // Verify Upcoming Events
-    expect(find.text('Upcoming PIT Events'), findsOneWidget);
+    // The shared calendar includes current bookings and schedule history.
+    expect(find.text('Defense Schedule'), findsOneWidget);
     expect(find.textContaining('Concept Proposal has 3 teams scheduled'), findsOneWidget);
 
     // Verify Pipeline

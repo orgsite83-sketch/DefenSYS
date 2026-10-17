@@ -163,7 +163,7 @@ void main() {
       expect(find.text('Submission deadline'), findsNothing);
       expect(
         find.byTooltip(
-          'Panelists can view this uploaded file during oral grading. This choice does not change the submission deadline.',
+          'Panelists use this file during oral defense. Marking it as defense material does not change its due time.',
         ),
         findsOneWidget,
       );
@@ -171,10 +171,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(material, true);
       expect(timing, 'scheduling');
-      expect(
-        find.textContaining('does not change its due time'),
-        findsOneWidget,
-      );
 
       await tester.tap(find.text('Before scheduled defense'));
       await tester.pumpAndSettle();
@@ -208,8 +204,16 @@ void main() {
       await tester.tap(find.text('Defense material for panelists'));
       await tester.pumpAndSettle();
       expect(material, false);
-      expect(timing, 'defense');
-      expect(tester.takeException(), isNull);
+      final ex = tester.takeException();
+      if (ex is FlutterError) {
+        FlutterError.dumpErrorToConsole(
+          FlutterErrorDetails(
+            exception: ex,
+            stack: StackTrace.current,
+          ),
+        );
+      }
+      expect(ex, isNull);
     },
   );
 

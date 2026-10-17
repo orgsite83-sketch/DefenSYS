@@ -3,6 +3,9 @@ import 'package:defensys/screens/web/shared/team_deliverables/components/cohort_
 import 'package:defensys/screens/web/shared/team_deliverables/deliverables_view_types.dart';
 import 'package:defensys/services/adviser_grading_provider.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
+import 'package:defensys/models/team_workflow_status.dart';
+import 'package:defensys/widgets/repository/workflow_status_style.dart';
+import 'package:defensys/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -10,10 +13,10 @@ import '../helpers/capture_preview.dart';
 import '../helpers/auth_test_overrides.dart';
 import '../helpers/pump_app.dart';
 
-Map<String, dynamic> _stage({bool ready = true}) => {
+Map<String, dynamic> _stage({bool ready = true, bool accepted = false}) => {
   'stage_label': 'Concept Proposal',
   'deliverables_configured': true,
-  'required_complete': false,
+  'required_complete': accepted,
   'required_total': 1,
   'required_uploaded': ready ? 1 : 0,
   'endorsement_required': true,
@@ -38,11 +41,12 @@ Map<String, dynamic> _stage({bool ready = true}) => {
       'label': 'Concept paper',
       'type': 'pre',
       'required': true,
+      'is_defense_material': true,
       'uploaded': ready,
       'can_faculty_review': true,
       if (ready)
         'submission': {
-          'status': 'pending',
+          'status': accepted ? 'accepted' : 'pending',
           'file_name': 'reviewed-paper.pdf',
           'files': [],
         },
@@ -75,7 +79,8 @@ class _Grades extends AdviserGradingNotifier {
 }
 
 class _ReviewNotifier extends CapstoneDeliverablesNotifier {
-  List<Object>? reviewed;
+  List<Object>? endorsed;
+  List<Object>? combinedReview;
   Map<String, String>? correction;
   @override
   CapstoneDeliverablesState build() => const CapstoneDeliverablesState();
@@ -85,7 +90,13 @@ class _ReviewNotifier extends CapstoneDeliverablesNotifier {
     String stageLabel,
     String reviewToken,
   ) async {
-    reviewed = [teamId, stageLabel, reviewToken];
+    combinedReview = [teamId, stageLabel, reviewToken];
+    return true;
+  }
+
+  @override
+  Future<bool> endorseTeam(int teamId, String stageLabel) async {
+    endorsed = [teamId, stageLabel];
     return true;
   }
 
@@ -97,6 +108,7 @@ class _ReviewNotifier extends CapstoneDeliverablesNotifier {
     required String status,
     String? feedback,
     bool clearDefenseRevisions = false,
+    int? fileId,
   }) async {
     correction = {
       'id': deliverableId,
@@ -107,70 +119,228 @@ class _ReviewNotifier extends CapstoneDeliverablesNotifier {
   }
 }
 
+Future<void> _pumpWorkspace(
+  WidgetTester tester, {
+  required Map<String, dynamic> stage,
+  required _ReviewNotifier notifier,
+  bool pit = false,
+  ThemeData? theme,
+}) async {
+  await pumpDefensysWidget(
+    tester,
+    RepaintBoundary(
+      key: const Key('review-preview'),
+      child: SingleChildScrollView(
+        child: DeliverablesTablePane(
+          state: CapstoneDeliverablesState(
+            scope: pit ? 'pit' : 'capstone',
+            selectedStage: 'Concept Proposal',
+            stageOptions: const ['Concept Proposal'],
+            teams: [
+              {
+                'id': 7,
+                'name': 'Team FreshStartAdvising',
+                'current_stage': 'Concept Proposal',
+                'stages': [stage],
+              },
+            ],
+          ),
+          isAdviser: !pit,
+          isPitInstructor: pit,
+          initialTeamId: 7,
+        ),
+      ),
+    ),
+    overrides: [
+      ...authTestOverrides(),
+      adviserGradingProvider.overrideWith(_Grades.new),
+      capstoneDeliverablesProvider.overrideWith(() => notifier),
+    ],
+    theme: theme,
+  );
+}
+
+Finder _endorseButton() => find.ancestor(
+  of: find.text('Endorse team'),
+  matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
+);
+
 void main() {
   setUpAll(() => loadPreviewFonts(force: true));
 
   for (final pit in [false, true]) {
+    for (final dark in [false, true]) {
+      testWidgets(
+        '${pit ? 'PIT' : 'Capstone'} shares badge labels and colors in ${dark ? 'dark' : 'light'} mode',
+        (tester) async {
+          tester.view.physicalSize = const Size(1500, 1200);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          final notifier = _ReviewNotifier();
+          final scenarios =
+              <(Map<String, dynamic>, String, WorkflowStatusTone)>[
+                (
+                  _stage(ready: false),
+                  'Awaiting files',
+                  WorkflowStatusTone.neutral,
+                ),
+                (_stage(), 'Needs review', WorkflowStatusTone.attention),
+                (
+                  _stage(accepted: true),
+                  'Awaiting endorsement',
+                  WorkflowStatusTone.attention,
+                ),
+                (
+                  {
+                    ..._stage(),
+                    'assessment_progress': {
+                      'display_status': 'scheduled',
+                      'is_completed': false,
+                    },
+                  },
+                  'Scheduled',
+                  WorkflowStatusTone.active,
+                ),
+                (
+                  {
+                    ..._stage(),
+                    'assessment_progress': {
+                      'display_status': 'failed',
+                      'is_completed': false,
+                    },
+                  },
+                  'Failed',
+                  WorkflowStatusTone.destructive,
+                ),
+                (
+                  {
+                    ..._stage(),
+                    'assessment_progress': {
+                      'display_status': 'completed',
+                      'is_completed': true,
+                    },
+                    'archive_complete': true,
+                    'documentation_complete': true,
+                  },
+                  'Completed',
+                  WorkflowStatusTone.success,
+                ),
+              ];
+          Size? cardSize;
+          for (final (stage, label, tone) in scenarios) {
+            await _pumpWorkspace(
+              tester,
+              stage: stage,
+              notifier: notifier,
+              pit: pit,
+              theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
+            );
+            final labels = find.text(label);
+            expect(
+              labels,
+              findsNWidgets(2),
+              reason: 'Team card and dossier must agree',
+            );
+            final style = WorkflowStatusStyle.of(
+              tester.element(labels.first),
+              tone,
+            );
+            for (final text in tester.widgetList<Text>(labels)) {
+              expect(text.style?.color, style.foreground);
+            }
+            final card = find
+                .ancestor(
+                  of: find.text('Team FreshStartAdvising').first,
+                  matching: find.byType(InkWell),
+                )
+                .first;
+            cardSize ??= tester.getSize(card);
+            expect(
+              tester.getSize(card),
+              cardSize,
+              reason: 'Status changes preserve the team card layout',
+            );
+            expect(tester.takeException(), isNull);
+            if (label == 'Scheduled') {
+              await capturePreview(
+                tester,
+                find.byKey(const Key('review-preview')),
+                'workflow-${pit ? 'pit' : 'capstone'}-${dark ? 'dark' : 'light'}',
+              );
+            }
+          }
+        },
+      );
+    }
+  }
+
+  for (final pit in [false, true]) {
     testWidgets(
-      '${pit ? 'PIT' : 'Capstone'} reviews the displayed files in one action; deck needs no approval',
+      '${pit ? 'PIT' : 'Capstone'} accepts scheduling files before separate endorsement; deck needs no approval',
       (tester) async {
         tester.view.physicalSize = const Size(1500, 1200);
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);
         final notifier = _ReviewNotifier();
         final stage = _stage();
-        final team = <String, dynamic>{
-          'id': 7,
-          'name': 'Team FreshStartAdvising',
-          'current_stage': 'Concept Proposal',
-          'stages': [stage],
-        };
-        await pumpDefensysWidget(
+        await _pumpWorkspace(
           tester,
-          RepaintBoundary(
-            key: const Key('review-preview'),
-            child: SingleChildScrollView(
-              child: DeliverablesTablePane(
-                state: CapstoneDeliverablesState(
-                  scope: pit ? 'pit' : 'capstone',
-                  selectedStage: 'Concept Proposal',
-                  stageOptions: const ['Concept Proposal'],
-                  teams: [team],
-                ),
-                isAdviser: !pit,
-                isPitInstructor: pit,
-                initialTeamId: 7,
-              ),
-            ),
-          ),
-          overrides: [
-            ...authTestOverrides(),
-            adviserGradingProvider.overrideWith(_Grades.new),
-            capstoneDeliverablesProvider.overrideWith(() => notifier),
-          ],
+          stage: stage,
+          notifier: notifier,
+          pit: pit,
         );
-        expect(find.text('Accept'), findsNothing);
-        expect(find.text('Reject'), findsNothing);
+        expect(find.text('Accept'), findsOneWidget);
+        expect(find.text('Reject'), findsOneWidget);
         expect(find.text('Uploaded'), findsOneWidget);
-        expect(find.text('Awaiting review'), findsOneWidget);
-        expect(find.text('Request corrections'), findsNWidgets(2));
-        expect(DeliverablesTriageHelper.pendingReviewCount(team), 1);
+        expect(find.text('Request corrections'), findsOneWidget);
+        expect(find.text('Review & endorse'), findsNothing);
+        expect(
+          tester.widget<ElevatedButton>(_endorseButton()).onPressed,
+          isNull,
+        );
         await capturePreview(
           tester,
           find.byKey(const Key('review-preview')),
           'review-endorsement-${pit ? 'pit' : 'capstone'}',
         );
-        await tester.tap(find.text('Review & endorse'));
+        await tester.tap(find.text('Accept'));
         await tester.pumpAndSettle();
-        expect(find.text('reviewed-paper.pdf'), findsWidgets);
+        await tester.tap(find.text('Accept Requirement'));
+        await tester.pumpAndSettle();
+        expect(notifier.correction, {
+          'id': 'PAPER',
+          'status': 'accepted',
+          'feedback': '',
+        });
+        expect(notifier.endorsed, isNull);
+        expect(notifier.combinedReview, isNull);
+
+        await _pumpWorkspace(
+          tester,
+          stage: _stage(accepted: true),
+          notifier: notifier,
+          pit: pit,
+        );
+        expect(find.text('Accepted'), findsOneWidget);
+        expect(find.text('Awaiting endorsement'), findsWidgets);
         expect(
-          find.textContaining('approves these files and endorses'),
+          tester.widget<ElevatedButton>(_endorseButton()).onPressed,
+          isNotNull,
+        );
+        await tester.tap(_endorseButton());
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining(
+            'All required before-endorsement files have been accepted.',
+          ),
           findsOneWidget,
         );
-        await tester.tap(find.text('Approve & endorse'));
+        await tester.tap(find.text('Endorse'));
         await tester.pumpAndSettle();
-        expect(notifier.reviewed, [7, 'Concept Proposal', 'snapshot-123']);
-        await tester.tap(find.text('Request corrections').last);
+        expect(notifier.endorsed, [7, 'Concept Proposal']);
+        expect(notifier.combinedReview, isNull);
+
+        await tester.tap(find.text('Request corrections'));
         await tester.pumpAndSettle();
         final dialog = find.byType(AlertDialog);
         final send = find.descendant(
@@ -195,10 +365,57 @@ void main() {
         expect(tester.takeException(), isNull);
       },
     );
+
+    testWidgets(
+      '${pit ? 'PIT' : 'Capstone'} rejects a before-endorsement file with feedback',
+      (tester) async {
+        tester.view.physicalSize = const Size(1500, 1200);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        final notifier = _ReviewNotifier();
+        final stage = _stage();
+        // Explicit scheduling timing must behave like the compatible default.
+        (stage['pre'] as List).first['requirement_timing'] = 'scheduling';
+        await _pumpWorkspace(
+          tester,
+          stage: stage,
+          notifier: notifier,
+          pit: pit,
+        );
+        await tester.tap(find.text('Reject'));
+        await tester.pumpAndSettle();
+        expect(find.text('Reject: Concept paper'), findsOneWidget);
+        final dialog = find.byType(AlertDialog);
+        final reject = find.descendant(
+          of: dialog,
+          matching: find.byType(ElevatedButton),
+        );
+        expect(tester.widget<ElevatedButton>(reject).onPressed, isNull);
+        await tester.enterText(
+          find.descendant(of: dialog, matching: find.byType(TextField)),
+          'Explain the system architecture',
+        );
+        await tester.pump();
+        await tester.tap(reject);
+        await tester.pumpAndSettle();
+        expect(notifier.correction, {
+          'id': 'PAPER',
+          'status': 'rejected',
+          'feedback': 'Explain the system architecture',
+        });
+        expect(notifier.endorsed, isNull);
+        expect(notifier.combinedReview, isNull);
+        expect(
+          tester.widget<ElevatedButton>(_endorseButton()).onPressed,
+          isNull,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
   }
 
   testWidgets(
-    'missing scheduling files disable combined review even when the deck is uploaded',
+    'missing scheduling files disable endorsement even when the deck is uploaded',
     (tester) async {
       tester.view.physicalSize = const Size(1500, 1100);
       tester.view.devicePixelRatio = 1;
@@ -227,13 +444,11 @@ void main() {
           adviserGradingProvider.overrideWith(_Grades.new),
         ],
       );
-      final button = find.ancestor(
-        of: find.text('Review & endorse'),
-        matching: find.byWidgetPredicate((widget) => widget is ElevatedButton),
-      );
-      expect(tester.widget<ElevatedButton>(button).onPressed, isNull);
+      expect(tester.widget<ElevatedButton>(_endorseButton()).onPressed, isNull);
       expect(
-        find.text('Upload all required before-endorsement files first.'),
+        find.text(
+          'The team needs to upload the required before-endorsement files.',
+        ),
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);

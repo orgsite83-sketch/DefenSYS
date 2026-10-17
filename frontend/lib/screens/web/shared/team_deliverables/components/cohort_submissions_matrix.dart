@@ -1,3 +1,4 @@
+import 'package:defensys/widgets/repository/document_group.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +12,8 @@ import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/deliverables_view_types.dart';
 import 'package:defensys/utils/universal_file_viewer.dart';
 import 'package:defensys/widgets/repository/defense_material_readiness.dart';
+import 'package:defensys/models/team_workflow_status.dart';
+import 'package:defensys/widgets/repository/workflow_status_style.dart';
 
 int _asInt(dynamic value) {
   if (value == null) return 0;
@@ -269,7 +272,7 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
         } catch (_) {}
       }
 
-      if (mounted) {
+      if (context.mounted) {
         showSuccessToast(context, 'Reminders successfully delivered to $successCount teams.');
       }
     } finally {
@@ -457,9 +460,7 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                   final isAllCleared = stats['isAllCleared'] as bool;
 
                   final isPresentationOnly = activeStage?['is_presentation_only'] == true;
-                  final isEndorsed = activeStage?['endorsed'] == true;
                   final hasPending = pendingCount > 0 || DeliverablesTriageHelper.hasPendingReview(team);
-                  final isMissing = missingCount > 0 || DeliverablesTriageHelper.isOverdueOrMissing(team);
 
                   // Accurate Progress Value & Color calculation (truthful amber for pending review)
                   double progressValue;
@@ -468,7 +469,7 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
 
                   if (isPresentationOnly) {
                     progressValue = 1.0;
-                    progressBarColor = const Color(0xFF6366F1);
+                    progressBarColor = WorkflowStatusStyle.of(context, WorkflowStatusTone.active).foreground;
                     deliverableProgressLabel = 'Oral Pitching & Demo';
                   } else if (isAllCleared) {
                     progressValue = 1.0;
@@ -669,12 +670,7 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                                   flex: 2,
                                   child: Align(
                                     alignment: Alignment.centerLeft,
-                                    child: _buildStatusPill(
-                                      isEndorsed: isEndorsed,
-                                      hasPending: hasPending,
-                                      isMissing: isMissing,
-                                      reqComplete: isAllCleared,
-                                    ),
+                                    child: _buildStatusPill(activeStage ?? {}),
                                   ),
                                 ),
                                 // Actions: Remind + Review/Hide Button
@@ -1033,7 +1029,7 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                           : 'Files required to be cleared before the adviser can endorse this team.',
                     ),
                     const SizedBox(height: 8),
-                    ...beforeEndorsement.map((d) => _buildDeliverableItemCard(context, d, currentStage, isPit)),
+                    ...beforeEndorsement.map((d) => _buildDeliverableItemCard(context, d, currentStage, isPit, teamId)),
                     const SizedBox(height: 14),
                   ],
 
@@ -1045,7 +1041,7 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                       subtitle: 'Presentation slides and demonstration materials required for panel review.',
                     ),
                     const SizedBox(height: 8),
-                    ...beforeDefense.map((d) => _buildDeliverableItemCard(context, d, currentStage, isPit)),
+                    ...beforeDefense.map((d) => _buildDeliverableItemCard(context, d, currentStage, isPit, teamId)),
                     const SizedBox(height: 14),
                   ],
 
@@ -1057,7 +1053,7 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                       subtitle: 'Final manuscripts, compliance forms, and project archives.',
                     ),
                     const SizedBox(height: 8),
-                    ...allPost.map((d) => _buildDeliverableItemCard(context, d, currentStage, isPit)),
+                    ...allPost.map((d) => _buildDeliverableItemCard(context, d, currentStage, isPit, teamId)),
                   ],
 
                   // Empty State if no deliverables configured
@@ -1121,7 +1117,9 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
     Map<String, dynamic> item,
     String stageLabel,
     bool isPit,
+    int teamId,
   ) {
+    if ((item['file_policy'] as Map? ?? {}).isNotEmpty) return DocumentGroup(teamId: teamId, stageLabel: stageLabel, item: item);
     final label = item['label']?.toString() ??
         item['title']?.toString() ??
         item['name']?.toString() ??
@@ -1540,69 +1538,33 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
     );
   }
 
-  Widget _buildStatusPill({
-    required bool isEndorsed,
-    required bool hasPending,
-    required bool isMissing,
-    required bool reqComplete,
-  }) {
-    Color bg;
-    Color border;
-    Color text;
-    String label;
-    IconData icon;
-
-    if (isEndorsed) {
-      bg = const Color(0xFFECFDF5);
-      border = const Color(0xFFA7F3D0);
-      text = const Color(0xFF047857);
-      label = 'Endorsed';
-      icon = LucideIcons.checkCheck;
-    } else if (hasPending) {
-      bg = const Color(0xFFFFFBEB);
-      border = const Color(0xFFFDE68A);
-      text = const Color(0xFFB45309);
-      label = 'Needs Review';
-      icon = LucideIcons.clock;
-    } else if (reqComplete) {
-      bg = const Color(0xFFEFF6FF);
-      border = const Color(0xFFBFDBFE);
-      text = const Color(0xFF1D4ED8);
-      label = 'Submitted';
-      icon = LucideIcons.checkCircle2;
-    } else if (isMissing) {
-      bg = const Color(0xFFFEF2F2);
-      border = const Color(0xFFFECACA);
-      text = const Color(0xFFB91C1C);
-      label = 'Missing Req.';
-      icon = LucideIcons.circleAlert;
-    } else {
-      bg = const Color(0xFFF8FAFC);
-      border = const Color(0xFFE2E8F0);
-      text = const Color(0xFF475569);
-      label = 'In Progress';
-      icon = LucideIcons.timer;
-    }
+  Widget _buildStatusPill(Map<String, dynamic> stage) {
+    final status = TeamWorkflowStatus.fromStage(stage, scope: widget.state.scope);
+    final style = WorkflowStatusStyle.of(context, status.tone);
 
     return ShadBadge.outline(
-      backgroundColor: bg,
-      foregroundColor: text,
+      backgroundColor: style.background,
+      foregroundColor: style.foreground,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(6),
-        side: BorderSide(color: border),
+        side: BorderSide(color: style.border),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 11, color: text),
+          Icon(WorkflowStatusStyle.iconFor(status), size: 11, color: style.foreground),
           const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.bold,
-              color: text,
+          Flexible(
+            child: Text(
+              status.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.bold,
+                color: style.foreground,
+              ),
             ),
           ),
         ],

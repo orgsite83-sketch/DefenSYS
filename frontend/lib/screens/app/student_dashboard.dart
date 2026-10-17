@@ -12,6 +12,7 @@ import '../../config/api_config.dart';
 import '../../services/capstone_deliverables_provider.dart';
 import '../../services/dashboard_provider.dart';
 import '../../services/auth_provider.dart';
+import '../../services/academic/student_team_selection_provider.dart';
 import '../../theme/defensys_tokens.dart';
 import '../../l10n/l10n_ext.dart';
 import '../../widgets/confirm_dialog.dart';
@@ -79,14 +80,20 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(studentTeamSelectionProvider, (previous, next) {
+      if (previous != next) {
+        ref.read(dashboardProvider('student').notifier).fetchDashboardData(silent: true);
+      }
+    });
     ref.listen(dashboardProvider('student'), (prev, next) {
+      if (prev?.data == next.data) return;
       final team = next.data?['team'] as Map<String, dynamic>?;
       if (team != null) {
         final isCapstone = team['isCapstone'] == true;
         final yearLevel = next.data?['year_level']?.toString().trim();
         ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
           scope: isCapstone ? 'capstone' : 'pit',
-          selectedStage: widget.initialStage,
+          selectedStage: widget.initialStage ?? team['currentStage']?.toString(),
           yearLevel: isCapstone ? null : (yearLevel?.isNotEmpty == true ? yearLevel : null),
         );
       }

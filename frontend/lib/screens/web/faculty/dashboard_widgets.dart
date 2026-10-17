@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../theme/defensys_tokens.dart';
+import '../shared/dashboard_schedule_planner.dart';
 import '../shared/team_deliverables/deliverables_view_types.dart';
 
 class FacultyDashboardColumns extends StatelessWidget {
@@ -403,15 +404,7 @@ class TeamRequirementBadge extends StatelessWidget {
   }
 }
 
-class DefenseScheduleCalendar extends StatefulWidget {
-  final String title;
-  final String subtitle;
-  final List<Map<String, dynamic>> schedules;
-  final Map<int, String> teamNames;
-  final bool loading;
-  final bool hasError;
-  final void Function(int? teamId, String stageLabel) onOpenDefense;
-
+class DefenseScheduleCalendar extends StatelessWidget {
   const DefenseScheduleCalendar({
     super.key,
     required this.title,
@@ -421,409 +414,123 @@ class DefenseScheduleCalendar extends StatefulWidget {
     required this.loading,
     required this.hasError,
     required this.onOpenDefense,
+    this.programScope = 'capstone',
+    this.onRefresh,
   });
 
-  @override
-  State<DefenseScheduleCalendar> createState() =>
-      _DefenseScheduleCalendarState();
-}
+  final String title;
+  final String subtitle;
+  final List<Map<String, dynamic>> schedules;
+  final Map<int, String> teamNames;
+  final bool loading;
+  final bool hasError;
+  final void Function(int? teamId, String stageLabel) onOpenDefense;
+  final String programScope;
+  final VoidCallback? onRefresh;
 
-class _DefenseScheduleCalendarState extends State<DefenseScheduleCalendar> {
-  static const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  late DateTime _selectedDay;
-  bool _monthView = false;
-  bool _userSelected = false;
-  bool _showAll = false;
-
-  DateTime _day(DateTime date) => DateTime(date.year, date.month, date.day);
-
-  DateTime? _scheduleDay(Map<String, dynamic> schedule) =>
-      DateTime.tryParse(schedule['scheduled_date']?.toString() ?? '');
-
-  DateTime _firstDay(List<Map<String, dynamic>> schedules) {
-    final today = _day(DateTime.now());
-    final dates =
-        schedules
-            .map(_scheduleDay)
-            .whereType<DateTime>()
-            .where((date) => !date.isBefore(today))
-            .toList()
-          ..sort();
-    return dates.isEmpty ? today : _day(dates.first);
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedDay = _firstDay(widget.schedules);
-  }
-
-  @override
-  void didUpdateWidget(covariant DefenseScheduleCalendar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!_userSelected && oldWidget.schedules != widget.schedules) {
-      _selectedDay = _firstDay(widget.schedules);
+  List<Map<String, dynamic>> _sessions() {
+    final result = <Map<String, dynamic>>[];
+    for (final schedule in schedules) {
+      final teamId = int.tryParse('${schedule['team_id']}');
+      final date = DateTime.tryParse('${schedule['scheduled_date']}');
+      if (!teamNames.containsKey(teamId) ||
+          date == null ||
+          (schedule['scope'] != null && schedule['scope'] != programScope) ||
+          schedule['status'] == 'cancelled') {
+        continue;
+      }
+      final rawTime = schedule['start_time']?.toString() ?? '';
+      final start = DateTime.tryParse('${schedule['scheduled_date']}T$rawTime');
+      final duration = (schedule['slot_duration'] as num?)?.toInt() ?? 60;
+      final end = start?.add(Duration(minutes: duration));
+      final display =
+          schedule['display_status']?.toString() ??
+          (schedule['status'] == 'done'
+              ? 'assessed'
+              : schedule['status']?.toString() ?? 'scheduled');
+      final level =
+          schedule['team_level']?.toString() ??
+          schedule['year_level']?.toString() ??
+          '';
+      final year = RegExp(
+        r'^[1-4](?:st|nd|rd|th) Year',
+      ).firstMatch(level)?.group(0);
+      final state = schedule['status'] == 'archived'
+          ? 'archived'
+          : display == 'completed'
+          ? 'completed'
+          : schedule['status'] == 'done'
+          ? 'assessed'
+          : 'scheduled';
+      result.add({
+        'session_id':
+            schedule['id']?.toString() ??
+            '$teamId-${schedule['stage_label']}-$date-$rawTime',
+        'date':
+            '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}',
+        'scope': programScope,
+        'team_id': teamId,
+        'team_name': teamNames[teamId],
+        'team_count': 1,
+        'event_name': schedule['stage_label']?.toString() ?? 'Defense',
+        'year_levels': [if (year != null) year],
+        'room': schedule['room']?.toString() ?? 'Venue to be confirmed',
+        'time_blocks': [
+          if (start != null && end != null)
+            {'start': start.toIso8601String(), 'end': end.toIso8601String()},
+        ],
+        'status_counts': {state: 1},
+        'display_status': display,
+        'materials_readiness': schedule['materials_readiness'],
+        'can_open': true,
+        'sort_time': rawTime,
+      });
     }
-  }
-
-  List<Map<String, dynamic>> _eventsOn(DateTime day) =>
-      widget.schedules
-          .where((schedule) => _scheduleDay(schedule) == day)
-          .toList()
-        ..sort(
-          (a, b) => (a['start_time']?.toString() ?? '').compareTo(
-            b['start_time']?.toString() ?? '',
-          ),
-        );
-
-  void _select(DateTime day) => setState(() {
-    _selectedDay = _day(day);
-    _userSelected = true;
-    _showAll = false;
-  });
-
-  String _time(BuildContext context, Map<String, dynamic> schedule) {
-    final raw = schedule['start_time']?.toString() ?? '';
-    final parts = raw.split(':');
-    final hour = parts.isEmpty ? null : int.tryParse(parts[0]);
-    final minute = parts.length < 2 ? null : int.tryParse(parts[1]);
-    if (hour == null || minute == null || hour > 23 || minute > 59) {
-      return 'Time pending';
-    }
-    return MaterialLocalizations.of(
-      context,
-    ).formatTimeOfDay(TimeOfDay(hour: hour, minute: minute));
-  }
-
-  Widget _outlinedButton({
-    required String tooltip,
-    required Widget child,
-    required VoidCallback onPressed,
-    double? width,
-  }) => Tooltip(
-    message: tooltip,
-    child: SizedBox(
-      width: width,
-      height: 32,
-      child: OutlinedButton(
-        onPressed: onPressed,
-        style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 9),
-          side: BorderSide(color: DefensysTokens.borderOf(context)),
-          foregroundColor: DefensysTokens.textPrimaryOf(context),
-          backgroundColor: DefensysTokens.surfaceOf(context),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-        ),
-        child: child,
-      ),
-    ),
-  );
-
-  Widget _dateCell(DateTime day, {bool month = false}) {
-    final selected = day == _selectedDay;
-    final count = _eventsOn(day).length;
-    final today = day == _day(DateTime.now());
-    final maroon = DefensysTokens.maroonOf(context);
-    return Semantics(
-      button: true,
-      label:
-          '${MaterialLocalizations.of(context).formatMediumDate(day)}, '
-          '$count ${count == 1 ? 'defense' : 'defenses'}',
-      child: InkWell(
-        key: Key('defense-calendar-day-${day.year}-${day.month}-${day.day}'),
-        borderRadius: BorderRadius.circular(6),
-        onTap: () => _select(day),
-        child: Container(
-          margin: const EdgeInsets.all(2),
-          decoration: BoxDecoration(
-            color: selected ? maroon : null,
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: selected
-                  ? maroon
-                  : today
-                  ? DefensysTokens.borderOf(context)
-                  : Colors.transparent,
-            ),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (!month)
-                Text(
-                  _weekdays[day.weekday - 1],
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: selected
-                        ? Colors.white
-                        : DefensysTokens.textSecondaryOf(context),
-                  ),
-                ),
-              Text(
-                '${day.day}',
-                style: TextStyle(
-                  fontSize: month ? 12 : 14,
-                  fontWeight: selected || today
-                      ? FontWeight.w800
-                      : FontWeight.w500,
-                  color: selected
-                      ? Colors.white
-                      : DefensysTokens.textPrimaryOf(context),
-                ),
-              ),
-              if (count > 0)
-                Container(
-                  width: 5,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: selected ? Colors.white : maroon,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-            ],
-          ),
-        ),
+    result.sort(
+      (a, b) => '${a['date']} ${a['sort_time']}'.compareTo(
+        '${b['date']} ${b['sort_time']}',
       ),
     );
+    return result;
   }
 
-  Widget _calendar() {
-    final start = _monthView
-        ? DateTime(_selectedDay.year, _selectedDay.month, 1)
-        : _selectedDay.subtract(Duration(days: _selectedDay.weekday - 1));
-    final gridStart = start.subtract(Duration(days: start.weekday - 1));
-    if (!_monthView) {
-      return SizedBox(
-        height: 66,
-        child: Row(
-          children: [
-            for (var i = 0; i < 7; i++)
-              Expanded(child: _dateCell(gridStart.add(Duration(days: i)))),
-          ],
-        ),
-      );
-    }
-    final last = DateTime(_selectedDay.year, _selectedDay.month + 1, 0);
-    final cells = ((last.day + start.weekday - 2) ~/ 7 + 1) * 7;
-    return Column(
+  @override
+  Widget build(BuildContext context) => Container(
+    decoration: BoxDecoration(
+      color: DefensysTokens.surfaceOf(context),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: DefensysTokens.borderOf(context)),
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            for (final weekday in _weekdays)
-              Expanded(
-                child: Center(
-                  child: Text(
-                    weekday,
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: DefensysTokens.textSecondaryOf(context),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 7,
-            mainAxisExtent: 40,
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: DefensysTokens.borderOf(context)),
+            ),
           ),
-          itemCount: cells,
-          itemBuilder: (context, index) {
-            final day = gridStart.add(Duration(days: index));
-            return Opacity(
-              opacity: day.month == _selectedDay.month ? 1 : 0.42,
-              child: _dateCell(day, month: true),
-            );
-          },
+          child: Text(
+            title,
+            style: TextStyle(
+              color: DefensysTokens.textPrimaryOf(context),
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        DashboardSchedulePlanner(
+          workspace: 'faculty',
+          providedSessions: _sessions(),
+          loading: loading,
+          errorMessage: hasError ? 'The calendar could not be loaded.' : null,
+          description: subtitle,
+          onRetry: onRefresh,
+          onOpenTeam: (teamId, stage) => onOpenDefense(teamId, stage),
         ),
       ],
-    );
-  }
-
-  Widget _eventTile(Map<String, dynamic> schedule) {
-    final teamId = int.tryParse(schedule['team_id']?.toString() ?? '');
-    final teamName =
-        widget.teamNames[teamId] ?? schedule['team_name']?.toString() ?? 'Team';
-    final stage = schedule['stage_label']?.toString() ?? 'Defense';
-    final room = schedule['room']?.toString() ?? '';
-    final materials = schedule['materials_readiness'];
-    final required = materials is Map
-        ? int.tryParse('${materials['required_total'] ?? 0}') ?? 0
-        : 0;
-    final submitted = materials is Map
-        ? int.tryParse('${materials['submitted_total'] ?? 0}') ?? 0
-        : 0;
-    final details = [
-      stage,
-      _time(context, schedule),
-      if (room.isNotEmpty) room,
-    ].join(' · ');
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      dense: true,
-      isThreeLine: required > 0,
-      leading: Icon(
-        Icons.event_outlined,
-        color: DefensysTokens.maroonOf(context),
-      ),
-      title: Text(
-        teamName,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-      ),
-      subtitle: Text(
-        required > 0
-            ? '$details\n$submitted/$required defense materials uploaded'
-            : details,
-        maxLines: 3,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 12),
-      ),
-      trailing: const Icon(Icons.chevron_right_rounded),
-      onTap: () => widget.onOpenDefense(teamId, stage),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final events = _eventsOn(_selectedDay);
-    final month = MaterialLocalizations.of(
-      context,
-    ).formatMonthYear(_selectedDay);
-    final date = MaterialLocalizations.of(
-      context,
-    ).formatMediumDate(_selectedDay);
-    return Container(
-      decoration: BoxDecoration(
-        color: DefensysTokens.surfaceOf(context),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: DefensysTokens.borderOf(context)),
-      ),
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            widget.title,
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: DefensysTokens.textPrimaryOf(context),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            widget.subtitle,
-            style: TextStyle(
-              fontSize: 12,
-              color: DefensysTokens.textSecondaryOf(context),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  month,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              _outlinedButton(
-                tooltip: _monthView ? 'Previous month' : 'Previous week',
-                width: 32,
-                onPressed: () => _select(
-                  _monthView
-                      ? DateTime(
-                          _selectedDay.year,
-                          _selectedDay.month - 1,
-                          _selectedDay.day.clamp(
-                            1,
-                            DateTime(
-                              _selectedDay.year,
-                              _selectedDay.month,
-                              0,
-                            ).day,
-                          ),
-                        )
-                      : _selectedDay.subtract(const Duration(days: 7)),
-                ),
-                child: const Icon(Icons.chevron_left_rounded, size: 17),
-              ),
-              const SizedBox(width: 5),
-              _outlinedButton(
-                tooltip: _monthView ? 'Next month' : 'Next week',
-                width: 32,
-                onPressed: () => _select(
-                  _monthView
-                      ? DateTime(_selectedDay.year, _selectedDay.month + 1, 1)
-                      : _selectedDay.add(const Duration(days: 7)),
-                ),
-                child: const Icon(Icons.chevron_right_rounded, size: 17),
-              ),
-              const SizedBox(width: 7),
-              _outlinedButton(
-                tooltip: _monthView
-                    ? 'Show week calendar'
-                    : 'Show month calendar',
-                onPressed: () => setState(() => _monthView = !_monthView),
-                child: Text(_monthView ? 'Week view' : 'Month view'),
-              ),
-            ],
-          ),
-          _calendar(),
-          const Divider(height: 24),
-          Text(
-            date,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-          ),
-          if (widget.loading && widget.schedules.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (widget.hasError && widget.schedules.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 12),
-              child: Text(
-                'Unable to load defense schedules. Refresh to try again.',
-              ),
-            )
-          else if (widget.schedules.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 12),
-              child: Text('No defenses scheduled for your teams yet.'),
-            )
-          else if (events.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 12),
-              child: Text('No defenses on this day. Select a marked date.'),
-            )
-          else ...[
-            for (final event in _showAll ? events : events.take(3))
-              _eventTile(event),
-            if (events.length > 3)
-              TextButton(
-                onPressed: () => setState(() => _showAll = !_showAll),
-                child: Text(
-                  _showAll
-                      ? 'Show fewer'
-                      : 'Show all ${events.length} defenses',
-                ),
-              ),
-          ],
-        ],
-      ),
-    );
-  }
+    ),
+  );
 }

@@ -1,4 +1,5 @@
 from django.urls import path
+from .concept_views import ConceptActionView
 
 from .views import (
     CapstoneDeliverableEndorseView,
@@ -15,6 +16,7 @@ from .views import (
 
 
 urlpatterns = [
+    path('concepts/', ConceptActionView.as_view(), name='deliverable_concepts'),
     path('', CapstoneDeliverablesListView.as_view(), name='capstone_deliverables'),
     path('upload/', CapstoneDeliverableUploadView.as_view(), name='capstone_deliverable_upload'),
     path('remove/', CapstoneDeliverableRemoveView.as_view(), name='capstone_deliverable_remove'),
