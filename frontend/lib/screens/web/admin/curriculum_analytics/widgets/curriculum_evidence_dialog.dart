@@ -338,7 +338,9 @@ class _CurriculumEvidenceDialogState
             ),
             const SizedBox(height: 12),
             Text(
-              'Document-based estimate · not faculty-reviewed',
+              classification['decision_method'] == 'concept_functions'
+                  ? 'Estimate from proposed functions · not faculty-reviewed'
+                  : 'Document-based estimate · not faculty-reviewed',
               style: _muted,
             ),
           ],
@@ -984,6 +986,11 @@ class _CurriculumEvidenceDialogState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (classification['decision_method'] == 'concept_functions')
+                  Text(
+                    'This estimate uses the proposed information workflow. Candidate scores below are separate model suggestions; no probability is assigned to the functional estimate.',
+                    style: _muted,
+                  ),
                 if (classification['model_version'] != null)
                   Text(
                     'Model version: ${classification['model_version']}',

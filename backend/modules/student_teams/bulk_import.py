@@ -28,7 +28,8 @@ def imported_concept_requirement(data):
                   'assigned_title': title, 'project_version': 1}
     candidate = StudentTeam(name=data['team_name'], project_title=title,
         level=data.get('level', ''), year_level=data.get('year_level', ''),
-        section=data.get('section', ''), semester=get_active_semester(), concept_assignment=assignment)
+        section=data.get('section', ''), semester=get_active_semester(), concept_assignment=assignment,
+        current_defense_stage=data.get('current_defense_stage') or None)
     stage = contexts_for(candidate).first()
     if stage:
         assignment['context_key'] = context_key(stage)
@@ -484,8 +485,6 @@ def _existing_team_membership_issues(member_user_ids, *, team_name='', level='',
         memberships = TeamMembership.objects.filter(student_id=student_id, team__semester=semester)
         if pit:
             memberships = pit_event_memberships(memberships.filter(team__level__icontains='PIT'), event_name)
-        else:
-            memberships = memberships.filter(team__level__icontains='Capstone')
         membership = (
             memberships
             .select_related('team', 'student')

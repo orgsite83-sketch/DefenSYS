@@ -60,6 +60,11 @@ def can_read_media(user, name):
 
     guest = getattr(user, 'is_guest_panelist', False)
     admin = is_admin_user(user)
+    from repository.section_concepts.models import SectionConceptPaper
+    from repository.section_concepts.services import can_read as can_read_section
+    paper = SectionConceptPaper.objects.select_related('concept__round__project__section__semester').filter(file=name).first()
+    if paper:
+        return can_read_section(user, paper.concept.round.project)
     submissions = DeliverableSubmission.objects.filter(
         Q(file=name) | Q(files__file=name),
     ).select_related('team', 'team__semester').distinct()

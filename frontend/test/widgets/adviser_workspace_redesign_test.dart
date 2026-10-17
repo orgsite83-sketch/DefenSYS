@@ -308,7 +308,7 @@ void main() {
       tester.getTopLeft(find.text('My actions')).dy,
       greaterThan(tester.getTopLeft(find.text('Defense Schedule')).dy),
     );
-    expect(find.text('1 to endorse'), findsOneWidget);
+    expect(find.text('Awaiting files'), findsOneWidget);
     expect(find.textContaining('Room 301'), findsOneWidget);
     expect(find.textContaining('Room 302'), findsNothing);
     expect(find.text('Team Old'), findsNothing);

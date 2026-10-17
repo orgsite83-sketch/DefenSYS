@@ -179,8 +179,12 @@ class CriticalIntegrityTests(APITestCase):
         self.assertFalse(team_queryset_for_user(self.adviser).filter(pk=other.pk).exists())
 
     def test_archive_and_deliverable_gets_preserve_all_stored_files(self):
+        # Model the previous upload as history before adding the current revision.
+        self.file.is_current = False
+        self.file.save(update_fields=['is_current'])
         second = DeliverableSubmissionFile.objects.create(
             submission=self.submission, file_name='newer.txt', extracted_text='fixture',
+            revision=self.file.revision + 1,
             file=ContentFile(b'newer work', name='newer.txt'),
         )
         self.client.force_authenticate(user=self.admin)

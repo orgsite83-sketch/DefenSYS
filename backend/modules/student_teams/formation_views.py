@@ -13,20 +13,40 @@ from user_management.permissions import CanManageTeams
 from . import formation
 from .models import StudentTeam
 from .term_scope import get_active_semester
+from .formation_access import CanGenerateTeams, CanFormTeams
+
+
+class TeamRosterOptionsView(APIView):
+    permission_classes = [CanFormTeams]
+
+    def get(self, request):
+        return Response(formation.options(request.user, request.query_params, generation=False))
+
+
+class SharedSystemGenerationSerializer(serializers.Serializer):
+    project_manager_id = serializers.IntegerField(min_value=1)
+    reviewer_id = serializers.IntegerField(min_value=1)
+    title_mode = serializers.ChoiceField(choices=['student_proposed', 'faculty_provided'], default='student_proposed')
+    stage_label = serializers.CharField(max_length=120, required=False)
 
 
 class FormationRequest(serializers.Serializer):
     level = serializers.ChoiceField(choices=StudentTeam.LEVEL_CHOICES)
     event_name = serializers.CharField(required=False, allow_blank=True, max_length=120)
-    sections = serializers.ListField(child=serializers.CharField(max_length=80), min_length=1, max_length=100)
+    sections = serializers.ListField(child=serializers.CharField(max_length=80), required=False, default=list, max_length=100)
+    roster_mode = serializers.ChoiceField(choices=['sections', 'custom'], default='sections')
+    student_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, max_length=5000)
+    leader_method = serializers.ChoiceField(choices=['random', 'manual', 'keep', 'first'], required=False)
+    include_assigned = serializers.BooleanField(default=False)
     method = serializers.ChoiceField(choices=['random', 'alphabetical', 'reuse'])
     group_size = serializers.IntegerField(min_value=1, max_value=4)
     source_team_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False, max_length=500)
+    shared_system = SharedSystemGenerationSerializer(required=False)
 
 
 class TeamDraft(serializers.Serializer):
     name = serializers.CharField(max_length=120)
-    section = serializers.CharField(max_length=80)
+    section = serializers.CharField(max_length=80, allow_blank=True)
     leader_id = serializers.IntegerField(min_value=1)
     member_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), min_length=1, max_length=4)
 
@@ -37,7 +57,7 @@ class FormationCommitRequest(FormationRequest):
 
 
 class TeamFormationView(APIView):
-    permission_classes = [CanManageTeams]
+    permission_classes = [CanGenerateTeams]
 
     def get(self, request):
         return Response(formation.options(request.user, request.query_params))
@@ -49,7 +69,7 @@ class TeamFormationView(APIView):
 
 
 class TeamFormationCommitView(APIView):
-    permission_classes = [CanManageTeams]
+    permission_classes = [CanGenerateTeams]
 
     def post(self, request):
         data = FormationCommitRequest(data=request.data)
@@ -85,9 +105,13 @@ def setup_tasks(user):
             if team.is_pit and team.current_defense_stage and stage.event_name != team.current_defense_stage:
                 continue
             policy = resolve_policy(team, stage)
-            if not titles_complete(latest_round(team, stage)):
+            current = latest_round(team, stage)
+            shared = policy.get('source') == 'section_system'
+            from repository.deliverables.concepts import clearance_blocker
+            if not titles_complete(current) or (shared and not current.verdict and clearance_blocker(team, stage)):
                 tasks.append({'stage_label': stage.label, 'required_count': policy['required_count'],
-                              'mode': policy['mode']})
+                              'mode': policy['mode'], 'shared_system': shared,
+                              'section_project_id': policy.get('section_project_id')})
         if team.setup_pending or tasks:
             result.append({'id': team.pk, 'name': team.name, 'section': team.section,
                            'scope': 'pit' if team.is_pit else 'capstone', 'year_level': team.year_level,
@@ -100,7 +124,8 @@ class MyTeamSetupView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return Response({'teams': setup_tasks(request.user)})
+        from repository.section_concepts.services import task_payload
+        return Response({'teams': setup_tasks(request.user), 'section_tasks': task_payload(request.user)})
 
 
 class TeamLeaderSetupView(APIView):

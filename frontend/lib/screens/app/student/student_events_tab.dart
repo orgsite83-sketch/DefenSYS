@@ -67,7 +67,8 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (widget.isCapstone) {
+      final configuredStages = widget.studentData?['stage_options'] as List?;
+      if (widget.isCapstone && (configuredStages == null || configuredStages.isNotEmpty)) {
         ref.read(teamDefenseProvider.notifier).fetch();
       }
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
@@ -165,6 +166,12 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.studentData?['team']?['id'] != widget.studentData?['team']?['id']) {
       _selectedStageForView = widget.studentData?['team']?['currentStage']?.toString();
+    }
+    if (widget.isCapstone && (oldWidget.studentData?['stage_options'] as List? ?? []).isEmpty &&
+        (widget.studentData?['stage_options'] as List? ?? []).isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) { ref.read(teamDefenseProvider.notifier).fetch(); }
+      });
     }
     if (oldWidget.subTabNotifier != widget.subTabNotifier) {
       oldWidget.subTabNotifier?.removeListener(_onSubTabNotifierChanged);

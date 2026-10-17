@@ -510,7 +510,7 @@ class BulkImportTeamsPreviewView(APIView):
 
     def post(self, request):
         section = request.data.get('section', '').strip()
-        blocked = _reject_capstone_bulk_import_if_closed(request.user, section=section)
+        blocked = None if request.data.get('event_name') else _reject_capstone_bulk_import_if_closed(request.user, section=section)
         if blocked is not None:
             return blocked
 
@@ -565,7 +565,7 @@ class BulkImportTeamsView(APIView):
 
     def post(self, request):
         section = request.data.get('section', '').strip()
-        blocked = _reject_capstone_bulk_import_if_closed(request.user, section=section)
+        blocked = None if request.data.get('event_name') else _reject_capstone_bulk_import_if_closed(request.user, section=section)
         if blocked is not None:
             return blocked
 

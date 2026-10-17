@@ -1,5 +1,6 @@
 from django.test import SimpleTestCase
 from .project_classification import ProjectFocusClassifier, section_chunks
+from .classification_taxonomy import MODEL_VERSION
 
 
 class ProjectClassificationTests(SimpleTestCase):
@@ -57,7 +58,7 @@ The Flutter smartphone app implements offline lessons and push notifications for
         self.assertEqual(result['predicted_category'], 'Mobile Development')
         self.assertIn('Flutter', [t['name'] for t in result['technologies']])
         self.assertIn('input_hash', result)
-        self.assertTrue(result['model_version'].startswith('project-focus-3.1-'))
+        self.assertTrue(result['model_version'].startswith(f'{MODEL_VERSION}-'))
         self.assertEqual(result['training_source'], 'Authored development examples; not faculty-reviewed')
 
     def test_missing_text_is_explicitly_unresolved(self):
@@ -133,3 +134,92 @@ The Flutter smartphone app implements offline lessons and push notifications for
             'Methodology\nConfigurable criteria support patient handoff and records management.')
         self.assertEqual(result['predicted_category'], 'Information Systems')
         self.assertNotIn('Machine Learning', result['secondary_categories'])
+
+    def test_concept_functions_establish_information_system_without_platform_or_fake_score(self):
+        # Authored scenarios, not copies of the evaluated cohort's papers.
+        cases = [
+            'Search historical repair tickets. Record newly submitted requests.',
+            'Display available rehearsal rooms. Confirm reservations for approved groups.',
+            'Collect appliance inspection reports. Review submitted reports for maintenance staff.',
+            'Maintain approved service notices. Show current announcements to visitors.',
+            'Upload permitted forms for applicants. Find archived documents by reference number.',
+        ]
+        for functions in cases:
+            with self.subTest(functions=functions):
+                result = self.model.predict('CONCEPT PAPER\n03 Project Objectives\n'
+                    'Support the local service workflow.\n04 Proposed System and Key Functions\n' +
+                    functions + '\n06 Scope and Limitations\nPlatform selection follows stakeholder review.')
+                self.assertEqual(result['predicted_category'], 'Information Systems')
+                self.assertEqual(result['decision_method'], 'concept_functions')
+                self.assertEqual(result['status'], 'estimated')
+                self.assertIsNone(result['confidence_score'])
+                self.assertIsNone(result['margin'])
+                self.assertGreaterEqual(len({h['function'] for h in result['evidence']}), 2)
+                self.assertTrue(all(h['section'] == 'Proposed System And Key Functions' for h in result['evidence']))
+                self.assertEqual(result['technologies'], [])
+                self.assertTrue(result['top_3'])  # Raw model suggestions remain separate.
+
+    def test_concept_sections_keep_methodology_and_scope_out_of_functional_evidence(self):
+        chunks = section_chunks('CONCEPT PAPER\n01 Background and Rationale\nExisting practice.\n'
+            '03 Project Objectives\nIdentify stakeholder needs.\n04 Proposed System and Key Functions\n'
+            'Show current service notices.\n06 Scope and Limitations\nMaintain records.\n'
+            '07 Proposed Development and Validation Plan\nCollect inspection reports.\n'
+            '08 Risk Considerations and Safeguards\nCloud storage and distributed files reduce loss.')
+        self.assertEqual(chunks[0]['section'], 'Background And Rationale')
+        self.assertFalse(any(c['text'] == 'and Rationale' for c in chunks))
+        self.assertEqual(self.model.predict('CONCEPT PAPER\n' + '\n'.join(
+            f"{c['section']}\n{c['text']}" for c in chunks))['status'], 'unresolved')
+
+    def test_concept_fallback_rejects_generic_tentative_cited_manual_and_repeated_operations(self):
+        cases = [
+            'Objectives\nInterview stakeholders and conduct testing.\n'
+            'Proposed System Features\nUse authentication, storage, backups and validation.',
+            'Proposed System Features\nWe might maintain repair records. We could display request history.',
+            'Objectives\nStudy institutional service needs.\n'
+            'References\nMaintain repair records. Display request history.',
+            'Background and Rationale\nStaff maintain repair records and display request history manually.\n'
+            'Objectives\nInvestigate the problem through interviews.',
+            'Proposed System Features\nSearch room listings. Find room listings. Browse room listings.',
+            'Proposed System Features\nEvaluate search accuracy and user completion of tasks.\n'
+            'Provide searchable book records. Create a prototype for library availability.',
+            'Proposed System Features\nMaintain handwritten service records. Display paper-based request history.',
+            'Proposed System Features\nShow current service notices.\n'
+            'Scope and Limitations\nMaintain repair records.\n'
+            'Proposed Development and Validation Plan\nCollect inspection reports.',
+        ]
+        for body in cases:
+            with self.subTest(body=body):
+                self.assertEqual(self.model.predict('CONCEPT PAPER\n' + body)['status'], 'unresolved')
+
+    def test_specialist_focus_remains_primary_when_concept_also_manages_information(self):
+        result = self.model.predict('CONCEPT PAPER\nAbstract\n'
+            'An IoT embedded sensor prototype collects soil moisture measurements through an ESP32.\n'
+            'Proposed System Features\nRecord measurement history. Display archived reports.\n'
+            'Methodology\nThe microcontroller sends telemetry through an MQTT gateway.')
+        self.assertEqual(result['predicted_category'], 'IoT')
+        self.assertEqual(result['decision_method'], 'naive_bayes')
+        self.assertIsNotNone(result['confidence_score'])
+
+    def test_functional_fallback_does_not_hide_conflicting_specialist_evidence(self):
+        from unittest.mock import patch
+        probabilities = [0.9 if c == 'Web Development' else 0.1 if c == 'IoT' else 0
+                         for c in self.model.classifier.classes_]
+        with patch.object(self.model.classifier, 'predict_proba', return_value=[probabilities]):
+            result = self.model.predict('CONCEPT PAPER\nProposed System Features\n'
+                'An embedded sensor collects soil moisture readings.\n'
+                'Record measurement history. Display archived reports.')
+        self.assertEqual(result['status'], 'unresolved')
+        self.assertEqual(result['decision_method'], 'naive_bayes')
+
+    def test_archiver_supports_functional_estimate_without_numeric_confidence(self):
+        import tempfile
+        from pathlib import Path
+        from .document_archiver import DocumentArchiver
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / 'paper.pdf'
+            source.write_bytes(b'concept paper')
+            result = DocumentArchiver(str(Path(temporary) / 'archive')).archive_document(
+                str(source), 'paper.pdf', 'Information Systems', None, {})
+            self.assertEqual(result['status'], 'success')
+            self.assertEqual(result['confidence'], 'Not scored (proposed functions)')
+            self.assertEqual(Path(result['archive_path']).read_bytes(), b'concept paper')

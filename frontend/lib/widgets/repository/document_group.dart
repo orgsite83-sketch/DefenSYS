@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../services/auth_provider.dart';
+import '../../models/team_workflow_status.dart';
+import 'workflow_status_style.dart';
 import '../../services/capstone_deliverables_provider.dart';
 import '../../utils/universal_file_viewer.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
@@ -173,6 +175,16 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
             'rejected' => 'Corrections requested',
             _ => 'Awaiting review',
           };
+    final fileStyle = WorkflowStatusStyle.of(
+      context,
+      file == null
+          ? WorkflowStatusTone.neutral
+          : file['status'] == 'rejected'
+          ? WorkflowStatusTone.attention
+          : accepted || defenseTimed
+          ? WorkflowStatusTone.success
+          : WorkflowStatusTone.active,
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
@@ -205,7 +217,17 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                 ),
               ),
               if (file != null)
-                Flexible(child: ShadBadge.secondary(child: Text(status))),
+                Flexible(
+                  child: ShadBadge.outline(
+                    backgroundColor: fileStyle.background,
+                    foregroundColor: fileStyle.foreground,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                      side: BorderSide(color: fileStyle.border),
+                    ),
+                    child: Text(status),
+                  ),
+                ),
             ],
           ),
           if ('${file?['feedback'] ?? ''}'.isNotEmpty)

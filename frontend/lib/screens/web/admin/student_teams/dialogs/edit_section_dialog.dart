@@ -8,6 +8,8 @@ import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/feedback/defensys_loading.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
+import 'package:defensys/widgets/repository/section_concept_setup_dialog.dart';
+import 'package:defensys/widgets/repository/section_concept_workspace.dart';
 
 class EditSectionDialog extends ConsumerStatefulWidget {
   const EditSectionDialog({
@@ -693,6 +695,22 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
                                   ),
                                 ),
                                 if (_conceptContexts.isNotEmpty) ...[
+                                  const SizedBox(height: 16),
+                                  for (final c in _conceptContexts.where((c) => c['section_project_id'] != null))
+                                    TextButton.icon(icon: const Icon(Icons.account_tree_outlined),
+                                      label: Text('${c['label']} system proposals'),
+                                      onPressed: () async {
+                                        await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) =>
+                                          SectionConceptWorkspace(projectId: c['section_project_id'] as int)));
+                                        if (mounted) await _load();
+                                      }),
+                                  if (_details?['can_setup_shared_system'] == true)
+                                    OutlinedButton.icon(icon: const Icon(Icons.account_tree_outlined),
+                                      onPressed: _saving ? null : () async {
+                                        await openSectionConceptSetup(context, _details!, widget.scope ??
+                                          (_conceptContexts.first['key'].toString().startsWith('pit:') ? 'pit' : 'capstone'));
+                                        if (mounted) await _load();
+                                      }, label: const Text('Configure shared system proposals')),
                                   const SizedBox(height: 16),
                                   Container(
                                     decoration: BoxDecoration(

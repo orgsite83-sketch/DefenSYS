@@ -78,7 +78,7 @@ Widget buildDeliverablesStats(CapstoneDeliverablesState state) {
   final items = [
     _compactStatItem(context, teamLabel, _count(state, 'teams'), Icons.groups_2_outlined, DefensysTokens.maroonTextOf(context)),
     _compactStatItem(context, 'Ready', _count(state, 'ready'), Icons.verified_outlined, AppColors.success),
-    _compactStatItem(context, 'Pending', _count(state, 'pending_review'), Icons.rate_review_outlined, Colors.orange),
+    _compactStatItem(context, 'Pending', _count(state, 'pending_review'), Icons.rate_review_outlined, WorkflowStatusStyle.of(context, WorkflowStatusTone.active).foreground),
     _compactStatItem(context, 'Missing', _count(state, 'missing_requirements'), Icons.warning_amber_outlined, AppColors.warning),
     _compactStatItem(context, 'Files', _count(state, 'submitted_files'), Icons.folder_copy_outlined, Colors.blue),
     _compactStatItem(context, 'Archive Files', _count(state, 'archive_files'), Icons.inventory_2_outlined, AppColors.gold),
@@ -549,7 +549,7 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
     final allCount = counts[TeamTriageFilter.all] ?? widget.state.teams.length;
     final needsReviewCount = counts[TeamTriageFilter.needsReview] ?? 0;
     final endorsementCount = counts[TeamTriageFilter.awaitingEndorsement] ?? 0;
-    final attentionStyle = WorkflowStatusStyle.of(context, WorkflowStatusTone.attention);
+    final reviewStyle = WorkflowStatusStyle.of(context, WorkflowStatusTone.active);
     final readyCount = counts[TeamTriageFilter.readyForDefense] ?? 0;
     final overdueCount = counts[TeamTriageFilter.overdue] ?? 0;
 
@@ -568,12 +568,12 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
             _buildTriageChip(
               filter: TeamTriageFilter.needsReview,
               label: 'Needs Review ($needsReviewCount)',
-              dotColor: attentionStyle.foreground,
+              dotColor: reviewStyle.foreground,
             ),
             _buildTriageChip(
               filter: TeamTriageFilter.awaitingEndorsement,
               label: 'Awaiting endorsement ($endorsementCount)',
-              dotColor: attentionStyle.foreground,
+              dotColor: reviewStyle.foreground,
             ),
             _buildTriageChip(
               filter: TeamTriageFilter.readyForDefense,
@@ -589,7 +589,7 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
                   : widget.isAdviser
                       ? 'Missing Requirements ($overdueCount)'
                       : 'Missing / Overdue ($overdueCount)',
-              dotColor: attentionStyle.foreground,
+              dotColor: WorkflowStatusStyle.of(context, WorkflowStatusTone.attention).foreground,
             ),
             if (widget.state.scope == 'capstone') for (final entry in const {
               TeamTriageFilter.replacementConcepts: 'Replacement concepts',

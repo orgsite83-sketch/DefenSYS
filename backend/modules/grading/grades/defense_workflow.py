@@ -20,6 +20,10 @@ def is_chair(grade, user):
 def passed_and_cleared(grade):
     if not grade.uses_defense_verdict:
         return grade.result == 'passed'
+    if grade.verdict in (TeamGrade.VERDICT_APPROVED, TeamGrade.VERDICT_APPROVED_WITH_REVISIONS):
+        from repository.section_concepts.services import module_pass_allowed
+        if not module_pass_allowed(grade):
+            return False
     if grade.verdict == TeamGrade.VERDICT_APPROVED:
         return True
     if grade.verdict == TeamGrade.VERDICT_APPROVED_WITH_REVISIONS:
@@ -120,6 +124,11 @@ def workflow_payload(grade):
         hearing = ConceptRound.objects.filter(schedule_id=grade.schedule_id).first()
         if hearing:
             concept_workflow['hearing_concepts'] = hearing.concepts
+            if hearing.section_round_id:
+                systems = {s.key: s.title for s in hearing.section_round.systems.all()}
+                concept_workflow['hearing_concepts'] = [{**c, 'system_title': systems.get(c['key'], ''),
+                    'section_selected': hearing.section_round.selected_key == c['key']}
+                    for c in hearing.concepts]
             concept_workflow['hearing_round'] = hearing.number
     return {
         'concept_workflow': concept_workflow,

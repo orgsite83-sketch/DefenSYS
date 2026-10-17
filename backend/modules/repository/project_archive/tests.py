@@ -24,6 +24,17 @@ User = get_user_model()
 
 
 class RepositoryAuditApiTests(APITestCase):
+    def _open_archive_path(self, *titles, **query):
+        response = self.client.get('/api/repository/audit/', query)
+        for title in titles:
+            self.assertEqual(response.status_code, 200)
+            folder = next(folder for folder in response.data['folder_browser']['folders']
+                          if folder['title'] == title)
+            response = self.client.get('/api/repository/audit/', {
+                **query, 'folder_key': folder['key'],
+            })
+        return response
+
     def setUp(self):
         self.admin = User.objects.create_user(
             username='admin-user',
@@ -131,19 +142,64 @@ class RepositoryAuditApiTests(APITestCase):
         folders = root.data['folder_browser']['folders']
         self.assertEqual(sum(folder['file_count'] for folder in folders), 4)
 
-        team_folder = next(folder for folder in folders if folder['title'] == 'Team Cipher')
-        stages = self.client.get('/api/repository/audit/', {
-            'group_by': 'team', 'folder_key': team_folder['key'], 'limit': 1,
-        })
+        self.assertEqual([folder['title'] for folder in folders], ['2026-2027'])
+        stages = self._open_archive_path(
+            '2026-2027', '1st Semester', '4th Year', group_by='team', limit=1,
+        )
         self.assertEqual(stages.data['folder_browser']['file_count'], 2)
         self.assertEqual(len(stages.data['folder_browser']['folders']), 2)
         stage_folder = stages.data['folder_browser']['folders'][0]
-        leaf = self.client.get('/api/repository/audit/', {
+        teams = self.client.get('/api/repository/audit/', {
             'group_by': 'team', 'folder_key': stage_folder['key'], 'limit': 1,
         })
+        team_folder = teams.data['folder_browser']['folders'][0]
+        self.assertEqual(team_folder['title'], 'Team Cipher')
+        leaf = self.client.get('/api/repository/audit/', {
+            'group_by': 'team', 'folder_key': team_folder['key'], 'limit': 1,
+        })
         self.assertTrue(leaf.data['folder_browser']['is_leaf'])
+        self.assertEqual(len(leaf.data['folder_browser']['breadcrumbs']), 5)
         self.assertEqual(leaf.data['pagination']['total'], 1)
         self.assertEqual(len(leaf.data['entries']), 1)
+
+    def test_current_semester_start_keeps_history_accessible_via_breadcrumbs(self):
+        self.client.force_authenticate(user=self.admin)
+        current = self.client.get('/api/repository/audit/', {'open_current_semester': '1'})
+        browser = current.data['folder_browser']
+        self.assertEqual([c['title'] for c in browser['breadcrumbs']],
+                         ['2026-2027', '1st Semester'])
+        self.assertEqual(browser['file_count'], 4)
+        # Switch to a semester without files: keep its breadcrumbs, never show old files.
+        self.semester.is_active = False
+        self.semester.save(update_fields=['is_active'])
+        Semester.objects.create(school_year=self.school_year, label=Semester.SECOND, is_active=True)
+        empty = self.client.get('/api/repository/audit/', {'open_current_semester': '1'})
+        browser = empty.data['folder_browser']
+        self.assertEqual([c['title'] for c in browser['breadcrumbs']],
+                         ['2026-2027', '2nd Semester'])
+        self.assertEqual(browser['file_count'], 0)
+        year = self.client.get('/api/repository/audit/', {
+            'folder_key': browser['breadcrumbs'][0]['key'],
+        })
+        self.assertEqual([f['title'] for f in year.data['folder_browser']['folders']],
+                         ['1st Semester'])
+        root = self.client.get('/api/repository/audit/', {'folder_key': ''})
+        self.assertEqual(root.data['folder_browser']['breadcrumbs'], [])
+        self.assertEqual(root.data['folder_browser']['file_count'], 4)
+
+    def test_current_semester_start_respects_explicit_academic_filter(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get('/api/repository/audit/', {
+            'open_current_semester': '1', 'academic_year': '2025-2026',
+        })
+        self.assertEqual(response.data['folder_browser']['folder_key'], '')
+
+    def test_current_semester_start_without_active_term_stays_at_root(self):
+        self.semester.is_active = False
+        self.semester.save(update_fields=['is_active'])
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get('/api/repository/audit/', {'open_current_semester': '1'})
+        self.assertEqual(response.data['folder_browser']['folder_key'], '')
 
     def test_deliverable_folders_keep_stages_separate(self):
         DeliverableSubmission.objects.create(
@@ -153,11 +209,14 @@ class RepositoryAuditApiTests(APITestCase):
             file_name='Team_Cipher_Final_D1.pdf', uploaded_by=self.admin,
         )
         self.client.force_authenticate(user=self.admin)
-        response = self.client.get('/api/repository/audit/', {
-            'group_by': 'deliverable', 'type': 'capstone',
-        })
-        d1_folders = [f for f in response.data['folder_browser']['folders']
-                      if f['title'].startswith('D1 -')]
+        d1_folders = []
+        for stage in ('Concept Proposal', 'Final Defense'):
+            response = self._open_archive_path(
+                '2026-2027', '1st Semester', '4th Year', stage,
+                group_by='deliverable', type='capstone',
+            )
+            d1_folders.extend(f for f in response.data['folder_browser']['folders']
+                              if f['title'].startswith('D1 -'))
         self.assertEqual(len(d1_folders), 2)
         self.assertNotEqual(d1_folders[0]['key'], d1_folders[1]['key'])
 
@@ -173,10 +232,11 @@ class RepositoryAuditApiTests(APITestCase):
             semester=self.semester, leader=self.student,
         )
         self.client.force_authenticate(user=self.admin)
-        root = self.client.get('/api/repository/audit/', {
-            'group_by': 'deliverable', 'type': 'capstone',
-            'stage': 'Concept Proposal', 'deliverable_id': 'D1',
-        })
+        root = self._open_archive_path(
+            '2026-2027', '1st Semester', '4th Year', 'Concept Proposal',
+            group_by='deliverable', type='capstone',
+            stage='Concept Proposal', deliverable_id='D1',
+        )
         folder = next(f for f in root.data['folder_browser']['folders']
                       if f['title'] == 'Concept paper')
         self.assertEqual(folder['file_count'], 1)
@@ -255,8 +315,11 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertEqual(entry['academic_year'], '2026-2027')
         self.assertEqual(entry['year_level'], '3rd Year')
         self.assertEqual(entry['pit_event_config_id'], event.id)
+        events = self._open_archive_path(
+            '2026-2027', '1st Semester', '3rd Year', group_by='stage',
+        )
         self.assertTrue(any(f['title'] == event.event_name
-                            for f in response.data['folder_browser']['folders']))
+                            for f in events.data['folder_browser']['folders']))
 
     def test_pit_deliverable_comparison_stays_in_leads_assigned_year(self):
         event = PitEventGradingConfig.objects.create(year_level='3rd Year',
@@ -280,9 +343,10 @@ class RepositoryAuditApiTests(APITestCase):
                 panel_weight=80, peer_weight=20, adviser_weight=0,
             )
         self.client.force_authenticate(user=self.pit_lead)
-        response = self.client.get('/api/repository/audit/', {
-            'group_by': 'deliverable', 'deliverable_id': 'PIT_D1',
-        })
+        response = self._open_archive_path(
+            '2026-2027', '1st Semester', '3rd Year', 'Showcase',
+            group_by='deliverable', deliverable_id='PIT_D1',
+        )
         self.assertEqual(response.status_code, 200)
         folder = next(folder for folder in response.data['folder_browser']['folders']
                       if folder['title'] == 'Pitch deck')

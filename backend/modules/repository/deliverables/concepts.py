@@ -68,7 +68,7 @@ def get_round(team, stage):
         return current
     policy = resolve_policy(team, stage, use_round=False)
     return ConceptRound.objects.create(team=team, **context_fields(stage), project_version=team.project_version,
-        policy_snapshot=policy, concepts=initial_concepts(policy))
+        section_round_id=policy.get('section_round_id'), policy_snapshot=policy, concepts=initial_concepts(policy))
 
 
 def documents_snapshot(team, stage, *, clearance_only=False):
@@ -108,6 +108,10 @@ def clearance_blocker(team, stage):
     current = latest_round(team, stage)
     if not titles_complete(current):
         return 'Submit a title and the required documents for every concept.'
+    from repository.section_concepts.services import scheduling_blocker
+    shared_blocker = scheduling_blocker(team, stage, current)
+    if shared_blocker:
+        return shared_blocker
     if current.review_required and not clearance_valid(team, stage, current):
         return f'The current concept set needs {reviewer_name(stage)} review and endorsement before scheduling.'
     from .services import get_deliverable_definitions_for_team, submissions_for
@@ -165,6 +169,8 @@ def endorse(team, stage, actor):
         raise ValueError('Enter a title for every concept before endorsement.')
     if current.schedule_id:
         raise ValueError('This concept set is already attached to a defense.')
+    if current.section_round_id and not all(c.get('faculty_confirmed') for c in current.concepts):
+        raise ValueError('Faculty must confirm all three module names and their system connections before endorsement.')
     current.endorsed_at, current.endorsed_by = timezone.now(), actor
     current.endorsement_snapshot = documents_snapshot(team, stage, clearance_only=True)
     current.save(update_fields=['endorsed_at', 'endorsed_by', 'endorsement_snapshot'])
@@ -239,6 +245,8 @@ def record_outcome(grade, decisions, *, replacement_required=False):
     if latest_round(grade.team, stage).pk != current.pk:
         raise ValidationError('An earlier concept hearing is read-only after the next round has started.')
     concepts, replacement_required, selected = validate_decisions(current, decisions, grade.verdict, replacement_required)
+    from repository.section_concepts.services import validate_module_decision
+    validate_module_decision(grade, current, concepts)
     current.concepts, current.verdict, current.remarks = concepts, grade.verdict, grade.verdict_remarks
     current.replacement_required = replacement_required
     current.documents_snapshot = documents_snapshot(grade.team, stage)
@@ -253,10 +261,13 @@ def record_outcome(grade, decisions, *, replacement_required=False):
     snapshot = resolve_policy(grade.team, stage, current=current)
     policy = stage.concept_config.get('review_policy', 'replacement')
     review = policy == 'always' or (policy == 'replacement' and replacement_required) or grade.redefense_verification_required
-    next_concepts = [{**c, 'title': '' if replacement_required else c['title'], 'decision': '', 'remarks': ''} for c in concepts]
+    replacement_key = current.section_round.selected_key if current.section_round_id else ''
+    next_concepts = [{**c, 'title': '' if replacement_required and (not replacement_key or c['key'] == replacement_key) else c['title'],
+        **({'faculty_confirmed': False} if current.section_round_id and replacement_required and (
+            not replacement_key or c['key'] == replacement_key) else {}), 'decision': '', 'remarks': ''} for c in concepts]
     next_round = ConceptRound.objects.create(team=grade.team, **context_fields(stage),
         project_version=grade.project_version, number=current.number + 1,
-        concepts=next_concepts, review_required=review,
+        section_round_id=current.section_round_id, concepts=next_concepts, review_required=review,
         policy_snapshot={**snapshot, **({'assigned_title': ''} if replacement_required else {})})
     if replacement_required:
         from .services import get_deliverable_definitions_for_team
@@ -264,7 +275,10 @@ def record_outcome(grade, decisions, *, replacement_required=False):
         concept_ids = [d['id'] for d in get_deliverable_definitions_for_team(grade.team, stage.label)
                        if (d.get('file_policy') or {}).get('mode') == 'concepts']
         for submission in DeliverableSubmission.objects.filter(team=grade.team, stage_label=stage.label, deliverable_id__in=concept_ids):
-            submission.files.filter(is_current=True).update(is_current=False)
+            files = submission.files.filter(is_current=True)
+            if replacement_key:
+                files = files.filter(slot_key__startswith=f'{replacement_key}:')
+            files.update(is_current=False)
             definition = next(d for d in get_deliverable_definitions_for_team(grade.team, stage.label) if d['id'] == submission.deliverable_id)
             sync_submission(submission, definition, stage)
     if grade.team.ready_for_stage == stage.label:
@@ -282,6 +296,11 @@ def save_titles(team, stage, concepts, *, actor=None):
     team = StudentTeam.objects.select_for_update().get(pk=team.pk)
     current = get_round(team, stage)
     policy = resolve_policy(team, stage, current=current)
+    from repository.section_concepts.services import can_edit_module_titles, module_title_metadata, require_active
+    if current.section_round_id:
+        require_active(current.section_round.project)
+        if not can_edit_module_titles(actor, team, stage, current):
+            raise PermissionError('Faculty controls confirmed module names; the team leader may propose unconfirmed names.')
     if policy.get('mode') == 'assigned':
         raise PermissionError('Assigned project/module titles are managed in Manage sections.')
     if current.schedule_id or current.verdict:
@@ -289,12 +308,15 @@ def save_titles(team, stage, concepts, *, actor=None):
     if not isinstance(concepts, list) or len(concepts) != len(current.concepts):
         raise ValueError('Enter the configured number of concept titles.')
     keyed = {c.get('key'): c for c in concepts if isinstance(c, dict)}
+    if len(keyed) != len(current.concepts) or set(keyed) != {c['key'] for c in current.concepts}:
+        raise ValueError('Enter each configured concept exactly once.')
     updated = deepcopy(current.concepts)
     for c in updated:
         title = keyed.get(c['key'], {}).get('title', '')
         if not isinstance(title, str) or not title.strip() or len(title.strip()) > 255:
             raise ValueError('Every concept needs a title of up to 255 characters.')
         c['title'] = title.strip()
+        c.update(module_title_metadata(actor, team, stage))
     if updated != current.concepts:
         invalidate_clearance(team, stage.label)
         current.concepts = updated
@@ -345,6 +367,14 @@ def payload(team, stage, *, history=True):
     current = rounds[0] if rounds else None
     policy = resolve_policy(team, stage, current=current)
     concepts = current.concepts if current else initial_concepts(policy)
+    shared_policy = policy.get('source') == 'section_system'
+    shared_round = current.section_round if current and current.section_round_id else None
+    if shared_policy:
+        from repository.section_concepts.models import SectionConceptRound
+        shared_round = shared_round or SectionConceptRound.objects.filter(pk=policy.get('section_round_id')).first()
+        names = {s.key: s.title for s in shared_round.systems.all()} if shared_round else {}
+        concepts = [{**c, 'system_title': names.get(c['key'], ''),
+            'section_selected': bool(shared_round and shared_round.selected_key == c['key'])} for c in concepts]
     from .services import required_complete
     ready = not clearance_blocker(team, stage)
     if current and current.schedule_id:
@@ -359,6 +389,11 @@ def payload(team, stage, *, history=True):
     else:
         status = 'concept_review_pending'
     return {'enabled': True, 'config': policy, 'round': current.number if current else 1,
+        'section_project_id': policy.get('section_project_id'),
+        'section_selected_key': shared_round.selected_key if shared_round else '',
+        'section_revisions_pending': bool(shared_round and shared_round.verdict == 'approved_with_revisions' and not shared_round.revisions_cleared_at),
+        'faculty_names_required': shared_policy and policy.get('title_mode') == 'faculty_provided',
+        'module_names_confirmed': shared_policy and all(c.get('faculty_confirmed') for c in concepts),
         'concepts': concepts, 'status': status, 'can_edit': bool(team.semester.is_active and (not current or not current.schedule_id)),
         'assigned': policy.get('mode') == 'assigned',
         'can_edit_titles': policy.get('mode') != 'assigned' and bool(team.semester.is_active and (not current or not current.schedule_id)),

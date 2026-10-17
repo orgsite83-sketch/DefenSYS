@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
@@ -43,6 +44,8 @@ class DashboardNotifier extends Notifier<DashboardState> {
 
   final String role;
   int _requestRevision = 0;
+  Completer<void>? _studentRefresh;
+  int? _studentRefreshTeam;
 
   @override
   DashboardState build() {
@@ -51,9 +54,23 @@ class DashboardNotifier extends Notifier<DashboardState> {
 
   static String get baseUrl => ApiConfig.dashboardsUrl;
 
-  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
+  AuthenticatedHttpClient get _client =>
+      ref.read(authenticatedHttpClientProvider);
 
   Future<void> fetchDashboardData({bool silent = false}) async {
+    final selectedTeam = role == 'student'
+        ? ref.read(studentTeamSelectionProvider)
+        : null;
+    if (role == 'student' &&
+        _studentRefresh != null &&
+        _studentRefreshTeam == selectedTeam) {
+      return _studentRefresh!.future;
+    }
+    final completion = Completer<void>();
+    if (role == 'student') {
+      _studentRefresh = completion;
+      _studentRefreshTeam = selectedTeam;
+    }
     final revision = ++_requestRevision;
     final hasData = state.data != null;
     if (!silent || !hasData) {
@@ -64,10 +81,13 @@ class DashboardNotifier extends Notifier<DashboardState> {
 
     try {
       final url = '$baseUrl/$role/';
-      final selectedTeam = role == 'student' ? ref.read(studentTeamSelectionProvider) : null;
-      final response = await _client.get(Uri.parse(url).replace(queryParameters: {
-        if (selectedTeam != null) 'team_id': '$selectedTeam',
-      }));
+      final response = await _client.get(
+        Uri.parse(url).replace(
+          queryParameters: {
+            if (selectedTeam != null) 'team_id': '$selectedTeam',
+          },
+        ),
+      );
       if (!ref.mounted || revision != _requestRevision) return;
 
       if (response.statusCode == 200) {
@@ -75,7 +95,9 @@ class DashboardNotifier extends Notifier<DashboardState> {
         state = state.copyWith(
           isLoading: false,
           isRefreshing: false,
-          data: data is Map<String, dynamic> ? data : Map<String, dynamic>.from(data as Map),
+          data: data is Map<String, dynamic>
+              ? data
+              : Map<String, dynamic>.from(data as Map),
         );
       } else {
         state = state.copyWith(
@@ -94,6 +116,9 @@ class DashboardNotifier extends Notifier<DashboardState> {
         isRefreshing: false,
         error: 'Connection error: $e',
       );
+    } finally {
+      completion.complete();
+      if (identical(_studentRefresh, completion)) _studentRefresh = null;
     }
   }
 }

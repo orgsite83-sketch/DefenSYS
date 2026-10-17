@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:defensys/services/api_http.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/widgets/student_team_setup_tasks.dart';
+import 'package:defensys/services/academic/student_team_selection_provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -77,4 +79,74 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('concept task opens the selected team and configured stage', (
+    tester,
+  ) async {
+    final requests = <http.Request>[];
+    setApiHttpClientForTesting(
+      MockClient((request) async {
+        requests.add(request);
+        if (request.url.path.endsWith('/my-setup/')) {
+          return http.Response(
+            jsonEncode({
+              'teams': [
+                {
+                  'id': 7,
+                  'name': 'Team Sining',
+                  'section': 'BSIT-2A',
+                  'event_name': 'PIT Design',
+                  'needs_name': false,
+                  'scope': 'pit',
+                  'year_level': '2nd Year',
+                  'concept_tasks': [
+                    {
+                      'stage_label': 'PIT Design',
+                      'required_count': 5,
+                      'mode': 'proposals',
+                    },
+                  ],
+                },
+              ],
+            }),
+            200,
+          );
+        }
+        if (request.url.path.contains('/dashboards/')) {
+          return http.Response('{"team":{"id":7}}', 200);
+        }
+        return http.Response(
+          jsonEncode({
+            'teams': [
+              {'id': 7},
+            ],
+            'selected_stage': 'PIT Design',
+            'stage_options': ['PIT Design'],
+          }),
+          200,
+        );
+      }),
+    );
+    var opened = false;
+    await pumpDefensysWidget(
+      tester,
+      StudentTeamSetupTasks(onOpenRepository: () => opened = true),
+      overrides: [authProvider.overrideWith(_StudentAuth.new)],
+    );
+    await tester.tap(find.text('Submit 5 concepts · PIT Design'));
+    await tester.pumpAndSettle();
+    final dashboard = requests.singleWhere(
+      (r) => r.url.path.contains('/dashboards/'),
+    );
+    expect(dashboard.url.queryParameters['team_id'], '7');
+    final concepts = requests.singleWhere(
+      (r) => r.url.path.contains('/deliverables'),
+    );
+    expect(concepts.url.queryParameters['stage_label'], 'PIT Design');
+    expect(opened, isTrue);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(StudentTeamSetupTasks)),
+    );
+    expect(container.read(studentTeamSelectionProvider), 7);
+  });
 }

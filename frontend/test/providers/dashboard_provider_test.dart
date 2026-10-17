@@ -3,6 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:defensys/services/api_http.dart';
 import 'package:defensys/services/dashboard_provider.dart';
+import 'package:defensys/services/academic/student_team_selection_provider.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import '../helpers/auth_test_overrides.dart';
 import '../helpers/mock_http_setup.dart';
@@ -20,16 +25,68 @@ void main() {
   });
 
   test('fetchDashboardData loads admin stats', () async {
-    final container = ProviderContainer(
-      overrides: authTestOverrides(),
-    );
+    final container = ProviderContainer(overrides: authTestOverrides());
     addTearDown(container.dispose);
 
-    await container.read(dashboardProvider('admin').notifier).fetchDashboardData();
+    await container
+        .read(dashboardProvider('admin').notifier)
+        .fetchDashboardData();
 
     final state = container.read(dashboardProvider('admin'));
     expect(state.isLoading, isFalse);
     expect(state.data?['stats'], isNotNull);
     expect(state.data?['stats']['total_teams'], 1);
   });
+
+  test(
+    'student team refreshes share requests and ignore older team responses',
+    () async {
+      final requests = <http.Request>[];
+      final responses = <Completer<http.Response>>[];
+      setApiHttpClientForTesting(
+        MockClient((request) {
+          requests.add(request);
+          final response = Completer<http.Response>();
+          responses.add(response);
+          return response.future;
+        }),
+      );
+      final container = ProviderContainer(overrides: authTestOverrides());
+      addTearDown(container.dispose);
+      final selection = container.read(studentTeamSelectionProvider.notifier);
+      final dashboard = container.read(dashboardProvider('student').notifier);
+      selection.select(7);
+      final first = dashboard.fetchDashboardData();
+      final shared = dashboard.fetchDashboardData(silent: true);
+      await Future<void>.delayed(Duration.zero);
+      expect(requests, hasLength(1));
+      expect(requests.first.url.queryParameters['team_id'], '7');
+      selection.select(9);
+      final second = dashboard.fetchDashboardData();
+      await Future<void>.delayed(Duration.zero);
+      expect(requests, hasLength(2));
+      responses[1].complete(
+        http.Response(
+          jsonEncode({
+            'team': {'id': 9},
+          }),
+          200,
+        ),
+      );
+      await second;
+      responses[0].complete(
+        http.Response(
+          jsonEncode({
+            'team': {'id': 7},
+          }),
+          200,
+        ),
+      );
+      await Future.wait([first, shared]);
+      expect(
+        container.read(dashboardProvider('student')).data?['team']['id'],
+        9,
+      );
+    },
+  );
 }

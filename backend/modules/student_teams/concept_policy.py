@@ -35,6 +35,10 @@ def resolve_policy(team, stage, *, current=None, use_round=True, section_assignm
             # Legacy rounds retain exactly the set they already contain.
             return {**config, 'mode': 'proposals', 'required_count': len(current.concepts),
                     'assigned_title': '', 'source': 'existing_round'}
+    from repository.section_concepts.services import policy_for
+    shared = policy_for(team, stage)
+    if shared:
+        return shared
     if section_assignment is None:
         from .models import SectionAssignment
         section_assignment = SectionAssignment.objects.filter(semester_id=team.semester_id,

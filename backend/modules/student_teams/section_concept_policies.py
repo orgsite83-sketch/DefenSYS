@@ -13,6 +13,8 @@ def policy_context_payload(team, teams, assignment):
     from repository.deliverables.models import DeliverableSubmission
     result = []
     for stage in contexts_for(team):
+        from repository.section_concepts.services import project_for
+        project = project_for(team, stage)
         rows = []
         for member in teams:
             current = latest_round(member, stage)
@@ -24,6 +26,7 @@ def policy_context_payload(team, teams, assignment):
                 'has_submissions': DeliverableSubmission.objects.filter(team=member,
                     project_version=member.project_version, stage_label=stage.label).exists()})
         result.append({'key': context_key(stage), 'label': stage.label,
+            'section_project_id': project.pk if project else None,
             'policy': (assignment.concept_policies or {}).get(context_key(stage), {'mode': 'auto'}) if assignment else {'mode': 'auto'},
             'teams': rows})
     return result
@@ -43,6 +46,9 @@ def apply_policy_changes(team, teams, assignment, changes, *, confirmed=False):
             raise ValidationError('Choose each enabled concept stage/event at most once within this section.')
         seen.add(key)
         stage = stages[key]
+        from repository.section_concepts.services import project_for
+        if project_for(team, stage):
+            raise ValidationError('Manage shared system and corresponding module proposals in the section concept workspace.')
         old_policies = {member.pk: resolve_policy(member, stage, section_assignment=assignment) for member in teams}
         try:
             if 'section_policy' in change:

@@ -40,7 +40,7 @@ from .grouping import (
     team_counts_payload,
     track_from_entry_type,
 )
-from .folders import archive_folder_payload
+from .folders import academic_term_folder_key, archive_folder_payload
 from .payloads import (
     capstone_entry_payload,
     capstone_archive_entry_payload,
@@ -1024,10 +1024,18 @@ def repository_audit_payload(request):
             stage_filter=stage_filter,
         )
 
+    folder_key = query_params.get('folder_key') or ''
+    if (not folder_key and query_params.get('open_current_semester') == '1'
+            and not query_params.get('academic_year') and not query_params.get('semester')):
+        active_semester = get_active_semester()
+        if active_semester:
+            folder_key = academic_term_folder_key(
+                active_semester.school_year.label, active_semester.label,
+            )
     folder_browser = archive_folder_payload(
         filtered,
         group_by=query_params.get('group_by') or 'team',
-        folder_key=query_params.get('folder_key') or '',
+        folder_key=folder_key,
     )
 
     limit, offset = _parse_pagination(request)

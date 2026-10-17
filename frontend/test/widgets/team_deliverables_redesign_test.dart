@@ -85,7 +85,7 @@ void main() {
       expect(DeliverablesTriageHelper.pendingReviewCount(mockTeams[1]), 2);
     });
 
-    test('uploaded is not accepted or ready; waived and locked items are excluded', () {
+    test('uploaded is not accepted or ready; upload locks do not hide reviews', () {
       final team = <String, dynamic>{'selected_stage': {
         'required_complete': true, 'deliverables_configured': true,
         'pre': [
@@ -96,7 +96,7 @@ void main() {
           {'uploaded': true, 'locked': true},
         ],
       }};
-      expect(DeliverablesTriageHelper.pendingReviewCount(team), 1);
+      expect(DeliverablesTriageHelper.pendingReviewCount(team), 2);
       expect(DeliverablesTriageHelper.isReadyForDefense(team), isFalse);
       (team['selected_stage'] as Map)['pre'] = [];
       expect(DeliverablesTriageHelper.hasPendingReview(team), isFalse);

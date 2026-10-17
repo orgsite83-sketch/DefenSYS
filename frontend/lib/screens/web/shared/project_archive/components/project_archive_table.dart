@@ -355,7 +355,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           const SizedBox(height: 18),
           if (state.isLoading && state.entries.isEmpty)
             DefensysSkeleton.list(count: 6, rowHeight: 48)
-          else if (state.entries.isEmpty)
+          else if (state.entries.isEmpty && state.folderBrowser.isEmpty)
             _emptyRepositoryTable()
           else
             _buildEntriesBody(state),

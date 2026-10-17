@@ -963,7 +963,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
-                value: statusOptions.contains(_status)
+                initialValue: statusOptions.contains(_status)
                     ? _status
                     : statusOptions.first,
                 decoration: const InputDecoration(
@@ -992,7 +992,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
               if (!widget.isPitLead && isCapstone) ...[
                 const SizedBox(height: 16),
                 DropdownButtonFormField<int?>(
-                  value: detailState.advisers.any((a) => _asInt(a['id']) == _adviserId)
+                  initialValue: detailState.advisers.any((a) => _asInt(a['id']) == _adviserId)
                       ? _adviserId
                       : null,
                   decoration: const InputDecoration(
@@ -1896,9 +1896,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
 
     final payload = {
       'name': _nameController.text.trim(),
-      'project_title': _projectTitleController.text.trim().isEmpty
-          ? _nameController.text.trim()
-          : _projectTitleController.text.trim(),
+      'project_title': _projectTitleController.text.trim(),
       'leader_id': _leaderId,
       'member_ids': _selectedMembers.toList(),
       'adviser_id': adviserId,

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../models/team_workflow_status.dart';
+import '../../../widgets/repository/workflow_status_style.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../shared/dashboard_schedule_planner.dart';
 import '../shared/team_deliverables/deliverables_view_types.dart';
@@ -247,6 +249,7 @@ class TeamRequirementSummary {
   final bool awaitingSchedule;
   final bool configured;
   final bool needsAttention;
+  final TeamWorkflowStatus? workflow;
 
   const TeamRequirementSummary({
     required this.missingForEndorsement,
@@ -256,14 +259,18 @@ class TeamRequirementSummary {
     required this.awaitingSchedule,
     required this.configured,
     required this.needsAttention,
+    this.workflow,
   });
 
   int get missing => missingForEndorsement + pendingDefenseFiles;
 
-  factory TeamRequirementSummary.fromTeam(Map<String, dynamic>? team) {
+  factory TeamRequirementSummary.fromTeam(
+    Map<String, dynamic>? team, {
+    String scope = 'capstone',
+  }) {
     final stage = team == null
         ? null
-        : DeliverablesTriageHelper.resolveActiveStage(team);
+        : DeliverablesTriageHelper.resolveCurrentStage(team);
     if (stage == null) {
       return const TeamRequirementSummary(
         missingForEndorsement: 0,
@@ -325,7 +332,7 @@ class TeamRequirementSummary {
     return TeamRequirementSummary(
       missingForEndorsement: endorsementIds.length,
       pendingDefenseFiles: defenseIds.length,
-      awaitingReview: DeliverablesTriageHelper.pendingReviewCount(team!),
+      awaitingReview: TeamWorkflowStatus.pendingReviewCount(stage),
       overdue: overdue,
       awaitingSchedule:
           materials is Map && materials['status'] == 'awaiting_schedule',
@@ -334,71 +341,40 @@ class TeamRequirementSummary {
           stage['is_presentation_only'] == true ||
           DeliverablesTriageHelper.items(stage).isNotEmpty,
       needsAttention: stage['required_complete'] == false,
+      workflow: TeamWorkflowStatus.fromStage(stage, scope: scope),
     );
   }
 
-  String get label {
-    if (overdue && pendingDefenseFiles > 0) {
-      return '$pendingDefenseFiles overdue';
-    }
-    if (missingForEndorsement > 0) {
-      return '$missingForEndorsement to endorse';
-    }
-    if (awaitingReview > 0) return '$awaitingReview to review';
-    if (needsAttention) return 'Needs attention';
-    if (pendingDefenseFiles > 0) {
-      return awaitingSchedule
-          ? '$pendingDefenseFiles due later'
-          : '$pendingDefenseFiles before defense';
-    }
-    return configured ? 'Ready' : 'No requirements';
-  }
+  String get label => workflow?.label ?? 'Not configured';
 }
 
 class TeamRequirementBadge extends StatelessWidget {
   final Map<String, dynamic>? team;
 
-  const TeamRequirementBadge({super.key, required this.team});
+  final String scope;
+
+  const TeamRequirementBadge({
+    super.key,
+    required this.team,
+    this.scope = 'capstone',
+  });
 
   @override
   Widget build(BuildContext context) {
     if (team == null) return const SizedBox.shrink();
-    final summary = TeamRequirementSummary.fromTeam(team);
-    final colors = Theme.of(context).colorScheme;
-    final color = summary.overdue && summary.pendingDefenseFiles > 0
-        ? colors.error
-        : summary.missingForEndorsement > 0 || summary.needsAttention
-        ? const Color(0xFF9A6700)
-        : summary.awaitingReview > 0
-        ? const Color(0xFF2853A4)
-        : summary.pendingDefenseFiles > 0
-        ? DefensysTokens.textSecondaryOf(context)
-        : summary.configured
-        ? const Color(0xFF25704A)
-        : DefensysTokens.textSecondaryOf(context);
+    final summary = TeamRequirementSummary.fromTeam(team, scope: scope);
     return Tooltip(
       message:
+          '${summary.workflow?.nextStep ?? ''} '
           '${summary.missingForEndorsement} files needed before endorsement; '
           '${summary.pendingDefenseFiles} defense files due later. '
           'Defense files do not block endorsement or scheduling. '
           '${summary.awaitingReview} submissions awaiting review.',
-      child: Container(
+      child: TeamWorkflowBadge(
         key: const Key('team-requirement-badge'),
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: color.withValues(alpha: 0.25)),
-        ),
-        child: Text(
-          summary.label,
-          maxLines: 1,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            color: color,
-          ),
-        ),
+        status:
+            summary.workflow ?? TeamWorkflowStatus.describe('not_configured'),
+        compact: true,
       ),
     );
   }

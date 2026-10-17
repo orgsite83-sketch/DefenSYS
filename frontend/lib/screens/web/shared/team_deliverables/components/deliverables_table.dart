@@ -792,27 +792,17 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
 
     final feedback = submission?['feedback']?.toString();
 
+    final fileStyle = WorkflowStatusStyle.of(context,
+      subStatus == 'rejected' ? WorkflowStatusTone.attention
+        : displayCleared ? WorkflowStatusTone.success
+        : uploaded ? WorkflowStatusTone.active : WorkflowStatusTone.neutral);
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: subStatus == 'rejected'
-            ? Colors.red.withValues(alpha: 0.04)
-            : (displayCleared
-                ? Colors.green.withValues(alpha: 0.05)
-                : (uploaded
-                    ? Colors.orange.withValues(alpha: 0.04)
-                    : const Color(0xFFF8FAFC))),
+        color: fileStyle.background,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: subStatus == 'rejected'
-              ? Colors.red.withValues(alpha: 0.3)
-              : (displayCleared
-                  ? Colors.green.withValues(alpha: 0.2)
-                  : (uploaded
-                      ? Colors.orange.withValues(alpha: 0.3)
-                      : const Color(0xFFE2E8F0))),
-        ),
+        border: Border.all(color: fileStyle.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -827,13 +817,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                         : (uploaded
                             ? Icons.hourglass_empty_rounded
                             : (postLocked ? Icons.lock_outline : Icons.radio_button_unchecked))),
-                color: displayCleared
-                    ? AppColors.success
-                    : (subStatus == 'rejected'
-                        ? AppColors.danger
-                        : (uploaded
-                            ? AppColors.warning
-                            : DefensysTokens.textSecondaryOf(context))),
+                color: fileStyle.foreground,
                 size: 20,
               ),
               const SizedBox(width: 10),
@@ -1330,44 +1314,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
-  Map<String, dynamic> _resolveStageStatusBadge(Map<String, dynamic> stage) {
-    final status = TeamWorkflowStatus.fromStage(stage, scope: widget.state.scope);
-    final style = WorkflowStatusStyle.of(context, status.tone);
-    return {
-      'label': status.label,
-      'color': style.foreground,
-      'bg': style.background,
-      'border': style.border,
-      'icon': WorkflowStatusStyle.iconFor(status),
-    };
-  }
-
-  Widget _buildStageStatusBadge(Map<String, dynamic> stage) {
-    final badge = _resolveStageStatusBadge(stage);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: badge['bg'] as Color,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: badge['border'] as Color),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(badge['icon'] as IconData, size: 12, color: badge['color'] as Color),
-          const SizedBox(width: 4),
-          Text(
-            badge['label'] as String,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              color: badge['color'] as Color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _buildStageStatusBadge(Map<String, dynamic> stage) => TeamWorkflowBadge(
+    status: TeamWorkflowStatus.fromStage(stage, scope: widget.state.scope),
+  );
 
   bool _canEndorseTeam(Map<String, dynamic> stage) {
     final review = stage['endorsement_review'];
@@ -2055,11 +2004,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final cardSelectedStageLabel = _effectiveSelectedStage(team);
     final selectedStage = _stagePayload(stages, cardSelectedStageLabel);
 
-    final badge = _resolveStageStatusBadge(selectedStage);
-    final badgeColor = badge['color'] as Color;
-    final badgeText = badge['label'] as String;
-    final badgeIcon = badge['icon'] as IconData;
-
     final gradingState = ref.watch(adviserGradingProvider);
     final gradeRecord = adviserGradeForTeam(team, cardSelectedStageLabel,
       gradingState.grades) ?? <String, dynamic>{};
@@ -2113,27 +2057,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: badge['bg'] as Color,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(badgeIcon, size: 11, color: badgeColor),
-                      const SizedBox(width: 3),
-                      Text(
-                        badgeText,
-                        style: TextStyle(
-                          color: badgeColor,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
+                TeamWorkflowBadge(
+                  status: TeamWorkflowStatus.fromStage(selectedStage, scope: widget.state.scope),
+                  compact: true,
                 ),
                 if (widget.isAdviser && (gradingStatus.needsGrade || minutesToSign.isNotEmpty)) ...[
                   const SizedBox(height: 6),

@@ -37,6 +37,12 @@ def pit_events_for_user(user, *, semester=None):
     # Independent adviser, instructor and student assignments remain valid.
     from django.db.models import Q
     allowed = Q(pk__in=[])
+    # Instructors must be able to prepare their first teams in an empty section.
+    from user_management.models import SectionInstructorAssignment
+    for term, year in SectionInstructorAssignment.objects.filter(
+            faculty=user, is_active=True).values_list('semester_id', 'year_level').distinct():
+        if pit_year(year):
+            allowed |= Q(semester_id=term, year_level=year)
     for term, year in visible_teams_for(user).filter(level__icontains='PIT').values_list(
             'semester_id', 'year_level').distinct():
         if pit_year(year):

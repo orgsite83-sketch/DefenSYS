@@ -18,11 +18,18 @@ def _decode_path(value):
     try:
         raw = base64.urlsafe_b64decode(value + '=' * (-len(value) % 4))
         path = json.loads(raw)
-        if isinstance(path, list) and 1 <= len(path) <= 2 and all(isinstance(item, str) for item in path):
+        if isinstance(path, list) and 1 <= len(path) <= 5 and all(isinstance(item, str) for item in path):
             return path
     except (ValueError, UnicodeDecodeError, TypeError):
         pass
     return None
+
+
+def academic_term_folder_key(academic_year, semester):
+    return _encode_path([
+        json.dumps(['academic_year', academic_year]),
+        json.dumps(['semester', semester]),
+    ])
 
 
 def _file_entries(entries):
@@ -40,26 +47,23 @@ def _segments(entry, group_by):
     team_id = entry.get('team_id')
     team_name = entry.get('team_name') or 'Unmatched records'
     team_key = f'id:{team_id}' if team_id else f'name:{team_name}'
-    term_key = [year, semester, track, year_level]
-    term_label = f'{year} · {semester} · {year_level} {track.upper() if track == "pit" else "Capstone"}'
-
-    if group_by == 'team':
-        return [
-            (json.dumps(term_key + ['team', team_key]), team_name, term_label),
-            (json.dumps(['stage', stage_id]), stage, 'Stage' if track == 'capstone' else 'PIT event'),
-        ]
-    if group_by == 'stage':
-        return [
-            (json.dumps(term_key + ['stage', stage_id]), stage, term_label),
-            (json.dumps(['team', team_key]), team_name, year_level),
-        ]
+    # The common hierarchy keeps every browsing mode inside its academic context.
+    # Include the track in stage keys so similarly named PIT/Capstone records stay separate.
+    parents = [
+        (json.dumps(['academic_year', year]), year, 'Academic period'),
+        (json.dumps(['semester', semester]), semester, 'Semester'),
+        (json.dumps(['year_level', year_level]), year_level, 'Year level'),
+        (json.dumps(['stage', track, stage_id]), stage,
+         'PIT event' if track == 'pit' else 'Capstone stage'),
+    ]
+    if group_by in {'team', 'stage'}:
+        return parents + [(json.dumps(['team', team_key]), team_name, year_level)]
     deliverable_id = entry.get('deliverable_id') or 'archive-files'
     deliverable_label = entry.get('deliverable_label') or 'Archive files'
     if deliverable_id == 'archive-files':
         deliverable_label = 'Archive files'
-    return [
-        (json.dumps(term_key + ['deliverable', stage_id, deliverable_id]),
-         deliverable_label, f'{stage} · {term_label}'),
+    return parents + [
+        (json.dumps(['deliverable', deliverable_id]), deliverable_label, stage),
     ]
 
 
@@ -96,6 +100,22 @@ def archive_folder_payload(entries, group_by='team', folder_key=''):
             segments = matching[0][1]
             breadcrumbs.append({
                 'title': segments[index][1],
+                'key': _encode_path(selected_path[:index + 1]),
+            })
+    else:
+        # Empty terms still need a route back to the academic-period directory.
+        for index, dimension in enumerate(('academic_year', 'semester', 'year_level')):
+            if index >= depth:
+                break
+            try:
+                segment = json.loads(selected_path[index])
+            except (ValueError, TypeError):
+                break
+            if (not isinstance(segment, list) or len(segment) != 2
+                    or segment[0] != dimension or not isinstance(segment[1], str)):
+                break
+            breadcrumbs.append({
+                'title': segment[1],
                 'key': _encode_path(selected_path[:index + 1]),
             })
     is_leaf = bool(matching) and depth >= len(matching[0][1])

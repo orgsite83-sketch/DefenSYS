@@ -69,3 +69,54 @@ class WorkflowStatusStyle {
     _ => Icons.hourglass_top_rounded,
   };
 }
+
+/// Shared primary status for dashboards, team cards, dossiers and matrices.
+class TeamWorkflowBadge extends StatelessWidget {
+  const TeamWorkflowBadge({
+    super.key,
+    required this.status,
+    this.compact = false,
+  });
+
+  final TeamWorkflowStatus status;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = WorkflowStatusStyle.of(context, status.tone);
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 6 : 10,
+        vertical: compact ? 2 : 4,
+      ),
+      decoration: BoxDecoration(
+        color: style.background,
+        borderRadius: BorderRadius.circular(compact ? 4 : 20),
+        border: Border.all(color: style.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            WorkflowStatusStyle.iconFor(status),
+            size: 12,
+            color: style.foreground,
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              status.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: compact ? 10 : 11,
+                fontWeight: FontWeight.w700,
+                color: style.foreground,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

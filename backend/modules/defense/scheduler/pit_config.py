@@ -69,6 +69,9 @@ def check_pit_event_locked(config, semester=None):
     if config.is_officially_complete:
         return True, 'This PIT event is officially complete for the active semester.'
     from repository.deliverables.models import ConceptRound
+    from repository.section_concepts.models import SectionConceptProject
+    if SectionConceptProject.objects.filter(pit_event_config=config).exists():
+        return True, 'A section has already started shared system concepts for this PIT event.'
     if ConceptRound.objects.filter(pit_event_config=config).exists():
         return True, 'Students have already started concept submissions for this PIT event.'
 
@@ -409,6 +412,7 @@ def pit_event_config_payload(config):
         'is_officially_complete': config.is_officially_complete,
         'peer_grading_enabled': config.peer_grading_enabled,
         'concept_config': config.concept_config,
+        'team_membership_policy': config.team_membership_policy,
         'archive_file_template': config.archive_file_template,
         'is_locked': is_locked,
         'lock_reason': lock_reason,

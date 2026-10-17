@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../screens/app/panelist_dashboard.dart';
 import '../notifications/notification_request_screen.dart';
 import '../screens/web/shared/team_deliverables/team_deliverables_screen.dart';
+import '../screens/web/admin/student_teams/team_creation_page.dart';
 import '../screens/app/documenter_dashboard.dart';
 import '../screens/web/faculty/documenter/minutes_form_screen.dart';
 import '../screens/app/student_dashboard.dart';
@@ -375,6 +376,7 @@ List<GoRoute> _adminSectionRoutes() {
       path: 'student-teams',
       pageBuilder: _adminSectionPage,
       routes: [
+        _teamCreationRoute(),
         GoRoute(
           path: ':teamId',
           builder: (_, state) {
@@ -505,6 +507,7 @@ List<GoRoute> _facultySectionRoutes() {
       path: 'student-teams',
       pageBuilder: _facultySectionPage,
       routes: [
+        _teamCreationRoute(),
         GoRoute(
           path: ':teamId',
           builder: (_, state) {
@@ -542,6 +545,7 @@ List<GoRoute> _facultySectionRoutes() {
     GoRoute(path: 'repository-audit', pageBuilder: _facultySectionPage),
     GoRoute(path: 'audit-compliance', pageBuilder: _facultySectionPage),
     GoRoute(path: 'deliverables', pageBuilder: _facultySectionPage, routes: [
+      _teamCreationRoute(instructor: true),
       GoRoute(path: 'teams/:teamId', builder: (_, state) => TeamDeliverablesScreen(
         key: ValueKey(state.uri.toString()),
         initialTeamId: int.parse(state.pathParameters['teamId']!),
@@ -557,6 +561,18 @@ List<GoRoute> _facultySectionRoutes() {
     GoRoute(path: 'pit-events', pageBuilder: _facultySectionPage),
   ];
 }
+
+GoRoute _teamCreationRoute({bool instructor = false}) => GoRoute(
+  path: 'creation',
+  redirect: instructor ? null : (_, state) => state.uri.path.replaceFirst('/creation', ''),
+  builder: (_, state) => TeamCreationPage(
+    key: ValueKey(state.uri.toString()),
+    initialTab: state.uri.queryParameters['tab'] ?? 'generate',
+    initialLevel: state.uri.queryParameters['level'],
+    initialSection: state.uri.queryParameters['section'],
+    initialEvent: state.uri.queryParameters['event'],
+  ),
+);
 
 Page<void> _adminSectionPage(
   BuildContext context,

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../services/student_teams_provider.dart';
 import '../../../services/dashboard_provider.dart';
+import '../../../widgets/repository/section_concept_workspace.dart';
 
 class SectionIntegrationTab extends ConsumerStatefulWidget {
   final Map<String, dynamic> studentData;
@@ -103,6 +104,7 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                   ),
                   const SizedBox(height: 18),
                   _sectionHeader('Modules Integration'),
+                  SectionConceptHub(section: userSection.toString()),
                   const SizedBox(height: 12),
                   if (sectionTeams.isEmpty)
                     const Center(
@@ -160,7 +162,7 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                         decoration: BoxDecoration(
-                                          color: DefensysTokens.maroon.withOpacity(0.1),
+                                          color: DefensysTokens.maroon.withValues(alpha: 0.1),
                                           borderRadius: BorderRadius.circular(12),
                                         ),
                                         child: const Text(

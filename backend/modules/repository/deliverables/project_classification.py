@@ -19,6 +19,7 @@ from .classification_taxonomy import (
     MODEL_VERSION, TRAINING_SOURCE, TRAINING_EXAMPLES, FOCUS_SIGNALS,
     DOMAIN_SIGNALS, TECHNOLOGY_SIGNALS,
 )
+from .concept_focus import concept_function_evidence
 
 logger = logging.getLogger(__name__)
 MIN_SCORE = 60.0
@@ -28,9 +29,13 @@ GENERIC_WORDS = {'project', 'system', 'application', 'software', 'development',
                  'requirements', 'proposed', 'prototype', 'provide', 'using'}
 HEADER = re.compile(
     r'^\s*(?:\d+(?:\.\d+)*[.)]?\s+)?'
-    r'(abstract|introduction(?:\s*/\s*background)?|background|problem statement|'
-    r'project purpose|objectives|proposed system features|system features|'
-    r'scope(?: and boundaries)?|methodology|target beneficiaries|expected outputs(?: and outcomes)?|'
+    r'(abstract|introduction(?:\s*/\s*background)?|background(?: and rationale| of (?:the )?study)?|'
+    r'problem statement|statement of the problem|project purpose|(?:project |specific |general )?objectives|'
+    r'proposed system (?:features|and key functions)|system features|functional requirements|'
+    r'main features|system functionality|scope(?: and (?:boundaries|limitations))?|methodology|'
+    r'proposed development and validation plan|risk considerations and safeguards|'
+    r'target beneficiaries|target users and information requirements|'
+    r'expected outputs?(?: and (?:outcomes|initial success indicators))?|'
     r'preliminary technology considerations|success indicators|related (?:work|literature)|'
     r'literature review|references|bibliography|technical architecture|implementation|'
     r'technology stack|conclusion|results)\s*[:.]?\s*(.*)$', re.I,
@@ -75,8 +80,9 @@ def section_chunks(text):
             section = heading[1].title()
             key = heading[1].lower()
             weight = 0 if key in ('related work', 'related literature', 'literature review',
-                                  'references', 'bibliography', 'preliminary technology considerations') else (
-                1 if key in ('scope', 'scope and boundaries', 'success indicators') else 3)
+                                  'references', 'bibliography', 'preliminary technology considerations',
+                                  'risk considerations and safeguards') else (
+                1 if key in ('scope', 'scope and boundaries', 'scope and limitations', 'success indicators') else 3)
             line = heading[2].strip()
             if not line:
                 continue
@@ -116,6 +122,16 @@ def _signals(chunks, taxonomy):
         if evidence:
             found[label] = evidence
     return found
+
+
+def _independent_signals(evidence):
+    """Singular/plural mentions and overlapping phrases supply only one cue."""
+    independent = []
+    family = lambda term: re.sub(r'\b(\w{4,})s\b', r'\1', term.lower())
+    for hit in sorted(evidence, key=lambda h: len(h['term'])):
+        if not any(matches(family(hit['term']), family(e['term'])) for e in independent):
+            independent.append(hit)
+    return independent
 
 
 class ProjectFocusClassifier:
@@ -174,14 +190,7 @@ class ProjectFocusClassifier:
         margin = score - candidates[1]['probability']
         label = best['category']
         evidence = focus.get(label, [])
-        # Different phrases containing the same token are not independent cues.
-        independent = []
-        for hit in sorted(evidence, key=lambda h: len(h['term'])):
-            # Singular/plural mentions such as sensor/sensors or booking/bookings
-            # are one cue, not two independent pieces of support.
-            family = lambda term: re.sub(r'\b(\w{4,})s\b', r'\1', term.lower())
-            if not any(matches(family(hit['term']), family(e['term'])) for e in independent):
-                independent.append(hit)
+        independent = _independent_signals(evidence)
         if len(re.sub(r'\s+', '', text)) < 40:
             status, reason_code = 'unresolved', 'unreadable'
             reason = 'The document has too little extracted text for project classification.'
@@ -200,21 +209,37 @@ class ProjectFocusClassifier:
         else:
             status, reason_code = 'estimated', 'supported'
             reason = f'Estimated {label} from {", ".join(h["term"] for h in independent[:4])} in the project description.'
+        decision_method = 'naive_bayes'
+        predicted = label if status == 'estimated' else 'Other'
+        functional = concept_function_evidence(text, chunks)
+        specialist_support = any(category != 'Information Systems' and len(_independent_signals(hits)) >= 2
+                                 for category, hits in focus.items())
+        if (status == 'unresolved' and reason_code in ('insufficient_evidence', 'low_score') and
+                functional and not specialist_support):
+            predicted, status, reason_code = 'Information Systems', 'estimated', 'supported'
+            decision_method, independent = 'concept_functions', functional
+            reason = ('Estimated Information Systems from proposed functions: ' +
+                      '; '.join(hit['term'] for hit in functional) +
+                      '. This describes the intended information workflow; platform and technologies are not inferred.')
         domain = max(domains, key=lambda d: len(domains[d])) if domains else 'Unresolved domain'
         return {
-            'predicted_category': label if status == 'estimated' else 'Other',
+            'predicted_category': predicted, 'decision_method': decision_method,
             'candidate_category': label, 'status': status, 'reason_code': reason_code,
-            'reason': reason, 'confidence_score': round(score, 2),
-            'confidence': f'{score:.1f}%', 'margin': round(margin, 2),
+            # Functional rules have no calibrated probability. Preserve the raw
+            # Naive Bayes candidates separately rather than inventing a score.
+            'reason': reason, 'confidence_score': round(score, 2) if decision_method == 'naive_bayes' else None,
+            'confidence': f'{score:.1f}%' if decision_method == 'naive_bayes' else 'Not scored (proposed functions)',
+            'margin': round(margin, 2) if decision_method == 'naive_bayes' else None,
             'all_probabilities': candidates, 'top_3': candidates[:3],
-            'secondary_categories': [c for c in focus if c != label and len(focus[c]) >= 2],
+            'secondary_categories': [c for c in focus if c != predicted and len(_independent_signals(focus[c])) >= 2],
             'domain': domain, 'domain_evidence': domains.get(domain, [])[:4],
             'technologies': [{'name': name, 'evidence': hits[:2]} for name, hits in technologies.items()],
             'evidence': independent[:6], 'model_version': self.model_version,
             'training_source': self.training_source, 'input_hash': input_hash(text),
             'classified_at': datetime.now(timezone.utc).isoformat(),
             'acceptance': {'minimum_score': MIN_SCORE, 'minimum_margin': MIN_MARGIN,
-                           'minimum_independent_terms': 2},
+                           'minimum_independent_terms': 2, 'minimum_independent_functions': 2,
+                           'method': decision_method},
         }
 
     def save_model(self, filepath):

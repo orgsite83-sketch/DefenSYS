@@ -9,7 +9,6 @@ import '../../../../widgets/shadcn/defensys_workflow_widgets.dart';
 import '../../../../widgets/feedback/defensys_loading.dart';
 import 'widgets/curriculum_explorer_charts.dart';
 import 'widgets/curriculum_evidence_dialog.dart';
-import 'widgets/curriculum_meeting_export.dart';
 import 'widgets/curriculum_review_panels.dart';
 import 'widgets/curriculum_project_analytics.dart';
 
@@ -208,23 +207,6 @@ class _CurriculumAnalyticsScreenState
                               child: const Text('Refresh'),
                             ),
                             const ReportExportMenu(reportId: 'curriculum-summary'),
-                            ShadButton(
-                              size: ShadButtonSize.sm,
-                              enabled: !state.isLoading && data.isNotEmpty,
-                              backgroundColor: DefensysTokens.maroonOf(context),
-                              foregroundColor: Colors.white,
-                              leading: const Icon(
-                                LucideIcons.download,
-                                size: 15,
-                              ),
-                              onPressed: () => openCurriculumMeetingExport(
-                                context,
-                                ref,
-                                q,
-                                _tab,
-                              ),
-                              child: const Text('Export analytics report'),
-                            ),
                           ],
                         ),
                       ],

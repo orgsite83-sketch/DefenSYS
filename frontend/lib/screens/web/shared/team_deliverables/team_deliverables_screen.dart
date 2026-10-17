@@ -8,6 +8,7 @@ import 'package:defensys/services/defense/adviser_defense_provider.dart';
 import 'package:defensys/services/defense/team_defense_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
+import 'package:defensys/theme/defensys_button_styles.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'components/deliverables_filter_bar.dart';
@@ -15,6 +16,7 @@ import 'components/deliverables_table.dart';
 import 'components/faculty_teams_overview_export.dart';
 import 'components/cohort_submissions_matrix.dart';
 import 'deliverables_view_types.dart';
+import '../../admin/student_teams/team_creation_page.dart';
 export 'deliverables_view_types.dart';
 
 Widget _notice(IconData icon, String message, Color color) {
@@ -143,6 +145,17 @@ class _TeamDeliverablesScreenState
     super.dispose();
   }
 
+  Future<void> _openCreation({bool importTab = false}) async {
+    final state = ref.read(capstoneDeliverablesProvider);
+    final saved = await openTeamCreation(context, importTab: importTab,
+      level: widget.pitYearLevel == null ? null : '${widget.pitYearLevel} PIT',
+      section: widget.pitSection, event: state.selectedStage);
+    if (saved == true && mounted) {
+      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
+      ref.read(pitInstructorDefenseProvider.notifier).fetch();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(capstoneDeliverablesProvider);
@@ -190,21 +203,46 @@ class _TeamDeliverablesScreenState
             icon: Icons.folder_open_outlined,
             title: pageTitle,
             subtitle: pageSubtitle,
-            actions: IconButton(
-              tooltip: 'Refresh',
-              onPressed: state.isSaving
-                  ? null
-                  : () {
-                      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
-                      if (widget.isAdviser) {
-                        ref.read(adviserDefenseProvider.notifier).fetch();
-                        ref.read(adviserGradingProvider.notifier).fetchAll();
-                      } else if (widget.isPitInstructor) {
-                        ref.read(pitInstructorDefenseProvider.notifier).fetch();
-                        ref.read(adviserGradingProvider.notifier).fetchAll();
-                      }
-                    },
-              icon: const Icon(Icons.refresh),
+            actions: Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Tooltip(
+                  message: 'Refresh',
+                  child: OutlinedButton.icon(
+                    onPressed: state.isSaving
+                        ? null
+                        : () {
+                            ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
+                            if (widget.isAdviser) {
+                              ref.read(adviserDefenseProvider.notifier).fetch();
+                              ref.read(adviserGradingProvider.notifier).fetchAll();
+                            } else if (widget.isPitInstructor) {
+                              ref.read(pitInstructorDefenseProvider.notifier).fetch();
+                              ref.read(adviserGradingProvider.notifier).fetchAll();
+                            }
+                          },
+                    style: DefensysButtonStyles.secondary(context),
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Refresh'),
+                  ),
+                ),
+                if (widget.isPitInstructor) ...[
+                  OutlinedButton.icon(
+                    onPressed: state.isSaving ? null : () => _openCreation(importTab: true),
+                    style: DefensysButtonStyles.secondary(context),
+                    icon: const Icon(Icons.upload_file_rounded),
+                    label: const Text('Import'),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: state.isSaving ? null : () => _openCreation(),
+                    style: DefensysButtonStyles.primary(context),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Team Creation'),
+                  ),
+                ],
+              ],
             ),
           ),
           if (state.error != null) ...[

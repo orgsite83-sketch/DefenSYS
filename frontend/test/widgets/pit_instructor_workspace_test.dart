@@ -190,10 +190,10 @@ void main() {
         tester.getTopLeft(find.text('My actions')).dx,
         greaterThan(tester.getTopLeft(find.text('My teams')).dx),
       );
-      expect(find.text('2 before defense'), findsOneWidget);
+      expect(find.descendant(of: find.byKey(const Key('team-requirement-badge')), matching: find.text('Ready to schedule')), findsOneWidget);
       expect(find.textContaining('Room 301'), findsOneWidget);
       expect(find.textContaining('Room 302'), findsNothing);
-      expect(find.text('Ready to schedule'), findsOneWidget);
+      expect(find.text('Ready to schedule'), findsNWidgets(2));
       expect(
         find.text('No submissions need review right now.'),
         findsOneWidget,
@@ -315,7 +315,7 @@ void main() {
     final summary = TeamRequirementSummary.fromTeam(team);
     expect(summary.missing, 1);
     expect(summary.awaitingReview, 1);
-    expect(summary.label, '1 overdue');
+    expect(summary.label, '1 needs review');
   });
 
   test('team badge separates endorsement blockers from files due later', () {
@@ -357,12 +357,62 @@ void main() {
     final blocked = TeamRequirementSummary.fromTeam(team(paperUploaded: false));
     expect(blocked.missingForEndorsement, 1);
     expect(blocked.pendingDefenseFiles, 1);
-    expect(blocked.label, '1 to endorse');
+    expect(blocked.label, 'Awaiting files');
 
     final ready = TeamRequirementSummary.fromTeam(team(paperUploaded: true));
     expect(ready.missingForEndorsement, 0);
     expect(ready.pendingDefenseFiles, 1);
-    expect(ready.label, '1 due later');
+    expect(ready.label, 'Awaiting endorsement');
+  });
+
+  testWidgets('team badge preserves completion workflow and guidance', (
+    tester,
+  ) async {
+    await pumpDefensysWidget(
+      tester,
+      TeamRequirementBadge(
+        team: {
+          'selected_stage': {
+            'deliverables_configured': true,
+            'required_complete': true,
+            'has_done_schedule': true,
+            'assessment_progress': {'display_status': 'awaiting_completion'},
+          },
+        },
+      ),
+    );
+
+    expect(find.text('Awaiting completion'), findsOneWidget);
+    expect(find.text('Ready'), findsNothing);
+    final tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
+    expect(tooltip.message, contains('Waiting for authorized finalization'));
+  });
+
+  test('team badge follows workflow after file requirements are satisfied', () {
+    for (final entry in {
+      'awaiting_completion': 'Awaiting completion',
+      'completed': 'Completed',
+      'grading_incomplete': 'Grading incomplete',
+      'defense_scheduled': 'Scheduled',
+      'failed': 'Failed',
+      'endorsed': 'Ready to schedule',
+    }.entries) {
+      final summary = TeamRequirementSummary.fromTeam({
+        'selected_stage': {
+          'deliverables_configured': true,
+          'required_complete': true,
+          'stage_status_detail': entry.key,
+        },
+      });
+      expect(summary.label, entry.value, reason: entry.key);
+    }
+    final awaitingEndorsement = TeamRequirementSummary.fromTeam({
+      'selected_stage': {
+        'deliverables_configured': true,
+        'required_complete': true,
+      },
+    });
+    expect(awaitingEndorsement.label, 'Awaiting endorsement');
   });
 
   testWidgets('defense calendar fits a narrow dashboard card', (tester) async {
@@ -803,7 +853,7 @@ void main() {
     );
 
     // Keep review status visible without repeating the project title in the list.
-    expect(find.text('Needs review'), findsNWidgets(2));
+    expect(find.text('1 needs review'), findsNWidgets(2));
 
     // No competing separate banners or bottom tags on the compact card list:
     expect(find.text('1 awaiting review'), findsNothing);

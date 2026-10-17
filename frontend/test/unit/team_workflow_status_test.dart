@@ -3,6 +3,152 @@ import 'package:defensys/screens/web/shared/team_deliverables/deliverables_view_
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test(
+    'post-defense uploads precede finalization, with reviews taking priority',
+    () {
+      for (final scope in ['pit', 'capstone']) {
+        final post = <String, dynamic>{
+          'id': 'FINAL',
+          'type': 'post',
+          'required': true,
+          'uploaded': false,
+        };
+        final value = <String, dynamic>{
+          'deliverables_configured': true,
+          'assessment_progress': {'display_status': 'awaiting_completion'},
+          'post': [post],
+        };
+        var status = TeamWorkflowStatus.fromStage(value, scope: scope);
+        expect(status.label, 'Awaiting post-defense');
+        expect(status.nextStep, contains('submit or correct'));
+        post['uploaded'] = true;
+        post['submission'] = {'status': 'pending'};
+        expect(
+          TeamWorkflowStatus.fromStage(value, scope: scope).label,
+          '1 needs review',
+        );
+        post['submission'] = {'status': 'accepted'};
+        expect(
+          TeamWorkflowStatus.fromStage(value, scope: scope).label,
+          'Awaiting completion',
+        );
+        post['uploaded'] = false;
+        post['submission'] = null;
+        value['assessment_progress'] = {'display_status': 'scheduled'};
+        expect(
+          TeamWorkflowStatus.fromStage(value, scope: scope).label,
+          'Scheduled',
+        );
+        value['has_done_schedule'] = true;
+        value['assessment_progress'] = {
+          'display_status': 'awaiting_evaluation',
+        };
+        expect(
+          TeamWorkflowStatus.fromStage(value, scope: scope).label,
+          'Awaiting post-defense',
+        );
+        post['is_waived'] = true;
+        expect(
+          TeamWorkflowStatus.fromStage(value, scope: scope).label,
+          'Awaiting evaluation',
+        );
+      }
+    },
+  );
+
+  test(
+    'pre and post reviews take priority, then restore completion status',
+    () {
+      for (final scope in ['pit', 'capstone']) {
+        for (final combined in [false, true]) {
+          final pre = {
+            'type': 'pre',
+            'uploaded': true,
+            'locked': true,
+            'submission': {'status': 'pending_review'},
+          };
+          final post = {
+            'type': 'post',
+            'uploaded': true,
+            'locked': true,
+            'submission': {'status': 'pending'},
+          };
+          final value = <String, dynamic>{
+            'deliverables_configured': true,
+            'assessment_progress': {'display_status': 'awaiting_completion'},
+            if (combined)
+              'deliverables': [pre, post]
+            else ...{
+              'pre': [pre],
+              'post': [post],
+            },
+          };
+          final team = <String, dynamic>{'selected_stage': value};
+          final status = TeamWorkflowStatus.fromStage(value, scope: scope);
+          expect(status.label, '2 needs review');
+          expect(status.code, 'needs_review');
+          expect(status.nextStep, contains('pre- and post-defense'));
+          expect(DeliverablesTriageHelper.pendingReviewCount(team), 2);
+          expect(
+            DeliverablesTriageHelper.matchesFilter(
+              team,
+              TeamTriageFilter.needsReview,
+            ),
+            isTrue,
+          );
+          (pre['submission'] as Map)['status'] = 'accepted';
+          expect(
+            TeamWorkflowStatus.fromStage(value, scope: scope).label,
+            '1 needs review',
+          );
+          (post['submission'] as Map)['status'] = 'accepted';
+          expect(
+            TeamWorkflowStatus.fromStage(value, scope: scope).label,
+            'Awaiting completion',
+          );
+          expect(DeliverablesTriageHelper.pendingReviewCount(team), 0);
+        }
+      }
+    },
+  );
+
+  test('review count uses current files within a grouped submission', () {
+    final value = {
+      'assessment_progress': {
+        'display_status': 'completed',
+        'is_completed': true,
+      },
+      'deliverables': [
+        {
+          'type': 'post',
+          'submission': {
+            'status': 'rejected',
+            'files': [
+              {'status': 'accepted'},
+              {'status': 'pending'},
+              {'status': 'submitted'},
+              {'status': 'rejected'},
+              {'status': 'pending', 'is_current': false},
+            ],
+          },
+        },
+        {
+          'type': 'pre',
+          'requirement_timing': 'defense',
+          'submission': {'status': 'pending'},
+        },
+        {
+          'type': 'post',
+          'is_waived': true,
+          'submission': {'status': 'pending'},
+        },
+        {'type': 'post', 'source': 'defense_minutes', 'uploaded': true},
+      ],
+    };
+    expect(TeamWorkflowStatus.fromStage(value).label, '2 needs review');
+    expect(TeamWorkflowStatus.pendingReviewCount(value), 2);
+  });
+
   Map<String, dynamic> stage({String? fileStatus, bool endorsed = false}) => {
     'deliverables_configured': true,
     'endorsed': endorsed,
@@ -31,12 +177,12 @@ void main() {
         stage(fileStatus: 'pending'),
       );
       expect(pending.code, 'needs_review');
-      expect(pending.tone, WorkflowStatusTone.attention);
+      expect(pending.tone, WorkflowStatusTone.active);
       final accepted = TeamWorkflowStatus.fromStage(
         stage(fileStatus: 'accepted'),
       );
       expect(accepted.code, 'awaiting_endorsement');
-      expect(accepted.tone, WorkflowStatusTone.attention);
+      expect(accepted.tone, WorkflowStatusTone.active);
       final endorsed = TeamWorkflowStatus.fromStage(
         stage(fileStatus: 'accepted', endorsed: true),
       );
@@ -50,11 +196,7 @@ void main() {
       TeamWorkflowStatus.fromStage(stage(fileStatus: 'rejected')).tone,
       WorkflowStatusTone.attention,
     );
-    for (final code in [
-      'revisions_pending',
-      'for_redefense',
-      'pending_post_defense',
-    ]) {
+    for (final code in ['revisions_pending', 'for_redefense']) {
       expect(
         TeamWorkflowStatus.describe(code).tone,
         WorkflowStatusTone.attention,
@@ -80,7 +222,7 @@ void main() {
   );
 
   test('missing defense materials remain secondary to the schedule status', () {
-    final value = stage(fileStatus: 'pending')
+    final value = stage(fileStatus: 'accepted')
       ..['assessment_progress'] = {
         'display_status': 'scheduled',
         'is_completed': false,

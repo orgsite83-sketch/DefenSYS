@@ -5,7 +5,7 @@ must not be used to claim real-world accuracy. A reviewed dataset can replace
 them through NaiveBayesClassifier.train_from_examples without changing callers.
 """
 
-MODEL_VERSION = 'project-focus-3.1'
+MODEL_VERSION = 'project-focus-3.2'
 TRAINING_SOURCE = 'Authored development examples; not faculty-reviewed'
 
 TRAINING_EXAMPLES = {

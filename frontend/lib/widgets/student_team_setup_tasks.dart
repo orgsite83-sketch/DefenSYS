@@ -5,15 +5,19 @@ import '../services/academic/team_formation_service.dart';
 import '../services/academic/student_team_selection_provider.dart';
 import '../services/auth/auth_provider.dart';
 import '../services/capstone_deliverables_provider.dart';
+import '../services/dashboard_provider.dart';
+import 'repository/section_concept_workspace.dart';
 
 class StudentTeamSetupTasks extends ConsumerStatefulWidget {
   const StudentTeamSetupTasks({
     super.key,
     this.onOpenRepository,
     this.onRefresh,
+    this.refreshKey,
   });
   final VoidCallback? onOpenRepository;
   final Future<void> Function()? onRefresh;
+  final Object? refreshKey;
 
   @override
   ConsumerState<StudentTeamSetupTasks> createState() =>
@@ -22,6 +26,7 @@ class StudentTeamSetupTasks extends ConsumerStatefulWidget {
 
 class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
   List<Map<String, dynamic>> teams = [];
+  List<Map<String, dynamic>> sectionTasks = [];
   String? error;
   bool busy = false;
   int _requestRevision = 0;
@@ -35,7 +40,9 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
   @override
   void didUpdateWidget(covariant StudentTeamSetupTasks oldWidget) {
     super.didUpdateWidget(oldWidget);
-    load();
+    if (oldWidget.refreshKey != widget.refreshKey) {
+      load();
+    }
   }
 
   Future<void> load() async {
@@ -46,6 +53,8 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
       if (mounted && revision == _requestRevision) {
         setState(() {
           teams = _teams(result);
+          sectionTasks = (result['section_tasks'] as List? ?? []).whereType<Map>()
+              .map((t) => Map<String, dynamic>.from(t)).toList();
           error = null;
         });
       }
@@ -93,6 +102,20 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
       error = null;
     });
     ref.read(studentTeamSelectionProvider.notifier).select(team['id'] as int);
+    // Wait for the selected team's dashboard before opening its concept stage.
+    // This shares an in-flight refresh with the dashboard's team listener.
+    await ref
+        .read(dashboardProvider('student').notifier)
+        .fetchDashboardData(silent: true);
+    if (!mounted) return;
+    final dashboardError = ref.read(dashboardProvider('student')).error;
+    if (dashboardError != null) {
+      setState(() {
+        busy = false;
+        error = dashboardError;
+      });
+      return;
+    }
     await ref
         .read(capstoneDeliverablesProvider.notifier)
         .fetchDeliverables(
@@ -112,7 +135,7 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
 
   @override
   Widget build(BuildContext context) {
-    if (teams.isEmpty && error == null) return const SizedBox.shrink();
+    if (teams.isEmpty && sectionTasks.isEmpty && error == null) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Material(
@@ -126,7 +149,7 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Complete your team setup',
+                sectionTasks.isEmpty ? 'Complete your team setup' : 'Your section and team tasks',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               if (busy) const LinearProgressIndicator(),
@@ -140,6 +163,17 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                   child: const Text('Retry'),
                 ),
               ],
+              for (final task in sectionTasks) ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.account_tree_outlined),
+                title: Text('${task['title']}'),
+                subtitle: Text('${task['section']} · ${task['stage_label']} · ${task['status_label'] ?? '${task['status']}'.replaceAll('_', ' ')}'),
+                onTap: busy ? null : () async {
+                  await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) =>
+                    SectionConceptWorkspace(projectId: task['project_id'] as int)));
+                  if (mounted) await load();
+                },
+              ),
               ...teams.map(
                 (team) => Padding(
                   padding: const EdgeInsets.only(top: 12),
@@ -165,7 +199,9 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
                           label: Text(
                             task['mode'] == 'assigned'
                                 ? 'View assigned project · ${task['stage_label']}'
-                                : 'Submit ${task['required_count']} concepts · ${task['stage_label']}',
+                                : task['shared_system'] == true
+                                  ? 'Submit 3 corresponding module concepts · ${task['stage_label']}'
+                                  : 'Submit ${task['required_count']} concepts · ${task['stage_label']}',
                           ),
                         ),
                       ),

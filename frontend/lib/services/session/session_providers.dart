@@ -18,6 +18,7 @@ import '../admin/project_archive_provider.dart';
 import '../grading/rubrics_provider.dart';
 import '../academic/student_academic_records_provider.dart';
 import '../academic/student_teams_provider.dart';
+import '../academic/student_team_selection_provider.dart';
 import '../admin/user_management_provider.dart';
 import '../admin/external_evaluator_provider.dart';
 import '../pit/weekly_progress_provider.dart';
@@ -40,6 +41,7 @@ void invalidateSessionProviders(Ref ref) {
   ref.invalidate(rubricsProvider);
   ref.invalidate(studentAcademicRecordsProvider);
   ref.invalidate(studentTeamsProvider);
+  ref.invalidate(studentTeamSelectionProvider);
   ref.invalidate(userManagementProvider);
   ref.invalidate(externalEvaluatorProvider);
   ref.invalidate(capstoneDeliverablesProvider);

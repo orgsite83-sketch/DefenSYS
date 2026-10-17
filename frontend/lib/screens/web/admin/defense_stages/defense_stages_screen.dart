@@ -1253,6 +1253,34 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               children: [
                 LayoutBuilder(
                   builder: (context, constraints) {
+                    void syncPolicySlot() {
+                      final policy = item['file_policy'];
+                      if (policy is Map && policy['mode'] == 'concepts') {
+                        final slots = policy['slots'] as List? ?? [];
+                        final label = (item['label'] as String?)?.trim();
+                        final format = item['file_format'] as String? ?? 'pdf';
+                        final req = item['required'] == true;
+                        if (slots.isEmpty) {
+                          policy['slots'] = [
+                            {
+                              'key': 'paper',
+                              'label': label?.isNotEmpty == true ? label : 'Concept paper',
+                              'file_format': format,
+                              'required': req,
+                            }
+                          ];
+                        } else {
+                          for (final s in slots) {
+                            if (s is Map) {
+                              s['file_format'] = format;
+                              s['required'] = req;
+                              if (label?.isNotEmpty == true) s['label'] = label;
+                            }
+                          }
+                        }
+                      }
+                    }
+
                     final nameField = TextFormField(
                         controller: labelController,
                         decoration: _dialogInputDecoration(
@@ -1264,6 +1292,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                         style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                         onChanged: (value) {
                           item['label'] = value.trim();
+                          syncPolicySlot();
                           setDialogState(() {});
                         },
                       );
@@ -1273,6 +1302,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                         value: currentFormat,
                         onChanged: (val) => setDialogState(() {
                           item['file_format'] = val;
+                          syncPolicySlot();
                         }),
                       ),
                     );
@@ -1282,6 +1312,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                         label: const Text('Required'),
                         onChanged: (value) => setDialogState(() {
                           item['required'] = value;
+                          syncPolicySlot();
                         }),
                       ),
                     );
@@ -1440,6 +1471,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                             DocumentPolicyEditor(
                               value: Map<String, dynamic>.from(item['file_policy'] as Map? ?? {}),
                               allowConcepts: !isPost,
+                              deliverableLabel: labelController.text,
+                              fileFormat: currentFormat,
+                              required: item['required'] == true,
                               onChanged: (value) => setDialogState(() => item['file_policy'] = value),
                             ),
                           ],
@@ -1489,6 +1523,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                             DocumentPolicyEditor(
                               value: Map<String, dynamic>.from(item['file_policy'] as Map? ?? {}),
                               allowConcepts: false,
+                              deliverableLabel: labelController.text,
+                              fileFormat: currentFormat,
+                              required: item['required'] == true,
                               onChanged: (value) => setDialogState(() => item['file_policy'] = value),
                             ),
                             const SizedBox(height: 10),

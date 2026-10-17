@@ -1,4 +1,5 @@
 import 'package:defensys/widgets/repository/concept_workspace.dart';
+import 'package:defensys/widgets/repository/section_concept_workspace.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -40,8 +41,9 @@ class DefenseWorkflowPanel extends ConsumerWidget {
         fileName: '${file['name']}',
       );
     } catch (_) {
-      if (context.mounted)
+      if (context.mounted) {
         showErrorToast(context, 'Unable to load this preserved project file.');
+      }
     }
   }
 
@@ -172,8 +174,9 @@ class DefenseWorkflowPanel extends ConsumerWidget {
                       (review && reviewDate == null)
                   ? null
                   : () {
-                      if (form.currentState!.validate())
+                      if (form.currentState!.validate()) {
                         Navigator.pop(dialogContext, true);
+                      }
                     },
               child: Text(review ? 'Schedule review' : 'Save decision'),
             ),
@@ -299,6 +302,13 @@ class DefenseWorkflowPanel extends ConsumerWidget {
             Text('Compliance review: ${grade['compliance_review_date']}'),
           ],
           if (conceptWorkflow != null) DefensysShadcnScope(child: ConceptHistory(workflow: Map<String, dynamic>.from(conceptWorkflow))),
+          if (conceptWorkflow?['section_project_id'] != null) ...[
+            if (conceptWorkflow?['section_revisions_pending'] == true)
+              const Text('Shared system revisions are pending. The designated system reviewer must clear them before progression.'),
+            TextButton.icon(icon: const Icon(Icons.account_tree_outlined), label: const Text('Open section system and module decisions'),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) =>
+                SectionConceptWorkspace(projectId: conceptWorkflow!['section_project_id'] as int)))),
+          ],
           const SizedBox(height: 12),
           Wrap(
             spacing: 8,

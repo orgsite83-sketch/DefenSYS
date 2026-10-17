@@ -370,27 +370,116 @@ class DocumentPolicyEditor extends StatelessWidget {
     required this.onChanged,
     this.enabled = true,
     this.allowConcepts = false,
+    this.deliverableLabel,
+    this.fileFormat,
+    this.required = true,
   });
+
   final Map<String, dynamic> value;
   final ValueChanged<Map<String, dynamic>> onChanged;
-  final bool enabled, allowConcepts;
+  final bool enabled;
+  final bool allowConcepts;
+  final String? deliverableLabel;
+  final String? fileFormat;
+  final bool required;
+
+  Widget _buildFileStepper({
+    required BuildContext context,
+    required String label,
+    required int count,
+    required int min,
+    required int max,
+    required ValueChanged<int> onStep,
+    required bool isEnabled,
+  }) {
+    final theme = Theme.of(context);
+    final borderColor = DefensysTokens.borderOf(context);
+    final secondaryColor = DefensysTokens.textSecondaryOf(context);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: DefensysTokens.surfaceOf(context),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: secondaryColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(width: 6),
+          IconButton(
+            tooltip: 'Fewer files',
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+            onPressed: isEnabled && count > min ? () => onStep(count - 1) : null,
+            icon: const Icon(Icons.remove_rounded, size: 16),
+          ),
+          SizedBox(
+            width: 26,
+            child: Text(
+              '$count',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'More files',
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+            onPressed: isEnabled && count < max ? () => onStep(count + 1) : null,
+            icon: const Icon(Icons.add_rounded, size: 16),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final mode = value['mode']?.toString() ?? 'single';
-    final slots = (value['slots'] as List? ?? [])
-        .whereType<Map>()
-        .map((s) => Map<String, dynamic>.from(s))
-        .toList();
-    void updateSlot(int index, String field, dynamic val) {
-      final updated = slots.map((s) => Map<String, dynamic>.from(s)).toList();
-      updated[index][field] = val;
-      onChanged({...value, 'slots': updated});
-    }
-
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final primaryColor = isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B);
     final secondaryColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+
+    final minFiles = (value['min_files'] is int) ? value['min_files'] as int : 1;
+    final maxFiles = (value['max_files'] is int) ? value['max_files'] as int : 10;
+
+    void selectMode(String newMode) {
+      final slotLabel = (deliverableLabel?.trim().isNotEmpty == true)
+          ? deliverableLabel!.trim()
+          : 'Concept paper';
+      final slotFormat = fileFormat ?? 'pdf';
+
+      onChanged({
+        'mode': newMode,
+        if (newMode == 'multiple') ...{
+          'min_files': minFiles,
+          'max_files': maxFiles < minFiles ? minFiles : maxFiles,
+        },
+        if (newMode == 'concepts')
+          'slots': [
+            {
+              'key': 'paper',
+              'label': slotLabel,
+              'required': required,
+              'file_format': slotFormat,
+            },
+          ],
+      });
+    }
 
     return DefensysShadcnScope(
       child: Padding(
@@ -404,30 +493,15 @@ class DocumentPolicyEditor extends StatelessWidget {
                 final choiceWidget = SizedBox(
                   width: isCompact ? double.infinity : 220,
                   child: WorkflowChoice(
-                    value: mode,
+                    value: mode == 'named' ? 'single' : mode,
                     enabled: enabled,
                     options: {
                       'single': 'One file',
-                      'named': 'Named documents',
-                      'multiple': 'Multiple attachments',
                       if (allowConcepts || mode == 'concepts')
                         'concepts': 'Documents for each concept',
+                      'multiple': 'Multiple attachments',
                     },
-                    onChanged: (mode) => onChanged({
-                      'mode': mode,
-                      if (mode == 'multiple') ...{'min_files': 1, 'max_files': 10},
-                      if (mode == 'named' || mode == 'concepts')
-                        'slots': [
-                          {
-                            'key': 'paper',
-                            'label': mode == 'concepts'
-                                ? 'Concept paper'
-                                : 'Document',
-                            'required': true,
-                            'file_format': 'pdf',
-                          },
-                        ],
-                    }),
+                    onChanged: selectMode,
                   ),
                 );
 
@@ -479,106 +553,62 @@ class DocumentPolicyEditor extends StatelessWidget {
               },
             ),
             if (mode == 'multiple') ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               Wrap(
                 spacing: 12,
                 runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  WorkflowChoice(
-                    value: '${value['min_files'] ?? 1}',
-                    enabled: enabled,
-                    options: {
-                      for (var i = 1; i <= 50; i++) '$i': 'At least $i',
+                  _buildFileStepper(
+                    context: context,
+                    label: 'At least',
+                    count: minFiles,
+                    min: 1,
+                    max: maxFiles,
+                    isEnabled: enabled,
+                    onStep: (newMin) {
+                      onChanged({
+                        ...value,
+                        'min_files': newMin,
+                        if (maxFiles < newMin) 'max_files': newMin,
+                      });
                     },
-                    onChanged: (v) =>
-                        onChanged({...value, 'min_files': int.parse(v)}),
                   ),
-                  WorkflowChoice(
-                    value: '${value['max_files'] ?? 10}',
-                    enabled: enabled,
-                    options: {for (var i = 1; i <= 50; i++) '$i': 'Up to $i'},
-                    onChanged: (v) =>
-                        onChanged({...value, 'max_files': int.parse(v)}),
+                  _buildFileStepper(
+                    context: context,
+                    label: 'Up to',
+                    count: maxFiles,
+                    min: minFiles,
+                    max: 50,
+                    isEnabled: enabled,
+                    onStep: (newMax) {
+                      onChanged({
+                        ...value,
+                        'max_files': newMax,
+                        if (minFiles > newMax) 'min_files': newMax,
+                      });
+                    },
                   ),
                 ],
               ),
             ],
-            if (mode == 'named' || mode == 'concepts') ...[
+            if (mode == 'concepts') ...[
               const SizedBox(height: 8),
-              if (mode == 'concepts')
-                const Text(
-                  'These document slots repeat for each required concept.',
-                ),
-              for (var i = 0; i < slots.length; i++)
-                Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      ShadInput(
-                        key: ValueKey(slots[i]['key']),
-                        initialValue: '${slots[i]['label'] ?? ''}',
-                        enabled: enabled,
-                        placeholder: const Text('Document name'),
-                        onChanged: (v) => updateSlot(i, 'label', v),
+              Row(
+                children: [
+                  Icon(Icons.info_outline_rounded, size: 14, color: secondaryColor),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'These document slots repeat for each required concept.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: secondaryColor,
+                        fontWeight: FontWeight.w500,
                       ),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 6,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          WorkflowChoice(
-                            value: '${slots[i]['file_format'] ?? 'pdf'}',
-                            enabled: enabled,
-                            options: const {
-                              'pdf': 'PDF',
-                              'presentation': 'Pitch deck',
-                              'document': 'Word / PDF',
-                              'archive': 'Archive',
-                              'image': 'Image',
-                              'video': 'Video',
-                              'spreadsheet': 'Spreadsheet',
-                              'audio': 'Audio',
-                              'any': 'Any format',
-                            },
-                            onChanged: (v) => updateSlot(i, 'file_format', v),
-                          ),
-                          ShadCheckbox(
-                            value: slots[i]['required'] != false,
-                            enabled: enabled,
-                            label: const Text('Required'),
-                            onChanged: (v) => updateSlot(i, 'required', v),
-                          ),
-                          ShadButton.ghost(
-                            enabled: enabled && slots.length > 1,
-                            child: const Text('Remove'),
-                            onPressed: () {
-                              final updated = [...slots]..removeAt(i);
-                              onChanged({...value, 'slots': updated});
-                            },
-                          ),
-                        ],
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              const SizedBox(height: 8),
-              ShadButton.outline(
-                enabled: enabled && slots.length < 20,
-                child: const Text('Add document slot'),
-                onPressed: () => onChanged({
-                  ...value,
-                  'slots': [
-                    ...slots,
-                    {
-                      'key': 'doc_${DateTime.now().microsecondsSinceEpoch}',
-                      'label': 'Supporting document',
-                      'required': true,
-                      'file_format': 'pdf',
-                    },
-                  ],
-                }),
+                ],
               ),
             ],
           ],

@@ -94,6 +94,9 @@ class UserSerializer(serializers.ModelSerializer):
     def get_is_project_manager(self, obj):
         if obj.role != 'student':
             return False
+        from repository.section_concepts.models import SectionConceptProject
+        if SectionConceptProject.objects.filter(project_manager=obj, section__semester__is_active=True).exists():
+            return True
         from student_teams.models import SectionAssignment
         return SectionAssignment.objects.filter(
             project_manager=obj,
@@ -103,6 +106,10 @@ class UserSerializer(serializers.ModelSerializer):
     def get_managed_section(self, obj):
         if obj.role != 'student':
             return None
+        from repository.section_concepts.models import SectionConceptProject
+        project = SectionConceptProject.objects.filter(project_manager=obj, section__semester__is_active=True).select_related('section').first()
+        if project:
+            return project.section.section
         from student_teams.models import SectionAssignment
         assignment = SectionAssignment.objects.filter(
             project_manager=obj,

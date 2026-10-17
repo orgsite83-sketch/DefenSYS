@@ -8,6 +8,7 @@ from rest_framework.exceptions import ValidationError
 from academic_period_management.models import SchoolYear, Semester
 from defense.scheduler.models import PitEventGradingConfig
 from user_management.academic_records.models import StudentAcademicRecord
+from user_management.models import SectionInstructorAssignment
 from .models import StudentTeam, TeamMembership
 
 User = get_user_model()
@@ -22,6 +23,9 @@ class TeamFormationTests(APITestCase):
             label=Semester.FIRST, is_active=True)
         self.event = PitEventGradingConfig.objects.create(semester=self.term,
             event_name='PIT Design', year_level='2nd Year', concept_config={'enabled': True, 'required_count': 3})
+        for section in ('BSIT-2A', 'BSIT-2B'):
+            SectionInstructorAssignment.objects.create(faculty=self.lead, semester=self.term,
+                year_level='2nd Year', section=section)
         self.students = []
         for i in range(15):
             student = User.objects.create_user(username=f'formation-{i:02d}', role='student',
@@ -114,7 +118,15 @@ class TeamFormationTests(APITestCase):
     def test_other_actor_cannot_use_preview(self):
         response = self.preview()
         self.client.force_authenticate(self.admin)
-        self.assertEqual(self.commit(response).status_code, 400)
+        self.assertEqual(self.commit(response).status_code, 403)
+
+    def test_admin_and_unassigned_lead_keep_import_but_cannot_generate(self):
+        SectionInstructorAssignment.objects.all().delete()
+        for actor in (self.admin, self.lead):
+            self.client.force_authenticate(actor)
+            self.assertEqual(self.preview().status_code, 403)
+            self.assertEqual(self.client.get('/api/teams/generation/context/').status_code, 403)
+            self.assertEqual(self.client.get('/api/teams/roster-options/', self.payload).status_code, 200)
 
     def test_invalid_later_group_rolls_back_every_team(self):
         response = self.preview()
@@ -224,7 +236,7 @@ class TeamFormationTests(APITestCase):
         self.assertEqual(self.client.get(f'/api/dashboards/student/?team_id={outsider.pk}').status_code, 404)
         self.assertEqual(self.client.get('/api/dashboards/student/?team_id=invalid').status_code, 400)
 
-    def test_capstone_generation_obeys_intake_and_uses_existing_concept_policy(self):
+    def test_capstone_rosters_use_admin_import_even_when_intake_is_open(self):
         self.client.force_authenticate(self.admin)
         self.term.label = Semester.SECOND
         self.term.capstone_program_phase = Semester.PHASE_CAPSTONE_1
@@ -232,13 +244,12 @@ class TeamFormationTests(APITestCase):
         self.term.save()
         StudentAcademicRecord.objects.all().update(year_level='3rd Year')
         response = self.preview(level='3rd Year Capstone')
-        self.assertEqual(response.status_code, 200, response.data)
-        result = self.commit(response, level='3rd Year Capstone')
-        self.assertEqual(result.status_code, 201, result.data)
-        self.assertTrue(StudentTeam.objects.filter(level='3rd Year Capstone').exists())
+        self.assertEqual(response.status_code, 403, response.data)
+        roster = self.client.get('/api/teams/roster-options/', {'level': '3rd Year Capstone'})
+        self.assertEqual(roster.status_code, 200, roster.data)
         self.term.capstone_team_creation_enabled = False
         self.term.save()
-        self.assertEqual(self.preview(level='3rd Year Capstone').status_code, 400)
+        self.assertEqual(self.client.get('/api/teams/roster-options/', {'level': '3rd Year Capstone'}).status_code, 400)
 
     def test_preview_expiry_and_signature_are_enforced(self):
         response = self.preview()
@@ -251,8 +262,47 @@ class TeamFormationTests(APITestCase):
         existing = self.existing(event=self.event.event_name)
         self.event.team_membership_policy = 'multiple'
         self.event.save(update_fields=['team_membership_policy'])
-        response = self.preview()
-        result = self.commit(response)
+        response = self.preview(include_assigned=True)
+        result = self.commit(response, include_assigned=True)
         self.assertEqual(result.status_code, 201, result.data)
         self.assertEqual(TeamMembership.objects.filter(student=self.students[0]).count(), 2)
         self.assertEqual(existing.members.count(), 3)
+
+    def test_manager_edit_does_not_turn_provisional_name_into_project_title(self):
+        self.assertEqual(self.commit(self.preview()).status_code, 201)
+        team = StudentTeam.objects.first()
+        response = self.client.patch(f'/api/teams/{team.pk}/', {
+            'name': 'Updated provisional team', 'project_title': '', 'level': team.level,
+            'leader_id': team.leader_id, 'member_ids': list(team.members.values_list('pk', flat=True)),
+            'current_defense_stage': self.event.event_name,
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        team.refresh_from_db()
+        self.assertEqual(team.project_title, '')
+        self.assertTrue(team.project_pending)
+
+    def test_admin_event_import_is_available_when_capstone_creation_is_closed(self):
+        self.client.force_authenticate(self.admin)
+        row = {'team_name': 'Admin PIT roster', 'member_ids': [self.students[0].get_full_name()],
+               'leader_id': self.students[0].get_full_name(), 'level': '2nd Year PIT', 'year_level': '2nd Year'}
+        body = {'event_name': self.event.event_name, 'teams': [row]}
+        result = self.client.post('/api/teams/bulk-import/preview/', body, format='json')
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result.data['summary']['ready'], 1, result.data)
+        result = self.client.post('/api/teams/bulk-import/', body, format='json')
+        self.assertEqual(result.status_code, 201, result.data)
+        self.assertEqual(result.data['created_count'], 1, result.data)
+
+    def test_overlapping_reused_rosters_follow_lead_selected_membership_policy(self):
+        first = self.existing(name='First source roster')
+        second = self.existing(name='Second source roster', students=self.students[2:5])
+        changes = {'method': 'reuse', 'source_team_ids': [first.pk, second.pk]}
+        self.assertEqual(self.preview(**changes).status_code, 400)
+        self.event.team_membership_policy = 'multiple'
+        self.event.save(update_fields=['team_membership_policy'])
+        response = self.preview(**changes)
+        self.assertEqual(response.status_code, 200, response.data)
+        result = self.commit(response, **changes)
+        self.assertEqual(result.status_code, 201, result.data)
+        self.assertEqual(TeamMembership.objects.filter(student=self.students[2],
+            team__current_defense_stage=self.event.event_name).count(), 2)

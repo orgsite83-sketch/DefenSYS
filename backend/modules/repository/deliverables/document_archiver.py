@@ -36,7 +36,7 @@ class DocumentArchiver:
         source_file_path: str,
         filename: str,
         category: str,
-        confidence: float,
+        confidence: float | None,
         metadata: Dict[str, str]
     ) -> Dict[str, any]:
         """
@@ -46,13 +46,14 @@ class DocumentArchiver:
             source_file_path: Path to source file
             filename: Original filename
             category: ML-predicted category
-            confidence: Classification confidence (0-100)
+            confidence: Model score (0-100), or None for functional evidence
             metadata: Additional metadata (year_level, course_code, team_name, etc.)
             
         Returns:
             Dictionary with archiving results
         """
         try:
+            confidence_label = f'{confidence:.1f}%' if confidence is not None else 'Not scored (proposed functions)'
             # Extract metadata
             year_level = metadata.get('year_level', 'Unknown')
             course_code = metadata.get('course_code', 'Unknown')
@@ -75,7 +76,7 @@ class DocumentArchiver:
             self._write_metadata(metadata_path, {
                 'filename': filename,
                 'category': category,
-                'confidence': f'{confidence:.1f}%',
+                'confidence': confidence_label,
                 'year_level': year_level,
                 'course_code': course_code,
                 'semester': semester,
@@ -93,8 +94,9 @@ class DocumentArchiver:
                 'archive_path': str(dest_file_path),
                 'relative_path': str(relative_path),
                 'category': category,
-                'confidence': f'{confidence:.1f}%',
-                'message': f'File archived to {category} with {confidence:.1f}% confidence'
+                'confidence': confidence_label,
+                'message': f'File archived to {category}' + (
+                    f' with {confidence:.1f}% confidence' if confidence is not None else ' from proposed functions')
             }
             
         except Exception as e:
@@ -205,7 +207,7 @@ def archive_with_classification(
     category = classification['predicted_category']
     confidence = classification['confidence_score']
     
-    logger.info(f'Category: {category} ({confidence:.1f}% confidence)')
+    logger.info('Category: %s (%s)', category, classification['confidence'])
     logger.info(f'Top 3: {[f"{p["category"]} ({p["confidence"]})" for p in classification["top_3"]]}')
     
     # Step 2: Archive document

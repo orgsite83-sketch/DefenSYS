@@ -164,10 +164,10 @@ class CurriculumExplorerTests(APITestCase):
         StageDeliverable.objects.create(defense_stage=self.stage, deliverable_id='D1',
             label='Chapter 1-3', is_defense_material=True)
         old = DeliverableSubmissionFile.objects.create(submission=parent,
-            file='deliverables/old.pdf', file_name='old.pdf', extracted_text=old_text)
+            file='deliverables/old.pdf', file_name='old.pdf', extracted_text=old_text, is_current=False)
         latest = DeliverableSubmissionFile.objects.create(submission=parent,
             file='deliverables/current.pdf', file_name='current.pdf', extracted_text=current_text)
-        # Equal timestamps must still choose the last upload deterministically.
+        # Historical uploads cannot replace the current file when timestamps tie.
         DeliverableSubmissionFile.objects.filter(pk=old.pk).update(uploaded_at=latest.uploaded_at)
         response = self.client.get(f'/api/curriculum-analytics/explorer/projects/{self.a.pk}:1/',
                                   {'scope': 'capstone', 'academic_year': self.year.label})
@@ -258,7 +258,7 @@ class CurriculumExplorerTests(APITestCase):
             label='Project documentation', is_defense_material=True)
         parent = DeliverableSubmission.objects.create(team=team, stage_label=event.event_name,
             deliverable_id='D1', label='Project documentation', deliverable_type='pre')
-        old = DeliverableSubmissionFile.objects.create(submission=parent, file_name='old.pdf')
+        old = DeliverableSubmissionFile.objects.create(submission=parent, file_name='old.pdf', is_current=False)
         latest = DeliverableSubmissionFile.objects.create(submission=parent, file_name='latest.pdf')
         DeliverableSubmissionFile.objects.filter(pk=old.pk).update(uploaded_at=latest.uploaded_at - timedelta(days=1))
         response = self.client.get(f'/api/curriculum-analytics/explorer/projects/{team.pk}:1/',
@@ -491,6 +491,37 @@ class CurriculumExplorerTests(APITestCase):
         self.assertEqual(detail.data['profile']['source_count'], 0)
         self.assertNotIn('features', detail.data['profile'])
         self.assertIsNone(detail.data['profile']['description'])
+
+    def test_pit_concept_functions_appear_in_analytics_without_invented_platform_or_database_writes(self):
+        from defense.scheduler.models import PitEventDeliverable
+        team = self.team('ServiceDesk', StudentTeam.LEVEL_1_PIT, '1st Year')
+        event = PitEventGradingConfig.objects.create(year_level='1st Year', semester=self.sem,
+                                                     event_name='Concept presentation')
+        PitEventDeliverable.objects.create(pit_event_config=event, deliverable_id='PAPER',
+                                           label='Concept Paper', is_defense_material=True)
+        text = ('CONCEPT PAPER\n01 Background and Rationale\n'
+                'ServiceDesk coordinates repair requests for shared classroom equipment.\n'
+                '03 Project Objectives\nSupport the equipment service desk.\n'
+                '04 Proposed System and Key Functions\n'
+                'Search submitted repair tickets.\nRecord newly submitted requests.\n'
+                '06 Scope and Limitations\nSpecific platform choices follow requirements review.')
+        parent = DeliverableSubmission.objects.create(team=team, stage_label=event.event_name,
+            deliverable_id='PAPER', label='Concept Paper', deliverable_type='pre', extracted_text=text,
+            category='Other', category_confidence=20)
+        response = self.get(scope='pit', year_level='1', academic_year=self.year.label)
+        self.assertEqual(response.data['project_analytics']['coverage']['classified'], 1)
+        self.assertEqual(response.data['projects'][0]['category'], 'Information Systems')
+        detail = self.client.get(f'/api/curriculum-analytics/explorer/projects/{team.pk}:1/',
+            {'scope': 'pit', 'year_level': '1', 'academic_year': self.year.label}).data
+        self.assertEqual(detail['classification']['decision_method'], 'concept_functions')
+        self.assertIsNone(detail['classification']['model_score'])
+        self.assertEqual(detail['classification']['technologies'], [])
+        self.assertEqual(detail['profile']['platforms'], [])
+        self.assertTrue(all(h['document_id'] == f'submission:{parent.pk}'
+                            for h in detail['classification']['evidence']))
+        parent.refresh_from_db()
+        self.assertEqual(parent.category, 'Other')
+        self.assertEqual(parent.category_confidence, 20)
 
     def test_reclassification_changes_only_derived_fields_and_creates_backup(self):
         parent = DeliverableSubmission.objects.create(team=self.a, stage_label=self.stage.label,

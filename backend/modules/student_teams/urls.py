@@ -1,6 +1,8 @@
 from django.urls import include, path
 from .formation_views import (TeamFormationView, TeamFormationCommitView, PitTeamPolicyView,
-                              MyTeamSetupView, TeamLeaderSetupView)
+                              MyTeamSetupView, TeamLeaderSetupView, TeamRosterOptionsView)
+from .formation_workspace import (TeamCreationContextView, SectionRosterPreviewView,
+    SectionRosterCommitView, PreparedTeamsPreviewView, PreparedTeamsCommitView)
 
 from .views import (
     BulkImportTeamsPreviewView,
@@ -16,6 +18,12 @@ from .views import (
 
 
 urlpatterns = [
+    path('roster-options/', TeamRosterOptionsView.as_view(), name='team_roster_options'),
+    path('generation/context/', TeamCreationContextView.as_view(), name='team_creation_context'),
+    path('generation/roster/', SectionRosterPreviewView.as_view(), name='section_roster_preview'),
+    path('generation/roster/create/', SectionRosterCommitView.as_view(), name='section_roster_commit'),
+    path('generation/import/', PreparedTeamsPreviewView.as_view(), name='prepared_teams_preview'),
+    path('generation/import/create/', PreparedTeamsCommitView.as_view(), name='prepared_teams_commit'),
     path('generation/', TeamFormationView.as_view(), name='team_formation'),
     path('generation/create/', TeamFormationCommitView.as_view(), name='team_formation_create'),
     path('generation/events/<int:event_id>/policy/', PitTeamPolicyView.as_view(), name='pit_team_policy'),

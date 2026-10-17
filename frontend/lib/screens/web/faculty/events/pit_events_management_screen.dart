@@ -2081,6 +2081,34 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
         ? item['file_format'].toString()
         : 'any';
 
+    void syncPolicySlot() {
+      final policy = item['file_policy'];
+      if (policy is Map && policy['mode'] == 'concepts') {
+        final slots = policy['slots'] as List? ?? [];
+        final label = (item['label'] as String?)?.trim();
+        final format = item['file_format'] as String? ?? 'pdf';
+        final req = item['required'] == true;
+        if (slots.isEmpty) {
+          policy['slots'] = [
+            {
+              'key': 'paper',
+              'label': label?.isNotEmpty == true ? label : 'Concept paper',
+              'file_format': format,
+              'required': req,
+            }
+          ];
+        } else {
+          for (final s in slots) {
+            if (s is Map) {
+              s['file_format'] = format;
+              s['required'] = req;
+              if (label?.isNotEmpty == true) s['label'] = label;
+            }
+          }
+        }
+      }
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -2183,6 +2211,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                       style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, fontFamily: DefensysTokens.fontFamily),
                       onChanged: (value) {
                         item['label'] = value.trim();
+                        syncPolicySlot();
                         setState(() {});
                         _markDirty();
                       },
@@ -2195,6 +2224,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                         onChanged: (val) {
                           setState(() {
                             item['file_format'] = val;
+                            syncPolicySlot();
                           });
                           _markDirty();
                         },
@@ -2208,6 +2238,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                         onChanged: (value) {
                           setState(() {
                             item['required'] = value == true;
+                            syncPolicySlot();
                           });
                           _markDirty();
                         },
@@ -2382,6 +2413,9 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               value: Map<String, dynamic>.from(item['file_policy'] as Map? ?? {}),
                               enabled: !isLocked,
                               allowConcepts: !isPost && _conceptConfig['enabled'] == true,
+                              deliverableLabel: labelController.text,
+                              fileFormat: currentFormat,
+                              required: item['required'] == true,
                               onChanged: (value) {
                                 setState(() => item['file_policy'] = value);
                                 _markDirty();
@@ -2427,6 +2461,9 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               value: Map<String, dynamic>.from(item['file_policy'] as Map? ?? {}),
                               enabled: !isLocked,
                               allowConcepts: false,
+                              deliverableLabel: labelController.text,
+                              fileFormat: currentFormat,
+                              required: item['required'] == true,
                               onChanged: (value) {
                                 setState(() => item['file_policy'] = value);
                                 _markDirty();

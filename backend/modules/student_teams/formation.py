@@ -2,6 +2,8 @@
 from collections import Counter
 from math import ceil
 from random import SystemRandom
+from hashlib import sha256
+from uuid import uuid4
 
 from django.contrib.auth import get_user_model
 from django.core import signing
@@ -19,13 +21,12 @@ from .models import StudentTeam, TeamMembership
 from .serializers import StudentTeamWriteSerializer
 from .team_levels import user_is_admin, user_is_pit_lead_only
 from .term_scope import assert_active_semester_for_create, get_active_semester
+from .formation_access import allowed_sections, require_formation_scope, require_generation_scope, instructor_sections, is_manager
 
 SALT = 'student-teams.formation.v1'
 
 
-def formation_scope(user, data, *, lock=False):
-    if not (user_is_admin(user) or user_is_pit_lead_only(user)):
-        raise PermissionDenied('Only administrators and PIT leads can form teams.')
+def formation_scope(user, data, *, lock=False, roster_only=False, generation=True):
     semester = get_active_semester()
     if not semester:
         raise ValidationError('No active semester is configured.')
@@ -34,11 +35,14 @@ def formation_scope(user, data, *, lock=False):
     if level not in dict(StudentTeam.LEVEL_CHOICES):
         raise ValidationError({'level': 'Select a program and year level.'})
     year = level.rsplit(' ', 1)[0]
+    (require_generation_scope if generation else require_formation_scope)(user, semester, level)
     if user_is_pit_lead_only(user) and (
             'PIT' not in level or year != user.pit_lead_year):
         raise PermissionDenied('This roster is outside your assigned PIT year level.')
     event = None
     if 'PIT' in level:
+        if roster_only and not data.get('event_name'):
+            return semester, level, year, None
         events = pit_events_for_user(user, semester=semester).filter(year_level=year)
         if lock:
             events = events.select_for_update()
@@ -55,34 +59,54 @@ def formation_scope(user, data, *, lock=False):
     return semester, level, year, event
 
 
-def roster(semester, level, year, event):
+def roster(semester, level, year, event, user=None, *, generation=True):
     records = StudentAcademicRecord.objects.filter(
         semester=semester, year_level=year, student__role='student', student__is_active=True,
-    ).exclude(section='').select_related('student').order_by(
+    ).select_related('student').order_by(
         'section', 'student__last_name', 'student__first_name', 'student__username', 'student_id')
+    permitted = (set(instructor_sections(user, semester, year).values_list('section', flat=True))
+                 if generation else allowed_sections(user, semester, year)) if user else None
+    if permitted is not None:
+        records = records.filter(section__in=permitted)
     assigned = TeamMembership.objects.filter(team__semester=semester)
     if event:
         assigned = pit_event_memberships(assigned.filter(team__level__icontains='PIT'), event.event_name)
         excluded = set() if event.team_membership_policy == 'multiple' else set(assigned.values_list('student_id', flat=True))
-    else:
+    elif 'PIT' not in level:
         excluded = set(assigned.filter(team__level__icontains='Capstone').values_list('student_id', flat=True))
+    else:
+        excluded = set()
+    assigned_ids = set(assigned.values_list('student_id', flat=True)) if event else excluded
     return [{
         'id': record.student_id, 'name': record.student.get_full_name() or record.student.username,
         'username': record.student.username, 'section': record.section,
+        'assigned': record.student_id in assigned_ids,
         'eligible': record.student_id not in excluded,
     } for record in records]
 
 
-def options(user, data):
-    semester, level, year, event = formation_scope(user, data)
-    students = roster(semester, level, year, event)
-    sections = sorted({s['section'] for s in students})
+def options(user, data, *, generation=True):
+    semester, level, year, event = formation_scope(user, data, roster_only=True, generation=generation)
+    students = roster(semester, level, year, event, user, generation=generation)
+    sections = {s['section'] for s in students if s['section'] and s['section'].upper() != 'BSIT'}
+    from user_management.models import SectionInstructorAssignment
+    assignments = instructor_sections(user, semester, year)
+    sections = sorted(sections | set(assignments.values_list('section', flat=True)))
     sources = StudentTeam.objects.filter(semester=semester, level=level).prefetch_related('memberships')
     if event:
         sources = sources.exclude(current_defense_stage=event.event_name)
     else:
         sources = sources.none()
+    sources = sources.filter(section__in=sections)
+    from defense.stages.models import DefenseStage
+    contexts = ([event] if event and event.concept_config.get('enabled') else []) if 'PIT' in level else list(
+        DefenseStage.objects.filter(concept_config__enabled=True).order_by('display_order'))
+    reviewers = get_user_model().objects.filter(role='faculty', is_active=True)
+    if not is_manager(user):
+        reviewers = reviewers.filter(pk__in=assignments.values('faculty_id'))
     return {
+        'concept_contexts': [{'label': c.label} for c in contexts],
+        'system_reviewers': [{'id': r.pk, 'name': r.get_full_name() or r.username} for r in reviewers.order_by('last_name', 'pk')],
         'students': students,
         'sections': [{'name': section,
                       'eligible_count': sum(s['eligible'] for s in students if s['section'] == section),
@@ -93,28 +117,45 @@ def options(user, data):
         'team_membership_policy': event.team_membership_policy if event else 'single',
         'event_id': event.pk if event else None,
         'semester_id': semester.pk,
+        'can_manage_policy': is_manager(user),
+        'unassigned_count': sum(not s['section'] or s['section'].upper() == 'BSIT' for s in students),
     }
 
 
-def snapshot(user, semester, level, event, sections, students):
+def snapshot(user, semester, level, event, sections, students, selected_ids=None):
     return {'actor': user.pk, 'semester': semester.pk, 'level': level,
             'event': event.pk if event else None,
             'policy': event.team_membership_policy if event else 'single',
             'sections': sorted(sections),
-            'students': sorted([[s['id'], s['section']] for s in students if s['eligible'] and s['section'] in sections])}
+            'students': sorted([[s['id'], s['section']] for s in students if s['eligible'] and
+                (s['id'] in selected_ids if selected_ids is not None else s['section'] in sections)])}
 
 
 def preview(user, data):
     semester, level, year, event = formation_scope(user, data)
-    students = roster(semester, level, year, event)
+    students = roster(semester, level, year, event, user)
+    if not data.get('include_assigned', False):
+        students = [{**s, 'eligible': s['eligible'] and not s['assigned']} for s in students]
     sections = data['sections']
-    if len(sections) != len(set(sections)) or not set(sections) <= {s['section'] for s in students}:
+    shared_system = data.get('shared_system')
+    if shared_system and (data.get('roster_mode', 'sections') != 'sections' or len(sections) != 1):
+        raise ValidationError('Generate a shared system for one enrolled section at a time.')
+    if shared_system:
+        generation_concept_context(event, shared_system)
+    custom = data.get('roster_mode', 'sections') == 'custom'
+    if not custom and (len(sections) != len(set(sections)) or not set(sections) <= {
+            s['section'] for s in students if s['section'] and s['section'].upper() != 'BSIT'}):
         raise ValidationError({'sections': 'Choose existing sections from the current roster.'})
-    selected = [s for s in students if s['eligible'] and s['section'] in sections]
+    selected_ids = data.get('student_ids', []) if custom else None
+    if custom and (not selected_ids or not set(selected_ids) <= {s['id'] for s in students if s['eligible']}):
+        raise ValidationError('Select available students from your authorized roster.')
+    selected = [s for s in students if s['eligible'] and
+        (s['id'] in selected_ids if custom else s['section'] in sections)]
     if not selected:
         raise ValidationError('No eligible students are available in these sections.')
     size, method = data['group_size'], data['method']
     groups, used = [], set()
+    leader_method = data.get('leader_method', 'random' if method == 'random' else 'first')
     if method == 'reuse':
         if not event:
             raise ValidationError('Roster reuse is available for PIT events.')
@@ -125,12 +166,14 @@ def preview(user, data):
         eligible = {s['id']: s for s in selected}
         for team in sources:
             ids = [m.student_id for m in team.memberships.all()]
-            if not ids or any(i not in eligible or i in used or eligible[i]['section'] != team.section for i in ids):
-                raise ValidationError('Reused teams must have available, non-overlapping members in the selected sections.')
+            if not ids or any(i not in eligible or eligible[i]['section'] != team.section for i in ids):
+                raise ValidationError('Reused teams must have available members in the selected sections.')
+            if event.team_membership_policy != 'multiple' and used.intersection(ids):
+                raise ValidationError('These rosters overlap. Allow multiple teams in this event or choose non-overlapping rosters.')
             groups.append({'section': team.section, 'member_ids': ids, 'leader_id': team.leader_id})
             used.update(ids)
     rng = SystemRandom()
-    for section in sections:
+    for section in (sorted({s['section'] for s in selected}) if custom else sections):
         members = [s['id'] for s in selected if s['section'] == section and s['id'] not in used]
         if method == 'random':
             rng.shuffle(members)
@@ -145,6 +188,13 @@ def preview(user, data):
             offset += length
             groups.append({'section': section, 'member_ids': ids,
                            'leader_id': rng.choice(ids) if method == 'random' else ids[0]})
+    for group in groups:
+        if leader_method == 'random':
+            group['leader_id'] = rng.choice(group['member_ids'])
+        elif leader_method == 'manual':
+            group['leader_id'] = None
+        elif leader_method == 'keep' and not group.get('leader_id'):
+            group['leader_id'] = group['member_ids'][0]
     existing = set(StudentTeam.objects.filter(level=level).values_list('name', flat=True))
     for index, group in enumerate(groups, 1):
         stem = f'{group["section"]} · Team {index:02d}'
@@ -156,8 +206,13 @@ def preview(user, data):
             name = f'{stem[:110]} ({suffix})'
         existing.add(name)
         group['name'] = name
+    state = snapshot(user, semester, level, event, sections, students, selected_ids)
+    state.update(nonce=uuid4().hex, roster_mode='custom' if custom else 'sections',
+                 group_size=size, method=method)
+    if shared_system:
+        state['shared_system'] = shared_system
     return {'teams': groups, 'students': selected,
-            'preview_token': signing.dumps(snapshot(user, semester, level, event, sections, students), salt=SALT)}
+            'preview_token': signing.dumps(state, salt=SALT, compress=True)}
 
 
 @transaction.atomic
@@ -167,23 +222,43 @@ def create_from_preview(request, data):
         expected = signing.loads(data['preview_token'], salt=SALT, max_age=3600)
     except signing.BadSignature as exc:
         raise ValidationError('This preview expired or is invalid. Generate a fresh preview.') from exc
+    fingerprint = sha256(data['preview_token'].encode()).hexdigest()
+    # A durable audit receipt makes a retry safe even when multiple teams are allowed.
+    list(get_user_model().objects.select_for_update().filter(pk=request.user.pk))
+    receipt = SystemAuditLog.objects.filter(actor=request.user, action='teams.generate',
+        new_values__preview_id=fingerprint).first()
+    if receipt:
+        return list(StudentTeam.objects.filter(pk__in=receipt.new_values['team_ids']))
     # All requests acquire stable student locks before checking availability.
     expected_ids = [row[0] for row in expected.get('students', [])]
     list(get_user_model().objects.select_for_update().filter(pk__in=expected_ids).order_by('pk'))
-    students = roster(semester, level, year, event)
-    actual = snapshot(request.user, semester, level, event, data['sections'], students)
+    students = roster(semester, level, year, event, request.user)
+    if not data.get('include_assigned', False):
+        students = [{**s, 'eligible': s['eligible'] and not s['assigned']} for s in students]
+    custom = data.get('roster_mode', 'sections') == 'custom'
+    actual = snapshot(request.user, semester, level, event, data['sections'], students,
+        data.get('student_ids', []) if custom else None)
+    actual.update(nonce=expected.get('nonce'), roster_mode='custom' if custom else 'sections',
+                  group_size=data['group_size'], method=data['method'])
+    if data.get('shared_system'):
+        actual['shared_system'] = data['shared_system']
     if expected != actual:
         raise ValidationError('The roster or event policy changed. Generate a fresh preview before creating teams.')
     drafts = data['teams']
     ids = [i for team in drafts for i in team['member_ids']]
-    if Counter(ids) != Counter(expected_ids):
-        raise ValidationError('Every previewed student must appear exactly once in this batch.')
+    if event and event.team_membership_policy == 'multiple':
+        if set(ids) != set(expected_ids):
+            raise ValidationError('Include every previewed student and use only students from this roster.')
+    elif Counter(ids) != Counter(expected_ids):
+        raise ValidationError('Every previewed student must appear exactly once in this batch under the selected membership policy.')
     by_id = {s['id']: s for s in students}
     names = [t['name'].strip() for t in drafts]
     if len(names) != len(set(names)):
         raise ValidationError('Each generated team needs a different name.')
     teams = []
     for draft in drafts:
+        if len(draft['member_ids']) != len(set(draft['member_ids'])):
+            raise ValidationError('A student may only appear once within an individual team.')
         if data['method'] != 'reuse' and len(draft['member_ids']) > data['group_size']:
             raise ValidationError('A team exceeds the selected maximum team size.')
         if any(by_id[i]['section'] != draft['section'] for i in draft['member_ids']):
@@ -191,14 +266,30 @@ def create_from_preview(request, data):
         serializer = StudentTeamWriteSerializer(data={
             **draft, 'level': level, 'year_level': year, 'semester_id': semester.pk,
             'project_title': '', 'current_defense_stage': event.event_name if event else None,
-        }, context={'assigned_by': request.user, 'user': request.user})
+        }, context={'assigned_by': request.user, 'user': request.user, 'preserve_section': True,
+                    'formation': True})
         serializer.is_valid(raise_exception=True)
         teams.append(serializer.save(setup_pending=True))
+    if data.get('shared_system'):
+        from repository.section_concepts.services import configure
+        configure(request.user, teams, generation_concept_context(event, data['shared_system']), data['shared_system'])
     log_high_impact_action(category=SystemAuditLog.CATEGORY_STUDENT_TEAMS, action='teams.generate',
         target=teams[0], request=request, strict=True,
         new_values={'team_ids': [t.pk for t in teams], 'semester_id': semester.pk,
-                    'level': level, 'event_name': event.event_name if event else '', 'method': data['method']})
+                    'level': level, 'event_name': event.event_name if event else '', 'method': data['method'],
+                    'preview_id': fingerprint})
     return teams
+
+
+def generation_concept_context(event, data):
+    if event:
+        context = event
+    else:
+        from defense.stages.models import DefenseStage
+        context = DefenseStage.objects.filter(label=data.get('stage_label'), concept_config__enabled=True).first()
+    if not context or not context.concept_config.get('enabled'):
+        raise ValidationError('Select a stage/event with concept selection enabled for the shared system.')
+    return context
 
 
 @transaction.atomic

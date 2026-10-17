@@ -6,6 +6,7 @@ import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/utils/excel_safe_decode.dart';
 import 'package:defensys/utils/import/team_bulk_import_csv.dart';
 import 'package:defensys/utils/import/team_bulk_import_file.dart';
+import 'package:defensys/utils/export/team_roster_excel_generator.dart';
 import 'package:excel/excel.dart' as xl;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:xml/xml.dart';
@@ -56,6 +57,38 @@ List<int> workbookBytes({String prefix = '', bool singleQuotes = false}) {
 }
 
 void main() {
+  test(
+    'instructor template reuses the official format with assigned section and instructor',
+    () {
+      final bytes = generateOfficialTeamRosterExcelBytes(
+        isCapstone: false,
+        assignedSection: 'BSIT-3C',
+        instructorName: 'Mara Reyes',
+      );
+      final result = parseTeamBulkCsv(teamXlsxToCsv(bytes));
+      expect(result.rows, hasLength(16));
+      expect(result.rows.every((r) => r['section'] == 'BSIT-3C'), isTrue);
+      expect(
+        result.rows.every((r) => r['instructor_name'] == 'Mara Reyes'),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'admin template retains the two-section Capstone adviser assignments',
+    () {
+      final result = parseTeamBulkCsv(
+        teamXlsxToCsv(generateOfficialTeamRosterExcelBytes(isCapstone: true)),
+      );
+      expect(result.rows, hasLength(16));
+      expect(result.rows.map((r) => r['section']).toSet(), {
+        'BSIT-4A',
+        'BSIT-4B',
+      });
+      expect(result.rows.map((r) => r['adviser_name']).toSet(), hasLength(4));
+    },
+  );
   for (final prefix in ['', '/xl/', 'xl/']) {
     for (final singleQuotes in [false, true]) {
       test('imports $prefix relationships, single quotes: $singleQuotes', () {

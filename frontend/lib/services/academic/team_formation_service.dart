@@ -15,6 +15,29 @@ class TeamFormationService {
   final AuthenticatedHttpClient client;
   String get _base => ApiConfig.teamsUrl;
 
+  Future<Map<String, dynamic>> context() async =>
+      _decode(await client.get(Uri.parse('$_base/generation/context/')));
+
+  Future<Map<String, dynamic>> importPreview(
+    Map<String, dynamic> data, {
+    bool roster = false,
+  }) async => _decode(
+    await client.post(
+      Uri.parse('$_base/generation/${roster ? 'roster' : 'import'}/'),
+      body: jsonEncode(data),
+    ),
+  );
+
+  Future<Map<String, dynamic>> importCommit(
+    String token, {
+    bool roster = false,
+  }) async => _decode(
+    await client.post(
+      Uri.parse('$_base/generation/${roster ? 'roster' : 'import'}/create/'),
+      body: jsonEncode({'preview_token': token}),
+    ),
+  );
+
   Future<Map<String, dynamic>> options(String level, String? event) async =>
       _decode(
         await client.get(
@@ -26,6 +49,20 @@ class TeamFormationService {
           ),
         ),
       );
+
+  Future<Map<String, dynamic>> rosterOptions(
+    String level,
+    String? event,
+  ) async => _decode(
+    await client.get(
+      Uri.parse('$_base/roster-options/').replace(
+        queryParameters: {
+          'level': level,
+          if (event != null) 'event_name': event,
+        },
+      ),
+    ),
+  );
 
   Future<Map<String, dynamic>> preview(Map<String, dynamic> data) async =>
       _decode(

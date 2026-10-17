@@ -66,6 +66,9 @@ def check_stage_locked(stage, semester=None):
     config = stage.grading_configs.filter(semester=semester).first()
     if config and config.is_officially_complete:
         return True, 'This stage is officially complete for the active semester.'
+    from repository.section_concepts.models import SectionConceptProject
+    if SectionConceptProject.objects.filter(defense_stage=stage, section__semester=semester).exists():
+        return True, 'A section has already started shared system concepts for this stage.'
 
     from defense.scheduler.models import DefenseSchedule
     from grading.grades.models import TeamGrade

@@ -184,15 +184,62 @@ void main() {
                   'Awaiting files',
                   WorkflowStatusTone.neutral,
                 ),
-                (_stage(), 'Needs review', WorkflowStatusTone.attention),
+                (_stage(), '1 needs review', WorkflowStatusTone.active),
                 (
-                  _stage(accepted: true),
-                  'Awaiting endorsement',
-                  WorkflowStatusTone.attention,
+                  {
+                    ..._stage(accepted: true),
+                    'assessment_progress': {
+                      'display_status': 'awaiting_completion',
+                    },
+                    'archive_complete': false,
+                    'post': [
+                      {
+                        'id': 'FINAL',
+                        'label': 'Final paper',
+                        'type': 'post',
+                        'required': true,
+                        'uploaded': false,
+                      },
+                    ],
+                  },
+                  'Awaiting post-defense',
+                  WorkflowStatusTone.neutral,
                 ),
                 (
                   {
-                    ..._stage(),
+                    ..._stage(accepted: true),
+                    'assessment_progress': {
+                      'display_status': 'awaiting_completion',
+                    },
+                    'post': [
+                      {
+                        'id': 'FINAL',
+                        'label': 'Final paper',
+                        'type': 'post',
+                        'uploaded': true,
+                        'locked': true,
+                        'submission': {'status': 'pending'},
+                      },
+                      {
+                        'id': 'CODE',
+                        'label': 'Source code',
+                        'type': 'post',
+                        'uploaded': true,
+                        'submission': {'status': 'pending_review'},
+                      },
+                    ],
+                  },
+                  '2 needs review',
+                  WorkflowStatusTone.active,
+                ),
+                (
+                  _stage(accepted: true),
+                  'Awaiting endorsement',
+                  WorkflowStatusTone.active,
+                ),
+                (
+                  {
+                    ..._stage(accepted: true),
                     'assessment_progress': {
                       'display_status': 'scheduled',
                       'is_completed': false,
@@ -203,7 +250,7 @@ void main() {
                 ),
                 (
                   {
-                    ..._stage(),
+                    ..._stage(accepted: true),
                     'assessment_progress': {
                       'display_status': 'failed',
                       'is_completed': false,
@@ -214,7 +261,7 @@ void main() {
                 ),
                 (
                   {
-                    ..._stage(),
+                    ..._stage(accepted: true),
                     'assessment_progress': {
                       'display_status': 'completed',
                       'is_completed': true,

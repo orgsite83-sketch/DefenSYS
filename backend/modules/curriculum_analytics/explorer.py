@@ -487,8 +487,9 @@ class CurriculumExplorer:
 
     def _classify_documents(self, project, cache_key, docs, readable, related):
         usable = [d for d in related if d['classification']['status'] == 'estimated' and
-                  d['classification']['confidence_score'] >= getattr(settings, 'CURRICULUM_ML_MIN_SCORE', MIN_MODEL_SCORE)]
-        candidates = sorted(related, key=lambda d: -d['classification']['confidence_score'])
+                  (d['classification'].get('decision_method') == 'concept_functions' or
+                   (d['classification']['confidence_score'] or 0) >= getattr(settings, 'CURRICULUM_ML_MIN_SCORE', MIN_MODEL_SCORE))]
+        candidates = sorted(related, key=lambda d: -(d['classification']['confidence_score'] or 0))
         domain_docs = [d for d in related if d['classification']['domain'] != 'Unresolved domain']
         domain_source = max(domain_docs, key=lambda d: len(d['classification']['domain_evidence']), default=None)
         common = {'model_version': MODEL_VERSION, 'review_status': 'Estimated; not faculty-reviewed',
@@ -520,10 +521,11 @@ class CurriculumExplorer:
             return result
         # Duplicate files cannot outvote a project: use one primary document.
         primary = max(usable, key=lambda d: (bool(re.search(r'proposal|manuscript|final paper|concept', d['label'], re.I)),
-                                            d['uploaded_at'], d['classification']['confidence_score']))
+                                            d['uploaded_at'], d['classification']['confidence_score'] or 0))
         prediction = primary['classification']
         result = {**common, 'label': prediction['predicted_category'],
                   'status': 'estimated', 'reason_code': 'supported', 'reason': prediction['reason'],
+                  'decision_method': prediction.get('decision_method', 'naive_bayes'),
                   'model_score': prediction['confidence_score'], 'margin': prediction['margin'],
                   **_source_reference(primary),
                   'classified_at': prediction['classified_at'], 'training_source': prediction['training_source'],
@@ -667,7 +669,7 @@ class CurriculumExplorer:
                 'methodology': {'performance': 'Recorded rubric scores normalized to their recorded maximum. Missing scores are excluded; evaluators are consolidated per assessed subject.',
                                 'annual': 'Latest published assessment per team in each academic year. In-progress years and different assessment stages are not directly comparable.',
                                 'projects': 'One project per team in the selected period, using its latest project version. Uploads and assessment attempts do not add projects.',
-                                'classification': 'Section-aware Naive Bayes estimates from readable project documents. References, tentative technologies and administrative attachments are excluded. Development examples are not faculty-reviewed; model scores are not measured accuracy.'}}
+                                'classification': 'Document-based estimates use section-aware Naive Bayes or multiple proposed information-system functions when a concept paper leaves its platform undecided. References, tentative technologies and administrative attachments are excluded. Development examples are not faculty-reviewed; model scores are not measured accuracy.'}}
 
     def detail(self, project_id):
         project = next((p for p in self.selected if p['key'] == project_id), None)

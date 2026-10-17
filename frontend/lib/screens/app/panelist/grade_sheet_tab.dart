@@ -3,6 +3,7 @@ import 'package:defensys/utils/rubric_scoring.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:defensys/widgets/repository/concept_workspace.dart';
+import 'package:defensys/widgets/repository/section_concept_workspace.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'panelist_models.dart';
@@ -78,6 +79,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   DateTime? _revisionDeadline;
   bool _redefenseVerificationRequired = false;
   List<Map<String, dynamic>> _conceptDecisions = [];
+  int? _sectionProjectId;
   bool _isSubmittingVerdict = false;
   int _selectedStudentIndex = 0;
   String _identity(TeamData team) => json.encode([
@@ -172,6 +174,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       _selectedVerdict = team.hasVerdict ? team.verdict : null;
       _redefenseVerificationRequired = team.redefenseVerificationRequired;
       final conceptWorkflow = (team.workflowGrade?['workflow'] as Map? ?? {})['concept_workflow'] as Map?;
+      _sectionProjectId = conceptWorkflow?['section_project_id'] as int?;
       _conceptDecisions = ((conceptWorkflow?['hearing_concepts'] ?? conceptWorkflow?['concepts']) as List? ?? []).whereType<Map>().map((c) => Map<String, dynamic>.from(c)).toList();
       _revisionDeadline = team.revisionDeadline != null
           ? DateTime.tryParse(team.revisionDeadline!)
@@ -1707,6 +1710,14 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
               // Radio Options
               if (_conceptDecisions.isNotEmpty) ...[
+                if (_sectionProjectId != null)
+                  TextButton.icon(icon: const Icon(Icons.account_tree_outlined),
+                    label: const Text('Open section system proposals'),
+                    onPressed: () async {
+                      await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) =>
+                        SectionConceptWorkspace(projectId: _sectionProjectId!)));
+                      await widget.onRefresh?.call();
+                    }),
                 ConceptVerdictFields(concepts: _conceptDecisions, enabled: canEditVerdict,
                   onChanged: (value) => setState(() => _conceptDecisions = value)),
                 const SizedBox(height: 14),

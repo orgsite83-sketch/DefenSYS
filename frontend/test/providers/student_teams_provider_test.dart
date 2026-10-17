@@ -45,50 +45,108 @@ void main() {
     expect(next.error, isNull);
   });
 
-  test('stale preview failure cannot replace a newer successful validation', () async {
-    final responses = [Completer<http.Response>(), Completer<http.Response>()];
-    final bothStarted = Completer<void>();
-    var count = 0;
-    setApiHttpClientForTesting(MockClient((request) {
-      final index = count++;
-      if (count == 2) bothStarted.complete();
-      return responses[index].future;
-    }));
-    final container = ProviderContainer(overrides: authTestOverrides());
-    addTearDown(container.dispose);
-    final notifier = container.read(studentTeamsProvider.notifier);
-    final older = notifier.bulkImportPreview([{'team_name': 'Old'}]);
-    final newer = notifier.bulkImportPreview([{'team_name': 'New'}]);
-    await bothStarted.future;
-    responses[1].complete(http.Response('{"rows":[],"summary":{"ready":0}}', 200));
-    expect(await newer, isNotNull);
-    responses[0].complete(http.Response('{"detail":"Old validation error"}', 400));
-    expect(await older, isNull);
-    expect(container.read(studentTeamsProvider).error, isNull);
-  });
+  test(
+    'PIT import keeps event context when the directory has no explicit level',
+    () async {
+      http.Request? previewRequest;
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          if (request.method == 'POST') previewRequest = request;
+          return http.Response('{"teams":[],"rows":[],"summary":{}}', 200);
+        }),
+      );
+      final container = ProviderContainer(overrides: authTestOverrides());
+      addTearDown(container.dispose);
+      final notifier = container.read(studentTeamsProvider.notifier);
+      await notifier.fetchTeams(level: '', eventName: 'PIT Design');
+      await notifier.bulkImportPreview([
+        {'team_name': 'Prepared roster'},
+      ]);
+      expect(jsonDecode(previewRequest!.body)['event_name'], 'PIT Design');
+    },
+  );
 
-  test('section choices ignore directory search without changing its filters', () async {
-    final requests = <http.Request>[];
-    setApiHttpClientForTesting(MockClient((request) async {
-      requests.add(request);
-      return http.Response(jsonEncode({
-        'teams': [{'id': 5, 'section': 'BSIT-2A', 'is_editable': true}],
-      }), 200);
-    }));
-    final container = ProviderContainer(overrides: authTestOverrides());
-    addTearDown(container.dispose);
-    final notifier = container.read(studentTeamsProvider.notifier);
-    await notifier.fetchTeams(search: 'Team One', level: 'PIT', status: 'Pending', eventName: 'Demo');
-    final directory = container.read(studentTeamsProvider);
-    final choices = await notifier.fetchSectionTeams(
-      level: 'PIT', scope: 'active', yearLevel: '2nd Year', section: 'BSIT-2A',
-    );
-    expect(choices.single['section'], 'BSIT-2A');
-    expect(requests.last.url.queryParameters, {
-      'level': 'PIT', 'scope': 'active', 'year_level': '2nd Year', 'section': 'BSIT-2A',
-    });
-    expect(container.read(studentTeamsProvider), same(directory));
-  });
+  test(
+    'stale preview failure cannot replace a newer successful validation',
+    () async {
+      final responses = [
+        Completer<http.Response>(),
+        Completer<http.Response>(),
+      ];
+      final bothStarted = Completer<void>();
+      var count = 0;
+      setApiHttpClientForTesting(
+        MockClient((request) {
+          final index = count++;
+          if (count == 2) bothStarted.complete();
+          return responses[index].future;
+        }),
+      );
+      final container = ProviderContainer(overrides: authTestOverrides());
+      addTearDown(container.dispose);
+      final notifier = container.read(studentTeamsProvider.notifier);
+      final older = notifier.bulkImportPreview([
+        {'team_name': 'Old'},
+      ]);
+      final newer = notifier.bulkImportPreview([
+        {'team_name': 'New'},
+      ]);
+      await bothStarted.future;
+      responses[1].complete(
+        http.Response('{"rows":[],"summary":{"ready":0}}', 200),
+      );
+      expect(await newer, isNotNull);
+      responses[0].complete(
+        http.Response('{"detail":"Old validation error"}', 400),
+      );
+      expect(await older, isNull);
+      expect(container.read(studentTeamsProvider).error, isNull);
+    },
+  );
+
+  test(
+    'section choices ignore directory search without changing its filters',
+    () async {
+      final requests = <http.Request>[];
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          requests.add(request);
+          return http.Response(
+            jsonEncode({
+              'teams': [
+                {'id': 5, 'section': 'BSIT-2A', 'is_editable': true},
+              ],
+            }),
+            200,
+          );
+        }),
+      );
+      final container = ProviderContainer(overrides: authTestOverrides());
+      addTearDown(container.dispose);
+      final notifier = container.read(studentTeamsProvider.notifier);
+      await notifier.fetchTeams(
+        search: 'Team One',
+        level: 'PIT',
+        status: 'Pending',
+        eventName: 'Demo',
+      );
+      final directory = container.read(studentTeamsProvider);
+      final choices = await notifier.fetchSectionTeams(
+        level: 'PIT',
+        scope: 'active',
+        yearLevel: '2nd Year',
+        section: 'BSIT-2A',
+      );
+      expect(choices.single['section'], 'BSIT-2A');
+      expect(requests.last.url.queryParameters, {
+        'level': 'PIT',
+        'scope': 'active',
+        'year_level': '2nd Year',
+        'section': 'BSIT-2A',
+      });
+      expect(container.read(studentTeamsProvider), same(directory));
+    },
+  );
 
   test(
     'section save refreshes renamed filter and notifies related screens',

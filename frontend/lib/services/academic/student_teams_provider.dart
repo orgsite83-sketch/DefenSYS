@@ -404,7 +404,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
         
         body: jsonEncode({
           'teams': rows,
-            if (state.eventName != null && state.level.toUpperCase().contains('PIT')) 'event_name': state.eventName,
+            if (state.eventName != null && !state.level.toUpperCase().contains('CAPSTONE')) 'event_name': state.eventName,
           'adviser_filter': adviserFilter,
           if (csvColumns != null) 'csv_columns': csvColumns,
           if (section != null) 'section': section,
@@ -452,7 +452,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
         
         body: jsonEncode({
           'teams': rows,
-            if (state.eventName != null && state.level.toUpperCase().contains('PIT')) 'event_name': state.eventName,
+            if (state.eventName != null && !state.level.toUpperCase().contains('CAPSTONE')) 'event_name': state.eventName,
           'adviser_filter': adviserFilter,
           if (csvColumns != null) 'csv_columns': csvColumns,
           if (section != null) 'section': section,

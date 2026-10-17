@@ -19,6 +19,18 @@ enum TeamTriageFilter {
 }
 
 class DeliverablesTriageHelper {
+  /// Dashboard summaries follow the current stage, independent of a historical
+  /// stage selected in the deliverables workspace.
+  static Map<String, dynamic>? resolveCurrentStage(Map<String, dynamic> team) {
+    final current = team['current_stage']?.toString();
+    for (final stage in (team['stages'] as List? ?? []).whereType<Map>()) {
+      if (current != null && stage['stage_label']?.toString() == current) {
+        return Map<String, dynamic>.from(stage);
+      }
+    }
+    return resolveActiveStage(team);
+  }
+
   static Map<String, dynamic>? resolveActiveStage(Map<String, dynamic> team) {
     final stages = (team['stages'] as List?)
             ?.whereType<Map>()
@@ -51,7 +63,7 @@ class DeliverablesTriageHelper {
 
   static int pendingReviewCount(Map<String, dynamic> team) {
     final stage = resolveActiveStage(team);
-    return stage == null ? 0 : items(stage).where(isPending).length;
+    return stage == null ? 0 : TeamWorkflowStatus.pendingReviewCount(stage);
   }
 
   static bool hasPendingReview(Map<String, dynamic> team) => pendingReviewCount(team) > 0;

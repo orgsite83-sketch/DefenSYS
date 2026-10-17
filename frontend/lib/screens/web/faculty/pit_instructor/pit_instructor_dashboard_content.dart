@@ -375,7 +375,7 @@ class _PitInstructorDashboardContentState
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        TeamRequirementBadge(team: details[_id(team['id'])]),
+                        TeamRequirementBadge(team: details[_id(team['id'])], scope: 'pit'),
                         FacultyTeamMenu(
                           teamName: team['name']?.toString() ?? 'Team',
                           actions: [

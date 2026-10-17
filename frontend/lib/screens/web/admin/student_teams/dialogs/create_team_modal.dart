@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:defensys/services/student_teams_provider.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
-import 'generate_teams_dialog.dart';
 import 'package:defensys/services/academic/team_formation_service.dart';
 
 int? _asInt(dynamic value) {
@@ -30,16 +29,6 @@ Future<void> showCreateTeamModal({
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.groups_outlined),
-              title: const Text('Generate from students'),
-              subtitle: const Text(
-                'Randomize, group alphabetically, or reuse PIT team rosters by section.',
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.pop(context, 'generate'),
-            ),
-            const Divider(),
             ListTile(
               leading: const Icon(Icons.person_add_alt),
               title: const Text('Create manually'),
@@ -83,44 +72,6 @@ Future<void> showCreateTeamModal({
       isCapstoneAdmin: isCapstoneAdmin,
       isPitLeadManager: isPitLeadManager,
       pitLeadYear: pitLeadYear,
-    );
-  } else if (choice == 'generate') {
-    final pit = isPitLeadManager || state.level.toUpperCase().contains('PIT');
-    const supported = [
-      '1st Year PIT',
-      '2nd Year PIT',
-      '3rd Year PIT',
-      '3rd Year Capstone',
-      '4th Year Capstone',
-    ];
-    final levels = supported
-        .where(
-          (l) =>
-              l.contains(pit ? 'PIT' : 'Capstone') &&
-              (!isPitLeadManager || l == '$pitLeadYear PIT'),
-        )
-        .toList();
-    if (levels.isEmpty) return;
-    final defaultYear =
-        state.yearLevel ??
-        (pit
-            ? pitLeadYear
-            : (state.activeSemester?['label']?.toString().contains('1st') ==
-                      true
-                  ? '4th Year'
-                  : '3rd Year'));
-    final preferred = '$defaultYear ${pit ? 'PIT' : 'Capstone'}';
-    await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => GenerateTeamsDialog(
-        levels: levels,
-        initialLevel: levels.contains(state.level)
-            ? state.level
-            : (levels.contains(preferred) ? preferred : levels.first),
-        events: state.pitEvents,
-        initialSection: state.section,
-      ),
     );
   }
 }
@@ -175,15 +126,23 @@ Future<void> showManualCreateTeamModal({
 
   if (isPitView && selectedPitEvent != null) {
     try {
-      final roster = await ref.read(teamFormationServiceProvider).options(level, selectedPitEvent);
-      availableStudents = (roster['students'] as List).where((s) => s['eligible'] == true)
-          .map((s) => Map<String, dynamic>.from(s as Map)).toList();
+      final roster = await ref
+          .read(teamFormationServiceProvider)
+          .rosterOptions(level, selectedPitEvent);
+      availableStudents = (roster['students'] as List)
+          .where((s) => s['eligible'] == true)
+          .map((s) => Map<String, dynamic>.from(s as Map))
+          .toList();
     } catch (e) {
       availableStudents = [];
       rosterError = e.toString().replaceFirst('Exception: ', '');
     }
   }
-  if (!context.mounted) { name.dispose(); projectTitle.dispose(); return; }
+  if (!context.mounted) {
+    name.dispose();
+    projectTitle.dispose();
+    return;
+  }
 
   final saved = await showDialog<bool>(
     context: context,
@@ -201,6 +160,7 @@ Future<void> showManualCreateTeamModal({
                   children: [
                     TextField(
                       controller: name,
+                      onChanged: (_) => setDialogState(() {}),
                       decoration: const InputDecoration(labelText: 'Team Name'),
                     ),
                     const SizedBox(height: 12),
@@ -316,7 +276,7 @@ Future<void> showManualCreateTeamModal({
                                   try {
                                     final roster = await ref
                                         .read(teamFormationServiceProvider)
-                                        .options(level, value);
+                                        .rosterOptions(level, value);
                                     if (!context.mounted) return;
                                     setDialogState(
                                       () => availableStudents =

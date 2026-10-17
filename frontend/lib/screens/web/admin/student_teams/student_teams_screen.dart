@@ -268,14 +268,13 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       return;
     }
     if (!_canManageTeams(state) || state.isSaving) return;
-    showCreateTeamModal(
+    showManualCreateTeamModal(
       context: context,
       ref: ref,
       state: state,
       isCapstoneAdmin: _isCapstoneAdmin,
       isPitLeadManager: _isPitLeadManager,
       pitLeadYear: _pitLeadYear,
-      onBulkImport: () => _onBulkImportPressed(state),
     );
   }
 
@@ -944,6 +943,8 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
               isPitInstructor: _isPitInstructor,
               canTapActions: _canTapTeamActions(displayState),
               onBulkImport: () => _onBulkImportPressed(displayState),
+              onDownloadTemplate: _downloadCsvTemplate,
+              onRefresh: _fetchTeamsForCurrentRole,
               onCreateTeam: () => _onCreateTeamPressed(displayState),
             )]),
           ),

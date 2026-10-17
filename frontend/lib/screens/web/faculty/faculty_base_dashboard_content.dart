@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../admin/widgets/defensys_admin_shell.dart';
 import '../../../theme/defensys_tokens.dart';
+import '../../../widgets/repository/section_concept_workspace.dart';
 
 class FacultyBaseDashboardContent extends StatelessWidget {
   final Map<String, dynamic>? data;
@@ -47,6 +48,7 @@ class FacultyBaseDashboardContent extends StatelessWidget {
         const SizedBox(height: 24),
 
         // Row 1: Readiness & Status Deck
+        const SectionConceptTaskNotice(),
         if (isWide)
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,

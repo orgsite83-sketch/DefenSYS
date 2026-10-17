@@ -182,6 +182,10 @@ class StudentTeamSerializer(serializers.ModelSerializer):
     def get_system_name(self, obj):
         if not obj.section:
             return None
+        from repository.section_concepts.services import team_display
+        shared = team_display(obj)
+        if shared:
+            return shared['system_name']
         assignment = SectionAssignment.objects.filter(
             section=obj.section,
             semester=obj.semester
@@ -191,6 +195,10 @@ class StudentTeamSerializer(serializers.ModelSerializer):
     def get_project_manager_name(self, obj):
         if not obj.section:
             return None
+        from repository.section_concepts.services import team_display
+        shared = team_display(obj)
+        if shared:
+            return shared['project_manager_name']
         assignment = SectionAssignment.objects.filter(
             section=obj.section,
             semester=obj.semester
@@ -369,7 +377,13 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         user = self.context.get('assigned_by') or self.context.get('user')
         assert_active_semester_for_create(user, semester)
         if self.instance is not None:
-            assert_team_writable(user, self.instance)
+            if self.context.get('formation'):
+                from .formation_access import require_formation_scope
+                if self.instance.semester_id != semester.pk:
+                    raise serializers.ValidationError('Historical teams cannot be changed by an import.')
+                require_formation_scope(user, semester, self.instance.level, self.instance.section)
+            else:
+                assert_team_writable(user, self.instance)
             if not attrs.get('level'):
                 attrs['level'] = self.instance.level
             if not attrs.get('year_level'):
@@ -386,7 +400,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
                 if year_issues:
                     raise serializers.ValidationError({'member_ids': year_issues})
                 attrs['year_level'] = inferred
-            if not attrs.get('section'):
+            if not attrs.get('section') and not self.context.get('preserve_section'):
                 section, section_issues = infer_section_from_members(
                     member_ids,
                     semester,
@@ -410,15 +424,13 @@ class StudentTeamWriteSerializer(serializers.Serializer):
                     'member_ids': f'Students are enrolled in {inferred} but your PIT scope is {pit_year}.'
                 })
             attrs['year_level'] = inferred
-            section, section_issues = infer_section_from_members(
-                member_ids,
-                semester,
-                required=False,
-            )
-            if section_issues:
-                raise serializers.ValidationError({'member_ids': section_issues})
-            if section:
-                attrs['section'] = section
+            if not self.context.get('preserve_section'):
+                section, section_issues = infer_section_from_members(
+                    member_ids, semester, required=False)
+                if section_issues:
+                    raise serializers.ValidationError({'member_ids': section_issues})
+                if section:
+                    attrs['section'] = section
 
         if user and (user_is_admin(user) or user_is_pit_lead_only(user)):
             if not (self.context.get('section_import') and attrs.get('level')):
@@ -442,6 +454,11 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             if import_section:
                 attrs['section'] = import_section
         attrs['section'] = ' '.join((attrs.get('section') or '').strip().split())
+        if self.context.get('formation'):
+            from .formation_access import check_member_sections, is_manager
+            if not is_manager(user):
+                check_member_sections(user, semester, attrs['level'], attrs['section'], member_ids,
+                                      importing=self.context.get('roster_import', False))
 
         if user_is_pit_lead_only(user) and 'Capstone' in attrs['level']:
             raise serializers.ValidationError({'level': 'PIT Leads can only manage PIT teams.'})
@@ -484,10 +501,10 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         reason = validated_data.pop('adviser_change_reason', '')
         team = StudentTeam.objects.create(
             name=validated_data['name'],
-            project_title=(validated_data.get('project_title', '') if validated_data.get('setup_pending')
+            project_title=(validated_data.get('project_title', '') if (validated_data.get('setup_pending') or validated_data.get('project_pending'))
                            else validated_data.get('project_title') or validated_data['name']),
             setup_pending=validated_data.get('setup_pending', False),
-            project_pending=validated_data.get('setup_pending', False),
+            project_pending=validated_data.get('project_pending', validated_data.get('setup_pending', False)),
             concept_assignment=validated_data.get('concept_assignment', {}),
             level=validated_data['level'],
             year_level=validated_data['year_level'],
@@ -526,7 +543,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         reason = validated_data.pop('adviser_change_reason', '')
         previous_adviser_id = instance.adviser_id
         instance.name = validated_data['name']
-        instance.project_title = validated_data.get('project_title') or validated_data['name']
+        instance.project_title = validated_data.get('project_title') or ('' if instance.project_pending else validated_data['name'])
         if validated_data.get('project_title'):
             instance.project_pending = False
         instance.level = validated_data['level']
@@ -625,7 +642,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         TeamMembership.objects.bulk_create(memberships)
 
         # Update the student academic records' section to match the team's section
-        if team.section:
+        if team.section and not self.context.get('preserve_academic_sections'):
             StudentAcademicRecord.objects.filter(
                 student_id__in=member_ids,
                 semester=team.semester,
@@ -671,6 +688,8 @@ class BulkTeamRowSerializer(serializers.Serializer):
                 except ValueError as exc:
                     raise serializers.ValidationError({'level': str(exc)}) from exc
                 attrs['year_level'] = team_level_year(attrs['level'])
+        if attrs.get('current_defense_stage') and 'PIT' not in attrs.get('level', '').upper():
+            raise serializers.ValidationError({'current_defense_stage': 'Event imports are only available for PIT teams.'})
         return attrs
 
 

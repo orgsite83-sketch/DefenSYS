@@ -3,6 +3,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
+import 'package:defensys/theme/defensys_button_styles.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 
 class StudentTeamsListToolbar extends StatelessWidget {
@@ -65,21 +66,16 @@ Widget buildSecondaryButton({
   required VoidCallback? onTap,
   BuildContext? context,
 }) {
-  final isDark = context != null && Theme.of(context).brightness == Brightness.dark;
-  return SizedBox(
-    height: 42,
-    child: OutlinedButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon, size: 16),
-      label: Text(label),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark,
-        side: BorderSide(color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0)),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        padding: const EdgeInsets.symmetric(horizontal: 18),
-        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-      ),
-    ),
+  return Builder(
+    builder: (ctx) {
+      final effectiveContext = context ?? ctx;
+      return OutlinedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon),
+        label: Text(label),
+        style: DefensysButtonStyles.secondary(effectiveContext),
+      );
+    },
   );
 }
 
@@ -87,22 +83,18 @@ Widget buildPrimaryButton({
   required IconData icon,
   required String label,
   required VoidCallback? onTap,
+  BuildContext? context,
 }) {
-  return SizedBox(
-    height: 42,
-    child: ElevatedButton.icon(
-      onPressed: onTap,
-      icon: Icon(icon, size: 17),
-      label: Text(label),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: DefensysUi.primaryMaroon,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-      ),
-    ),
+  return Builder(
+    builder: (ctx) {
+      final effectiveContext = context ?? ctx;
+      return ElevatedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon),
+        label: Text(label),
+        style: DefensysButtonStyles.primary(effectiveContext),
+      );
+    },
   );
 }
 
@@ -112,8 +104,9 @@ class StudentTeamsHeaderActions extends StatelessWidget {
     required this.isPitInstructor,
     required this.canTapActions,
     this.onDownloadTemplate,
-    required this.onBulkImport,
+    this.onBulkImport,
     required this.onCreateTeam,
+    this.onRefresh,
   });
 
   final bool isPitInstructor;
@@ -121,6 +114,7 @@ class StudentTeamsHeaderActions extends StatelessWidget {
   final VoidCallback? onDownloadTemplate;
   final VoidCallback? onBulkImport;
   final VoidCallback? onCreateTeam;
+  final VoidCallback? onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -131,18 +125,31 @@ class StudentTeamsHeaderActions extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        buildSecondaryButton(
-          icon: Icons.output_rounded,
-          label: 'Bulk Import',
-          onTap: canTapActions ? onBulkImport : null,
-          context: context,
-        ),
-        const SizedBox(width: 14),
-        buildPrimaryButton(
-          icon: Icons.add_rounded,
-          label: 'Create New Team',
-          onTap: canTapActions ? onCreateTeam : null,
-        ),
+        if (onCreateTeam != null) ...[
+          OutlinedButton.icon(
+            onPressed: canTapActions ? onCreateTeam : null,
+            style: DefensysButtonStyles.secondary(context),
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('Create New Team'),
+          ),
+          const SizedBox(width: 10),
+        ],
+        if (onDownloadTemplate != null) ...[
+          OutlinedButton.icon(
+            onPressed: canTapActions ? onDownloadTemplate : null,
+            style: DefensysButtonStyles.secondary(context),
+            icon: const Icon(Icons.download_outlined),
+            label: const Text('Download template'),
+          ),
+          const SizedBox(width: 10),
+        ],
+        if (onBulkImport != null)
+          ElevatedButton.icon(
+            onPressed: canTapActions ? onBulkImport : null,
+            style: DefensysButtonStyles.primary(context),
+            icon: const Icon(Icons.upload_file_outlined),
+            label: const Text('Bulk Import'),
+          ),
       ],
     );
   }
@@ -175,16 +182,24 @@ class StudentTeamsSearchField extends StatelessWidget {
           color: isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark,
         ),
         decoration: InputDecoration(
-          prefixIcon: const Icon(Icons.search_rounded, color: DefensysUi.steelGrey, size: 19),
+          prefixIcon: const Icon(
+            Icons.search_rounded,
+            color: DefensysUi.steelGrey,
+            size: 19,
+          ),
           hintText: isPitContext
               ? 'Search by project title or leader...'
               : 'Search by project title, leader, or adviser...',
           hintStyle: TextStyle(
-            color: isDark ? DefensysTokens.textSecondaryDark : DefensysUi.steelGrey,
+            color: isDark
+                ? DefensysTokens.textSecondaryDark
+                : DefensysUi.steelGrey,
             fontSize: 13,
           ),
           filled: true,
-          fillColor: isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6),
+          fillColor: isDark
+              ? DefensysTokens.mistInputFill
+              : const Color(0xFFF3F4F6),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 14,
             vertical: 10,
@@ -192,13 +207,17 @@ class StudentTeamsSearchField extends StatelessWidget {
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide(
-              color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB),
+              color: isDark
+                  ? DefensysTokens.mistBorder
+                  : const Color(0xFFD1D5DB),
             ),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8),
             borderSide: BorderSide(
-              color: isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB),
+              color: isDark
+                  ? DefensysTokens.mistBorder
+                  : const Color(0xFFD1D5DB),
             ),
           ),
           focusedBorder: OutlineInputBorder(
@@ -254,10 +273,8 @@ class StudentTeamsLevelFilter extends StatelessWidget {
               child: Text(entry.value, style: const TextStyle(fontSize: 12.5)),
             ),
           ),
-          selectedOptionBuilder: (_, value) => Text(
-            levels[value]!,
-            style: const TextStyle(fontSize: 12.5),
-          ),
+          selectedOptionBuilder: (_, value) =>
+              Text(levels[value]!, style: const TextStyle(fontSize: 12.5)),
           onChanged: onLevelChanged,
         ),
       ),
@@ -283,8 +300,12 @@ class PitTeamScopeToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final fillBg = isDark ? DefensysTokens.mistInputFill : Colors.white;
-    final borderColor = isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB);
-    final textPrimary = isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark;
+    final borderColor = isDark
+        ? DefensysTokens.mistBorder
+        : const Color(0xFFD1D5DB);
+    final textPrimary = isDark
+        ? DefensysTokens.textPrimaryDark
+        : DefensysUi.textDark;
 
     return Row(
       children: [
@@ -327,9 +348,14 @@ class PitTeamScopeToggle extends StatelessWidget {
             style: OutlinedButton.styleFrom(
               foregroundColor: textPrimary,
               side: BorderSide(color: borderColor),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(7),
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 18),
-              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+              textStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ),
@@ -354,8 +380,12 @@ class PitYearLevelDropdownFilter extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final fillBg = isDark ? DefensysTokens.mistInputFill : Colors.white;
-    final borderColor = isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB);
-    final textPrimary = isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark;
+    final borderColor = isDark
+        ? DefensysTokens.mistBorder
+        : const Color(0xFFD1D5DB);
+    final textPrimary = isDark
+        ? DefensysTokens.textPrimaryDark
+        : DefensysUi.textDark;
 
     const items = [
       DropdownMenuItem<String?>(value: null, child: Text('All Year Levels')),
@@ -413,8 +443,12 @@ class PitEventDropdownFilter extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final fillBg = isDark ? DefensysTokens.mistInputFill : Colors.white;
-    final borderColor = isDark ? DefensysTokens.mistBorder : const Color(0xFFD1D5DB);
-    final textPrimary = isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark;
+    final borderColor = isDark
+        ? DefensysTokens.mistBorder
+        : const Color(0xFFD1D5DB);
+    final textPrimary = isDark
+        ? DefensysTokens.textPrimaryDark
+        : DefensysUi.textDark;
 
     final filtered = pitEvents.where((e) {
       if (selectedYearLevel == null || selectedYearLevel!.isEmpty) return true;
@@ -437,7 +471,9 @@ class PitEventDropdownFilter extends StatelessWidget {
     ];
 
     final values = menuItems.map((m) => m.value).toSet();
-    final safeValue = values.contains(currentEventName) ? currentEventName : null;
+    final safeValue = values.contains(currentEventName)
+        ? currentEventName
+        : null;
 
     return Container(
       width: 220,

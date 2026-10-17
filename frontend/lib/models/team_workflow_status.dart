@@ -13,7 +13,7 @@ class TeamWorkflowStatus {
     'awaiting_files' =>
       'The team needs to upload the required before-endorsement files.',
     'needs_review' =>
-      'Review the submitted files, then accept or reject each submission.',
+      'Review the submitted pre- and post-defense files, then accept or request corrections for each submission.',
     'changes_requested' =>
       'The team needs to submit the requested file corrections.',
     'awaiting_endorsement' =>
@@ -33,16 +33,19 @@ class TeamWorkflowStatus {
     'awaiting_completion' =>
       'Grading is ready. Waiting for authorized finalization.',
     'pending_post_defense' =>
-      'Review the required post-defense files and remaining documentation.',
+      'The team needs to submit or correct the required post-defense files and complete any remaining documentation.',
     'revisions_pending' =>
       'Complete and clear the revisions required by the defense decision.',
     'redefense_required' =>
       'Review re-defense requirements and authorization before scheduling another attempt.',
     'completed' =>
       'Required grading, documentation and file clearances are complete for this event or stage.',
-    'replacement_concepts_needed' => 'Submit replacement concepts using the panel feedback.',
-    'concept_review_pending' => 'Review the current concept papers and resolve any requested corrections.',
-    'ready_to_schedule_redefense' => 'The administrator can schedule the next defense attempt.',
+    'replacement_concepts_needed' =>
+      'Submit replacement concepts using the panel feedback.',
+    'concept_review_pending' =>
+      'Review the current concept papers and resolve any requested corrections.',
+    'ready_to_schedule_redefense' =>
+      'The administrator can schedule the next defense attempt.',
     'failed' || 'project_rejected' =>
       'Review the recorded outcome and any authorized next steps.',
     'paused' ||
@@ -66,7 +69,7 @@ class TeamWorkflowStatus {
     'needs_review' || 'pending_review' => const TeamWorkflowStatus(
       'needs_review',
       'Needs review',
-      WorkflowStatusTone.attention,
+      WorkflowStatusTone.active,
     ),
     'changes_requested' || 'needs_revision' => const TeamWorkflowStatus(
       'changes_requested',
@@ -76,7 +79,7 @@ class TeamWorkflowStatus {
     'awaiting_endorsement' => const TeamWorkflowStatus(
       'awaiting_endorsement',
       'Awaiting endorsement',
-      WorkflowStatusTone.attention,
+      WorkflowStatusTone.active,
     ),
     'ready_to_schedule' ||
     'endorsed' ||
@@ -94,7 +97,7 @@ class TeamWorkflowStatus {
     'awaiting_evaluation' => const TeamWorkflowStatus(
       'awaiting_evaluation',
       'Awaiting evaluation',
-      WorkflowStatusTone.attention,
+      WorkflowStatusTone.neutral,
     ),
     'evaluating' || 'defense_ongoing' => const TeamWorkflowStatus(
       'evaluating',
@@ -104,7 +107,7 @@ class TeamWorkflowStatus {
     'awaiting_verdict' => const TeamWorkflowStatus(
       'awaiting_verdict',
       'Awaiting verdict',
-      WorkflowStatusTone.attention,
+      WorkflowStatusTone.neutral,
     ),
     'grading_incomplete' => const TeamWorkflowStatus(
       'grading_incomplete',
@@ -114,17 +117,17 @@ class TeamWorkflowStatus {
     'awaiting_results' || 'assessed' => const TeamWorkflowStatus(
       'awaiting_results',
       'Awaiting results',
-      WorkflowStatusTone.attention,
+      WorkflowStatusTone.neutral,
     ),
     'awaiting_completion' => const TeamWorkflowStatus(
       'awaiting_completion',
       'Awaiting completion',
-      WorkflowStatusTone.attention,
+      WorkflowStatusTone.neutral,
     ),
     'pending_post_defense' => const TeamWorkflowStatus(
       'pending_post_defense',
-      'Post-defense requirements',
-      WorkflowStatusTone.attention,
+      'Awaiting post-defense',
+      WorkflowStatusTone.neutral,
     ),
     'revisions_pending' => const TeamWorkflowStatus(
       'revisions_pending',
@@ -195,13 +198,31 @@ class TeamWorkflowStatus {
         ...(stage['post'] as List? ?? []).whereType<Map>(),
       ];
 
-  static bool isPendingReview(Map item) {
-    if (item['requirement_timing'] == 'defense' ||
+  static bool isPendingReview(Map item) => pendingFileReviewCount(item) > 0;
+
+  static int pendingReviewCount(Map stage) => items(
+    stage,
+  ).fold(0, (total, item) => total + pendingFileReviewCount(item));
+
+  static int pendingFileReviewCount(Map item) {
+    final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
+    if ((!isPost && item['requirement_timing'] == 'defense') ||
         item['is_waived'] == true ||
-        item['locked'] == true) {
-      return false;
+        item['source'] == 'defense_minutes') {
+      return 0;
     }
+    // `locked` controls student uploads, not whether a submitted file needs review.
     final submission = item['submission'];
+    final files = submission is Map ? submission['files'] : null;
+    if (files is List && files.isNotEmpty) {
+      return files
+          .whereType<Map>()
+          .where(
+            (file) =>
+                file['is_current'] != false && _pendingStatus(file['status']),
+          )
+          .length;
+    }
     final status =
         (submission is Map
                 ? submission['status']
@@ -212,25 +233,98 @@ class TeamWorkflowStatus {
         item['uploaded'] == true ||
         submission is Map ||
         ['pending', 'pending_review', 'submitted'].contains(status);
-    return uploaded &&
-        (status == null ||
-            status.isEmpty ||
-            ['pending', 'pending_review', 'submitted'].contains(status));
+    return uploaded && _pendingStatus(status) ? 1 : 0;
   }
+
+  static bool _pendingStatus(dynamic status) =>
+      status == null ||
+      status.toString().isEmpty ||
+      [
+        'pending',
+        'pending_review',
+        'submitted',
+      ].contains(status.toString().toLowerCase());
 
   /// Describes backend facts; never grants review, scheduling or upload access.
   static TeamWorkflowStatus fromStage(Map stage, {String scope = 'capstone'}) {
+    final pending = pendingReviewCount(stage);
+    if (pending > 0) {
+      return TeamWorkflowStatus(
+        'needs_review',
+        '$pending needs review',
+        WorkflowStatusTone.active,
+      );
+    }
     final concept = stage['concept_workflow'];
-    if (concept is Map && concept['enabled'] == true && concept['can_edit'] == true) {
+    if (concept is Map &&
+        concept['enabled'] == true &&
+        concept['can_edit'] == true) {
       final status = concept['status']?.toString();
-      if (status == 'replacement_concepts_needed') return const TeamWorkflowStatus('replacement_concepts_needed', 'Replacement concepts needed', WorkflowStatusTone.attention);
-      if (status == 'concept_review_pending') return TeamWorkflowStatus('concept_review_pending', scope == 'pit' ? 'Instructor review pending' : 'Adviser review pending', WorkflowStatusTone.attention);
-      if (status == 'concept_endorsement_pending') return describe('awaiting_endorsement');
-      if (status == 'ready_to_schedule_redefense') return const TeamWorkflowStatus('ready_to_schedule_redefense', 'Ready to schedule re-defense', WorkflowStatusTone.active);
+      if (status == 'replacement_concepts_needed')
+        return const TeamWorkflowStatus(
+          'replacement_concepts_needed',
+          'Replacement concepts needed',
+          WorkflowStatusTone.attention,
+        );
+      if (status == 'concept_review_pending')
+        return TeamWorkflowStatus(
+          'concept_review_pending',
+          scope == 'pit'
+              ? 'Instructor review pending'
+              : 'Adviser review pending',
+          WorkflowStatusTone.active,
+        );
+      if (status == 'concept_endorsement_pending')
+        return describe('awaiting_endorsement');
+      if (status == 'ready_to_schedule_redefense')
+        return const TeamWorkflowStatus(
+          'ready_to_schedule_redefense',
+          'Ready to schedule re-defense',
+          WorkflowStatusTone.success,
+        );
       if (status == 'ready_to_schedule') return describe('ready_to_schedule');
       if (status == 'concepts_needed') return describe('awaiting_files');
     }
     final assessment = stage['assessment_progress'];
+    final recordedStatus = assessment is Map
+        ? assessment['display_status']?.toString()
+        : stage['stage_status_detail']?.toString() ??
+              stage['status']?.toString();
+    final defenseDone =
+        stage['is_defense_done'] == true ||
+        stage['has_done_schedule'] == true ||
+        const {
+          'awaiting_completion',
+          'completed',
+          'passed',
+          'pending_post_defense',
+        }.contains(recordedStatus);
+    final missingPostFiles =
+        stage['archive_complete'] == false ||
+        items(stage).any(
+          (item) =>
+              (item['type'] == 'post' || item['deliverable_type'] == 'post') &&
+              item['required'] == true &&
+              item['is_waived'] != true &&
+              item['source'] != 'defense_minutes' &&
+              (item['uploaded'] == false ||
+                  item['submission'] == null ||
+                  (item['submission'] is Map &&
+                      item['submission']['status'] != 'accepted')),
+        );
+    if (defenseDone &&
+        missingPostFiles &&
+        !const {
+          'failed',
+          'project_rejected',
+          'for_redefense',
+          'redefense_required',
+          'revisions_pending',
+          'cancelled',
+          'archived',
+        }.contains(recordedStatus)) {
+      return describe('pending_post_defense');
+    }
     if (assessment is Map && assessment['display_status'] is String) {
       final status = assessment['display_status'] as String;
       final completed =
@@ -248,7 +342,7 @@ class TeamWorkflowStatus {
 
     final detail =
         stage['stage_status_detail']?.toString() ?? stage['status']?.toString();
-    // Preserve later workflow states even when another file still needs review.
+    // With file reviews cleared, preserve the recorded defense workflow state.
     if (const {
       'failed',
       'project_rejected',

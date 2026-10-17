@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:defensys/screens/web/admin/student_teams/dialogs/generate_teams_dialog.dart';
 import 'package:defensys/screens/web/admin/student_teams/dialogs/create_team_modal.dart';
+import 'package:defensys/screens/web/admin/student_teams/components/student_teams_toolbar.dart';
 import 'package:defensys/services/api_http.dart';
 import 'package:defensys/services/student_teams_provider.dart';
 import 'package:flutter/material.dart';
@@ -13,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/auth_test_overrides.dart';
 import '../helpers/pump_app.dart';
+import '../helpers/capture_preview.dart';
 
 class _Teams extends StudentTeamsNotifier {
   @override
@@ -22,6 +24,29 @@ class _Teams extends StudentTeamsNotifier {
 }
 
 void main() {
+  testWidgets(
+    'roster managers retain bulk import and template actions without generation',
+    (tester) async {
+      var imports = 0;
+      await pumpDefensysWidget(
+        tester,
+        StudentTeamsHeaderActions(
+          isPitInstructor: false,
+          canTapActions: true,
+          onCreateTeam: () {},
+          onDownloadTemplate: () {},
+          onBulkImport: () => imports++,
+        ),
+      );
+      expect(find.text('Bulk Import'), findsOneWidget);
+      expect(find.text('Download template'), findsOneWidget);
+      expect(find.text('Team Creation'), findsNothing);
+      expect(find.text('Generate Teams'), findsNothing);
+      await tester.tap(find.text('Bulk Import'));
+      expect(imports, 1);
+    },
+  );
+  setUpAll(() => loadPreviewFonts(force: true));
   const students = [
     {
       'id': 1,
@@ -49,6 +74,7 @@ void main() {
   };
   late List<http.Request> requests;
   setUp(() {
+    options['team_membership_policy'] = 'single';
     SharedPreferences.setMockInitialValues({});
     requests = [];
     setApiHttpClientForTesting(
@@ -96,12 +122,15 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await pumpDefensysWidget(
       tester,
-      const GenerateTeamsDialog(
-        levels: ['2nd Year PIT'],
-        initialLevel: '2nd Year PIT',
-        events: [
-          {'id': 8, 'event_name': 'PIT Design', 'year_level': '2nd Year'},
-        ],
+      const RepaintBoundary(
+        key: ValueKey('formation-preview'),
+        child: GenerateTeamsDialog(
+          levels: ['2nd Year PIT'],
+          initialLevel: '2nd Year PIT',
+          events: [
+            {'id': 8, 'event_name': 'PIT Design', 'year_level': '2nd Year'},
+          ],
+        ),
       ),
       overrides: [
         ...authTestOverrides(),
@@ -123,7 +152,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Ben Santos').last);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Create 1 teams'));
+      await tester.tap(find.text('Create 1 team'));
       await tester.pumpAndSettle();
       final body = jsonDecode(
         requests.singleWhere((r) => r.url.path.endsWith('/create/')).body,
@@ -152,14 +181,24 @@ void main() {
   ) async {
     await pump(tester, viewport: const Size(900, 680));
     expect(tester.takeException(), isNull);
+    await capturePreview(
+      tester,
+      find.byKey(const ValueKey('formation-preview')),
+      'team-formation/settings',
+    );
     await tester.tap(find.text('Preview teams'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('Create 1 teams'), findsOneWidget);
+    expect(find.text('Create 1 team'), findsOneWidget);
+    await capturePreview(
+      tester,
+      find.byKey(const ValueKey('formation-preview')),
+      'team-formation/preview',
+    );
   });
 
   testWidgets(
-    'Create Team offers generation, manual creation and bulk import',
+    'roster manager chooser offers manual creation and bulk import',
     (tester) async {
       var imported = false;
       await pumpDefensysWidget(
@@ -182,7 +221,7 @@ void main() {
       );
       await tester.tap(find.text('Open create teams'));
       await tester.pumpAndSettle();
-      expect(find.text('Generate from students'), findsOneWidget);
+      expect(find.text('Generate from students'), findsNothing);
       expect(find.text('Create manually'), findsOneWidget);
       await tester.tap(find.text('Bulk import'));
       await tester.pumpAndSettle();

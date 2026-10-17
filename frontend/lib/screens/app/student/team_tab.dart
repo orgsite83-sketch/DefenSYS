@@ -91,6 +91,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (onRefresh != null) StudentTeamSetupTasks(onRefresh: onRefresh),
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
@@ -163,7 +164,8 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     final rawProjectTitle = team['projectTitle']?.toString() ??
         team['project_title']?.toString() ??
         '';
-    final projectTitle = rawProjectTitle.trim().isEmpty ? 'Project not selected' : rawProjectTitle;
+    final projectTitle = team['project_pending'] == true || rawProjectTitle.trim().isEmpty
+        ? 'Project not selected' : rawProjectTitle;
     final semester = team['semester']?.toString() ?? '';
     final schoolYear = team['schoolYear']?.toString() ?? '';
     final section = team['section']?.toString() ??
@@ -276,7 +278,9 @@ class _TeamTabState extends ConsumerState<TeamTab> {
           ),
           const SizedBox(height: 16),
         ],
-        StudentTeamSetupTasks(onOpenRepository: () => onSelectTab?.call(1, subTabIndex: 1), onRefresh: onRefresh),
+        if (onRefresh != null || team['setup_pending'] == true || team['project_pending'] == true)
+          StudentTeamSetupTasks(onOpenRepository: () => onSelectTab?.call(1, subTabIndex: 1),
+            onRefresh: onRefresh, refreshKey: delivState.teams),
         // 1. TEAM & PROJECT OVERVIEW (CLEAN WHITE CARD)
         _buildTeamHeaderCard(
           teamName: teamName,
@@ -633,14 +637,16 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                       children: [
                         Row(
                           children: [
-                            Text(
+                            Flexible(child: Text(
                               'Peer Eval',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.bold,
                                 color: DefensysTokens.textPrimaryOf(context),
                               ),
-                            ),
+                            )),
                             if (hasPendingPeer) ...[
                               const SizedBox(width: 5),
                               Container(

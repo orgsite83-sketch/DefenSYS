@@ -1169,29 +1169,25 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
     final submittedAt = submission?['submitted_at']?.toString();
 
     // Determine leading icon and status border
-    Color cardBorder = const Color(0xFFE2E8F0);
+    final fileStyle = WorkflowStatusStyle.of(context,
+      isWaived ? WorkflowStatusTone.neutral
+        : isRejected ? WorkflowStatusTone.attention
+        : isAccepted || isDefense && uploaded ? WorkflowStatusTone.success
+        : isPending ? WorkflowStatusTone.active : WorkflowStatusTone.neutral);
+    final cardBorder = fileStyle.border;
     IconData leadingIcon = LucideIcons.circle;
-    Color leadingColor = const Color(0xFF94A3B8);
+    final leadingColor = fileStyle.foreground;
 
     if (isWaived) {
       leadingIcon = LucideIcons.minusCircle;
-      leadingColor = const Color(0xFF64748B);
     } else if (isAccepted) {
       leadingIcon = LucideIcons.checkCircle2;
-      leadingColor = const Color(0xFF10B981);
-      cardBorder = const Color(0xFFA7F3D0);
     } else if (isRejected) {
       leadingIcon = LucideIcons.circleAlert;
-      leadingColor = const Color(0xFFEF4444);
-      cardBorder = const Color(0xFFFECACA);
     } else if (isPending) {
       leadingIcon = LucideIcons.clock;
-      leadingColor = const Color(0xFFF59E0B);
-      cardBorder = const Color(0xFFFDE68A);
     } else if (isMissing) {
       leadingIcon = LucideIcons.circleAlert;
-      leadingColor = const Color(0xFFEF4444);
-      cardBorder = const Color(0xFFFECACA);
     }
 
     return Container(
@@ -1468,46 +1464,33 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
     required bool isMissing,
     required bool isWaived,
   }) {
-    Color bg;
-    Color border;
-    Color fg;
+    final style = WorkflowStatusStyle.of(context,
+      isWaived ? WorkflowStatusTone.neutral
+        : isRejected ? WorkflowStatusTone.attention
+        : isDefenseUploaded || isAccepted ? WorkflowStatusTone.success
+        : isPending ? WorkflowStatusTone.active : WorkflowStatusTone.neutral);
+    final bg = style.background;
+    final border = style.border;
+    final fg = style.foreground;
     String text;
     IconData icon;
 
     if (isDefenseUploaded || isAccepted) {
-      bg = const Color(0xFFECFDF5);
-      border = const Color(0xFFA7F3D0);
-      fg = const Color(0xFF047857);
       text = isDefenseUploaded ? 'Uploaded' : 'Accepted';
       icon = LucideIcons.checkCircle2;
     } else if (isPending) {
-      bg = const Color(0xFFFFFBEB);
-      border = const Color(0xFFFDE68A);
-      fg = const Color(0xFFB45309);
       text = 'Pending Review';
       icon = LucideIcons.clock;
     } else if (isRejected) {
-      bg = const Color(0xFFFEF2F2);
-      border = const Color(0xFFFECACA);
-      fg = const Color(0xFFB91C1C);
       text = 'Needs Revision';
       icon = LucideIcons.circleAlert;
     } else if (isMissing) {
-      bg = const Color(0xFFFEF2F2);
-      border = const Color(0xFFFECACA);
-      fg = const Color(0xFFB91C1C);
       text = 'Missing';
       icon = LucideIcons.circleAlert;
     } else if (isWaived) {
-      bg = const Color(0xFFF1F5F9);
-      border = const Color(0xFFCBD5E1);
-      fg = const Color(0xFF64748B);
       text = 'Waived';
       icon = LucideIcons.minusCircle;
     } else {
-      bg = const Color(0xFFF1F5F9);
-      border = const Color(0xFFCBD5E1);
-      fg = const Color(0xFF64748B);
       text = 'Not Uploaded';
       icon = LucideIcons.circle;
     }
@@ -1538,37 +1521,8 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
     );
   }
 
-  Widget _buildStatusPill(Map<String, dynamic> stage) {
-    final status = TeamWorkflowStatus.fromStage(stage, scope: widget.state.scope);
-    final style = WorkflowStatusStyle.of(context, status.tone);
-
-    return ShadBadge.outline(
-      backgroundColor: style.background,
-      foregroundColor: style.foreground,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(6),
-        side: BorderSide(color: style.border),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(WorkflowStatusStyle.iconFor(status), size: 11, color: style.foreground),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
-              status.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.bold,
-                color: style.foreground,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _buildStatusPill(Map<String, dynamic> stage) => TeamWorkflowBadge(
+    status: TeamWorkflowStatus.fromStage(stage, scope: widget.state.scope),
+    compact: true,
+  );
 }

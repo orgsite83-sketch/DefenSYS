@@ -34,7 +34,9 @@ class _ProjectArchiveScreenState
     super.initState();
     _tableHScrollController.addListener(_updateTableScrollHint);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(repositoryAuditProvider.notifier).fetchEntries();
+      ref.read(repositoryAuditProvider.notifier).fetchEntries(
+        openCurrentSemester: ref.read(repositoryAuditProvider).folderBrowser.isEmpty,
+      );
     });
   }
 
@@ -148,7 +150,9 @@ class _ProjectArchiveScreenState
 
     ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (previous, next) {
       if (next == DefensysAdminSection.repositoryAudit) {
-        ref.read(repositoryAuditProvider.notifier).fetchEntries();
+        ref.read(repositoryAuditProvider.notifier).fetchEntries(
+          openCurrentSemester: ref.read(repositoryAuditProvider).folderBrowser.isEmpty,
+        );
       }
     });
 

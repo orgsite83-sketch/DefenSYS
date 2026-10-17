@@ -195,6 +195,7 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
     String? successMessage,
     bool clearDeliverable = false,
     bool clearTeam = false,
+    bool openCurrentSemester = false,
   }) async {
     final nextSearch = search ?? state.search;
     final nextType = type ?? state.type;
@@ -222,9 +223,16 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
         submissionKind != null ||
         clearTeam ||
         clearDeliverable;
+    final breadcrumbs = state.folderBrowser['breadcrumbs'];
+    final termFolderKey = breadcrumbs is List && breadcrumbs.length >= 2
+        ? (breadcrumbs[1] as Map)['key']?.toString() ?? ''
+        : '';
+    final resetFolderKey = academicYear != null || semester != null
+        ? ''
+        : termFolderKey;
     final nextFolderKey =
         folderKey ??
-        ((groupBy != null || filtersChanged) ? '' : state.folderKey);
+        ((groupBy != null || filtersChanged) ? resetFolderKey : state.folderKey);
     final nextPageOffset =
         pageOffset ??
         ((folderKey != null || groupBy != null || filtersChanged)
@@ -278,6 +286,7 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
           viewMode: nextViewMode,
           groupBy: nextGroupBy,
           folderKey: nextFolderKey,
+          openCurrentSemester: openCurrentSemester,
           offset: nextPageOffset,
         ),
       );
@@ -578,6 +587,7 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
     String viewMode = '',
     String groupBy = 'team',
     String folderKey = '',
+    bool openCurrentSemester = false,
     int offset = 0,
   }) {
     return Uri.parse(path.isEmpty ? baseUrl : '$baseUrl/$path/').replace(
@@ -595,6 +605,7 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
         if (viewMode.isNotEmpty) 'view': viewMode,
         'group_by': groupBy,
         if (folderKey.isNotEmpty) 'folder_key': folderKey,
+        if (openCurrentSemester) 'open_current_semester': '1',
         if (offset > 0) 'offset': '$offset',
       },
     );

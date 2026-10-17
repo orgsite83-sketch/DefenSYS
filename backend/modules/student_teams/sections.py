@@ -71,12 +71,24 @@ def section_payload(team, teams, students, assignment, *, actor=None):
         'project_manager_id': None,
         'project_manager_name': None,
     }
+    can_setup = bool(actor and (actor.is_superuser or actor.role == 'admin' or
+        (team.is_pit and ((getattr(actor, 'is_pit_lead', False) and actor.pit_lead_year == team.year_level) or
+            SectionInstructorAssignment.objects.filter(faculty=actor, semester=team.semester,
+                year_level=team.year_level, section=team.section, is_active=True).exists()))))
+    reviewers = get_user_model().objects.filter(role='faculty', is_active=True)
+    if actor and not (actor.is_superuser or actor.role == 'admin' or
+            (team.is_pit and getattr(actor, 'is_pit_lead', False) and actor.pit_lead_year == team.year_level)):
+        reviewers = reviewers.filter(pk__in=SectionInstructorAssignment.objects.filter(
+            semester=team.semester, year_level=team.year_level, section=team.section,
+            is_active=True).values('faculty_id'))
     return {
         **details,
         'semester_label': team.semester.display_name,
         'team_count': len(teams),
         'concept_contexts': policy_context_payload(team, teams, assignment),
         'can_manage_concepts': can_manage_concept_policies(actor, team),
+        'can_setup_shared_system': can_setup,
+        'system_reviewers': [{'id': r.pk, 'name': display_name(r)} for r in reviewers] if can_setup else [],
         'students': [
             {'id': student.pk, 'name': display_name(student), 'username': student.username}
             for student in students

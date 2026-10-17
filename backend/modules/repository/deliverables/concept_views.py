@@ -33,7 +33,7 @@ class ConceptActionView(APIView):
             return Response({'detail': 'Historical concept rounds are read-only.'}, status=403)
         try:
             if attrs['action'] == 'save_titles':
-                concepts.save_titles(team, stage, attrs.get('concepts'))
+                concepts.save_titles(team, stage, attrs.get('concepts'), actor=request.user)
             else:
                 concepts.override_clearance(team, stage, request.user, attrs.get('reason', ''))
         except (ValueError, PermissionError, concepts.ValidationError) as exc:

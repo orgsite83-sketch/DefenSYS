@@ -2478,6 +2478,11 @@ class StageCompletionService:
 
         with transaction.atomic():
             config = cls._lock_config(scope, config)
+            from repository.section_concepts.services import completion_blocker
+            context = config if scope == TeamGrade.SCOPE_PIT else config.defense_stage
+            shared_blocker = completion_blocker(context, semester)
+            if shared_blocker:
+                raise ValidationError({'stage_label': shared_blocker})
             group_grades = _grades_for_group(
                 semester, scope, label, config=config, year_level=year_level,
             )

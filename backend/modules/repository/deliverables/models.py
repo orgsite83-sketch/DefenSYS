@@ -337,6 +337,8 @@ class DeliverableSubmissionFile(models.Model):
 class ConceptRound(models.Model):
     """A concept set and the immutable evidence presented in one hearing."""
     team = models.ForeignKey('student_teams.StudentTeam', on_delete=models.CASCADE, related_name='concept_rounds')
+    section_round = models.ForeignKey('repository.SectionConceptRound', null=True, blank=True,
+        on_delete=models.PROTECT, related_name='module_rounds')
     defense_stage = models.ForeignKey('defense.DefenseStage', on_delete=models.PROTECT, null=True, blank=True)
     pit_event_config = models.ForeignKey('defense.PitEventGradingConfig', on_delete=models.PROTECT, null=True, blank=True)
     project_version = models.PositiveIntegerField(default=1)

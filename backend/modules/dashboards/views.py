@@ -178,6 +178,13 @@ def _project_manager_fields(user, active_semester=None):
 
     from student_teams.models import SectionAssignment
 
+    from repository.section_concepts.models import SectionConceptProject
+    shared = SectionConceptProject.objects.filter(project_manager=user)
+    shared = shared.filter(section__semester=active_semester) if active_semester else shared.filter(section__semester__is_active=True)
+    project = shared.select_related('section').first()
+    if project:
+        return True, project.section.section
+
     q_filter = {'project_manager': user}
     if active_semester is not None:
         q_filter['semester'] = active_semester
@@ -323,10 +330,14 @@ def _team_payload(team):
     from repository.deliverables.services import STAGE_OPTIONS, current_stage_for_team
     active_stage = current_stage_for_team(team) if team else None
     has_capstone_stages = not team.is_capstone or bool(list(STAGE_OPTIONS))
+    from repository.section_concepts.services import team_display
     return {
+        **team_display(team, active_stage),
         'id': team.id,
         'name': team.name,
         'projectTitle': team.project_title,
+        'setup_pending': team.setup_pending,
+        'project_pending': team.project_pending,
         'project_version': team.project_version,
         'semester_id': team.semester_id,
         'level': team.level,

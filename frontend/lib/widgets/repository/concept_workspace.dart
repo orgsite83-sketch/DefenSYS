@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'section_concept_workspace.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../services/auth_provider.dart';
@@ -184,7 +185,8 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
     final admin = user['role'] == 'admin' || user['is_superuser'] == true;
     final faculty = admin || user['role'] == 'faculty';
     final editable = workflow['can_edit'] == true;
-    final titlesEditable = editable && workflow['can_edit_titles'] != false;
+    final titlesEditable = editable && workflow['can_edit_titles'] != false &&
+        (faculty || (workflow['faculty_names_required'] != true && workflow['module_names_confirmed'] != true));
     final assigned = workflow['assigned'] == true;
     final cleared = workflow['clearance_valid'] == true;
     final status = switch (workflow['status']) {
@@ -223,6 +225,12 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 12),
+              if (workflow['section_project_id'] != null) ...[
+                const Text('Propose one corresponding module for each shared system. Faculty confirms module names and connections.'),
+                TextButton.icon(icon: const Icon(Icons.account_tree_outlined), label: const Text('Open shared system proposals'),
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) =>
+                    SectionConceptWorkspace(projectId: workflow['section_project_id'] as int)))),
+              ],
               for (final c in concepts)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
@@ -233,6 +241,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                     placeholder: Text(
                       assigned
                           ? 'Awaiting administrator assignment'
+                          : c['system_title'] != null ? 'Module for ${c['system_title'] == '' ? c['key'] : c['system_title']}'
                           : 'Proposed concept title',
                     ),
                   ),
@@ -404,17 +413,19 @@ class ConceptVerdictFields extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  '${concepts[i]['title']}',
+                  '${concepts[i]['system_title'] == null ? '' : '${concepts[i]['system_title']} → '}${concepts[i]['title']}',
                   style: const TextStyle(fontWeight: FontWeight.w500),
                 ),
                 const SizedBox(height: 6),
                 WorkflowChoice(
                   value: '${concepts[i]['decision'] ?? ''}',
-                  enabled: enabled,
-                  options: const {
+                  enabled: enabled && (!concepts[i].containsKey('system_title') || concepts.any((c) => c['section_selected'] == true)),
+                  options: {
                     '': 'Choose concept decision',
-                    'approved': 'Approved concept',
-                    'approved_with_revisions': 'Approved with revisions',
+                    if (!concepts[i].containsKey('system_title') || concepts[i]['section_selected'] == true)
+                      'approved': 'Approved concept',
+                    if (!concepts[i].containsKey('system_title') || concepts[i]['section_selected'] == true)
+                      'approved_with_revisions': 'Approved with revisions',
                     'rejected': 'Rejected',
                     'not_selected': 'Not selected',
                     'revise': 'Revise and present again',

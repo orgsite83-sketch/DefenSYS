@@ -1,6 +1,6 @@
 import 'package:excel/excel.dart';
 
-List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone}) {
+List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone, String? assignedSection, String? instructorName}) {
   final excel = Excel.createExcel();
   final sheetName = isCapstone ? 'defensys_team_roster_template' : 'defensys_pit_team_roster_template';
   
@@ -77,8 +77,8 @@ List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone}) {
   final leftTeams = isCapstone ? _capstone4ATeams : _pit2ATeams;
   final rightTeams = isCapstone ? _capstone4BTeams : _pit2BTeams;
 
-  final leftSection = isCapstone ? 'BSIT-4A' : 'BSIT-2A';
-  final rightSection = isCapstone ? 'BSIT-4B' : 'BSIT-2B';
+  final leftSection = assignedSection ?? (isCapstone ? 'BSIT-4A' : 'BSIT-2A');
+  final rightSection = assignedSection ?? (isCapstone ? 'BSIT-4B' : 'BSIT-2B');
 
   final systemName = isCapstone ? 'Hospital Management System' : 'Societree';
   final projectManager = 'Juan Dela Cruz';
@@ -241,7 +241,7 @@ List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone}) {
       col: 4,
       startRow: 4,
       endRow: 19,
-      text: 'Prof. Alex Santos',
+      text: instructorName ?? 'Prof. Alex Santos',
     );
 
     // Adviser 2: Prof. Elena Ramos (Rows 20 to 35: 16 rows merged)
@@ -257,7 +257,7 @@ List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone}) {
       col: 4,
       startRow: 4,
       endRow: 35,
-      text: 'Prof. Alex Santos',
+      text: instructorName ?? 'Prof. Alex Santos',
     );
   }
 
@@ -323,7 +323,7 @@ List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone}) {
       col: 10,
       startRow: 6,
       endRow: 37,
-      text: 'Prof. Alex Santos',
+      text: instructorName ?? 'Prof. Alex Santos',
     );
   }
 
