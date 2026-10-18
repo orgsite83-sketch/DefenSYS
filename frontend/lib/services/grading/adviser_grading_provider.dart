@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../app/data_refresh_provider.dart';
 import 'package:http/http.dart' as http;
 
 import '../../config/api_config.dart';
@@ -44,7 +45,8 @@ class AdviserGradingState {
     return AdviserGradingState(
       isLoading: isLoading ?? this.isLoading,
       isSaving: isSaving ?? this.isSaving,
-      adviserGradingEnabled: adviserGradingEnabled ?? this.adviserGradingEnabled,
+      adviserGradingEnabled:
+          adviserGradingEnabled ?? this.adviserGradingEnabled,
       grades: grades ?? this.grades,
       counts: counts ?? this.counts,
       error: clearError ? null : error ?? this.error,
@@ -58,12 +60,17 @@ class AdviserGradingState {
 // ---------------------------------------------------------------------------
 
 class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
+  int _requestVersion = 0;
   static String get _gradesUrl => '${ApiConfig.gradeCenterUrl}/adviser-grades/';
 
   @override
-  AdviserGradingState build() => const AdviserGradingState();
+  AdviserGradingState build() {
+    ref.onDispose(() => _requestVersion++);
+    return const AdviserGradingState();
+  }
 
-  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
+  AuthenticatedHttpClient get _client =>
+      ref.read(authenticatedHttpClientProvider);
 
   String _errorFromResponse(http.Response response) {
     try {
@@ -72,7 +79,9 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
         if (data['detail'] != null) return data['detail'].toString();
         if (data.isNotEmpty) {
           final firstValue = data.values.first;
-          if (firstValue is List && firstValue.isNotEmpty) return firstValue.first.toString();
+          if (firstValue is List && firstValue.isNotEmpty) {
+            return firstValue.first.toString();
+          }
           return firstValue.toString();
         }
       }
@@ -89,16 +98,27 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
 
   /// Loads capstone grade records for teams this adviser supervises.
   Future<void> fetchAll() async {
-    state = state.copyWith(isLoading: true, clearError: true, clearMessage: true);
+    final version = ++_requestVersion;
+    state = state.copyWith(
+      isLoading: true,
+      clearError: true,
+      clearMessage: true,
+    );
     try {
       final gradesResp = await _client.get(Uri.parse(_gradesUrl));
+      if (!ref.mounted || version != _requestVersion) return;
 
       if (gradesResp.statusCode != 200) {
-        state = state.copyWith(isLoading: false, error: _errorFromResponse(gradesResp));
+        state = state.copyWith(
+          isLoading: false,
+          error: _errorFromResponse(gradesResp),
+        );
         return;
       }
 
-      final gradesPayload = Map<String, dynamic>.from(jsonDecode(gradesResp.body));
+      final gradesPayload = Map<String, dynamic>.from(
+        jsonDecode(gradesResp.body),
+      );
       final adviserOn = gradesPayload['adviser_grading_enabled'] != false;
 
       state = state.copyWith(
@@ -112,6 +132,7 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
     } on SessionExpiredException {
       rethrow;
     } catch (e) {
+      if (!ref.mounted || version != _requestVersion) return;
       state = state.copyWith(isLoading: false, error: 'Connection error: $e');
     }
   }
@@ -125,17 +146,25 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
     List<Map<String, dynamic>> teamCriteriaScores = const [],
     List<Map<String, dynamic>> studentSubmissions = const [],
   }) async {
-    state = state.copyWith(isSaving: true, clearError: true, clearMessage: true);
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
     try {
       final body = <String, dynamic>{
         if (rubricId != null) 'rubric_id': rubricId,
         if (criteriaScores.isNotEmpty) 'criteria_scores': criteriaScores,
-        if (teamCriteriaScores.isNotEmpty) 'team_criteria_scores': teamCriteriaScores,
-        if (studentSubmissions.isNotEmpty) 'student_submissions': studentSubmissions,
+        if (teamCriteriaScores.isNotEmpty)
+          'team_criteria_scores': teamCriteriaScores,
+        if (studentSubmissions.isNotEmpty)
+          'student_submissions': studentSubmissions,
       };
 
       final response = await _client.post(
-        Uri.parse('${ApiConfig.gradeCenterUrl}/adviser-grades/$gradeId/submit/'),
+        Uri.parse(
+          '${ApiConfig.gradeCenterUrl}/adviser-grades/$gradeId/submit/',
+        ),
         body: jsonEncode(body),
       );
 
@@ -145,10 +174,20 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
           isSaving: false,
           message: 'Grade submitted successfully.',
         );
+        ref.read(dataRefreshProvider.notifier).markChanged(const [
+          DataArea.dashboard,
+          DataArea.grades,
+          DataArea.defenseBoard,
+          DataArea.deliverables,
+          DataArea.scheduler,
+        ]);
         return true;
       }
 
-      state = state.copyWith(isSaving: false, error: _errorFromResponse(response));
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
       return false;
     } on SessionExpiredException {
       rethrow;
@@ -165,5 +204,5 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
 
 final adviserGradingProvider =
     NotifierProvider<AdviserGradingNotifier, AdviserGradingState>(
-  AdviserGradingNotifier.new,
-);
+      AdviserGradingNotifier.new,
+    );

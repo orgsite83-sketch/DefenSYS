@@ -64,6 +64,7 @@ class _AdviserDashboardContentState
     ref
         .read(capstoneDeliverablesProvider.notifier)
         .fetchDeliverables(
+          workspace: 'adviser',
           scope: 'capstone',
           search: '',
           status: '',

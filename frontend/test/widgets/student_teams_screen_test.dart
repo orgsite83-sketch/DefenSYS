@@ -18,6 +18,7 @@ class _FakeStudentTeamsNotifier extends StudentTeamsNotifier {
 
   @override
   Future<void> fetchTeams({
+    String? workspace,
     String? search,
     String? level,
     String? status,

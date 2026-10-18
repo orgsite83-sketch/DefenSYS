@@ -4,7 +4,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from defensys_backend.read_projection import ReadAPIView as APIView
 
 from academic_period_management.serializers import SemesterSerializer
 from .serializers import (
@@ -89,11 +89,20 @@ def check_deliverable_write_permission(user, team):
     return False
 
 
+def workspace_deliverable_teams(request):
+    base = team_queryset_for_user(request.user)
+    workspace = request.query_params.get('workspace', '').strip()
+    if workspace:
+        from authentication_access_control.workspaces import workspace_teams_for
+        base = base.filter(pk__in=workspace_teams_for(request.user, workspace).values('pk'))
+    return base
+
+
 def deliverables_payload(request, queryset=None, selected_stage=None, scope=None):
     if scope is None:
         scope = request.query_params.get('scope', 'capstone')
 
-    base = team_queryset_for_user(request.user)
+    base = workspace_deliverable_teams(request)
     if scope == 'pit':
         base = base.filter(level__icontains='PIT')
     else:
@@ -114,7 +123,7 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
     if scope == 'pit':
         from defense.scheduler.models import PitEventGradingConfig
         from authentication_access_control.scopes import is_pit_lead_only, _pit_year
-        pit_lead = is_pit_lead_only(request.user)
+        pit_lead = is_pit_lead_only(request.user) and request.query_params.get('workspace', '') in ('', 'operations')
         pit_year = _pit_year(request.user) if pit_lead else None
         requested_year = (request.query_params.get('year_level') or pit_year or '').strip()
 
@@ -126,7 +135,8 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
                 requested_year = current.first().year_level or ''
 
         from defense.scheduler.event_scope import pit_events_for_user
-        configs_qs = pit_events_for_user(request.user, semester=semester) if semester else PitEventGradingConfig.objects.none()
+        configs_qs = pit_events_for_user(request.user, semester=semester,
+            workspace=request.query_params.get('workspace')) if semester else PitEventGradingConfig.objects.none()
         if requested_year:
             configs_qs = configs_qs.filter(year_level=requested_year)
 
@@ -167,14 +177,14 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
 
 
 def get_allowed_team(request, team_id):
-    return get_object_or_404(team_queryset_for_user(request.user), pk=team_id)
+    return get_object_or_404(workspace_deliverable_teams(request), pk=team_id)
 
 
 def deliverables_action_payload(request, team, stage_label):
     """Opt-in row refresh; legacy clients retain the full list response."""
     scope = 'pit' if team.is_pit else 'capstone'
     selected_stage = request.query_params.get('stage_label') or stage_label
-    queryset = team_queryset_for_user(request.user)
+    queryset = workspace_deliverable_teams(request)
     if request.query_params.get('response_mode') == 'team':
         # Re-read after the transaction: review/endorsement may update a different
         # model instance and invalidate the pre-write prefetched submissions.
@@ -202,7 +212,7 @@ class CapstoneDeliverablesListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        queryset = filter_teams(request, team_queryset_for_user(request.user))
+        queryset = filter_teams(request, workspace_deliverable_teams(request))
         return Response(deliverables_payload(request, queryset))
 
 

@@ -2546,7 +2546,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             ),
             const SizedBox(height: 3),
             Text(
-              team['project_title']?.toString() ?? 'No Project Title',
+              '${team['project_title'] ?? ''}'.trim().isEmpty
+                  ? 'Awaiting concept selection' : '${team['project_title']}',
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,

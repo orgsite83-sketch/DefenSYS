@@ -5,6 +5,7 @@ import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
 import '../session/session_expired.dart';
 import '../academic/student_team_selection_provider.dart';
+import 'data_refresh_provider.dart';
 
 final dashboardProvider =
     NotifierProvider.family<DashboardNotifier, DashboardState, String>(
@@ -46,6 +47,7 @@ class DashboardNotifier extends Notifier<DashboardState> {
   int _requestRevision = 0;
   Completer<void>? _studentRefresh;
   int? _studentRefreshTeam;
+  int? _studentRefreshRevision;
 
   @override
   DashboardState build() {
@@ -61,15 +63,18 @@ class DashboardNotifier extends Notifier<DashboardState> {
     final selectedTeam = role == 'student'
         ? ref.read(studentTeamSelectionProvider)
         : null;
+    final dataRevision = ref.read(dataRefreshProvider)[DataArea.dashboard] ?? 0;
     if (role == 'student' &&
         _studentRefresh != null &&
-        _studentRefreshTeam == selectedTeam) {
+        _studentRefreshTeam == selectedTeam &&
+        _studentRefreshRevision == dataRevision) {
       return _studentRefresh!.future;
     }
     final completion = Completer<void>();
     if (role == 'student') {
       _studentRefresh = completion;
       _studentRefreshTeam = selectedTeam;
+      _studentRefreshRevision = dataRevision;
     }
     final revision = ++_requestRevision;
     final hasData = state.data != null;

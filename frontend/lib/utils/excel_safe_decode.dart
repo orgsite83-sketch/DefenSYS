@@ -35,6 +35,33 @@ xl.Excel safeDecodeExcel(List<int> rawBytes) {
       modified = true;
     }
   }
+  // openpyxl writes an empty text cell as <c t="inlineStr"/>. It is
+  // valid XLSX, but excel 4.x unconditionally reads its first <t> node.
+  // Normalize only empty inline strings to blank cells; retain real text,
+  // including titles beginning with '=' as literal strings.
+  for (final file
+      in archive.files
+          .where(
+            (file) =>
+                file.name.startsWith('xl/worksheets/') &&
+                file.name.endsWith('.xml'),
+          )
+          .toList()) {
+    final sheet = XmlDocument.parse(utf8.decode(file.content as List<int>));
+    var changedSheet = false;
+    for (final cell in sheet.findAllElements('c')) {
+      if (cell.getAttribute('t') == 'inlineStr' &&
+          cell.findAllElements('t').isEmpty) {
+        cell.setAttribute('t', 'n');
+        changedSheet = true;
+      }
+    }
+    if (changedSheet) {
+      final content = utf8.encode(sheet.toXmlString());
+      archive.addFile(ArchiveFile(file.name, content.length, content));
+      modified = true;
+    }
+  }
   if (!modified) return xl.Excel.decodeBytes(rawBytes);
   final content = utf8.encode(document.toXmlString());
   archive.addFile(ArchiveFile(relations.name, content.length, content));

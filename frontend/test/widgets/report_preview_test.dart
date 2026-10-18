@@ -70,6 +70,7 @@ class _Teams extends StudentTeamsNotifier {
   StudentTeamsState build() => const StudentTeamsState(teams: [_team, _pitTeam]);
   @override
   Future<void> fetchTeams({
+    String? workspace,
     String? search,
     String? level,
     String? status,
@@ -359,7 +360,7 @@ void main() {
     expect(find.text('Team Roster Report'), findsOneWidget);
     expect(find.text('Team Grade Report Card'), findsNothing);
     expect(find.text('Audit Trail Export'), findsNothing);
-    expect(find.text('1 of 21 reports'), findsOneWidget);
+    expect(find.text('2 of 22 reports'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField).first, 'missing report');
     await tester.pumpAndSettle();
@@ -385,12 +386,12 @@ void main() {
     expect(find.text('Team Roster Report'), findsOneWidget);
     expect(find.text('Team Grade Report Card'), findsNothing);
     expect(find.text('Audit Trail Export'), findsNothing);
-    expect(find.text('5 of 21 reports'), findsOneWidget);
+    expect(find.text('5 of 22 reports'), findsOneWidget);
 
     await tester.tap(find.text('PIT').first);
     await tester.enterText(find.byType(TextField).first, 'roster');
     await tester.pumpAndSettle();
-    expect(find.text('1 of 20 reports'), findsOneWidget);
+    expect(find.text('1 of 21 reports'), findsOneWidget);
 
     await tester.tap(find.text('Clear Filters'));
     await tester.pumpAndSettle();

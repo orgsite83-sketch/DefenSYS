@@ -1,11 +1,11 @@
 from datetime import date, datetime, timedelta
 
 from django.contrib.auth import get_user_model
-from django.db.models import Prefetch, Q
+from django.db.models import Count, Prefetch, Q
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from defensys_backend.read_projection import ReadAPIView as APIView
 
 from user_management.permissions import (
     IsAdminRole,
@@ -43,7 +43,7 @@ from user_management.academic_records.models import StudentAcademicRecord
 from user_management.academic_records.rollover import next_academic_step
 from user_management.academic_records.serializers import StudentAcademicRecordSerializer
 from student_teams.models import StudentTeam, TeamMembership
-from student_teams.services import is_stage_ready
+from student_teams.services import is_stage_ready, stage_readiness_candidates
 from student_teams.team_levels import normalize_year_level
 from student_teams.term_scope import (
     apply_team_scope,
@@ -326,10 +326,10 @@ def _latest_academic_record(user):
 
 
 def _team_payload(team):
-    memberships = list(team.memberships.select_related('student').all())
-    from repository.deliverables.services import STAGE_OPTIONS, current_stage_for_team
+    memberships = list(team.memberships.all())
+    from repository.deliverables.services import current_stage_for_team
     active_stage = current_stage_for_team(team) if team else None
-    has_capstone_stages = not team.is_capstone or bool(list(STAGE_OPTIONS))
+    has_capstone_stages = not team.is_capstone or active_stage is not None
     from repository.section_concepts.services import team_display
     return {
         **team_display(team, active_stage),
@@ -434,7 +434,7 @@ def _pit_team_membership_by_student(pit_year, active_semester, *, historical=Fal
     memberships = TeamMembership.objects.filter(
         team__year_level=pit_year,
         team__level__icontains='PIT',
-    ).select_related('team', 'student')
+    ).select_related('team__semester__school_year', 'student')
     if active_semester:
         if historical:
             memberships = memberships.exclude(team__semester_id=active_semester.id)
@@ -495,6 +495,18 @@ def _cohort_rows_for_scope(user, pit_year, active_semester, *, historical=False,
         is_active=True,
     ).order_by('last_name', 'first_name', 'username')
 
+    membership_by_student = _pit_team_membership_by_student(
+        pit_year,
+        active_semester,
+        historical=historical,
+    )
+    # Cohort totals describe the selected year/term, before table filters.
+    counts = students.aggregate(
+        all=Count('pk'),
+        on_team=Count('pk', filter=Q(pk__in=membership_by_student.keys())),
+    )
+    counts['unassigned'] = counts['all'] - counts['on_team']
+
     search = (search or '').strip()
     if search:
         students = students.filter(
@@ -504,11 +516,6 @@ def _cohort_rows_for_scope(user, pit_year, active_semester, *, historical=False,
             | Q(email__icontains=search)
         )
 
-    membership_by_student = _pit_team_membership_by_student(
-        pit_year,
-        active_semester,
-        historical=historical,
-    )
     rows = []
     for student in students:
         membership = membership_by_student.get(student.id)
@@ -518,12 +525,6 @@ def _cohort_rows_for_scope(user, pit_year, active_semester, *, historical=False,
             section=section_by_student.get(student.id, ''),
             is_historical=historical,
         ))
-
-    counts = {
-        'all': len(rows),
-        'unassigned': sum(1 for row in rows if row['team_status'] == 'unassigned'),
-        'on_team': sum(1 for row in rows if row['team_status'] == 'on_team'),
-    }
 
     team_status = (team_status or 'all').strip().lower()
     if team_status == 'unassigned':
@@ -1075,7 +1076,7 @@ class AdminDashboardView(APIView):
         schedulable_teams = capstone_teams.filter(semester=active_sem) if active_sem else capstone_teams.none()
         ready_capstone_count = sum(
             any(is_stage_ready(team, stage) for stage in active_stages)
-            for team in schedulable_teams
+            for team in stage_readiness_candidates(schedulable_teams)
         )
         teams_with_adviser = capstone_teams.filter(adviser__isnull=False).count()
         teams_without_adviser = capstone_teams.filter(adviser__isnull=True).count()

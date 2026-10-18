@@ -78,6 +78,10 @@ def late_upload_window_active(schedule, *, now=None, grades_locked=None):
     return not (material_grades_locked(schedule) if grades_locked is None else grades_locked)
 
 
+from defensys_backend.read_projection import read_memoize
+
+
+@read_memoize(bypass_if=('lock',))
 def stage_schedule(team, stage_label, *, active_only=False, lock=False):
     from defense.scheduler.models import DefenseSchedule
 

@@ -385,7 +385,7 @@ void main() {
         ],
       ),
       user: {'id': 2, 'role': 'faculty', 'is_pit_lead': true},
-      schedules: [_defense(1, scope: 'pit', external: true)],
+      schedules: [{..._defense(1, scope: 'pit', external: true), 'can_manage': true}],
     );
     await _menu(tester, '1', scope: 'pit');
     await tester.tap(find.text('Evaluator access'));
@@ -406,6 +406,32 @@ void main() {
       findsNothing,
     );
   });
+
+  for (final permission in [false, null]) {
+    testWidgets('PIT lead assignment reads grant no management ($permission)', (tester) async {
+      await _pump(
+        tester,
+        external: _External(),
+        user: {'id': 2, 'role': 'faculty', 'is_pit_lead': true, 'pit_lead_year': '3rd Year'},
+        schedules: [{
+          ..._defense(1, scope: 'pit', external: true),
+          if (permission != null) 'can_manage': permission,
+          'section': 'BSIT-2A',
+        }],
+      );
+      expect(find.byKey(const ValueKey('session-actions-1|pit|1')), findsNothing);
+      expect(find.text('Stage actions'), findsNothing);
+      final menu = find.byKey(const ValueKey('defense-actions-1'));
+      await tester.ensureVisible(menu);
+      await tester.tap(find.descendant(of: menu, matching: find.byIcon(LucideIcons.ellipsis)));
+      await tester.pumpAndSettle();
+      expect(find.text('View details'), findsOneWidget);
+      for (final action in ['Edit panel', 'Change room', 'Reschedule defense', 'View change history']) {
+        expect(find.text(action), findsNothing);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('access failures are retryable and never show stale codes', (
     tester,

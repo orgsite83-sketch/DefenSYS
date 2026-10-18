@@ -54,9 +54,9 @@ def _send_to_groups(groups: list[str], payload: dict[str, Any]) -> None:
             )
 
 
-def notify_team_peer_open(*, semester_id, team_id, stage_label, student_ids):
+def notify_team_peer_open(*, semester_id, team_id, stage_label, student_ids, scope='capstone'):
     """Refresh only this team's students after their panel finishes grading."""
-    payload = _base_payload(scope='capstone', semester_id=semester_id, stage_label=stage_label)
+    payload = _base_payload(scope=scope, semester_id=semester_id, stage_label=stage_label)
     payload['team_id'] = team_id
     _send_to_groups([user_group_name(pk) for pk in student_ids], payload)
 

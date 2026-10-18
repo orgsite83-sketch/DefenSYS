@@ -1,4 +1,5 @@
 from decimal import Decimal
+from defensys_backend.read_projection import read_memoize
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -47,6 +48,7 @@ def _peer_max_score(grade):
     return total
 
 
+@read_memoize
 def required_peer_submission_count(team):
     """Each member evaluates every other member: N * (N - 1) submissions."""
     member_count = team.memberships.count()
@@ -55,8 +57,16 @@ def required_peer_submission_count(team):
     return member_count * (member_count - 1)
 
 
+@read_memoize
 def peer_submission_count(grade):
-    return PeerEvaluationSubmission.objects.filter(team_grade=grade).count()
+    return sum(_peer_submission_counts(grade).values())
+
+
+@read_memoize(copy=True)
+def _peer_submission_counts(grade):
+    return dict(PeerEvaluationSubmission.objects.filter(team_grade=grade)
+                .values('evaluator_id').annotate(total=Count('pk'))
+                .values_list('evaluator_id', 'total'))
 
 
 def is_team_peer_eval_complete(grade):
@@ -80,6 +90,7 @@ def is_evaluator_peer_complete(grade, evaluator):
     return submitted >= required
 
 
+@read_memoize(copy=True)
 def peer_completion_summary(grade):
     memberships = grade.team.memberships.all()
     if 'memberships' not in getattr(grade.team, '_prefetched_objects_cache', {}):
@@ -88,11 +99,7 @@ def peer_completion_summary(grade):
     evaluators_total = len(memberships)
     required = evaluators_total * max(evaluators_total - 1, 0)
     # One aggregate replaces a separate count for every evaluator.
-    counts = dict(
-        PeerEvaluationSubmission.objects.filter(team_grade=grade)
-        .values('evaluator_id').annotate(total=Count('pk'))
-        .values_list('evaluator_id', 'total')
-    )
+    counts = _peer_submission_counts(grade)
     submitted = sum(counts.values())
     evaluators_done = 0
     missing_evaluators = []

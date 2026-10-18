@@ -6,6 +6,7 @@ import '../services/academic/student_team_selection_provider.dart';
 import '../services/auth/auth_provider.dart';
 import '../services/capstone_deliverables_provider.dart';
 import '../services/dashboard_provider.dart';
+import '../theme/defensys_tokens.dart';
 import 'repository/section_concept_workspace.dart';
 
 class StudentTeamSetupTasks extends ConsumerStatefulWidget {
@@ -136,74 +137,309 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
   @override
   Widget build(BuildContext context) {
     if (teams.isEmpty && sectionTasks.isEmpty && error == null) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Material(
-        color: Theme.of(
-          context,
-        ).colorScheme.primaryContainer.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: DefensysTokens.surfaceOf(context),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.025),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                sectionTasks.isEmpty ? 'Complete your team setup' : 'Your section and team tasks',
-                style: Theme.of(context).textTheme.titleMedium,
+              Container(
+                width: 4,
+                color: DefensysTokens.maroonOf(context),
               ),
-              if (busy) const LinearProgressIndicator(),
-              if (error != null) ...[
-                Text(
-                  error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-                TextButton(
-                  onPressed: busy ? null : load,
-                  child: const Text('Retry'),
-                ),
-              ],
-              for (final task in sectionTasks) ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.account_tree_outlined),
-                title: Text('${task['title']}'),
-                subtitle: Text('${task['section']} · ${task['stage_label']} · ${task['status_label'] ?? '${task['status']}'.replaceAll('_', ' ')}'),
-                onTap: busy ? null : () async {
-                  await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) =>
-                    SectionConceptWorkspace(projectId: task['project_id'] as int)));
-                  if (mounted) await load();
-                },
-              ),
-              ...teams.map(
-                (team) => Padding(
-                  padding: const EdgeInsets.only(top: 12),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        '${team['name']} · ${team['section']}${team['event_name'] == '' ? '' : ' · ${team['event_name']}'}',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      if (team['needs_name'] == true)
-                        TextButton.icon(
-                          onPressed: busy ? null : () => nameTeam(team),
-                          icon: const Icon(Icons.edit_outlined),
-                          label: const Text('Choose team name'),
-                        ),
-                      ...(team['concept_tasks'] as List? ?? []).map(
-                        (task) => TextButton.icon(
-                          onPressed: busy || widget.onOpenRepository == null
-                              ? null
-                              : () => openConcepts(team, task as Map),
-                          icon: const Icon(Icons.description_outlined),
-                          label: Text(
-                            task['mode'] == 'assigned'
-                                ? 'View assigned project · ${task['stage_label']}'
-                                : task['shared_system'] == true
-                                  ? 'Submit 3 corresponding module concepts · ${task['stage_label']}'
-                                  : 'Submit ${task['required_count']} concepts · ${task['stage_label']}',
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(7),
+                            decoration: BoxDecoration(
+                              color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              Icons.task_alt_rounded,
+                              size: 16,
+                              color: DefensysTokens.maroonOf(context),
+                            ),
                           ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              sectionTasks.isEmpty ? 'Action Required: Complete Team Setup' : 'Your Section & Team Tasks',
+                              style: TextStyle(
+                                fontFamily: DefensysTokens.fontFamilyInter,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.2,
+                                color: DefensysTokens.textPrimaryOf(context),
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: DefensysTokens.panelOf(context),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: DefensysTokens.borderOf(context)),
+                            ),
+                            child: Text(
+                              '${sectionTasks.length} Action',
+                              style: TextStyle(
+                                fontFamily: DefensysTokens.fontFamilyInter,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                                color: DefensysTokens.textSecondaryOf(context),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (busy) ...[
+                        const SizedBox(height: 8),
+                        const LinearProgressIndicator(),
+                      ],
+                      if (error != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          error!,
+                          style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
                         ),
+                        TextButton(
+                          onPressed: busy ? null : load,
+                          child: const Text('Retry'),
+                        ),
+                      ],
+                      for (final task in sectionTasks) ...[
+                        () {
+                          final statusText = task['status_label'] ?? '${task['status']}'.replaceAll('_', ' ');
+                          final isMissing = statusText.toString().toLowerCase().contains('missing');
+
+                          return Container(
+                            margin: const EdgeInsets.only(top: 10),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: DefensysTokens.panelOf(context),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: DefensysTokens.borderOf(context)),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    Icons.account_tree_outlined,
+                                    size: 17,
+                                    color: DefensysTokens.maroonOf(context),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${task['title']}',
+                                        style: TextStyle(
+                                          fontFamily: DefensysTokens.fontFamilyInter,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: -0.2,
+                                          height: 1.25,
+                                          color: DefensysTokens.textPrimaryOf(context),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 5),
+                                      Wrap(
+                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        spacing: 6,
+                                        runSpacing: 4,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: DefensysTokens.surfaceOf(context),
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border.all(color: DefensysTokens.borderOf(context)),
+                                            ),
+                                            child: Text(
+                                              '${task['section']}',
+                                              style: TextStyle(
+                                                fontFamily: DefensysTokens.fontFamilyInter,
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w700,
+                                                color: DefensysTokens.textSecondaryOf(context),
+                                              ),
+                                            ),
+                                          ),
+                                          Text(
+                                            '${task['stage_label']}',
+                                            style: TextStyle(
+                                              fontFamily: DefensysTokens.fontFamilyInter,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w500,
+                                              color: DefensysTokens.textSecondaryOf(context),
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: isMissing ? const Color(0xFFFEF3C7) : const Color(0xFFDCFCE7),
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border.all(
+                                                color: isMissing ? const Color(0xFFFDE68A) : const Color(0xFF86EFAC),
+                                              ),
+                                            ),
+                                            child: Text(
+                                              statusText.toString(),
+                                              style: TextStyle(
+                                                fontFamily: DefensysTokens.fontFamilyInter,
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.w700,
+                                                color: isMissing ? const Color(0xFFB45309) : const Color(0xFF15803D),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                SizedBox(
+                                  height: 32,
+                                  child: OutlinedButton(
+                                    onPressed: busy ? null : () async {
+                                      await Navigator.of(context).push(
+                                        MaterialPageRoute<void>(
+                                          builder: (_) => SectionConceptWorkspace(
+                                            projectId: task['project_id'] as int,
+                                          ),
+                                        ),
+                                      );
+                                      if (mounted) await load();
+                                    },
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: DefensysTokens.maroonOf(context),
+                                      backgroundColor: DefensysTokens.maroonOf(context).withValues(alpha: 0.05),
+                                      side: BorderSide(
+                                        color: DefensysTokens.maroonOf(context).withValues(alpha: 0.28),
+                                      ),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 11),
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'Open',
+                                          style: TextStyle(
+                                            fontFamily: DefensysTokens.fontFamilyInter,
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Icon(
+                                          Icons.arrow_forward_rounded,
+                                          size: 13,
+                                          color: DefensysTokens.maroonOf(context),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }(),
+                      ],
+                      ...teams.map(
+                        (team) {
+                          final conceptTasks = (team['concept_tasks'] as List? ?? []).cast<Map>();
+                          final needsName = team['needs_name'] == true;
+                          if (!needsName && conceptTasks.isEmpty) return const SizedBox.shrink();
+
+                          return Container(
+                            margin: const EdgeInsets.only(top: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: DefensysTokens.panelOf(context),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: DefensysTokens.borderOf(context)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${team['name']} · ${team['section']}${team['event_name'] == '' ? '' : ' · ${team['event_name']}'}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: DefensysTokens.textSecondaryOf(context),
+                                  ),
+                                ),
+                                if (needsName) ...[
+                                  const SizedBox(height: 6),
+                                  OutlinedButton.icon(
+                                    onPressed: busy ? null : () => nameTeam(team),
+                                    icon: const Icon(Icons.edit_outlined, size: 13),
+                                    label: const Text('Choose team name', style: TextStyle(fontSize: 11.5)),
+                                    style: OutlinedButton.styleFrom(
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                  ),
+                                ],
+                                for (final task in conceptTasks) ...[
+                                  const SizedBox(height: 6),
+                                  ElevatedButton.icon(
+                                    onPressed: busy || widget.onOpenRepository == null
+                                        ? null
+                                        : () => openConcepts(team, task),
+                                    icon: const Icon(Icons.description_outlined, size: 13),
+                                    label: Text(
+                                      task['mode'] == 'assigned'
+                                          ? 'View assigned project · ${task['stage_label']}'
+                                          : task['shared_system'] == true
+                                            ? 'Submit 3 corresponding module concepts · ${task['stage_label']}'
+                                            : 'Submit ${task['required_count']} concepts · ${task['stage_label']}',
+                                      style: const TextStyle(fontSize: 11.5),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: DefensysTokens.maroonOf(context),
+                                      foregroundColor: Colors.white,
+                                      visualDensity: VisualDensity.compact,
+                                      elevation: 0,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -217,14 +453,21 @@ class _StudentTeamSetupTasksState extends ConsumerState<StudentTeamSetupTasks> {
   }
 }
 
-class _TeamNameDialog extends StatefulWidget {
-  const _TeamNameDialog({required this.initialName});
-  final String initialName;
-  @override
-  State<_TeamNameDialog> createState() => _TeamNameDialogState();
+Future<String?> showTeamNameDialog(BuildContext context, {required String initialName}) {
+  return showDialog<String>(
+    context: context,
+    builder: (_) => TeamNameDialog(initialName: initialName),
+  );
 }
 
-class _TeamNameDialogState extends State<_TeamNameDialog> {
+class TeamNameDialog extends StatefulWidget {
+  const TeamNameDialog({super.key, required this.initialName});
+  final String initialName;
+  @override
+  State<TeamNameDialog> createState() => _TeamNameDialogState();
+}
+
+class _TeamNameDialogState extends State<TeamNameDialog> {
   late final controller = TextEditingController(text: widget.initialName);
   @override
   void dispose() {
@@ -237,11 +480,22 @@ class _TeamNameDialogState extends State<_TeamNameDialog> {
     title: const Text('Choose your team name'),
     content: SizedBox(
       width: 420,
-      child: TextField(
-        controller: controller,
-        autofocus: true,
-        maxLength: 120,
-        decoration: const InputDecoration(labelText: 'Team name'),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 120,
+            decoration: const InputDecoration(labelText: 'Team name'),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Official team names can only be submitted once during setup. Subsequent name changes require administrator approval.',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+        ],
       ),
     ),
     actions: [
@@ -260,3 +514,5 @@ class _TeamNameDialogState extends State<_TeamNameDialog> {
     ],
   );
 }
+
+typedef _TeamNameDialog = TeamNameDialog;

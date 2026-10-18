@@ -8,6 +8,7 @@ import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/program_badge.dart';
 import '../../../widgets/student_team_setup_tasks.dart';
 import '../../../services/academic/student_team_selection_provider.dart';
+import '../../../services/academic/team_formation_service.dart';
 
 /// Screen 1: Academic Defense Overview & Student Team Workspace.
 /// Features clean, professional white surfaces, crisp hairline borders,
@@ -264,6 +265,37 @@ class _TeamTabState extends ConsumerState<TeamTab> {
       }
     }
 
+    final needsName = team['needs_name'] == true || team['setup_pending'] == true;
+    final student = widget.studentData?['student'] as Map<String, dynamic>?;
+    final isLeader = student?['is_leader'] == true ||
+        student?['isLeader'] == true ||
+        widget.studentData?['user']?['is_leader'] == true ||
+        members.any(
+          (m) =>
+              (m['id'] == student?['id'] || m['username'] == widget.studentData?['user']?['username']) &&
+              (m['isLeader'] == true || m['is_leader'] == true),
+        );
+
+    Map<String, dynamic>? conceptWorkflow;
+    for (final s in stagesList) {
+      final cw = s['concept_workflow'];
+      if (cw is Map && (cw['enabled'] == true || (cw['concepts'] as List? ?? []).isNotEmpty)) {
+        conceptWorkflow = Map<String, dynamic>.from(cw);
+        break;
+      }
+    }
+    final concepts = (conceptWorkflow?['concepts'] as List? ?? [])
+        .whereType<Map>()
+        .map((c) => Map<String, dynamic>.from(c))
+        .toList();
+    final isSharedSystem = conceptWorkflow?['section_project_id'] != null ||
+        team['section_project_id'] != null ||
+        (team['system_name'] != null && team['system_name'].toString().isNotEmpty);
+    final hasConceptWorkflow = conceptWorkflow != null && concepts.isNotEmpty;
+    final isPendingSelection = team['project_pending'] == true ||
+        rawProjectTitle.trim().isEmpty ||
+        conceptWorkflow?['status'] != 'approved';
+
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -291,7 +323,22 @@ class _TeamTabState extends ConsumerState<TeamTab> {
           semester: semester,
           schoolYear: schoolYear,
           adviserName: adviserName,
+          needsName: needsName,
+          isLeader: isLeader,
+          teamId: team['id'] as int?,
+          hasConceptWorkflow: hasConceptWorkflow,
+          isPendingSelection: isPendingSelection,
+          isSharedSystem: isSharedSystem,
         ),
+        if (hasConceptWorkflow && isPendingSelection) ...[
+          const SizedBox(height: 12),
+          _buildProposedConceptsCard(
+            workflow: conceptWorkflow,
+            concepts: concepts,
+            isSharedSystem: isSharedSystem,
+            onSelectTab: onSelectTab,
+          ),
+        ],
         const SizedBox(height: 12),
 
         // 2. DIRECT ACTION SHORTCUTS (REPOSITORY & PEER EVAL SUB-TAB)
@@ -343,6 +390,21 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     );
   }
 
+  Future<void> _handleNameTeam(int teamId, String currentName) async {
+    final name = await showTeamNameDialog(context, initialName: currentName);
+    if (name == null || name.trim().isEmpty || !mounted) return;
+    try {
+      await ref.read(teamFormationServiceProvider).completeName(teamId, name.trim());
+      await widget.onRefresh?.call();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        );
+      }
+    }
+  }
+
   // ─── 1. TEAM & PROJECT OVERVIEW CARD ───────────────────────────────────────
 
   Widget _buildTeamHeaderCard({
@@ -354,6 +416,12 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     required String semester,
     required String schoolYear,
     required String adviserName,
+    bool needsName = false,
+    bool isLeader = false,
+    int? teamId,
+    bool hasConceptWorkflow = false,
+    bool isPendingSelection = false,
+    bool isSharedSystem = false,
   }) {
     final monogram = _extractTeamMonogram(teamName);
     final termText = semester.isNotEmpty && schoolYear.isNotEmpty
@@ -412,23 +480,69 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      teamName,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: DefensysTokens.textPrimaryOf(context),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            teamName,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: DefensysTokens.textPrimaryOf(context),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (needsName && isLeader && teamId != null) ...[
+                          const SizedBox(width: 6),
+                          InkWell(
+                            onTap: () => _handleNameTeam(teamId, teamName),
+                            borderRadius: BorderRadius.circular(6),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.3)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.edit_outlined, size: 12, color: DefensysTokens.maroonOf(context)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Name team',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: DefensysTokens.maroonOf(context),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ] else if (!needsName) ...[
+                          const SizedBox(width: 6),
+                          Tooltip(
+                            message: 'Official team name finalized',
+                            child: Icon(Icons.lock_outline_rounded, size: 13, color: DefensysTokens.steelGrey.withValues(alpha: 0.6)),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      projectTitle,
+                      isPendingSelection && hasConceptWorkflow
+                          ? (isSharedSystem ? '3 Shared System Modules Proposed' : '3 Concept Proposals Submitted')
+                          : projectTitle,
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
-                        color: DefensysTokens.textSecondaryOf(context),
+                        color: isPendingSelection && hasConceptWorkflow
+                            ? DefensysTokens.darkGold
+                            : DefensysTokens.textSecondaryOf(context),
                         height: 1.25,
                       ),
                       maxLines: 2,
@@ -495,6 +609,286 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                   ),
                 ],
               ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── 1B. PROPOSED CONCEPTS OVERVIEW CARD ──────────────────────────────────
+
+  Widget _buildProposedConceptsCard({
+    required Map<String, dynamic> workflow,
+    required List<Map<String, dynamic>> concepts,
+    required bool isSharedSystem,
+    required void Function(int index, {int? subTabIndex})? onSelectTab,
+  }) {
+    final round = workflow['round'] ?? 1;
+    final status = switch (workflow['status']) {
+      'concepts_needed' => 'Concepts needed',
+      'replacement_concepts_needed' => 'Replacement needed',
+      'concept_review_pending' => 'Review pending',
+      'concept_endorsement_pending' => 'Awaiting endorsement',
+      'ready_to_schedule' => 'Ready to schedule',
+      'scheduled' => 'Hearing scheduled',
+      'approved' => 'Approved',
+      _ => 'Concept Stage',
+    };
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: DefensysTokens.surfaceOf(context),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: DefensysTokens.borderOf(context)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: DefensysTokens.darkGold.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.lightbulb_outline_rounded,
+                  color: DefensysTokens.darkGold,
+                  size: 17,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Proposed Concepts',
+                      style: TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.bold,
+                        color: DefensysTokens.textPrimaryOf(context),
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      isSharedSystem
+                          ? 'Module proposals for section shared systems'
+                          : 'Standalone concept proposals',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.panelOf(context),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: DefensysTokens.borderOf(context)),
+                ),
+                child: Text(
+                  'Attempt $round · $status',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (concepts.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'No concepts configured for this stage yet.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: DefensysTokens.textSecondaryOf(context),
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          for (var i = 0; i < concepts.length; i++) ...[
+            Builder(
+              builder: (context) {
+                final c = concepts[i];
+                final letter = String.fromCharCode(65 + i);
+                final modTitle = c['title']?.toString().trim() ?? '';
+                final docStatus = c['documents_status']?.toString() ?? '';
+                final confirmed = c['faculty_confirmed'] == true;
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: DefensysTokens.panelOf(context),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: confirmed ? const Color(0xFF16A34A) : DefensysTokens.borderOf(context),
+                      width: confirmed ? 1.4 : 1.0,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(
+                                color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2),
+                              ),
+                            ),
+                            child: Text(
+                              isSharedSystem ? 'System $letter' : 'Concept ${i + 1}',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.bold,
+                                color: DefensysTokens.maroonOf(context),
+                              ),
+                            ),
+                          ),
+                          if (confirmed)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFDCFCE7),
+                                borderRadius: BorderRadius.circular(5),
+                                border: Border.all(color: const Color(0xFF86EFAC)),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.check_rounded, size: 10, color: Color(0xFF15803D)),
+                                  SizedBox(width: 3),
+                                  Text(
+                                    'Confirmed',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF15803D),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else if (docStatus == 'uploaded' || docStatus == 'ready')
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: DefensysTokens.surfaceOf(context),
+                                borderRadius: BorderRadius.circular(5),
+                                border: Border.all(color: DefensysTokens.borderOf(context)),
+                              ),
+                              child: Text(
+                                'Paper ready',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: DefensysTokens.textSecondaryOf(context),
+                                ),
+                              ),
+                            )
+                          else
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.transparent,
+                                borderRadius: BorderRadius.circular(5),
+                                border: Border.all(color: DefensysTokens.borderOf(context)),
+                              ),
+                              child: Text(
+                                docStatus.isNotEmpty ? docStatus.replaceAll('_', ' ') : 'Pending',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: DefensysTokens.textSecondaryOf(context),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        modTitle.isNotEmpty
+                            ? modTitle
+                            : (isSharedSystem ? 'Module title not yet proposed' : 'Concept title not yet proposed'),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: modTitle.isNotEmpty
+                              ? DefensysTokens.textPrimaryOf(context)
+                              : DefensysTokens.steelGrey,
+                          fontStyle: modTitle.isEmpty ? FontStyle.italic : FontStyle.normal,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 34,
+                  child: OutlinedButton.icon(
+                    onPressed: () => onSelectTab?.call(1, subTabIndex: 1),
+                    icon: const Icon(Icons.description_outlined, size: 14),
+                    label: const Text('Deliverables', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: DefensysTokens.textPrimaryOf(context),
+                      side: BorderSide(color: DefensysTokens.borderOf(context)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                ),
+              ),
+              if (isSharedSystem) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SizedBox(
+                    height: 34,
+                    child: TextButton.icon(
+                      onPressed: () => onSelectTab?.call(3),
+                      icon: Icon(Icons.hub_outlined, size: 14, color: DefensysTokens.maroonOf(context)),
+                      label: Text(
+                        'Integration Hub →',
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: DefensysTokens.maroonOf(context)),
+                      ),
+                      style: TextButton.styleFrom(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ],

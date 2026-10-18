@@ -52,6 +52,7 @@ class TeamBulkImportReviewTable extends StatefulWidget {
     this.sectionOptions,
     this.studentOptions,
     this.onSectionAdded,
+    this.onOpenExistingTeam,
   });
 
   final List<Map<String, dynamic>> rows;
@@ -70,6 +71,7 @@ class TeamBulkImportReviewTable extends StatefulWidget {
   final List<String>? sectionOptions;
   final List<dynamic>? studentOptions;
   final void Function(String newSection)? onSectionAdded;
+  final ValueChanged<int>? onOpenExistingTeam;
 
   @override
   State<TeamBulkImportReviewTable> createState() => _TeamBulkImportReviewTableState();
@@ -537,7 +539,7 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                       const Icon(Icons.error_outline_rounded, size: 15, color: _red),
                       const SizedBox(width: 8),
                       Text(
-                        '${issues.length} issue${issues.length == 1 ? '' : 's'} require correction:',
+                        '${issues.length} issue${issues.length == 1 ? ' requires' : 's require'} correction:',
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -608,6 +610,15 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
               ),
             ),
 
+          if (widget.onOpenExistingTeam != null && (preview?['membership_conflicts'] as List? ?? []).isNotEmpty)
+            Padding(padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+              child: Wrap(spacing: 8, runSpacing: 6, children: [
+                for (final team in (preview!['membership_conflicts'] as List).whereType<Map>())
+                  TextButton.icon(onPressed: () => widget.onOpenExistingTeam!(team['id'] as int),
+                    icon: const Icon(Icons.open_in_new, size: 14),
+                    label: Text('Review ${team['name']}')),
+              ])),
+
           // 3. Form Fields Body
           Padding(
             padding: const EdgeInsets.all(16),
@@ -644,7 +655,7 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                             child: _field(
                               label: widget.isCapstoneAdmin ? 'Capstone Project Title' : 'PIT Project Title',
                               icon: Icons.lightbulb_outline_rounded,
-                              isRequired: true,
+                              isRequired: false,
                               value: row['project_title']?.toString() ?? '',
                               hintText: 'e.g. Alumni Career Tracker',
                               onChanged: (v) {
@@ -698,7 +709,7 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
                           _field(
                             label: widget.isCapstoneAdmin ? 'Capstone Project Title' : 'PIT Project Title',
                             icon: Icons.lightbulb_outline_rounded,
-                            isRequired: true,
+                            isRequired: false,
                             value: row['project_title']?.toString() ?? '',
                             hintText: 'e.g. Alumni Career Tracker',
                             onChanged: (v) {
@@ -1744,13 +1755,13 @@ class _TeamBulkImportReviewTableState extends State<TeamBulkImportReviewTable> {
 
   Widget _statusBadge(bool ready, int issueCount, int warningCount) {
     final label = ready
-        ? 'Ready'
+        ? warningCount > 0 ? 'Ready · $warningCount warning${warningCount == 1 ? '' : 's'}' : 'Ready'
         : issueCount > 0
         ? '$issueCount issue${issueCount == 1 ? '' : 's'}'
         : warningCount > 0
         ? '$warningCount warning${warningCount == 1 ? '' : 's'}'
         : 'Pending Review';
-    final color = ready
+    final color = ready && warningCount > 0 ? _amber : ready
         ? (DefensysTokens.isDark(context) ? const Color(0xFF86EFAC) : _green)
         : issueCount > 0
         ? _red

@@ -532,10 +532,13 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
           final previous = previousTeams[assignment.scheduleId];
           if (!assignment.isPosted &&
               previous != null &&
-              previous.hasUnsavedChanges &&
+              (previous.hasUnsavedChanges ||
+                  (previous.draftSavedAt != null &&
+                      assignment.draftSavedAt == null)) &&
               previous.evaluationContext == assignment.evaluationContext) {
             assignment.draftSubmissions = previous.draftSubmissions;
-            assignment.hasUnsavedChanges = true;
+            assignment.draftSavedAt = previous.draftSavedAt;
+            assignment.hasUnsavedChanges = previous.hasUnsavedChanges;
           }
           return assignment;
         }).toList();
@@ -550,7 +553,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
           _loading = false;
           _assignmentsError = null;
         });
-        await _loadResults();
+        if (_selectedIndex == 2 || _results.isNotEmpty) await _loadResults();
         if (mounted &&
             previousTeams.isNotEmpty &&
             previousSession != _selectedSessionKey &&
@@ -634,6 +637,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard>
       }
       if (!mounted) return;
       setState(() => _selectedIndex = index);
+      if (index == 0) await _loadData(showLoading: false);
       if (index == 2) await _loadResults();
     } finally {
       _navigating = false;

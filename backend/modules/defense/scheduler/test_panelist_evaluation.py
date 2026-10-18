@@ -3,6 +3,8 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
@@ -41,6 +43,24 @@ class PanelistEvaluationTests(APITestCase):
 
     def scores(self, score=0):
         return fixtures.DefenseSchedulerApiTests.criteria_scores(self, score)
+
+    def test_read_reuse_preserves_assignments_and_observes_next_request_changes(self):
+        schedule = self.schedule()
+        GradeContextService.get_or_create_for_schedule(schedule)
+        self.assertEqual(self.save_draft(schedule).status_code, 200)
+        fixed_now = timezone.now()
+        with patch('django.utils.timezone.now', return_value=fixed_now):
+            with self.settings(READ_PROJECTION_CACHE_ENABLED=False), CaptureQueriesContext(connection) as original:
+                before = self.client.get('/api/defense/schedules/panelist-assignments/')
+            with CaptureQueriesContext(connection) as optimized:
+                after = self.client.get('/api/defense/schedules/panelist-assignments/')
+        self.assertEqual(after.status_code, 200)
+        self.assertEqual(after.data, before.data)
+        self.assertLess(len(optimized), len(original))
+        self.assertLess(len(optimized), 160)
+        SchedulePanelist.objects.filter(schedule=schedule, panelist=self.panelist).update(is_chair=False)
+        refreshed = self.client.get('/api/defense/schedules/panelist-assignments/')
+        self.assertFalse(refreshed.data['teams'][0]['is_chair'])
 
     def save_draft(self, schedule, submissions=None, **overrides):
         payload = {

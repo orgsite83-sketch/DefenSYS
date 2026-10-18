@@ -47,7 +47,7 @@ class _PitLeadCohortSectionDetailScreenState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(pitLeadCohortProvider.notifier).fetchCohort();
       ref.read(pitInstructorProvider.notifier).fetchAssignments();
-      ref.read(studentTeamsProvider.notifier).fetchTeams(scope: 'active');
+      ref.read(studentTeamsProvider.notifier).fetchTeams(scope: 'active', workspace: 'operations');
     });
   }
 

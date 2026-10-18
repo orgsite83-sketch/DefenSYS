@@ -11,6 +11,8 @@ import 'package:defensys/services/user_management_provider.dart';
 import '../helpers/pump_app.dart';
 
 class FakePitLeadCohortNotifier extends PitLeadCohortNotifier {
+  int loads = 0;
+  List<Map<String, dynamic>>? responseStudents;
   @override
   PitLeadCohortState build() {
     return PitLeadCohortState(
@@ -48,11 +50,19 @@ class FakePitLeadCohortNotifier extends PitLeadCohortNotifier {
     String? search,
     String? teamStatusFilter,
     String? scope,
-  }) async {}
+  }) async {
+    loads++;
+    if (responseStudents != null) {
+      state = state.copyWith(students: responseStudents);
+    }
+  }
+
+  List<Map<String, dynamic>> get rosterRows => state.students;
 }
 
 class FakePitInstructorNotifier extends PitInstructorNotifier {
   final restoreRequests = <(int, bool)>[];
+  int loads = 0;
 
   @override
   PitInstructorState build() {
@@ -92,7 +102,9 @@ class FakePitInstructorNotifier extends PitInstructorNotifier {
   }
 
   @override
-  Future<void> fetchAssignments() async {}
+  Future<void> fetchAssignments() async {
+    loads++;
+  }
 
   @override
   Future<bool> setAssignmentActive(int assignmentId, bool isActive) async {
@@ -150,12 +162,13 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
 
       final instructorNotifier = FakePitInstructorNotifier();
+      final cohortNotifier = FakePitLeadCohortNotifier();
 
       await pumpDefensysWidget(
         tester,
         const PitLeadCohortScreen(),
         overrides: [
-          pitLeadCohortProvider.overrideWith(() => FakePitLeadCohortNotifier()),
+          pitLeadCohortProvider.overrideWith(() => cohortNotifier),
           pitInstructorProvider.overrideWith(() => instructorNotifier),
           academicPeriodProvider.overrideWith(
             () => FakeAcademicPeriodNotifier(),
@@ -202,9 +215,50 @@ void main() {
         findsWidgets,
       ); // Instructor tag under section
 
+      void expectMetric(String title, String value) {
+        final metric = find.ancestor(
+          of: find.text(title),
+          matching: find.byType(Column),
+        ).first;
+        expect(find.descendant(of: metric, matching: find.text(value)), findsOneWidget);
+      }
+
+      // Simulate the searched API response while retaining full cohort counts.
+      expect(cohortNotifier.loads, 1);
+      final fullRoster = cohortNotifier.rosterRows;
+      cohortNotifier.responseStudents = [fullRoster.first];
+      await tester.enterText(find.byType(TextField).first, 'Sofia');
+      await tester.pumpAndSettle();
+      expectMetric('All Records', '2');
+      expectMetric('Filtered', '1');
+      expectMetric('Students', '2');
+      expect(find.text('2'), findsNWidgets(3)); // Two total cards and tab badge.
+      expect(find.text('Sofia Lim'), findsOneWidget);
+      expect(find.text('James Rivera'), findsNothing);
+
+      cohortNotifier.responseStudents = [];
+      await tester.enterText(find.byType(TextField).first, 'no-match');
+      await tester.pumpAndSettle();
+      expectMetric('All Records', '2');
+      expectMetric('Filtered', '0');
+      expectMetric('Students', '2');
+      expect(find.text('No student records found'), findsOneWidget);
+
+      cohortNotifier.responseStudents = fullRoster;
+      await tester.tap(find.text('Clear'));
+      await tester.pumpAndSettle();
+      expectMetric('All Records', '2');
+      expectMetric('Filtered', '2');
+      expectMetric('Students', '2');
+      expect(find.text('James Rivera'), findsOneWidget);
+
       // Switch to Section Instructors tab
+      final loadsBeforeTabSwitch = cohortNotifier.loads;
+      expect(instructorNotifier.loads, 1);
       await tester.tap(find.text('Section Instructors'));
       await tester.pumpAndSettle();
+      expect(cohortNotifier.loads, loadsBeforeTabSwitch + 1);
+      expect(instructorNotifier.loads, 2);
 
       // Verify Tab 2 metrics and contents
       expect(find.text('Total Instructors'), findsOneWidget);

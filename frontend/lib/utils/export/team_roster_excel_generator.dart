@@ -328,7 +328,9 @@ List<int> generateOfficialTeamRosterExcelBytes({required bool isCapstone, String
   }
 
   setCell(1, 0, 'Project / Module is optional. Omit its column for the stage default (normally 3 proposals); enter an assigned title for one concept.', metaLabelStyle);
-  final bytes = excel.save();
+  // save() starts its own browser download named FlutterExcel.xlsx. This
+  // generator only returns bytes; the caller owns the single named download.
+  final bytes = excel.encode();
   return bytes ?? [];
 }
 

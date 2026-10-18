@@ -709,6 +709,10 @@ class GradeCenterApiTests(APITestCase):
         self.assertFalse(PeerEvaluationSubmission.objects.filter(team_grade__team=self.pit_team).exists())
 
     def test_pit_peer_submit_uses_only_open_event_when_multiple_grades_exist(self):
+        self.semester.is_active = False
+        self.semester.save(update_fields=['is_active'])
+        self.first_semester.is_active = True
+        self.first_semester.save(update_fields=['is_active'])
         second_pit = User.objects.create_user(
             username='2025-0002-open',
             password='pass12345',
@@ -719,8 +723,14 @@ class GradeCenterApiTests(APITestCase):
         TeamMembership.objects.create(team=self.pit_team, student=second_pit, order=1)
         config = self._ensure_pit_event_config('PIT Identity', semester=self.first_semester)
         other_config = self._ensure_pit_event_config('PIT Identity 2', semester=self.first_semester)
+        other_config.peer_grading_enabled = False
+        other_config.save(update_fields=['peer_grading_enabled'])
         config.peer_grading_enabled = True
         config.save(update_fields=['peer_grading_enabled', 'updated_at'])
+        self.pit_schedule.event_name = config.event_name
+        self.pit_schedule.rubric = config.panel_rubric
+        self.pit_schedule.scheduled_date = timezone.localdate()
+        self.pit_schedule.save(update_fields=['event_name', 'rubric', 'scheduled_date'])
         RubricCriterion.objects.create(
             rubric=config.peer_rubric,
             name='Teamwork',
@@ -733,6 +743,8 @@ class GradeCenterApiTests(APITestCase):
             semester=self.first_semester,
             scope=TeamGrade.SCOPE_PIT,
             pit_event_config=config,
+            schedule=self.pit_schedule,
+            panel_score=Decimal('80'),
             panel_weight=80,
             peer_weight=20,
             adviser_weight=0,
@@ -748,6 +760,11 @@ class GradeCenterApiTests(APITestCase):
         )
 
         self.client.force_authenticate(user=self.pit_student)
+        # The enabled event is still unavailable until its scheduled defense's
+        # panel evaluations are complete. An aggregate alone is insufficient.
+        from .services import peer_grading_allowed_for_grade
+        self.assertFalse(peer_grading_allowed_for_grade(open_grade))
+        self._record_panel_evaluations(open_grade)
         response = self.client.post(
             '/api/grading/grades/peer-evaluations/',
             {
@@ -760,7 +777,7 @@ class GradeCenterApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(
             PeerEvaluationSubmission.objects.filter(
                 team_grade=open_grade,

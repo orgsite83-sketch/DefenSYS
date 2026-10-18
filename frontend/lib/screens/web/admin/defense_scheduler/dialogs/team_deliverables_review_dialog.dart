@@ -20,6 +20,7 @@ class TeamDeliverablesReviewDialog {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+          workspace: 'operations',
           scope: scope,
           selectedStage: stageLabel,
         );

@@ -3,6 +3,7 @@ from defense.stages.models import DefenseStage
 from repository.deliverables.models import DeliverableSubmission
 from repository.deliverables.services import display_name
 from repository.entry_payloads import ml_fields_from
+from defensys_backend.read_projection import read_memoize
 
 from django.db.models import Avg, Count
 from django.utils import timezone
@@ -23,6 +24,7 @@ TYPE_OPTIONS = [
 ]
 
 
+@read_memoize(copy=True)
 def active_defense_stage_options():
     return list(
         DefenseStage.objects.filter(is_active=True)
@@ -134,7 +136,8 @@ def capstone_entry_payload(submission):
     
     from repository.deliverables.services import definition_for
     definition = definition_for(team, submission.stage_label, submission.deliverable_id) or {}
-    files = list(submission.files.filter(is_current=True).order_by('uploaded_at'))
+    files = sorted((file for file in submission.files.all() if file.is_current),
+                   key=lambda file: file.uploaded_at)
     if definition.get('file_policy'):
         files = [f for f in files if f.status == 'accepted']
     if not files:
@@ -505,8 +508,13 @@ def get_user_shelf_payload(user):
     if not user or not getattr(user, 'is_authenticated', False):
         return {'items': []}
     
+    # An unused shelf needs no library projection. Reviews can still contribute
+    # activity even when the user has never saved or opened an output.
+    shelf_items = list(UserBookShelf.objects.filter(user=user).order_by('-updated_at'))
+    if not shelf_items and not RepositoryReview.objects.filter(user=user).exists():
+        return {'items': [], 'recent': [], 'saved': [], 'activity': []}
     visible = library_targets(user)
-    shelf_items = list(UserBookShelf.objects.filter(user=user, target_id__in=visible).order_by('-updated_at'))
+    shelf_items = [item for item in shelf_items if item.target_id in visible]
     recent = sorted((item for item in shelf_items if item.last_opened_at),
                     key=lambda item: item.last_opened_at, reverse=True)
     activity = []

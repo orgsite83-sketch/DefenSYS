@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/capstone_deliverables_provider.dart';
 import '../../../services/dashboard_provider.dart';
+import '../../../services/app/data_refresh_provider.dart';
 import '../../../services/defense/team_defense_provider.dart';
 import '../../../models/team_defense_record.dart';
 import '../../../widgets/defense/team_defense_records.dart';
@@ -15,6 +16,7 @@ class StudentEventsTab extends ConsumerStatefulWidget {
   final Map<String, dynamic>? studentData;
   final ValueNotifier<int>? subTabNotifier;
   final String? initialStage;
+  final bool isActive;
 
   const StudentEventsTab({
     super.key,
@@ -22,6 +24,7 @@ class StudentEventsTab extends ConsumerStatefulWidget {
     required this.studentData,
     this.subTabNotifier,
     this.initialStage,
+    this.isActive = true,
   });
 
   @override
@@ -30,13 +33,13 @@ class StudentEventsTab extends ConsumerStatefulWidget {
 
 class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     with SingleTickerProviderStateMixin {
-
   late TabController _subTabController;
   int _activeSubIndex = 0;
   Timer? _countdownTimer;
   Duration? _timeUntilDefense;
   bool _isDefensePast = false;
   String? _selectedStageForView;
+  bool _refreshQueued = false;
 
   String? get _studentYearLevel {
     final y = widget.studentData?['year_level']?.toString().trim();
@@ -59,6 +62,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
         setState(() {
           _activeSubIndex = _subTabController.index;
         });
+        if (widget.isActive) _refreshAll();
       }
     });
 
@@ -68,10 +72,13 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final configuredStages = widget.studentData?['stage_options'] as List?;
-      if (widget.isCapstone && (configuredStages == null || configuredStages.isNotEmpty)) {
+      if (widget.isCapstone &&
+          (configuredStages == null || configuredStages.isNotEmpty)) {
         ref.read(teamDefenseProvider.notifier).fetch();
       }
-      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+      ref
+          .read(capstoneDeliverablesProvider.notifier)
+          .fetchDeliverables(
             scope: widget.isCapstone ? 'capstone' : 'pit',
             selectedStage: widget.initialStage,
             yearLevel: widget.isCapstone ? null : _studentYearLevel,
@@ -80,7 +87,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
   }
 
   void _startCountdown() {
+    _countdownTimer?.cancel();
     _calculateRemainingTime();
+    if (!widget.isActive) return;
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
         setState(() {
@@ -91,16 +100,26 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
   }
 
   void _calculateRemainingTime() {
-    final stages = (widget.studentData?['stages'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-    final currentStageLabel = widget.studentData?['current_stage']?.toString().trim().toLowerCase();
-    final targetStage = _selectedStageForView?.trim().toLowerCase() ?? currentStageLabel;
+    final stages =
+        (widget.studentData?['stages'] as List?)
+            ?.cast<Map<String, dynamic>>() ??
+        [];
+    final currentStageLabel = widget.studentData?['current_stage']
+        ?.toString()
+        .trim()
+        .toLowerCase();
+    final targetStage =
+        _selectedStageForView?.trim().toLowerCase() ?? currentStageLabel;
 
     Map<String, dynamic>? activeSchedule;
-    final topSchedule = widget.studentData?['schedule'] as Map<String, dynamic>? ??
+    final topSchedule =
+        widget.studentData?['schedule'] as Map<String, dynamic>? ??
         widget.studentData?['defense_schedule'] as Map<String, dynamic>?;
 
     if (topSchedule != null &&
-        (targetStage == null || topSchedule['stage']?.toString().trim().toLowerCase() == targetStage)) {
+        (targetStage == null ||
+            topSchedule['stage']?.toString().trim().toLowerCase() ==
+                targetStage)) {
       activeSchedule = topSchedule;
     } else if (targetStage != null && stages.isNotEmpty) {
       final matchedStage = stages.firstWhere(
@@ -108,12 +127,18 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
         orElse: () => <String, dynamic>{},
       );
       if (matchedStage['schedule'] is Map) {
-        activeSchedule = Map<String, dynamic>.from(matchedStage['schedule'] as Map);
+        activeSchedule = Map<String, dynamic>.from(
+          matchedStage['schedule'] as Map,
+        );
       }
     }
 
-    final dateStr = activeSchedule?['date']?.toString() ?? activeSchedule?['scheduled_date']?.toString();
-    final timeStr = activeSchedule?['startTime']?.toString() ?? activeSchedule?['start_time']?.toString();
+    final dateStr =
+        activeSchedule?['date']?.toString() ??
+        activeSchedule?['scheduled_date']?.toString();
+    final timeStr =
+        activeSchedule?['startTime']?.toString() ??
+        activeSchedule?['start_time']?.toString();
 
     if (dateStr == null || dateStr.trim().isEmpty) {
       _timeUntilDefense = null;
@@ -125,12 +150,24 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
       DateTime scheduledDate;
       if (timeStr != null && timeStr.contains(':')) {
         final parsedDate = DateTime.parse(dateStr);
-        final timeClean = timeStr.toUpperCase().replaceAll('AM', '').replaceAll('PM', '').trim();
+        final timeClean = timeStr
+            .toUpperCase()
+            .replaceAll('AM', '')
+            .replaceAll('PM', '')
+            .trim();
         final timeParts = timeClean.split(':');
         int hour = int.tryParse(timeParts[0]) ?? 9;
-        final minute = timeParts.length > 1 ? (int.tryParse(timeParts[1]) ?? 0) : 0;
+        final minute = timeParts.length > 1
+            ? (int.tryParse(timeParts[1]) ?? 0)
+            : 0;
         if (timeStr.toUpperCase().contains('PM') && hour < 12) hour += 12;
-        scheduledDate = DateTime(parsedDate.year, parsedDate.month, parsedDate.day, hour, minute);
+        scheduledDate = DateTime(
+          parsedDate.year,
+          parsedDate.month,
+          parsedDate.day,
+          hour,
+          minute,
+        );
       } else {
         scheduledDate = DateTime.parse(dateStr);
       }
@@ -153,24 +190,40 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
 
   void _onSubTabNotifierChanged() {
     final target = widget.subTabNotifier?.value;
-    if (target != null && target >= 0 && target < 3 && _subTabController.index != target) {
+    if (target != null &&
+        target >= 0 &&
+        target < 3 &&
+        _subTabController.index != target) {
       _subTabController.animateTo(target);
-      setState(() {
-        _activeSubIndex = target;
-      });
     }
   }
 
   @override
   void didUpdateWidget(covariant StudentEventsTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.studentData?['team']?['id'] != widget.studentData?['team']?['id']) {
-      _selectedStageForView = widget.studentData?['team']?['currentStage']?.toString();
+    if (oldWidget.isActive != widget.isActive) {
+      _startCountdown();
+      if (widget.isActive) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _refreshAll();
+        });
+      }
     }
-    if (widget.isCapstone && (oldWidget.studentData?['stage_options'] as List? ?? []).isEmpty &&
+    if (oldWidget.studentData?['team']?['id'] !=
+        widget.studentData?['team']?['id']) {
+      _selectedStageForView = widget.studentData?['team']?['currentStage']
+          ?.toString();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && widget.isActive) _refreshAll();
+      });
+    }
+    if (widget.isCapstone &&
+        (oldWidget.studentData?['stage_options'] as List? ?? []).isEmpty &&
         (widget.studentData?['stage_options'] as List? ?? []).isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) { ref.read(teamDefenseProvider.notifier).fetch(); }
+        if (mounted) {
+          ref.read(teamDefenseProvider.notifier).fetch();
+        }
       });
     }
     if (oldWidget.subTabNotifier != widget.subTabNotifier) {
@@ -190,30 +243,55 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
   Future<void> _refreshAll() async {
     await Future.wait([
       if (widget.isCapstone) ref.read(teamDefenseProvider.notifier).fetch(),
-      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+      ref
+          .read(capstoneDeliverablesProvider.notifier)
+          .fetchDeliverables(
             scope: widget.isCapstone ? 'capstone' : 'pit',
             yearLevel: widget.isCapstone ? null : _studentYearLevel,
           ),
-      ref.read(dashboardProvider('student').notifier).fetchDashboardData(),
+      ref
+          .read(dashboardProvider('student').notifier)
+          .fetchDashboardData(silent: true),
     ]);
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(dataRefreshProvider, (previous, next) {
+      if (!widget.isActive || _refreshQueued) return;
+      const areas = [
+        DataArea.dashboard,
+        DataArea.deliverables,
+        DataArea.grades,
+        DataArea.scheduler,
+      ];
+      if (!areas.any((area) => (previous?[area] ?? 0) != (next[area] ?? 0))) {
+        return;
+      }
+      _refreshQueued = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _refreshQueued = false;
+        if (mounted && widget.isActive) _refreshAll();
+      });
+      WidgetsBinding.instance.ensureVisualUpdate();
+    });
     final delivState = ref.watch(capstoneDeliverablesProvider);
     final isCapstone = widget.isCapstone;
 
-    final backendStageOptions = (widget.studentData?['stage_options'] as List?)
+    final backendStageOptions =
+        (widget.studentData?['stage_options'] as List?)
             ?.map((e) => e.toString().trim())
             .where((s) => s.isNotEmpty)
             .toList() ??
         const <String>[];
-    final stageOptions = widget.studentData?.containsKey('stage_options') == true
+    final stageOptions =
+        widget.studentData?.containsKey('stage_options') == true
         ? backendStageOptions
         : delivState.stageOptions;
 
     final team = widget.studentData?['team'] as Map<String, dynamic>?;
-    final scheduleData = widget.studentData?['schedule'] as Map<String, dynamic>? ??
+    final scheduleData =
+        widget.studentData?['schedule'] as Map<String, dynamic>? ??
         widget.studentData?['defense_schedule'] as Map<String, dynamic>?;
     final grades = widget.studentData?['grades'] as Map<String, dynamic>?;
 
@@ -229,12 +307,19 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
 
     final teamData = team?['id'] == null
         ? delivState.teams.firstOrNull
-        : delivState.teams.where((t) =>
-            defenseRecordId(t['id']) == defenseRecordId(team?['id'])).firstOrNull;
-    final stagesList = (teamData?['stages'] as List? ?? widget.studentData?['stages'] as List? ?? [])
-        .cast<Map<String, dynamic>>();
+        : delivState.teams
+              .where(
+                (t) => defenseRecordId(t['id']) == defenseRecordId(team?['id']),
+              )
+              .firstOrNull;
+    final stagesList =
+        (teamData?['stages'] as List? ??
+                widget.studentData?['stages'] as List? ??
+                [])
+            .cast<Map<String, dynamic>>();
 
-    final rawActiveStageName = teamData?['current_stage']?.toString() ??
+    final rawActiveStageName =
+        teamData?['current_stage']?.toString() ??
         teamData?['current_defense_stage']?.toString() ??
         teamData?['ready_for_stage']?.toString() ??
         team?['currentStage']?.toString() ??
@@ -246,31 +331,44 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     final activeStageName = stageOptions.isEmpty
         ? ''
         : (stageOptions.any(
-                (s) => s.trim().toLowerCase() == rawActiveStageName.trim().toLowerCase())
-            ? rawActiveStageName
-            : stageOptions.first);
+                (s) =>
+                    s.trim().toLowerCase() ==
+                    rawActiveStageName.trim().toLowerCase(),
+              )
+              ? rawActiveStageName
+              : stageOptions.first);
 
-    final selectedStage = (_selectedStageForView != null &&
-            stageOptions.any((s) =>
-                s.trim().toLowerCase() == _selectedStageForView!.trim().toLowerCase()))
+    final selectedStage =
+        (_selectedStageForView != null &&
+            stageOptions.any(
+              (s) =>
+                  s.trim().toLowerCase() ==
+                  _selectedStageForView!.trim().toLowerCase(),
+            ))
         ? _selectedStageForView!
         : (delivState.selectedStage.isNotEmpty &&
-                stageOptions.any((s) =>
+              stageOptions.any(
+                (s) =>
                     s.trim().toLowerCase() ==
-                    delivState.selectedStage.trim().toLowerCase()))
-            ? delivState.selectedStage
-            : (activeStageName.isNotEmpty
-                ? activeStageName
-                : (stageOptions.firstOrNull ?? ''));
+                    delivState.selectedStage.trim().toLowerCase(),
+              ))
+        ? delivState.selectedStage
+        : (activeStageName.isNotEmpty
+              ? activeStageName
+              : (stageOptions.firstOrNull ?? ''));
 
     final isSelectedStageActive =
-        selectedStage.trim().toLowerCase() == activeStageName.trim().toLowerCase();
-    final selectedStageIndex = stageOptions
-        .indexWhere((s) => s.trim().toLowerCase() == selectedStage.trim().toLowerCase());
-    final activeStageIndex = stageOptions
-        .indexWhere((s) => s.trim().toLowerCase() == activeStageName.trim().toLowerCase());
+        selectedStage.trim().toLowerCase() ==
+        activeStageName.trim().toLowerCase();
+    final selectedStageIndex = stageOptions.indexWhere(
+      (s) => s.trim().toLowerCase() == selectedStage.trim().toLowerCase(),
+    );
+    final activeStageIndex = stageOptions.indexWhere(
+      (s) => s.trim().toLowerCase() == activeStageName.trim().toLowerCase(),
+    );
 
-    final adviserName = team?['adviserName']?.toString() ??
+    final adviserName =
+        team?['adviserName']?.toString() ??
         team?['adviser_name']?.toString() ??
         (isCapstone ? 'Unassigned' : 'N/A');
 
@@ -290,16 +388,22 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                 Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
                   child: Center(
-                    child: CircularProgressIndicator(color: DefensysTokens.maroonOf(context)),
+                    child: CircularProgressIndicator(
+                      color: DefensysTokens.maroonOf(context),
+                    ),
                   ),
                 )
               else if (stageOptions.isNotEmpty) ...[
                 // Outstanding Post-Defense Action Required Banner
                 Builder(
                   builder: (context) {
-                    final stageWithPending = StudentTaskBadgeHelper
-                        .firstStageWithPendingPostDeliverables(stagesList);
-                    if (stageWithPending == null) return const SizedBox.shrink();
+                    final stageWithPending =
+                        StudentTaskBadgeHelper.firstStageWithPendingPostDeliverables(
+                          stagesList,
+                        );
+                    if (stageWithPending == null) {
+                      return const SizedBox.shrink();
+                    }
                     return _buildPendingPostActionBanner(
                       pendingStageInfo: stageWithPending,
                       selectedStageName: selectedStage,
@@ -308,7 +412,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                           _selectedStageForView = stage;
                           _calculateRemainingTime();
                         });
-                        ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+                        ref
+                            .read(capstoneDeliverablesProvider.notifier)
+                            .fetchDeliverables(
                               scope: isCapstone ? 'capstone' : 'pit',
                               yearLevel: isCapstone ? null : _studentYearLevel,
                               selectedStage: stage,
@@ -330,7 +436,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         _selectedStageForView = stage;
                         _calculateRemainingTime();
                       });
-                      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+                      ref
+                          .read(capstoneDeliverablesProvider.notifier)
+                          .fetchDeliverables(
                             scope: 'capstone',
                             selectedStage: stage,
                           );
@@ -348,7 +456,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         _selectedStageForView = stage;
                         _calculateRemainingTime();
                       });
-                      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+                      ref
+                          .read(capstoneDeliverablesProvider.notifier)
+                          .fetchDeliverables(
                             scope: 'pit',
                             yearLevel: _studentYearLevel,
                             selectedStage: stage,
@@ -358,15 +468,21 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                 const SizedBox(height: 12),
 
                 // Contextual Notice Banner (Archive for past stages, Upcoming info for future stages - Capstone only)
-                if (isCapstone && !isSelectedStageActive && activeStageName.isNotEmpty) ...[
+                if (isCapstone &&
+                    !isSelectedStageActive &&
+                    activeStageName.isNotEmpty) ...[
                   Builder(
                     builder: (context) {
-                      final isPastStage = selectedStageIndex != -1 &&
+                      final isPastStage =
+                          selectedStageIndex != -1 &&
                           activeStageIndex != -1 &&
                           selectedStageIndex < activeStageIndex;
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
                           color: isPastStage
                               ? const Color(0xFFFFFBEB)
@@ -395,13 +511,19 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                 isPastStage
                                     ? (StudentTaskBadgeHelper.hasPendingPostDeliverables(
                                             stagesList.firstWhere(
-                                          (s) =>
-                                              s['stage_label']?.toString().trim().toLowerCase() ==
-                                              selectedStage.trim().toLowerCase(),
-                                          orElse: () => <String, dynamic>{},
-                                        ))
-                                        ? 'Viewing "$selectedStage": Post-defense deliverables are pending upload below'
-                                        : 'Viewing past milestone archive for "$selectedStage"')
+                                              (s) =>
+                                                  s['stage_label']
+                                                      ?.toString()
+                                                      .trim()
+                                                      .toLowerCase() ==
+                                                  selectedStage
+                                                      .trim()
+                                                      .toLowerCase(),
+                                              orElse: () => <String, dynamic>{},
+                                            ),
+                                          )
+                                          ? 'Viewing "$selectedStage": Post-defense deliverables are pending upload below'
+                                          : 'Viewing past milestone archive for "$selectedStage"')
                                     : 'Upcoming Stage: "$selectedStage" (Deliverables open after $activeStageName)',
                                 style: TextStyle(
                                   fontSize: 11.5,
@@ -424,14 +546,18 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                     .read(capstoneDeliverablesProvider.notifier)
                                     .fetchDeliverables(
                                       scope: isCapstone ? 'capstone' : 'pit',
-                                      yearLevel: isCapstone ? null : _studentYearLevel,
+                                      yearLevel: isCapstone
+                                          ? null
+                                          : _studentYearLevel,
                                       selectedStage: activeStageName,
                                     );
                               },
                               borderRadius: BorderRadius.circular(6),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 3.5),
+                                  horizontal: 8,
+                                  vertical: 3.5,
+                                ),
                                 decoration: BoxDecoration(
                                   color: isPastStage
                                       ? const Color(0xFFFEF3C7)
@@ -439,10 +565,12 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                   borderRadius: BorderRadius.circular(6),
                                   border: Border.all(
                                     color: isPastStage
-                                        ? const Color(0xFFF59E0B)
-                                            .withValues(alpha: 0.4)
-                                        : const Color(0xFF94A3B8)
-                                            .withValues(alpha: 0.4),
+                                        ? const Color(
+                                            0xFFF59E0B,
+                                          ).withValues(alpha: 0.4)
+                                        : const Color(
+                                            0xFF94A3B8,
+                                          ).withValues(alpha: 0.4),
                                   ),
                                 ),
                                 child: Text(
@@ -476,12 +604,21 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   ),
                   child: Column(
                     children: [
-                      const Icon(Icons.account_tree_outlined, size: 28, color: DefensysTokens.steelGrey),
+                      const Icon(
+                        Icons.account_tree_outlined,
+                        size: 28,
+                        color: DefensysTokens.steelGrey,
+                      ),
                       const SizedBox(height: 12),
                       Text(
-                        isCapstone ? 'No defense stages configured yet' : 'No PIT events configured yet',
+                        isCapstone
+                            ? 'No defense stages configured yet'
+                            : 'No PIT events configured yet',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 6),
                       Text(
@@ -489,7 +626,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                             ? 'Your defense timeline will appear after an administrator adds a stage.'
                             : 'Your PIT events will appear after an administrator configures them.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 12, color: DefensysTokens.textSecondaryOf(context)),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: DefensysTokens.textSecondaryOf(context),
+                        ),
                       ),
                     ],
                   ),
@@ -499,9 +639,12 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
               Builder(
                 builder: (context) {
                   if (stageOptions.isEmpty) return const SizedBox.shrink();
-                  final hasPendingDeliverables = delivState.hasPendingDeliverables;
+                  final hasPendingDeliverables =
+                      delivState.hasPendingDeliverables;
                   final hasPendingPeer =
-                      StudentTaskBadgeHelper.hasPendingPeerEval(widget.studentData);
+                      StudentTaskBadgeHelper.hasPendingPeerEval(
+                        widget.studentData,
+                      );
 
                   return Container(
                     width: double.infinity,
@@ -526,11 +669,17 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         borderRadius: BorderRadius.circular(8),
                       ),
                       labelColor: Colors.white,
-                      unselectedLabelColor: DefensysTokens.textSecondaryOf(context),
-                      labelStyle:
-                          const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
-                      unselectedLabelStyle:
-                          const TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5),
+                      unselectedLabelColor: DefensysTokens.textSecondaryOf(
+                        context,
+                      ),
+                      labelStyle: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11.5,
+                      ),
+                      unselectedLabelStyle: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 11.5,
+                      ),
                       padding: const EdgeInsets.all(3),
                       dividerColor: Colors.transparent,
                       tabs: [
@@ -566,7 +715,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                     decoration: BoxDecoration(
                                       color: Colors.redAccent,
                                       shape: BoxShape.circle,
-                                      border: Border.all(color: Colors.white, width: 1),
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 1,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -581,7 +733,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                               mainAxisSize: MainAxisSize.min,
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                const Icon(Icons.star_outline_rounded, size: 13),
+                                const Icon(
+                                  Icons.star_outline_rounded,
+                                  size: 13,
+                                ),
                                 const SizedBox(width: 4),
                                 const Text('Peer Eval'),
                                 if (hasPendingPeer) ...[
@@ -592,7 +747,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                     decoration: BoxDecoration(
                                       color: Colors.redAccent,
                                       shape: BoxShape.circle,
-                                      border: Border.all(color: Colors.white, width: 1),
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 1,
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -621,10 +779,17 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                             .map((g) => Map<String, dynamic>.from(g))
                             .toList();
                         return TeamDefenseRecordsView(
-                          teamId: defenseRecordId(teamData?['id'] ?? team?['id']) ?? -1,
+                          teamId:
+                              defenseRecordId(teamData?['id'] ?? team?['id']) ??
+                              -1,
                           selectedStage: selectedStage,
-                          projectVersion: defenseRecordId(teamData?['project_version'] ?? team?['project_version']),
-                          semesterId: defenseRecordId(teamData?['semester_id'] ?? team?['semester_id']),
+                          projectVersion: defenseRecordId(
+                            teamData?['project_version'] ??
+                                team?['project_version'],
+                          ),
+                          semesterId: defenseRecordId(
+                            teamData?['semester_id'] ?? team?['semester_id'],
+                          ),
                           adviserName: adviserName,
                           grades: stageGrades,
                         );
@@ -654,11 +819,17 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                             selectedStage.trim().toLowerCase(),
                         orElse: () => <String, dynamic>{},
                       );
-                      final stageSubs = (stageInfo['my_peer_submissions'] as List?)
-                              ?.cast<Map<String, dynamic>>() ?? [];
-                      final fallbackSubs = (widget.studentData?['myPeerSubmissions'] as List?)
-                              ?.cast<Map<String, dynamic>>() ?? [];
-                      final rawSubmissions = stageSubs.isNotEmpty ? stageSubs : fallbackSubs;
+                      final stageSubs =
+                          (stageInfo['my_peer_submissions'] as List?)
+                              ?.cast<Map<String, dynamic>>() ??
+                          [];
+                      final fallbackSubs =
+                          (widget.studentData?['myPeerSubmissions'] as List?)
+                              ?.cast<Map<String, dynamic>>() ??
+                          [];
+                      final rawSubmissions = stageSubs.isNotEmpty
+                          ? stageSubs
+                          : fallbackSubs;
                       final stageMySubmissions = rawSubmissions.where((sub) {
                         final subStage = sub['stage']?.toString();
                         if (subStage == null || subStage.isEmpty) {
@@ -667,19 +838,25 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         return subStage.trim().toLowerCase() ==
                             selectedStage.trim().toLowerCase();
                       }).toList();
-                      final effectiveSubmissions = (stageMySubmissions.isEmpty && isSelectedStageActive)
+                      final effectiveSubmissions =
+                          (stageMySubmissions.isEmpty && isSelectedStageActive)
                           ? rawSubmissions
                           : stageMySubmissions;
 
-                      final stagePeerCriteria = (stageInfo['peer_criteria'] as List? ??
-                              (isSelectedStageActive
-                                  ? (widget.studentData?['peerCriteria'] as List? ?? [])
-                                  : []))
-                          .cast<Map<String, dynamic>>();
-                      final stagePeerEvalAllowed = stageInfo.containsKey('peer_eval_allowed')
+                      final stagePeerCriteria =
+                          (stageInfo['peer_criteria'] as List? ??
+                                  (isSelectedStageActive
+                                      ? (widget.studentData?['peerCriteria']
+                                                as List? ??
+                                            [])
+                                      : []))
+                              .cast<Map<String, dynamic>>();
+                      final stagePeerEvalAllowed =
+                          stageInfo.containsKey('peer_eval_allowed')
                           ? stageInfo['peer_eval_allowed'] == true
                           : (isSelectedStageActive && peerEvalAllowed);
-                      final stageHideHistory = !isSelectedStageActive &&
+                      final stageHideHistory =
+                          !isSelectedStageActive &&
                           stageMySubmissions.isEmpty &&
                           stageInfo['peer_eval_allowed'] != true &&
                           stageInfo['grade']?['status'] != 'awaiting_peers';
@@ -688,17 +865,23 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         isCapstone: isCapstone,
                         peerEvalAllowed: stagePeerEvalAllowed,
                         peerEvalUnavailableReason:
-                            stageInfo['peer_eval_unavailable_reason']?.toString() ??
+                            stageInfo['peer_eval_unavailable_reason']
+                                ?.toString() ??
                             (isSelectedStageActive
-                                ? (widget.studentData?['peerEvalUnavailableReason'])?.toString()
+                                ? (widget.studentData?['peerEvalUnavailableReason'])
+                                      ?.toString()
                                 : null),
                         teammates: teammates,
                         peerCriteria: stagePeerCriteria,
                         myPeerSubmissions: effectiveSubmissions,
-                        studentId: widget.studentData?['student']?['id']?.toString() ?? '',
+                        studentId:
+                            widget.studentData?['student']?['id']?.toString() ??
+                            '',
                         teamId: team?['id']?.toString() ?? '',
                         peerWeight:
-                            (widget.studentData?['weights']?['peer'] as num?)?.toInt() ?? 20,
+                            (widget.studentData?['weights']?['peer'] as num?)
+                                ?.toInt() ??
+                            20,
                         onPeerSubmitted: _refreshAll,
                         onRefresh: _refreshAll,
                         isEmbedded: true,
@@ -725,26 +908,45 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     required ValueChanged<String> onStageSelected,
   }) {
     final pendingStageLabel = pendingStageInfo['stage_label']?.toString() ?? '';
-    final pendingCount =
-        StudentTaskBadgeHelper.pendingPostDeliverablesCount(pendingStageInfo);
-    if (pendingCount <= 0 || pendingStageLabel.isEmpty) return const SizedBox.shrink();
+    final pendingCount = StudentTaskBadgeHelper.pendingPostDeliverablesCount(
+      pendingStageInfo,
+    );
+    if (pendingCount <= 0 || pendingStageLabel.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
-    final isPendingCurrentSelected = pendingStageLabel.trim().toLowerCase() ==
+    final isPendingCurrentSelected =
+        pendingStageLabel.trim().toLowerCase() ==
         selectedStageName.trim().toLowerCase();
 
-    final gradeData = (pendingStageInfo['grade'] as Map<String, dynamic>?) ??
-        (pendingStageInfo['grade'] is Map ? Map<String, dynamic>.from(pendingStageInfo['grade'] as Map) : null);
-    final verdict = gradeData?['verdict']?.toString() ?? pendingStageInfo['verdict']?.toString();
+    final gradeData =
+        (pendingStageInfo['grade'] as Map<String, dynamic>?) ??
+        (pendingStageInfo['grade'] is Map
+            ? Map<String, dynamic>.from(pendingStageInfo['grade'] as Map)
+            : null);
+    final verdict =
+        gradeData?['verdict']?.toString() ??
+        pendingStageInfo['verdict']?.toString();
     final verdictRemarks = gradeData?['verdict_remarks']?.toString();
     final revisionDeadline = gradeData?['revision_deadline']?.toString();
     final isRevisions = verdict == 'approved_with_revisions';
 
-    final themeColor = isRevisions ? const Color(0xFFD97706) : const Color(0xFF2563EB);
-    final bgColor = isRevisions ? const Color(0xFFFFFBEB) : const Color(0xFFEFF6FF);
-    final borderColor = isRevisions ? const Color(0xFFFDE68A) : const Color(0xFFBFDBFE);
-    final iconBgColor = isRevisions ? const Color(0xFFF59E0B) : const Color(0xFF3B82F6);
+    final themeColor = isRevisions
+        ? const Color(0xFFD97706)
+        : const Color(0xFF2563EB);
+    final bgColor = isRevisions
+        ? const Color(0xFFFFFBEB)
+        : const Color(0xFFEFF6FF);
+    final borderColor = isRevisions
+        ? const Color(0xFFFDE68A)
+        : const Color(0xFFBFDBFE);
+    final iconBgColor = isRevisions
+        ? const Color(0xFFF59E0B)
+        : const Color(0xFF3B82F6);
 
-    final titleText = isRevisions ? 'Revisions & Compliance Required' : 'Post-Defense Requirements Due';
+    final titleText = isRevisions
+        ? 'Revisions & Compliance Required'
+        : 'Post-Defense Requirements Due';
     final descText = isRevisions
         ? '$pendingStageLabel defense was approved with revisions. Please address the panel directives and upload the $pendingCount required post-defense deliverable${pendingCount > 1 ? 's' : ''}.'
         : '$pendingStageLabel defense passed! Please submit the $pendingCount required final deliverable${pendingCount > 1 ? 's' : ''} to complete this milestone.';
@@ -774,7 +976,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
               shape: BoxShape.circle,
             ),
             child: Icon(
-              isRevisions ? Icons.assignment_late_rounded : Icons.task_alt_rounded,
+              isRevisions
+                  ? Icons.assignment_late_rounded
+                  : Icons.task_alt_rounded,
               color: themeColor,
               size: 20,
             ),
@@ -797,7 +1001,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     ),
                     const SizedBox(width: 6),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 1.5,
+                      ),
                       decoration: BoxDecoration(
                         color: themeColor,
                         borderRadius: BorderRadius.circular(8),
@@ -811,10 +1018,14 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         ),
                       ),
                     ),
-                    if (revisionDeadline != null && revisionDeadline.isNotEmpty) ...[
+                    if (revisionDeadline != null &&
+                        revisionDeadline.isNotEmpty) ...[
                       const SizedBox(width: 6),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 1.5,
+                        ),
                         decoration: BoxDecoration(
                           color: DefensysTokens.surfaceOf(context),
                           borderRadius: BorderRadius.circular(6),
@@ -823,7 +1034,11 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.schedule_rounded, size: 10, color: themeColor),
+                            Icon(
+                              Icons.schedule_rounded,
+                              size: 10,
+                              color: themeColor,
+                            ),
                             const SizedBox(width: 3),
                             Text(
                               'Due: $revisionDeadline',
@@ -845,11 +1060,15 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,
-                    color: isRevisions ? const Color(0xFF92400E) : const Color(0xFF1E3A8A),
+                    color: isRevisions
+                        ? const Color(0xFF92400E)
+                        : const Color(0xFF1E3A8A),
                     height: 1.3,
                   ),
                 ),
-                if (isRevisions && verdictRemarks != null && verdictRemarks.trim().isNotEmpty) ...[
+                if (isRevisions &&
+                    verdictRemarks != null &&
+                    verdictRemarks.trim().isNotEmpty) ...[
                   const SizedBox(height: 6),
                   Container(
                     width: double.infinity,
@@ -862,7 +1081,11 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.format_quote_rounded, size: 14, color: Color(0xFFD97706)),
+                        const Icon(
+                          Icons.format_quote_rounded,
+                          size: 14,
+                          color: Color(0xFFD97706),
+                        ),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
@@ -895,7 +1118,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   label: Text(
                     isPendingCurrentSelected && _activeSubIndex == 1
                         ? 'Viewing Deliverables Below'
-                        : (isRevisions ? 'Upload $pendingStageLabel Revisions' : 'Upload $pendingStageLabel Files'),
+                        : (isRevisions
+                              ? 'Upload $pendingStageLabel Revisions'
+                              : 'Upload $pendingStageLabel Files'),
                     style: const TextStyle(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
@@ -904,7 +1129,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   style: ElevatedButton.styleFrom(
                     backgroundColor: themeColor,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -929,11 +1157,33 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     required Map<String, dynamic>? grades,
     required ValueChanged<String> onStageSelected,
   }) {
-    final eventTitle = selectedStageName.isNotEmpty ? selectedStageName : 'PIT Milestone Event';
-    final dateStr = (scheduleData?['date'] ?? scheduleData?['scheduled_date'] ?? scheduleData?['defense_date'])?.toString() ?? '';
-    final timeStr = (scheduleData?['time'] ?? scheduleData?['time_slot'] ?? scheduleData?['start_time'])?.toString() ?? '';
-    final roomStr = (scheduleData?['room'] ?? scheduleData?['venue'] ?? scheduleData?['room_name'])?.toString() ?? '';
-    final chairStr = (scheduleData?['panel_chair'] ?? scheduleData?['chair'] ?? scheduleData?['panel_chair_name'])?.toString() ?? '';
+    final eventTitle = selectedStageName.isNotEmpty
+        ? selectedStageName
+        : 'PIT Milestone Event';
+    final dateStr =
+        (scheduleData?['date'] ??
+                scheduleData?['scheduled_date'] ??
+                scheduleData?['defense_date'])
+            ?.toString() ??
+        '';
+    final timeStr =
+        (scheduleData?['time'] ??
+                scheduleData?['time_slot'] ??
+                scheduleData?['start_time'])
+            ?.toString() ??
+        '';
+    final roomStr =
+        (scheduleData?['room'] ??
+                scheduleData?['venue'] ??
+                scheduleData?['room_name'])
+            ?.toString() ??
+        '';
+    final chairStr =
+        (scheduleData?['panel_chair'] ??
+                scheduleData?['chair'] ??
+                scheduleData?['panel_chair_name'])
+            ?.toString() ??
+        '';
 
     final hasSchedule = dateStr.isNotEmpty;
 
@@ -961,7 +1211,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
+                  color: DefensysTokens.maroonOf(
+                    context,
+                  ).withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
@@ -1015,11 +1267,20 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 3.5,
+                ),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
+                  color: DefensysTokens.maroonOf(
+                    context,
+                  ).withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2)),
+                  border: Border.all(
+                    color: DefensysTokens.maroonOf(
+                      context,
+                    ).withValues(alpha: 0.2),
+                  ),
                 ),
                 child: Text(
                   'PIT Event',
@@ -1043,7 +1304,11 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
               ),
               child: Row(
                 children: [
-                  Icon(Icons.person_outline_rounded, size: 13, color: DefensysTokens.textSecondaryOf(context)),
+                  Icon(
+                    Icons.person_outline_rounded,
+                    size: 13,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -1059,7 +1324,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   ),
                   const SizedBox(width: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFFE2E8F0),
                       borderRadius: BorderRadius.circular(4),
@@ -1089,17 +1357,26 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
                 itemBuilder: (context, idx) {
                   final opt = stageOptions[idx];
-                  final isSel = opt.trim().toLowerCase() == selectedStageName.trim().toLowerCase();
+                  final isSel =
+                      opt.trim().toLowerCase() ==
+                      selectedStageName.trim().toLowerCase();
                   return InkWell(
                     onTap: () => onStageSelected(opt),
                     borderRadius: BorderRadius.circular(20),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
-                        color: isSel ? DefensysTokens.maroonOf(context) : DefensysTokens.surfaceHigherOf(context),
+                        color: isSel
+                            ? DefensysTokens.maroonOf(context)
+                            : DefensysTokens.surfaceHigherOf(context),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: isSel ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
+                          color: isSel
+                              ? DefensysTokens.maroonOf(context)
+                              : DefensysTokens.borderOf(context),
                         ),
                       ),
                       child: Text(
@@ -1107,7 +1384,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
-                          color: isSel ? Colors.white : DefensysTokens.textSecondaryOf(context),
+                          color: isSel
+                              ? Colors.white
+                              : DefensysTokens.textSecondaryOf(context),
                         ),
                       ),
                     ),
@@ -1163,11 +1442,15 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     Container(
                       padding: const EdgeInsets.all(5),
                       decoration: BoxDecoration(
-                        color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
+                        color: DefensysTokens.maroonOf(
+                          context,
+                        ).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(7),
                       ),
                       child: Icon(
-                        isCapstone ? Icons.alt_route_rounded : Icons.event_available_rounded,
+                        isCapstone
+                            ? Icons.alt_route_rounded
+                            : Icons.event_available_rounded,
                         size: 16,
                         color: DefensysTokens.maroonTextOf(context),
                       ),
@@ -1175,7 +1458,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     const SizedBox(width: 8),
                     Flexible(
                       child: Text(
-                        isCapstone ? 'Capstone Defense Stages' : 'Milestone Stages',
+                        isCapstone
+                            ? 'Capstone Defense Stages'
+                            : 'Milestone Stages',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,
@@ -1191,7 +1476,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
+                  color: DefensysTokens.maroonOf(
+                    context,
+                  ).withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -1251,24 +1538,46 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                       orElse: () => <String, dynamic>{},
                     );
 
-                    final isCleared = stageInfo['is_officially_complete'] == true ||
-                        stageInfo['stage_status_detail']?.toString() == 'passed' ||
-                        stageInfo['stage_progress_status']?.toString() == 'passed' ||
+                    final isCleared =
+                        stageInfo['is_officially_complete'] == true ||
+                        stageInfo['stage_status_detail']?.toString() ==
+                            'passed' ||
+                        stageInfo['stage_progress_status']?.toString() ==
+                            'passed' ||
                         (stageIdx < activeStageIdx && activeStageIdx != -1);
 
-                    final isActive = (stageIdx == activeStageIdx) ||
-                        (!isCleared && (stageIdx == 0 || stageIdx <= activeStageIdx));
+                    final isActive =
+                        (stageIdx == activeStageIdx) ||
+                        (!isCleared &&
+                            (stageIdx == 0 || stageIdx <= activeStageIdx));
 
                     final hasPendingPost =
-                        StudentTaskBadgeHelper.hasPendingPostDeliverables(stageInfo);
-                    final gradeData = (stageInfo['grade'] as Map<String, dynamic>?) ??
-                        (stageInfo['grade'] is Map ? Map<String, dynamic>.from(stageInfo['grade'] as Map) : null);
-                    final verdict = gradeData?['verdict']?.toString() ?? stageInfo['verdict']?.toString();
+                        StudentTaskBadgeHelper.hasPendingPostDeliverables(
+                          stageInfo,
+                        );
+                    final gradeData =
+                        (stageInfo['grade'] as Map<String, dynamic>?) ??
+                        (stageInfo['grade'] is Map
+                            ? Map<String, dynamic>.from(
+                                stageInfo['grade'] as Map,
+                              )
+                            : null);
+                    final verdict =
+                        gradeData?['verdict']?.toString() ??
+                        stageInfo['verdict']?.toString();
 
                     final isForRedefense = verdict == 'for_redefense';
-                    final isRevisionsDue = isCleared && hasPendingPost && verdict == 'approved_with_revisions';
-                    final isRequirementsDue = isCleared && hasPendingPost && !isRevisionsDue && !isForRedefense;
-                    final isStagePassed = isCleared && !hasPendingPost && !isForRedefense;
+                    final isRevisionsDue =
+                        isCleared &&
+                        hasPendingPost &&
+                        verdict == 'approved_with_revisions';
+                    final isRequirementsDue =
+                        isCleared &&
+                        hasPendingPost &&
+                        !isRevisionsDue &&
+                        !isForRedefense;
+                    final isStagePassed =
+                        isCleared && !hasPendingPost && !isForRedefense;
 
                     String statusLabel;
                     Color statusColor;
@@ -1291,7 +1600,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                       statusIcon = Icons.check_circle_rounded;
                     } else {
                       statusLabel = isActive ? 'Current' : 'Upcoming';
-                      statusColor = isActive ? DefensysTokens.maroonOf(context) : const Color(0xFF94A3B8);
+                      statusColor = isActive
+                          ? DefensysTokens.maroonOf(context)
+                          : const Color(0xFF94A3B8);
                       statusIcon = null;
                     }
 
@@ -1310,23 +1621,54 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                       nodeBg = const Color(0xFF16A34A);
                       nodeBorder = const Color(0xFF15803D);
                     } else {
-                      nodeBg = isActive ? DefensysTokens.maroonOf(context) : const Color(0xFFF1F5F9);
-                      nodeBorder = isActive ? DefensysTokens.maroonOf(context) : const Color(0xFFCBD5E1);
+                      nodeBg = isActive
+                          ? DefensysTokens.maroonOf(context)
+                          : const Color(0xFFF1F5F9);
+                      nodeBorder = isActive
+                          ? DefensysTokens.maroonOf(context)
+                          : const Color(0xFFCBD5E1);
                     }
 
                     Widget nodeInner;
                     if (isForRedefense) {
-                      nodeInner = const Icon(Icons.replay_rounded, size: 18, color: Colors.white);
+                      nodeInner = const Icon(
+                        Icons.replay_rounded,
+                        size: 18,
+                        color: Colors.white,
+                      );
                     } else if (isRevisionsDue) {
-                      nodeInner = const Icon(Icons.pending_actions_rounded, size: 18, color: Colors.white);
+                      nodeInner = const Icon(
+                        Icons.pending_actions_rounded,
+                        size: 18,
+                        color: Colors.white,
+                      );
                     } else if (isRequirementsDue) {
-                      nodeInner = const Icon(Icons.upload_file_rounded, size: 18, color: Colors.white);
+                      nodeInner = const Icon(
+                        Icons.upload_file_rounded,
+                        size: 18,
+                        color: Colors.white,
+                      );
                     } else if (isStagePassed) {
-                      nodeInner = const Icon(Icons.check_rounded, size: 19, color: Colors.white);
+                      nodeInner = const Icon(
+                        Icons.check_rounded,
+                        size: 19,
+                        color: Colors.white,
+                      );
                     } else if (isActive) {
-                      nodeInner = Text('${stageIdx + 1}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.white));
+                      nodeInner = Text(
+                        '${stageIdx + 1}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      );
                     } else {
-                      nodeInner = Icon(Icons.lock_outline_rounded, size: 14, color: DefensysTokens.textSecondaryOf(context));
+                      nodeInner = Icon(
+                        Icons.lock_outline_rounded,
+                        size: 14,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      );
                     }
 
                     return Expanded(
@@ -1337,7 +1679,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         },
                         borderRadius: BorderRadius.circular(10),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 4,
+                            horizontal: 2,
+                          ),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -1375,34 +1720,46 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                   shape: BoxShape.circle,
                                   border: Border.all(
                                     color: isSelected ? nodeBorder : nodeBg,
-                                    width: isSelected ? 3.0 : (isActive ? 2.5 : 1.5),
+                                    width: isSelected
+                                        ? 3.0
+                                        : (isActive ? 2.5 : 1.5),
                                   ),
                                   boxShadow: isSelected
                                       ? [
                                           BoxShadow(
-                                            color: nodeBorder.withValues(alpha: 0.45),
+                                            color: nodeBorder.withValues(
+                                              alpha: 0.45,
+                                            ),
                                             blurRadius: 10,
                                             spreadRadius: 2,
                                           ),
                                         ]
                                       : (isActive
-                                          ? [
-                                              BoxShadow(
-                                                color: DefensysTokens.maroonOf(context)
-                                                    .withValues(alpha: 0.35),
-                                                blurRadius: 8,
-                                                spreadRadius: 1,
-                                              ),
-                                            ]
-                                          : (isCleared
-                                              ? [
-                                                  BoxShadow(
-                                                    color: nodeBorder.withValues(alpha: 0.25),
-                                                    blurRadius: 6,
-                                                    offset: const Offset(0, 2),
-                                                  ),
-                                                ]
-                                              : null)),
+                                            ? [
+                                                BoxShadow(
+                                                  color:
+                                                      DefensysTokens.maroonOf(
+                                                        context,
+                                                      ).withValues(alpha: 0.35),
+                                                  blurRadius: 8,
+                                                  spreadRadius: 1,
+                                                ),
+                                              ]
+                                            : (isCleared
+                                                  ? [
+                                                      BoxShadow(
+                                                        color: nodeBorder
+                                                            .withValues(
+                                                              alpha: 0.25,
+                                                            ),
+                                                        blurRadius: 6,
+                                                        offset: const Offset(
+                                                          0,
+                                                          2,
+                                                        ),
+                                                      ),
+                                                    ]
+                                                  : null)),
                                 ),
                                 child: Center(child: nodeInner),
                               ),
@@ -1419,24 +1776,30 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                   fontWeight: isSelected
                                       ? FontWeight.w900
                                       : (isActive
-                                          ? FontWeight.w800
-                                          : (isCleared
-                                              ? FontWeight.w700
-                                              : FontWeight.w600)),
+                                            ? FontWeight.w800
+                                            : (isCleared
+                                                  ? FontWeight.w700
+                                                  : FontWeight.w600)),
                                   color: isSelected
                                       ? statusColor
                                       : (isActive
-                                          ? DefensysTokens.textPrimaryOf(context)
-                                          : (isCleared
-                                              ? const Color(0xFF1E293B)
-                                              : DefensysTokens.textSecondaryOf(context))),
+                                            ? DefensysTokens.textPrimaryOf(
+                                                context,
+                                              )
+                                            : (isCleared
+                                                  ? const Color(0xFF1E293B)
+                                                  : DefensysTokens.textSecondaryOf(
+                                                      context,
+                                                    ))),
                                 ),
                               ),
                               if (isSelected) ...[
                                 const SizedBox(height: 2),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 5, vertical: 1),
+                                    horizontal: 5,
+                                    vertical: 1,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: statusColor.withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(6),
@@ -1514,7 +1877,8 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
       orElse: () => <String, dynamic>{},
     );
 
-    final isCleared = stageInfo['is_officially_complete'] == true ||
+    final isCleared =
+        stageInfo['is_officially_complete'] == true ||
         stageInfo['stage_status_detail']?.toString() == 'passed' ||
         stageInfo['stage_progress_status']?.toString() == 'passed' ||
         (selectedIdx != -1 && activeIdx != -1 && selectedIdx < activeIdx);
@@ -1522,30 +1886,37 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     final isActive = (normSelected == normActive);
     final isUpcoming = !isCleared && !isActive;
     final isStageEndorsed = stageInfo['endorsed'] == true;
-    final noEndorsementNeeded = !isCapstone &&
+    final noEndorsementNeeded =
+        !isCapstone &&
         stageInfo['deliverables_configured'] == true &&
         stageInfo['endorsement_required'] == false;
-    final isEndorsedOrCleared = isCleared || isStageEndorsed || noEndorsementNeeded;
+    final isEndorsedOrCleared =
+        isCleared || isStageEndorsed || noEndorsementNeeded;
 
     // Resolve Grade / Deliberation data
-    final stageGradeMap = (stageInfo['grade'] as Map<String, dynamic>?) ??
-        (grades != null && grades['stage']?.toString().trim().toLowerCase() == normSelected
+    final stageGradeMap =
+        (stageInfo['grade'] as Map<String, dynamic>?) ??
+        (grades != null &&
+                grades['stage']?.toString().trim().toLowerCase() == normSelected
             ? grades
             : null);
 
-    final finalScore = stageGradeMap?['final_grade'] ??
+    final finalScore =
+        stageGradeMap?['final_grade'] ??
         stageGradeMap?['grade'] ??
         (isCleared ? (stageInfo['score'] ?? 'Passed') : null);
 
     final resultStr =
         stageGradeMap?['result']?.toString() ?? (isCleared ? 'PASSED' : null);
 
-    final completedDate = stageInfo['completed_date']?.toString() ??
+    final completedDate =
+        stageInfo['completed_date']?.toString() ??
         stageGradeMap?['completed_date']?.toString() ??
         stageGradeMap?['date']?.toString() ??
         'Completed';
 
-    final remarks = stageGradeMap?['remarks']?.toString() ??
+    final remarks =
+        stageGradeMap?['remarks']?.toString() ??
         stageInfo['remarks']?.toString();
 
     final presScore = stageGradeMap?['presentation']?.toString();
@@ -1553,21 +1924,25 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     final qnaScore = stageGradeMap?['qna']?.toString();
 
     // Resolve Schedule & Venue strictly for selected stage
-    final isTopScheduleForStage = schedule != null &&
+    final isTopScheduleForStage =
+        schedule != null &&
         schedule['stage']?.toString().trim().toLowerCase() == normSelected;
     final stageSchedule = isTopScheduleForStage
         ? schedule
         : (stageInfo['schedule'] as Map<String, dynamic>?);
 
-    final scheduledDate = stageSchedule?['date']?.toString() ??
+    final scheduledDate =
+        stageSchedule?['date']?.toString() ??
         stageSchedule?['scheduled_date']?.toString();
-    final startTime = stageSchedule?['startTime']?.toString() ??
+    final startTime =
+        stageSchedule?['startTime']?.toString() ??
         stageSchedule?['start_time']?.toString();
     final room = stageSchedule?['room']?.toString();
     final panelists = (stageSchedule?['panelists'] as List?) ?? [];
     final documenter = (stageSchedule?['documenter'] as Map?) ?? {};
 
-    final hasSchedule = scheduledDate != null && scheduledDate.trim().isNotEmpty;
+    final hasSchedule =
+        scheduledDate != null && scheduledDate.trim().isNotEmpty;
 
     return Container(
       width: double.infinity,
@@ -1602,7 +1977,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   isCleared
                       ? Icons.verified_rounded
                       : Icons.calendar_month_rounded,
-                  color: isCleared ? const Color(0xFF15803D) : DefensysTokens.maroonTextOf(context),
+                  color: isCleared
+                      ? const Color(0xFF15803D)
+                      : DefensysTokens.maroonTextOf(context),
                   size: 20,
                 ),
               ),
@@ -1624,7 +2001,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     Text(
                       isCleared
                           ? 'Milestone Cleared & Evaluated'
-                          : (isActive ? 'Active Stage Deliberation' : 'Upcoming Stage'),
+                          : (isActive
+                                ? 'Active Stage Deliberation'
+                                : 'Upcoming Stage'),
                       style: TextStyle(
                         fontSize: 11.5,
                         color: isCleared
@@ -1636,158 +2015,203 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   ],
                 ),
               ),
-              Builder(builder: (context) {
-                final stageVerdict = stageGradeMap?['verdict']?.toString();
-                final hasPendingPostSelected = StudentTaskBadgeHelper.hasPendingPostDeliverables(stageInfo);
-                String hBadgeText;
-                Color hBadgeBg;
-                Color hBadgeBorder;
-                Color hBadgeFg;
+              Builder(
+                builder: (context) {
+                  final stageVerdict = stageGradeMap?['verdict']?.toString();
+                  final hasPendingPostSelected =
+                      StudentTaskBadgeHelper.hasPendingPostDeliverables(
+                        stageInfo,
+                      );
+                  String hBadgeText;
+                  Color hBadgeBg;
+                  Color hBadgeBorder;
+                  Color hBadgeFg;
 
-                if (stageVerdict == 'for_redefense') {
-                  hBadgeText = 'For Re-defense';
-                  hBadgeBg = const Color(0xFFFEF2F2);
-                  hBadgeBorder = const Color(0xFFFECACA);
-                  hBadgeFg = const Color(0xFFDC2626);
-                } else if (stageVerdict == 'approved_with_revisions' && hasPendingPostSelected) {
-                  hBadgeText = 'Revisions Due';
-                  hBadgeBg = const Color(0xFFFFFBEB);
-                  hBadgeBorder = const Color(0xFFFDE68A);
-                  hBadgeFg = const Color(0xFFD97706);
-                } else if (hasPendingPostSelected) {
-                  hBadgeText = 'Requirements Due';
-                  hBadgeBg = const Color(0xFFEFF6FF);
-                  hBadgeBorder = const Color(0xFFBFDBFE);
-                  hBadgeFg = const Color(0xFF2563EB);
-                } else if (isCleared) {
-                  hBadgeText = 'Passed ✓';
-                  hBadgeBg = const Color(0xFFDCFCE7);
-                  hBadgeBorder = const Color(0xFF86EFAC);
-                  hBadgeFg = const Color(0xFF15803D);
-                } else {
-                  hBadgeText = isActive ? 'Current' : 'Upcoming';
-                  hBadgeBg = isActive ? const Color(0xFFFEF2F2) : const Color(0xFFF1F5F9);
-                  hBadgeBorder = isActive ? const Color(0xFFFCA5A5) : const Color(0xFFCBD5E1);
-                  hBadgeFg = isActive ? DefensysTokens.maroonOf(context) : const Color(0xFF64748B);
-                }
+                  if (stageVerdict == 'for_redefense') {
+                    hBadgeText = 'For Re-defense';
+                    hBadgeBg = const Color(0xFFFEF2F2);
+                    hBadgeBorder = const Color(0xFFFECACA);
+                    hBadgeFg = const Color(0xFFDC2626);
+                  } else if (stageVerdict == 'approved_with_revisions' &&
+                      hasPendingPostSelected) {
+                    hBadgeText = 'Revisions Due';
+                    hBadgeBg = const Color(0xFFFFFBEB);
+                    hBadgeBorder = const Color(0xFFFDE68A);
+                    hBadgeFg = const Color(0xFFD97706);
+                  } else if (hasPendingPostSelected) {
+                    hBadgeText = 'Requirements Due';
+                    hBadgeBg = const Color(0xFFEFF6FF);
+                    hBadgeBorder = const Color(0xFFBFDBFE);
+                    hBadgeFg = const Color(0xFF2563EB);
+                  } else if (isCleared) {
+                    hBadgeText = 'Passed ✓';
+                    hBadgeBg = const Color(0xFFDCFCE7);
+                    hBadgeBorder = const Color(0xFF86EFAC);
+                    hBadgeFg = const Color(0xFF15803D);
+                  } else {
+                    hBadgeText = isActive ? 'Current' : 'Upcoming';
+                    hBadgeBg = isActive
+                        ? const Color(0xFFFEF2F2)
+                        : const Color(0xFFF1F5F9);
+                    hBadgeBorder = isActive
+                        ? const Color(0xFFFCA5A5)
+                        : const Color(0xFFCBD5E1);
+                    hBadgeFg = isActive
+                        ? DefensysTokens.maroonOf(context)
+                        : const Color(0xFF64748B);
+                  }
 
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: hBadgeBg,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: hBadgeBorder),
-                  ),
-                  child: Text(
-                    hBadgeText,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: hBadgeFg,
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
                     ),
-                  ),
-                );
-              }),
+                    decoration: BoxDecoration(
+                      color: hBadgeBg,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: hBadgeBorder),
+                    ),
+                    child: Text(
+                      hBadgeText,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: hBadgeFg,
+                      ),
+                    ),
+                  );
+                },
+              ),
             ],
           ),
           const Divider(height: 24, color: Color(0xFFE2E8F0)),
 
           // ── CASE 1: CLEARED / PASSED STAGE ──
           if (isCleared) ...[
-            Builder(builder: (context) {
-              final verdictVal = stageGradeMap?['verdict']?.toString();
-              final isWithRevs = verdictVal == 'approved_with_revisions';
-              final deadlineStr = stageGradeMap?['revision_deadline']?.toString();
-              final cBg = isWithRevs ? const Color(0xFFFFFBEB) : const Color(0xFFF0FDF4);
-              final cBorder = isWithRevs ? const Color(0xFFFDE68A) : const Color(0xFFBBF7D0);
-              final cFg = isWithRevs ? const Color(0xFFD97706) : const Color(0xFF16A34A);
-              final cText = isWithRevs ? const Color(0xFF92400E) : const Color(0xFF15803D);
-              final cSubText = isWithRevs ? const Color(0xFFB45309) : const Color(0xFF166534);
+            Builder(
+              builder: (context) {
+                final verdictVal = stageGradeMap?['verdict']?.toString();
+                final isWithRevs = verdictVal == 'approved_with_revisions';
+                final deadlineStr = stageGradeMap?['revision_deadline']
+                    ?.toString();
+                final cBg = isWithRevs
+                    ? const Color(0xFFFFFBEB)
+                    : const Color(0xFFF0FDF4);
+                final cBorder = isWithRevs
+                    ? const Color(0xFFFDE68A)
+                    : const Color(0xFFBBF7D0);
+                final cFg = isWithRevs
+                    ? const Color(0xFFD97706)
+                    : const Color(0xFF16A34A);
+                final cText = isWithRevs
+                    ? const Color(0xFF92400E)
+                    : const Color(0xFF15803D);
+                final cSubText = isWithRevs
+                    ? const Color(0xFFB45309)
+                    : const Color(0xFF166534);
 
-              return Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: cBg,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: cBorder),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: cFg,
-                        shape: BoxShape.circle,
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: cBg,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: cBorder),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: cFg,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          isWithRevs
+                              ? Icons.assignment_late_rounded
+                              : Icons.verified_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
                       ),
-                      child: Icon(
-                        isWithRevs ? Icons.assignment_late_rounded : Icons.verified_rounded,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'Deliberation Result: ${resultStr ?? (isWithRevs ? 'APPROVED WITH REVISIONS' : 'PASSED')}',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                    color: cText,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Deliberation Result: ${resultStr ?? (isWithRevs ? 'APPROVED WITH REVISIONS' : 'PASSED')}',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: cText,
+                                    ),
                                   ),
                                 ),
-                              ),
-                              if (deadlineStr != null && deadlineStr.isNotEmpty) ...[
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: DefensysTokens.surfaceOf(context),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: cBorder),
+                                if (deadlineStr != null &&
+                                    deadlineStr.isNotEmpty) ...[
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: DefensysTokens.surfaceOf(context),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: cBorder),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.schedule_rounded,
+                                          size: 10,
+                                          color: cFg,
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          'Due: $deadlineStr',
+                                          style: TextStyle(
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: cFg,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.schedule_rounded, size: 10, color: cFg),
-                                      const SizedBox(width: 3),
-                                      Text(
-                                        'Due: $deadlineStr',
-                                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: cFg),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                                ],
                               ],
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Official Grade: ${finalScore ?? 'Passed'} • $completedDate',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              color: cSubText,
-                              fontWeight: FontWeight.w600,
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 2),
+                            Text(
+                              'Official Grade: ${finalScore ?? 'Passed'} • $completedDate',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: cSubText,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              );
-            }),
+                    ],
+                  ),
+                );
+              },
+            ),
 
             // Rubric Criteria Breakdown (if scores exist)
             if (presScore != null || techScore != null || qnaScore != null) ...[
               const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: DefensysTokens.surfaceHigherOf(context),
                   borderRadius: BorderRadius.circular(8),
@@ -1797,11 +2221,26 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     if (presScore != null)
-                      Expanded(child: _buildCriteriaScore('Presentation', '$presScore/30')),
+                      Expanded(
+                        child: _buildCriteriaScore(
+                          'Presentation',
+                          '$presScore/30',
+                        ),
+                      ),
                     if (techScore != null)
-                      Expanded(child: _buildCriteriaScore('Technical', '$techScore/50')),
+                      Expanded(
+                        child: _buildCriteriaScore(
+                          'Technical',
+                          '$techScore/50',
+                        ),
+                      ),
                     if (qnaScore != null)
-                      Expanded(child: _buildCriteriaScore('Q&A Defense', '$qnaScore/20')),
+                      Expanded(
+                        child: _buildCriteriaScore(
+                          'Q&A Defense',
+                          '$qnaScore/20',
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -1846,22 +2285,29 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
             const Divider(height: 1, color: Color(0xFFF1F5F9)),
             const SizedBox(height: 12),
           ]
-
           // ── CASE 2: ACTIVE STAGE ──
           else if (isActive) ...[
             if (hasSchedule) ...[
-              _scheduleMetaRow(Icons.calendar_month_outlined, 'Date & Time',
-                  '$scheduledDate${startTime != null ? ' at $startTime' : ''}'),
+              _scheduleMetaRow(
+                Icons.calendar_month_outlined,
+                'Date & Time',
+                '$scheduledDate${startTime != null ? ' at $startTime' : ''}',
+              ),
               const SizedBox(height: 10),
-              _scheduleMetaRow(Icons.location_on_outlined, 'Room / Venue',
-                  room?.isNotEmpty == true ? room! : 'Room TBA'),
+              _scheduleMetaRow(
+                Icons.location_on_outlined,
+                'Room / Venue',
+                room?.isNotEmpty == true ? room! : 'Room TBA',
+              ),
 
               if (panelists.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 _scheduleMetaRow(
                   Icons.people_outline_rounded,
                   'Defense Panelists',
-                  panelists.map((p) => p['name'] ?? p['username'] ?? 'Panelist').join(', '),
+                  panelists
+                      .map((p) => p['name'] ?? p['username'] ?? 'Panelist')
+                      .join(', '),
                 ),
               ],
 
@@ -1870,7 +2316,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                 _scheduleMetaRow(
                   Icons.edit_note_rounded,
                   'Assigned Documenter',
-                  documenter['name']?.toString() ?? documenter['username']?.toString() ?? '—',
+                  documenter['name']?.toString() ??
+                      documenter['username']?.toString() ??
+                      '—',
                 ),
               ],
 
@@ -1890,19 +2338,33 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    Expanded(child: _buildCountdownDigit(_timeUntilDefense!.inDays, 'Days')),
+                    Expanded(
+                      child: _buildCountdownDigit(
+                        _timeUntilDefense!.inDays,
+                        'Days',
+                      ),
+                    ),
                     const SizedBox(width: 6),
                     Expanded(
-                        child: _buildCountdownDigit(
-                            _timeUntilDefense!.inHours % 24, 'Hours')),
+                      child: _buildCountdownDigit(
+                        _timeUntilDefense!.inHours % 24,
+                        'Hours',
+                      ),
+                    ),
                     const SizedBox(width: 6),
                     Expanded(
-                        child: _buildCountdownDigit(
-                            _timeUntilDefense!.inMinutes % 60, 'Mins')),
+                      child: _buildCountdownDigit(
+                        _timeUntilDefense!.inMinutes % 60,
+                        'Mins',
+                      ),
+                    ),
                     const SizedBox(width: 6),
                     Expanded(
-                        child: _buildCountdownDigit(
-                            _timeUntilDefense!.inSeconds % 60, 'Secs')),
+                      child: _buildCountdownDigit(
+                        _timeUntilDefense!.inSeconds % 60,
+                        'Secs',
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 14),
@@ -1916,12 +2378,19 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.history_rounded, size: 16, color: DefensysTokens.textSecondaryOf(context)),
+                      Icon(
+                        Icons.history_rounded,
+                        size: 16,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'Defense date passed ($scheduledDate). Awaiting deliberation evaluation.',
-                          style: TextStyle(fontSize: 11, color: DefensysTokens.textSecondaryOf(context)),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: DefensysTokens.textSecondaryOf(context),
+                          ),
                         ),
                       ),
                     ],
@@ -1940,7 +2409,11 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                 ),
                 child: Column(
                   children: [
-                    Icon(Icons.event_available_outlined, size: 36, color: Colors.grey.shade400),
+                    Icon(
+                      Icons.event_available_outlined,
+                      size: 36,
+                      color: Colors.grey.shade400,
+                    ),
                     const SizedBox(height: 10),
                     Text(
                       'Defense schedule will be posted once assigned.',
@@ -1955,7 +2428,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     Text(
                       'Schedule will appear here once finalized.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 11.5, color: Colors.grey.shade500),
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: Colors.grey.shade500,
+                      ),
                     ),
                   ],
                 ),
@@ -1963,7 +2439,6 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
               const SizedBox(height: 14),
             ],
           ]
-
           // ── CASE 3: UPCOMING STAGE ──
           else if (isUpcoming) ...[
             Container(
@@ -1976,7 +2451,11 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
               ),
               child: Row(
                 children: [
-                  Icon(Icons.lock_outline_rounded, size: 22, color: DefensysTokens.textSecondaryOf(context)),
+                  Icon(
+                    Icons.lock_outline_rounded,
+                    size: 22,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -2036,14 +2515,16 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     ),
                     Text(
                       isCleared
-                          ? (isCapstone ? 'Milestone Endorsed & Completed ✓' : 'Event Completed ✓')
+                          ? (isCapstone
+                                ? 'Milestone Endorsed & Completed ✓'
+                                : 'Event Completed ✓')
                           : (isStageEndorsed
-                              ? 'Approved & Endorsed for Defense ✓'
-                              : noEndorsementNeeded
-                                  ? 'No endorsement required; ready to schedule'
-                                  : isCapstone
-                                      ? 'Awaiting Adviser Endorsement'
-                                      : 'Awaiting PIT Endorsement'),
+                                ? 'Approved & Endorsed for Defense ✓'
+                                : noEndorsementNeeded
+                                ? 'No endorsement required; ready to schedule'
+                                : isCapstone
+                                ? 'Awaiting Adviser Endorsement'
+                                : 'Awaiting PIT Endorsement'),
                       style: TextStyle(
                         fontSize: 10,
                         color: isEndorsedOrCleared

@@ -1,5 +1,6 @@
 """Source-level corrections and explicit published amendments with permanent evidence."""
 from decimal import Decimal, InvalidOperation
+from defensys_backend.read_projection import read_memoize
 
 from django.db import transaction
 from django.utils import timezone
@@ -19,15 +20,19 @@ def protected_grade(grade):
             or bool(grade.schedule_id and grade.schedule.status in ('done', 'archived')))
 
 
+@read_memoize(copy=True)
 def evaluator_completion(grade):
     """Require a complete team/member evaluation from every assigned identity."""
     schedule = grade.schedule
     if not schedule:
         return {'submitted': 0, 'required': 0}
-    expected = {(pid, None) for pid in schedule.panel_assignments.values_list('panelist_id', flat=True)}
-    expected |= {(None, str(pk)) for pk in schedule.guest_invitations.filter(is_active=True).values_list('pk', flat=True)}
-    expected |= {(None, str(pk)) for pk in schedule.guest_panelist_codes.filter(is_active=True).values_list('pk', flat=True)}
-    rows = list(grade.panelist_submissions.filter(schedule=schedule, is_void=False).prefetch_related('criterion_scores'))
+    expected = {(row.panelist_id, None) for row in schedule.panel_assignments.all()}
+    expected |= {(None, str(row.pk)) for row in schedule.guest_invitations.all() if row.is_active}
+    expected |= {(None, str(row.pk)) for row in schedule.guest_panelist_codes.all() if row.is_active}
+    submissions = grade.panelist_submissions.all()
+    if 'panelist_submissions' not in getattr(grade, '_prefetched_objects_cache', {}):
+        submissions = submissions.prefetch_related('criterion_scores')
+    rows = [row for row in submissions if row.schedule_id == schedule.pk and not row.is_void]
     from defense.scheduler.panelist_evaluation import validate_evaluation_submissions
     complete = 0
     for pid, gid in expected:

@@ -396,7 +396,7 @@ class PitEventGradingConfig(models.Model):
     panel_weight = models.PositiveSmallIntegerField(default=80)
     peer_weight = models.PositiveSmallIntegerField(default=20)
     is_officially_complete = models.BooleanField(default=False)
-    peer_grading_enabled = models.BooleanField(default=False)
+    peer_grading_enabled = models.BooleanField(default=True)
     team_membership_policy = models.CharField(
         max_length=20, default='single',
         choices=[('single', 'One team per student'), ('multiple', 'Multiple teams per student')],

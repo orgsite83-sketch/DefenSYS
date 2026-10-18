@@ -66,6 +66,26 @@ class ReportDefinition {
 abstract final class ReportCatalog {
   static const reports = [
     ReportDefinition(
+      'concept-projects',
+      'Concept Project Register',
+      'Concept titles and recorded decisions across PIT and Capstone. Export a 3rd Year PIT roster for fresh Capstone intake.',
+      'projects',
+      managerOnly: true,
+      filters: [
+        'semester_id',
+        'scope',
+        'year_level',
+        'section',
+        'pit_event_config_id',
+        'stage_id',
+        'concept_status',
+        'include_history',
+        'layout',
+        'search',
+      ],
+      icon: Icons.topic_outlined,
+    ),
+    ReportDefinition(
       'team-grade',
       'Team Grade Report Card',
       'Full recorded assessment and criterion breakdown for a team.',
@@ -352,6 +372,10 @@ abstract final class ReportCatalog {
         'stage_id': 'Stage',
         'stage': 'Stage / event',
         'pit_event': 'PIT event',
+        'pit_event_config_id': 'PIT concept event',
+        'concept_status': 'Concept decision',
+        'include_history': 'Round coverage',
+        'layout': 'Export layout',
         'type': 'Scope',
         'term_context': 'Term coverage',
         'year_level': 'Year level',

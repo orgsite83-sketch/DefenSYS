@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:html' as html;
 import 'dart:typed_data';
+import 'download_metadata.dart';
 
 class PickedTabularFile {
   final String name;
@@ -43,9 +44,9 @@ Future<void> downloadTextFile({
 Future<void> downloadBinaryFile({
   required String filename,
   required List<int> bytes,
-  String mimeType = 'application/pdf',
+  String? mimeType,
 }) async {
-  final blob = html.Blob([bytes], mimeType);
+  final blob = html.Blob([Uint8List.fromList(bytes)], mimeType ?? downloadMimeType(filename));
   final url = html.Url.createObjectUrlFromBlob(blob);
   final anchor = html.AnchorElement(href: url)
     ..download = filename
@@ -54,7 +55,7 @@ Future<void> downloadBinaryFile({
   html.document.body?.append(anchor);
   anchor.click();
   anchor.remove();
-  html.Url.revokeObjectUrl(url);
+  Timer(const Duration(seconds: 1), () => html.Url.revokeObjectUrl(url));
 }
 
 Future<String?> pickCsvTextFile() async {

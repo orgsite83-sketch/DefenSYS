@@ -71,6 +71,16 @@ class _AdminShellState extends ConsumerState<AdminShell> {
   final _refreshGate = WebSectionRefreshGate();
   final _sectionState = WebSectionState();
   DefensysAdminSection? _currentSection;
+  final Set<DefensysAdminSection> _queuedRefreshes = {};
+
+  void _queueSectionRefresh(DefensysAdminSection section) {
+    if (!_queuedRefreshes.add(section)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _queuedRefreshes.remove(section);
+      if (mounted && _currentSection == section) _refreshSectionData(section);
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
 
   @override
   void initState() {
@@ -117,6 +127,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       });
     }
 
+    if (activeSection == null) _currentSection = null;
     if (activeSection != null && activeSection != _currentSection) {
       _currentSection = activeSection;
       final area = _dataAreaForSection(activeSection);
@@ -124,16 +135,26 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       if (_refreshGate.activate(
         AdminRoutes.pathForSection(activeSection),
         revision: revision,
-        // Scheduling also depends on changes made by other users or sessions.
-        alwaysRefresh: activeSection == DefensysAdminSection.scheduling,
+        // Other users can change any section without a local revision bump.
+        alwaysRefresh: true,
       )) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _currentSection == activeSection) {
-            _refreshSectionData(activeSection);
-          }
-        });
+        _queueSectionRefresh(activeSection);
       }
     }
+
+    // Indexed branches stay mounted. Consume local writes while this section
+    // is visible as well as on navigation, without rebuilding its forms.
+    ref.listen(dataRefreshProvider, (previous, next) {
+      if (activeSection == null) return;
+      final area = _dataAreaForSection(activeSection);
+      final revision = next[area] ?? 0;
+      if ((previous?[area] ?? 0) == revision) return;
+      if (_refreshGate.activate(
+        AdminRoutes.pathForSection(activeSection), revision: revision,
+      )) {
+        _queueSectionRefresh(activeSection);
+      }
+    });
 
     final shellContent =
         widget.navigationShell ??
@@ -205,8 +226,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         DefensysAdminSection.repositoryAudit => DataArea.repository,
       };
 
-  // Root screens perform their first load. Revisit refreshes are centralized,
-  // throttled, and retain provider filters instead of resetting their defaults.
+  // Root screens perform their first load. Revisit refreshes retain provider
+  // filters and keep the existing section and its forms mounted.
   void _refreshSectionData(DefensysAdminSection section) {
     switch (section) {
       case DefensysAdminSection.overview:

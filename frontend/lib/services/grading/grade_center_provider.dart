@@ -149,10 +149,16 @@ class GradeCenterState {
 }
 
 class GradeCenterNotifier extends Notifier<GradeCenterState> {
+  int _fetchVersion = 0;
   static String get baseUrl => ApiConfig.gradeCenterUrl;
+
+  Uri _managementUri(String path) => Uri.parse('$baseUrl/$path').replace(
+    queryParameters: {'workspace': 'operations'},
+  );
 
   @override
   GradeCenterState build() {
+    ref.onDispose(() => _fetchVersion++);
     return const GradeCenterState();
   }
 
@@ -176,6 +182,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
         successMessage == null) {
       return;
     }
+    final version = ++_fetchVersion;
 
     state = state.copyWith(
       isLoading: state.grades.isEmpty,
@@ -190,6 +197,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
 
     try {
       final queryParameters = <String, String>{
+        'workspace': 'operations',
         if (nextSearch.trim().isNotEmpty) 'search': nextSearch.trim(),
         if (nextYearLevel.isNotEmpty) 'year_level': nextYearLevel,
         if (nextStatus.isNotEmpty) 'status': nextStatus,
@@ -199,6 +207,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       }
       final uri = Uri.parse(baseUrl).replace(queryParameters: queryParameters);
       final response = await _client.get(uri);
+      if (!ref.mounted || version != _fetchVersion) return;
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -212,6 +221,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
         error: _errorFromResponse(response),
       );
     } catch (e) {
+      if (!ref.mounted || version != _fetchVersion) return;
       state = state.copyWith(
         isLoading: false,
         isSaving: false,
@@ -225,7 +235,9 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     state = state.copyWith(isRefreshingGrade: true, clearError: true);
 
     try {
-      final response = await _client.get(Uri.parse('$baseUrl/$gradeId/'));
+      final response = await _client.get(Uri.parse('$baseUrl/$gradeId/').replace(
+        queryParameters: {'workspace': 'operations'},
+      ));
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -265,7 +277,9 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     );
 
     try {
-      final response = await _client.post(Uri.parse('$baseUrl/sync/'));
+      final response = await _client.post(Uri.parse('$baseUrl/sync/').replace(
+        queryParameters: {'workspace': 'operations'},
+      ));
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -300,7 +314,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
 
     try {
       final response = await _client.patch(
-        Uri.parse('$baseUrl/$gradeId/'),
+        _managementUri('$gradeId/'),
 
         body: jsonEncode(payload),
       );
@@ -324,7 +338,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
 
   Future<Map<String, dynamic>> correctionDetails(int gradeId) async {
     final response = await _client.get(
-      Uri.parse('$baseUrl/$gradeId/corrections/'),
+      _managementUri('$gradeId/corrections/'),
     );
     if (response.statusCode != 200) {
       throw Exception(_errorFromResponse(response));
@@ -337,7 +351,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     Map<String, dynamic> payload,
   ) async {
     final response = await _client.post(
-      Uri.parse('$baseUrl/$gradeId/corrections/'),
+      _managementUri('$gradeId/corrections/'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode(payload),
     );
@@ -366,7 +380,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
 
     try {
       final response = await _client.post(
-        Uri.parse('$baseUrl/$gradeId/publish/'),
+        _managementUri('$gradeId/publish/'),
       );
 
       if (response.statusCode == 200) {
@@ -397,7 +411,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       final response = await _client.get(
         Uri.parse(
           '$baseUrl/group-settings/',
-        ).replace(queryParameters: {'scope': scope, 'stage_label': stageLabel}),
+        ).replace(queryParameters: {'workspace': 'operations', 'scope': scope, 'stage_label': stageLabel}),
       );
       if (response.statusCode != 200) {
         throw Exception(_errorFromResponse(response));
@@ -432,8 +446,9 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
         peerCompleteCount: optInt('peer_complete_count'),
         peerEnabled: optBool('peer_enabled'),
         verdictCompleteCount: optInt('verdict_complete_count'),
-        postDeliverablesCompleteCount:
-            optInt('post_deliverables_complete_count'),
+        postDeliverablesCompleteCount: optInt(
+          'post_deliverables_complete_count',
+        ),
       );
     } finally {
       state = state.copyWith(isCheckingCompletion: false);
@@ -464,7 +479,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
         body['peer_grading_enabled'] = peerGradingEnabled;
       }
       final response = await _client.patch(
-        Uri.parse('$baseUrl/group-settings/'),
+        _managementUri('group-settings/'),
 
         body: jsonEncode(body),
       );
@@ -572,7 +587,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
         body['capstone_adviser_grading_enabled'] = adviserGradingEnabled;
       }
       final response = await _client.patch(
-        Uri.parse('$baseUrl/evaluation-settings/'),
+        _managementUri('evaluation-settings/'),
 
         body: jsonEncode(body),
       );
@@ -626,7 +641,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
         if (revisionDeadline != null) 'revision_deadline': revisionDeadline,
       };
       final response = await _client.patch(
-        Uri.parse('$baseUrl/$gradeId/verdict/'),
+        _managementUri('$gradeId/verdict/'),
         body: jsonEncode(body),
       );
       if (response.statusCode == 200) {
@@ -665,22 +680,38 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       DataArea.teams,
       DataArea.scheduler,
       DataArea.defenseBoard,
+      DataArea.deliverables,
+      DataArea.adviserGrades,
+      DataArea.documenter,
       DataArea.audit,
     ]);
   }
 
-  Future<bool> applyDefenseWorkflow(int gradeId, Map<String, dynamic> action) async {
-    state = state.copyWith(isSaving: true, clearError: true, clearMessage: true);
+  Future<bool> applyDefenseWorkflow(
+    int gradeId,
+    Map<String, dynamic> action,
+  ) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
     try {
       final response = await _client.post(
-        Uri.parse('$baseUrl/$gradeId/workflow/'), body: jsonEncode(action),
+        _managementUri('$gradeId/workflow/'),
+        body: jsonEncode(action),
       );
       if (response.statusCode != 200) {
-        state = state.copyWith(isSaving: false, error: _errorFromResponse(response));
+        state = state.copyWith(
+          isSaving: false,
+          error: _errorFromResponse(response),
+        );
         return false;
       }
-      _applyPayload(Map<String, dynamic>.from(jsonDecode(response.body)),
-          successMessage: 'Defense workflow updated.');
+      _applyPayload(
+        Map<String, dynamic>.from(jsonDecode(response.body)),
+        successMessage: 'Defense workflow updated.',
+      );
       _markDependentDataChanged();
       return true;
     } catch (e) {
@@ -691,10 +722,12 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
 
   Future<Map<String, dynamic>?> readHistoricalGrade(int gradeId) async {
     try {
-      final response = await _client.get(Uri.parse('$baseUrl/$gradeId/'));
+      final response = await _client.get(_managementUri('$gradeId/'));
       if (response.statusCode != 200) return null;
       final payload = Map<String, dynamic>.from(jsonDecode(response.body));
-      return payload['grade'] is Map ? Map<String, dynamic>.from(payload['grade']) : null;
+      return payload['grade'] is Map
+          ? Map<String, dynamic>.from(payload['grade'])
+          : null;
     } catch (_) {
       return null;
     }

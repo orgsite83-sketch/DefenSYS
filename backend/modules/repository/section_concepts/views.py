@@ -73,10 +73,10 @@ class SectionProjectListView(SectionAPIView):
     def get(self, request):
         if request.query_params.get('tasks_only') == '1':
             return Response({'tasks': services.task_payload(request.user)})
-        projects = services.visible_projects(request.user)
+        team_id = None
         if request.query_params.get('team_id'):
             team_id = serializers.IntegerField(min_value=1).run_validation(request.query_params['team_id'])
-            projects = [p for p in projects if services.active_links(p).filter(team_id=team_id).exists()]
+        projects = services.visible_projects(request.user, team_id=team_id)
         return Response({'projects': [services.payload(p, request.user) for p in projects],
                          'tasks': services.task_payload(request.user)})
 

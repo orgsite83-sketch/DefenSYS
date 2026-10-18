@@ -30,14 +30,18 @@ final pitInstructorDefenseProvider =
 /// The board scopes access on the server. Each workspace additionally filters
 /// by its team, so multi-role users only see that team's defense records.
 class TeamDefenseNotifier extends Notifier<TeamDefenseState> {
+  int _requestVersion = 0;
   String get scope => 'capstone';
   String? get defaultWorkspace => null;
 
   @override
-  TeamDefenseState build() => const TeamDefenseState();
+  TeamDefenseState build() {
+    ref.onDispose(() => _requestVersion++);
+    return const TeamDefenseState();
+  }
 
   Future<void> fetch({String? workspace}) async {
-    if (state.isLoading) return;
+    final version = ++_requestVersion;
     state = TeamDefenseState(isLoading: true, schedules: state.schedules);
     try {
       final uri = Uri.parse(ApiConfig.defenseBoardUrl).replace(
@@ -48,7 +52,7 @@ class TeamDefenseNotifier extends Notifier<TeamDefenseState> {
         },
       );
       final response = await ref.read(authenticatedHttpClientProvider).get(uri);
-      if (!ref.mounted) return;
+      if (!ref.mounted || version != _requestVersion) return;
       if (response.statusCode != 200) {
         state = TeamDefenseState(
           schedules: state.schedules,
@@ -68,7 +72,7 @@ class TeamDefenseNotifier extends Notifier<TeamDefenseState> {
             .toList(),
       );
     } catch (_) {
-      if (!ref.mounted) return;
+      if (!ref.mounted || version != _requestVersion) return;
       state = TeamDefenseState(
         schedules: state.schedules,
         error:

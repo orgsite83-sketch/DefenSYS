@@ -1,11 +1,13 @@
 import 'package:defensys/theme/program_colors.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/student_teams_provider.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/feedback/empty_state.dart';
 import 'package:defensys/widgets/table/table.dart';
+import 'package:defensys/widgets/repository/section_concept_workspace.dart';
 
 import 'student_teams_stage_summary.dart';
 
@@ -78,21 +80,33 @@ class UnifiedSectionMetadataCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 20),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF064E3B).withValues(alpha: 0.25) : const Color(0xFFF0FDF4),
+        color: isDark
+            ? const Color(0xFF064E3B).withValues(alpha: 0.25)
+            : const Color(0xFFF0FDF4),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: isDark ? const Color(0xFF065F46) : const Color(0xFFBBF7D0)),
+        border: Border.all(
+          color: isDark ? const Color(0xFF065F46) : const Color(0xFFBBF7D0),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.hub_rounded, color: isDark ? const Color(0xFF34D399) : const Color(0xFF16A34A), size: 20),
+              Icon(
+                Icons.hub_rounded,
+                color: isDark
+                    ? const Color(0xFF34D399)
+                    : const Color(0xFF16A34A),
+                size: 20,
+              ),
               const SizedBox(width: 8),
               Text(
                 'Unified Section Integration: $section',
                 style: TextStyle(
-                  color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF14532D),
+                  color: isDark
+                      ? const Color(0xFF6EE7B7)
+                      : const Color(0xFF14532D),
                   fontSize: 14,
                   fontWeight: FontWeight.w900,
                 ),
@@ -102,25 +116,71 @@ class UnifiedSectionMetadataCard extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              Text('System Name: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF14532D))),
-              Text(systemName ?? 'Not specified', style: TextStyle(fontSize: 13, color: isDark ? const Color(0xFFA7F3D0) : const Color(0xFF166534))),
+              Text(
+                'System Name: ',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: isDark
+                      ? const Color(0xFF6EE7B7)
+                      : const Color(0xFF14532D),
+                ),
+              ),
+              Text(
+                systemName ?? 'Not specified',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark
+                      ? const Color(0xFFA7F3D0)
+                      : const Color(0xFF166534),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),
           Row(
             children: [
-              Text('Project Manager: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: isDark ? const Color(0xFF6EE7B7) : const Color(0xFF14532D))),
-              Text(projectManager ?? 'Not specified', style: TextStyle(fontSize: 13, color: isDark ? const Color(0xFFA7F3D0) : const Color(0xFF166534))),
+              Text(
+                'Project Manager: ',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: isDark
+                      ? const Color(0xFF6EE7B7)
+                      : const Color(0xFF14532D),
+                ),
+              ),
+              Text(
+                projectManager ?? 'Not specified',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: isDark
+                      ? const Color(0xFFA7F3D0)
+                      : const Color(0xFF166534),
+                ),
+              ),
               const SizedBox(width: 6),
-              if (bulkPreview != null && bulkPreview!['section_assignment'] != null) ...[
-                if (bulkPreview!['section_assignment']['project_manager_valid'] == true)
-                  const Icon(Icons.check_circle_outline_rounded, color: Colors.green, size: 15)
-                else if (bulkPreview!['section_assignment']['project_manager_error'] != null)
-                  Tooltip(
-                    message: bulkPreview!['section_assignment']['project_manager_error'],
-                    child: const Icon(Icons.error_outline_rounded, color: Colors.red, size: 15),
+              if (bulkPreview != null &&
+                  bulkPreview!['section_assignment'] != null) ...[
+                if (bulkPreview!['section_assignment']['project_manager_valid'] ==
+                    true)
+                  const Icon(
+                    Icons.check_circle_outline_rounded,
+                    color: Colors.green,
+                    size: 15,
                   )
-              ]
+                else if (bulkPreview!['section_assignment']['project_manager_error'] !=
+                    null)
+                  Tooltip(
+                    message:
+                        bulkPreview!['section_assignment']['project_manager_error'],
+                    child: const Icon(
+                      Icons.error_outline_rounded,
+                      color: Colors.red,
+                      size: 15,
+                    ),
+                  ),
+              ],
             ],
           ),
         ],
@@ -152,13 +212,23 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
   final Map<String, bool> _sectionExpansionStates = {};
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
-  Color get _textPrimary => _isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark;
-  Color get _textSecondary => _isDark ? DefensysTokens.textSecondaryDark : DefensysUi.steelGrey;
+  Color get _textPrimary =>
+      _isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark;
+  Color get _textSecondary =>
+      _isDark ? DefensysTokens.textSecondaryDark : DefensysUi.steelGrey;
 
   Widget _buildTeamTitleCell(Map<String, dynamic> team, {required bool isPit}) {
     final teamName = team['name']?.toString() ?? 'Team';
     final projectTitle = _projectTitle(team);
     final adviserName = team['adviser_name']?.toString().trim() ?? '';
+    final defense = team['defense_context'];
+    final workflow = defense is Map && defense['concept_workflow'] is Map
+        ? defense['concept_workflow'] as Map
+        : <String, dynamic>{};
+    final proposals = (workflow['concepts'] as List? ?? [])
+        .whereType<Map>()
+        .where((c) => '${c['title'] ?? ''}'.trim().isNotEmpty)
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -173,11 +243,18 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
           ),
         ),
         const SizedBox(height: 2),
-        Text(
-          projectTitle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: _textSecondary, fontSize: 12),
+        Tooltip(
+          message: proposals
+              .map((c) => '${c['key']}: ${c['title']}')
+              .join('\n'),
+          child: Text(
+            team['project_pending'] == true && proposals.isNotEmpty
+                ? '${proposals.length} ${workflow['section_project_id'] != null ? 'modules' : 'concepts'} proposed · Awaiting selection'
+                : projectTitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: _textSecondary, fontSize: 12),
+          ),
         ),
         if (!isPit) ...[
           const SizedBox(height: 4),
@@ -217,9 +294,15 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
     final leaderName = team['leader_name']?.toString() ?? '-';
     final members = team['members'] as List? ?? const [];
     final leaderId = team['leader_id'];
-    final leaderMember = members.whereType<Map>().where((m) => m['id'] == leaderId).firstOrNull;
-    final leaderEnrolled = leaderMember == null || leaderMember['is_enrolled'] == true;
-    final hasUnenrolled = members.any((m) => m is Map && m['is_enrolled'] == false);
+    final leaderMember = members
+        .whereType<Map>()
+        .where((m) => m['id'] == leaderId)
+        .firstOrNull;
+    final leaderEnrolled =
+        leaderMember == null || leaderMember['is_enrolled'] == true;
+    final hasUnenrolled = members.any(
+      (m) => m is Map && m['is_enrolled'] == false,
+    );
 
     Widget leaderWidget;
     if (!leaderEnrolled && leaderName != '-') {
@@ -230,18 +313,34 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
           Text(
             leaderName,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: _textPrimary, fontSize: 12.5, fontWeight: FontWeight.w500),
+            style: TextStyle(
+              color: _textPrimary,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
             decoration: BoxDecoration(
-              color: _isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.3) : const Color(0xFFFEE2E2),
+              color: _isDark
+                  ? const Color(0xFF7F1D1D).withValues(alpha: 0.3)
+                  : const Color(0xFFFEE2E2),
               borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: _isDark ? const Color(0xFF991B1B) : const Color(0xFFFCA5A5)),
+              border: Border.all(
+                color: _isDark
+                    ? const Color(0xFF991B1B)
+                    : const Color(0xFFFCA5A5),
+              ),
             ),
             child: Text(
               'Not Enrolled',
-              style: TextStyle(color: _isDark ? const Color(0xFFFCA5A5) : const Color(0xFFB91C1C), fontSize: 8.5, fontWeight: FontWeight.w800),
+              style: TextStyle(
+                color: _isDark
+                    ? const Color(0xFFFCA5A5)
+                    : const Color(0xFFB91C1C),
+                fontSize: 8.5,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
         ],
@@ -250,7 +349,11 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
       leaderWidget = Text(
         leaderName,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: _textPrimary, fontSize: 12.5, fontWeight: FontWeight.w500),
+        style: TextStyle(
+          color: _textPrimary,
+          fontSize: 12.5,
+          fontWeight: FontWeight.w500,
+        ),
       );
     }
 
@@ -262,38 +365,53 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
         children: [
           Text(
             memberCountStr,
-            style: TextStyle(color: _textSecondary, fontSize: 11.5, fontWeight: FontWeight.w500),
+            style: TextStyle(
+              color: _textSecondary,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w500,
+            ),
           ),
           const SizedBox(width: 4),
           const Tooltip(
             message: 'Contains non-enrolled members',
-            child: Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 14),
+            child: Icon(
+              Icons.warning_amber_rounded,
+              color: Color(0xFFD97706),
+              size: 14,
+            ),
           ),
         ],
       );
     } else {
       membersWidget = Text(
         memberCountStr,
-        style: TextStyle(color: _textSecondary, fontSize: 11.5, fontWeight: FontWeight.w500),
+        style: TextStyle(
+          color: _textSecondary,
+          fontSize: 11.5,
+          fontWeight: FontWeight.w500,
+        ),
       );
     }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
-      children: [
-        leaderWidget,
-        const SizedBox(height: 2),
-        membersWidget,
-      ],
+      children: [leaderWidget, const SizedBox(height: 2), membersWidget],
     );
   }
 
-  Widget _buildDefenseContextCell(Map<String, dynamic> team, {required bool isPit}) {
-    final rawPitEvent = team['pit_event_name']?.toString().trim() ??
+  Widget _buildDefenseContextCell(
+    Map<String, dynamic> team, {
+    required bool isPit,
+  }) {
+    final rawPitEvent =
+        team['pit_event_name']?.toString().trim() ??
         team['current_defense_stage']?.toString().trim() ??
-        (team['defense_context'] is Map ? (team['defense_context']['event_label']?.toString().trim() ?? '') : '');
-    final hasAssignedPitEvent = rawPitEvent.isNotEmpty &&
+        (team['defense_context'] is Map
+            ? (team['defense_context']['event_label']?.toString().trim() ?? '')
+            : '');
+    final hasAssignedPitEvent =
+        rawPitEvent.isNotEmpty &&
         rawPitEvent != 'No PIT event scheduled' &&
         rawPitEvent != 'No PIT Event';
     final defenseText = isPit
@@ -308,7 +426,9 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
           decoration: BoxDecoration(
             color: ProgramColors.of(context, data: team).tint,
             borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: ProgramColors.of(context, data: team).border),
+            border: Border.all(
+              color: ProgramColors.of(context, data: team).border,
+            ),
           ),
           child: Text(
             defenseText,
@@ -330,11 +450,12 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
         color: isPit && !hasAssignedPitEvent ? _textSecondary : _textPrimary,
         fontSize: 12.5,
         fontWeight: FontWeight.w500,
-        fontStyle: isPit && !hasAssignedPitEvent ? FontStyle.italic : FontStyle.normal,
+        fontStyle: isPit && !hasAssignedPitEvent
+            ? FontStyle.italic
+            : FontStyle.normal,
       ),
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -365,7 +486,8 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
       return DefensysEmptyState(
         icon: Icons.groups_outlined,
         title: 'No Teams Found',
-        description: 'No student teams found matching the active filters or search parameters.',
+        description:
+            'No student teams found matching the active filters or search parameters.',
         size: DefensysEmptyStateSize.standard,
       );
     }
@@ -377,18 +499,39 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
       itemBuilder: (context, index) {
         final section = sortedSections[index];
         final sectionTeams = sectionsMap[section]!;
-        final systemName = sectionTeams.first['system_name']?.toString().trim() ?? '';
-        final managerName = sectionTeams.first['project_manager_name']?.toString().trim() ?? '';
+        final systemName =
+            sectionTeams.first['system_name']?.toString().trim() ?? '';
+        final managerName =
+            sectionTeams.first['project_manager_name']?.toString().trim() ?? '';
+        final sharedWorkflows = <int, Map>{};
+        for (final team in sectionTeams) {
+          final defense = team['defense_context'];
+          final workflow = defense is Map ? defense['concept_workflow'] : null;
+          final projectId = workflow is Map
+              ? _asInt(workflow['section_project_id'])
+              : null;
+          if (workflow is Map && projectId != null) {
+            sharedWorkflows[projectId] = {
+              ...workflow,
+              'stage_label': defense is Map
+                  ? defense['event_label'] ?? defense['current_stage'] ?? ''
+                  : '',
+            };
+          }
+        }
 
         final selectedAdviser = _selectedSectionAdviserFilter[section];
-        final displayedTeams = (selectedAdviser == null || selectedAdviser == 'all')
+        final displayedTeams =
+            (selectedAdviser == null || selectedAdviser == 'all')
             ? sectionTeams
             : sectionTeams.where((t) {
                 final adviser = t['adviser_name']?.toString().trim() ?? '';
                 return adviser == selectedAdviser;
               }).toList();
 
-        final isExpanded = _sectionExpansionStates[section] ?? (widget.searchQuery.trim().isNotEmpty);
+        final isExpanded =
+            _sectionExpansionStates[section] ??
+            (widget.searchQuery.trim().isNotEmpty);
 
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
@@ -458,7 +601,26 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                 ],
               ),
               children: [
-                Divider(height: 1, color: isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
+                Divider(
+                  height: 1,
+                  color: isDark
+                      ? DefensysTokens.mistBorder
+                      : const Color(0xFFE5E7EB),
+                ),
+                for (final entry in sharedWorkflows.entries)
+                  Consumer(
+                    builder: (context, ref, _) => SectionConceptOverview(
+                      key: ValueKey('section-system-${entry.key}'),
+                      projectId: entry.key,
+                      stageLabel: '${entry.value['stage_label']}',
+                      onChanged: () =>
+                          ref.read(studentTeamsProvider.notifier).fetchTeams(),
+                      systems: (entry.value['system_concepts'] as List? ?? [])
+                          .whereType<Map>()
+                          .map((s) => Map<String, dynamic>.from(s))
+                          .toList(),
+                    ),
+                  ),
                 if (systemName.isNotEmpty || managerName.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -469,9 +631,21 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                         runSpacing: 8,
                         children: [
                           if (systemName.isNotEmpty)
-                            Text('Shared system: $systemName', style: TextStyle(color: _textSecondary, fontSize: 12)),
+                            Text(
+                              'Shared system: $systemName',
+                              style: TextStyle(
+                                color: _textSecondary,
+                                fontSize: 12,
+                              ),
+                            ),
                           if (managerName.isNotEmpty)
-                            Text('Project manager: $managerName', style: TextStyle(color: _textSecondary, fontSize: 12)),
+                            Text(
+                              'Project manager: $managerName',
+                              style: TextStyle(
+                                color: _textSecondary,
+                                fontSize: 12,
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -479,28 +653,40 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                 if (!isPit) ...[
                   Builder(
                     builder: (context) {
-                      final sectionAdvisers = sectionTeams
-                          .map((t) => t['adviser_name']?.toString().trim() ?? '')
-                          .where((adv) => adv.isNotEmpty)
-                          .toSet()
-                          .toList()
-                        ..sort();
+                      final sectionAdvisers =
+                          sectionTeams
+                              .map(
+                                (t) =>
+                                    t['adviser_name']?.toString().trim() ?? '',
+                              )
+                              .where((adv) => adv.isNotEmpty)
+                              .toSet()
+                              .toList()
+                            ..sort();
 
                       if (sectionAdvisers.isEmpty) {
                         return const SizedBox.shrink();
                       }
 
-                      final isAllSelected = selectedAdviser == null || selectedAdviser == 'all';
+                      final isAllSelected =
+                          selectedAdviser == null || selectedAdviser == 'all';
 
                       return Padding(
-                        padding: const EdgeInsets.only(left: 16, right: 16, top: 12, bottom: 4),
+                        padding: const EdgeInsets.only(
+                          left: 16,
+                          right: 16,
+                          top: 12,
+                          bottom: 4,
+                        ),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Icon(
                               Icons.people_outline_rounded,
                               size: 16,
-                              color: isDark ? DefensysTokens.textSecondaryDark : DefensysUi.steelGrey,
+                              color: isDark
+                                  ? DefensysTokens.textSecondaryDark
+                                  : DefensysUi.steelGrey,
                             ),
                             const SizedBox(width: 6),
                             Padding(
@@ -510,7 +696,9 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                 style: TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
-                                  color: isDark ? DefensysTokens.textSecondaryDark : DefensysUi.steelGrey,
+                                  color: isDark
+                                      ? DefensysTokens.textSecondaryDark
+                                      : DefensysUi.steelGrey,
                                 ),
                               ),
                             ),
@@ -523,23 +711,39 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                   GestureDetector(
                                     onTap: () {
                                       setState(() {
-                                        _selectedSectionAdviserFilter[section] = null;
+                                        _selectedSectionAdviserFilter[section] =
+                                            null;
                                       });
                                     },
                                     child: MouseRegion(
                                       cursor: SystemMouseCursors.click,
                                       child: AnimatedContainer(
-                                        duration: const Duration(milliseconds: 150),
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        duration: const Duration(
+                                          milliseconds: 150,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 3,
+                                        ),
                                         decoration: BoxDecoration(
                                           color: isAllSelected
                                               ? DefensysUi.primaryMaroon
-                                              : (isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6)),
-                                          borderRadius: BorderRadius.circular(6),
+                                              : (isDark
+                                                    ? DefensysTokens
+                                                          .mistInputFill
+                                                    : const Color(0xFFF3F4F6)),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
                                           border: Border.all(
                                             color: isAllSelected
                                                 ? DefensysUi.primaryMaroon
-                                                : (isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB)),
+                                                : (isDark
+                                                      ? DefensysTokens
+                                                            .mistBorder
+                                                      : const Color(
+                                                          0xFFE5E7EB,
+                                                        )),
                                           ),
                                         ),
                                         child: Text(
@@ -549,7 +753,10 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                             fontWeight: FontWeight.bold,
                                             color: isAllSelected
                                                 ? Colors.white
-                                                : (isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark),
+                                                : (isDark
+                                                      ? DefensysTokens
+                                                            .textPrimaryDark
+                                                      : DefensysUi.textDark),
                                           ),
                                         ),
                                       ),
@@ -569,34 +776,64 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                       bgColor = DefensysUi.primaryMaroon;
                                       borderColor = DefensysUi.primaryMaroon;
                                       textColor = Colors.white;
-                                      countColor = Colors.white.withValues(alpha: 0.8);
+                                      countColor = Colors.white.withValues(
+                                        alpha: 0.8,
+                                      );
                                     } else if (isOverloaded) {
-                                      bgColor = isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.3) : const Color(0xFFFDE8E8);
-                                      borderColor = isDark ? const Color(0xFF991B1B) : const Color(0xFFF8B4B4);
-                                      textColor = isDark ? const Color(0xFFFCA5A5) : const Color(0xFF9B1C1C);
-                                      countColor = isDark ? const Color(0xFFF87171) : const Color(0xFFC81E1E);
+                                      bgColor = isDark
+                                          ? const Color(
+                                              0xFF7F1D1D,
+                                            ).withValues(alpha: 0.3)
+                                          : const Color(0xFFFDE8E8);
+                                      borderColor = isDark
+                                          ? const Color(0xFF991B1B)
+                                          : const Color(0xFFF8B4B4);
+                                      textColor = isDark
+                                          ? const Color(0xFFFCA5A5)
+                                          : const Color(0xFF9B1C1C);
+                                      countColor = isDark
+                                          ? const Color(0xFFF87171)
+                                          : const Color(0xFFC81E1E);
                                     } else {
-                                      bgColor = isDark ? DefensysTokens.mistInputFill : const Color(0xFFF3F4F6);
-                                      borderColor = isDark ? DefensysTokens.mistBorder : const Color(0xFFE5E7EB);
-                                      textColor = isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark;
-                                      countColor = isDark ? DefensysTokens.textSecondaryDark : DefensysUi.steelGrey;
+                                      bgColor = isDark
+                                          ? DefensysTokens.mistInputFill
+                                          : const Color(0xFFF3F4F6);
+                                      borderColor = isDark
+                                          ? DefensysTokens.mistBorder
+                                          : const Color(0xFFE5E7EB);
+                                      textColor = isDark
+                                          ? DefensysTokens.textPrimaryDark
+                                          : DefensysUi.textDark;
+                                      countColor = isDark
+                                          ? DefensysTokens.textSecondaryDark
+                                          : DefensysUi.steelGrey;
                                     }
 
                                     return GestureDetector(
                                       onTap: () {
                                         setState(() {
-                                          _selectedSectionAdviserFilter[section] = isSelected ? null : adv;
+                                          _selectedSectionAdviserFilter[section] =
+                                              isSelected ? null : adv;
                                         });
                                       },
                                       child: MouseRegion(
                                         cursor: SystemMouseCursors.click,
                                         child: AnimatedContainer(
-                                          duration: const Duration(milliseconds: 150),
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          duration: const Duration(
+                                            milliseconds: 150,
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 3,
+                                          ),
                                           decoration: BoxDecoration(
                                             color: bgColor,
-                                            borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(color: borderColor),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
+                                            border: Border.all(
+                                              color: borderColor,
+                                            ),
                                           ),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
@@ -623,7 +860,9 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                                 Icon(
                                                   Icons.warning_amber_rounded,
                                                   size: 12,
-                                                  color: isSelected ? Colors.white : const Color(0xFFC81E1E),
+                                                  color: isSelected
+                                                      ? Colors.white
+                                                      : const Color(0xFFC81E1E),
                                                 ),
                                               ],
                                             ],
@@ -647,9 +886,15 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                     borderRadius: BorderRadius.circular(8),
                     child: Container(
                       decoration: BoxDecoration(
-                        color: isDark ? DefensysTokens.mistSurface : Colors.white,
+                        color: isDark
+                            ? DefensysTokens.mistSurface
+                            : Colors.white,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: isDark ? DefensysTokens.mistBorder : DefensysTableTokens.cardBorder),
+                        border: Border.all(
+                          color: isDark
+                              ? DefensysTokens.mistBorder
+                              : DefensysTableTokens.cardBorder,
+                        ),
                       ),
                       child: DefensysDataTable<Map<String, dynamic>>(
                         items: displayedTeams,
@@ -699,9 +944,13 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                               flex: 1.6,
                               minWidth: 175,
                               cellBuilder: (context, team, index) {
-                                final deliverableCount = (team['defense_context'] is Map
-                                    ? team['defense_context']['deliverable_count']
-                                    : null) as num? ?? team['deliverable_count'] as num? ?? 0;
+                                final deliverableCount =
+                                    (team['defense_context'] is Map
+                                            ? team['defense_context']['deliverable_count']
+                                            : null)
+                                        as num? ??
+                                    team['deliverable_count'] as num? ??
+                                    0;
                                 final teamId = _asInt(team['id']);
                                 return Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -712,16 +961,20 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                     InkWell(
                                       onTap: teamId == null
                                           ? null
-                                          : () => widget.onOpenTeamDetail(teamId),
+                                          : () =>
+                                                widget.onOpenTeamDetail(teamId),
                                       borderRadius: BorderRadius.circular(4),
                                       child: Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 2),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 2,
+                                        ),
                                         child: Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Icon(
                                               deliverableCount > 0
-                                                  ? Icons.check_circle_outline_rounded
+                                                  ? Icons
+                                                        .check_circle_outline_rounded
                                                   : Icons.description_outlined,
                                               size: 11,
                                               color: deliverableCount > 0
@@ -736,7 +989,13 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                               style: TextStyle(
                                                 fontSize: 10.5,
                                                 color: deliverableCount > 0
-                                                    ? (_isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857))
+                                                    ? (_isDark
+                                                          ? const Color(
+                                                              0xFF6EE7B7,
+                                                            )
+                                                          : const Color(
+                                                              0xFF047857,
+                                                            ))
                                                     : _textSecondary,
                                                 fontWeight: deliverableCount > 0
                                                     ? FontWeight.w600
@@ -748,7 +1007,13 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                               Icons.chevron_right_rounded,
                                               size: 12,
                                               color: deliverableCount > 0
-                                                  ? (_isDark ? const Color(0xFF6EE7B7) : const Color(0xFF047857))
+                                                  ? (_isDark
+                                                        ? const Color(
+                                                            0xFF6EE7B7,
+                                                          )
+                                                        : const Color(
+                                                            0xFF047857,
+                                                          ))
                                                   : _textSecondary,
                                             ),
                                           ],
@@ -780,7 +1045,9 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                                 ),
                                 label: const Text('View'),
                                 style: TextButton.styleFrom(
-                                  foregroundColor: DefensysTokens.maroonTextOf(context),
+                                  foregroundColor: DefensysTokens.maroonTextOf(
+                                    context,
+                                  ),
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 8,
                                   ),

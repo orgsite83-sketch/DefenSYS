@@ -107,8 +107,7 @@ def setup_tasks(user):
             policy = resolve_policy(team, stage)
             current = latest_round(team, stage)
             shared = policy.get('source') == 'section_system'
-            from repository.deliverables.concepts import clearance_blocker
-            if not titles_complete(current) or (shared and not current.verdict and clearance_blocker(team, stage)):
+            if not titles_complete(current):
                 tasks.append({'stage_label': stage.label, 'required_count': policy['required_count'],
                               'mode': policy['mode'], 'shared_system': shared,
                               'section_project_id': policy.get('section_project_id')})

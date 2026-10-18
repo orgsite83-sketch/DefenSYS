@@ -1,13 +1,52 @@
 from django.db import transaction
 from django.core.exceptions import ValidationError
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
 from grading.constants import PASS_GRADE_THRESHOLD
-from .models import StudentTeam, TeamStageProgress
+from .models import StudentTeam, TeamRecoveryAuthorization, TeamStageProgress
+
+
+def stage_readiness_candidates(teams, stage=None):
+    """Cheap superset; every candidate still goes through is_stage_ready.
+
+    Never cache eligibility or replace progression, concept clearance, verdict,
+    or recovery checks. Include active schedules so their existing assessed
+    schedule reconciliation also runs, even when a team cannot be scheduled.
+    """
+    from grading.grades.models import TeamGrade
+    from defense.scheduler.models import DefenseSchedule
+
+    identity = {'team_id': OuterRef('pk'), 'semester_id': OuterRef('semester_id')}
+    progress = TeamStageProgress.objects.filter(**identity, status__in=(
+        TeamStageProgress.STATUS_READY, TeamStageProgress.STATUS_SCHEDULED,
+    ))
+    redefense = TeamGrade.objects.filter(**identity, verdict=TeamGrade.VERDICT_FOR_REDEFENSE)
+    recovery = TeamRecoveryAuthorization.objects.filter(
+        **identity, consumed_at__isnull=True,
+    ).filter(
+        Q(action=TeamRecoveryAuthorization.ACTION_RETAKE,
+          project_version=OuterRef('project_version')) |
+        Q(action=TeamRecoveryAuthorization.ACTION_NEW_CONCEPT,
+          replacement_project_version=OuterRef('project_version'))
+    )
+    schedules = DefenseSchedule.objects.filter(
+        **identity, scope=DefenseSchedule.SCOPE_CAPSTONE,
+        project_version=OuterRef('project_version'), status=DefenseSchedule.STATUS_SCHEDULED,
+    )
+    if stage is not None:
+        progress = progress.filter(defense_stage=stage)
+        redefense = redefense.filter(defense_stage=stage)
+        recovery = recovery.filter(defense_stage=stage)
+        schedules = schedules.filter(defense_stage=stage)
+    return teams.filter(
+        Exists(progress) | Exists(redefense) | Exists(recovery) | Exists(schedules)
+    ).select_related('semester')
 
 
 def get_ready_teams(semester, stage):
-    ids = [team.pk for team in StudentTeam.objects.filter(semester=semester) if is_stage_ready(team, stage)]
+    candidates = stage_readiness_candidates(StudentTeam.objects.filter(semester=semester), stage)
+    ids = [team.pk for team in candidates if is_stage_ready(team, stage)]
     return StudentTeam.objects.filter(pk__in=ids)
 
 

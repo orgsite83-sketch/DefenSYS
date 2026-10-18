@@ -6,6 +6,7 @@ import '../../services/auth_provider.dart';
 import '../../services/capstone_deliverables_provider.dart';
 import '../../utils/universal_file_viewer.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
+import '../../theme/defensys_tokens.dart';
 import 'document_policy_editor.dart';
 
 String? conceptDecisionError(
@@ -64,6 +65,7 @@ class ConceptWorkspace extends ConsumerStatefulWidget {
 class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
   final controllers = <String, TextEditingController>{};
   bool busy = false;
+  bool reviewSharedSystem = false;
   String? error;
   Map<String, dynamic> get workflow =>
       Map<String, dynamic>.from(widget.stage['concept_workflow'] as Map? ?? {});
@@ -97,7 +99,10 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
     super.didUpdateWidget(oldWidget);
     final oldWorkflow = oldWidget.stage['concept_workflow'] as Map? ?? {};
     if ('${oldWidget.teamId}:${oldWidget.stageLabel}:${oldWorkflow['round']}' !=
-        identity || (workflow['assigned'] == true && '${oldWorkflow['concepts']}' != '${workflow['concepts']}')) {
+            identity ||
+        (workflow['assigned'] == true &&
+            '${oldWorkflow['concepts']}' != '${workflow['concepts']}')) {
+      reviewSharedSystem = false;
       resetControllers();
     }
   }
@@ -185,14 +190,21 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
     final admin = user['role'] == 'admin' || user['is_superuser'] == true;
     final faculty = admin || user['role'] == 'faculty';
     final editable = workflow['can_edit'] == true;
-    final titlesEditable = editable && workflow['can_edit_titles'] != false &&
-        (faculty || (workflow['faculty_names_required'] != true && workflow['module_names_confirmed'] != true));
+    final titlesEditable =
+        editable &&
+        workflow['can_edit_titles'] != false &&
+        (faculty ||
+            (workflow['faculty_names_required'] != true &&
+                workflow['module_names_confirmed'] != true));
     final assigned = workflow['assigned'] == true;
     final cleared = workflow['clearance_valid'] == true;
     final status = switch (workflow['status']) {
       'concepts_needed' => 'Concepts needed',
       'replacement_concepts_needed' => 'Replacement concepts needed',
-      'concept_review_pending' => 'Adviser review pending',
+      'concept_review_pending' =>
+        workflow['section_project_id'] != null
+            ? 'Module review pending'
+            : 'Concept review pending',
       'concept_endorsement_pending' => 'Awaiting endorsement',
       'ready_to_schedule_redefense' => 'Ready to schedule re-defense',
       'ready_to_schedule' => 'Ready to schedule',
@@ -203,7 +215,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
       'project_rejected' => 'Project rejected',
       _ => 'Concept selection',
     };
-    return DefensysShadcnScope(
+    final content = DefensysShadcnScope(
       child: Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: ShadCard(
@@ -212,7 +224,11 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
             children: [
               Expanded(
                 child: Text(
-                  assigned ? 'Assigned concept review' : 'Concept hearing',
+                  assigned
+                      ? 'Assigned concept review'
+                      : workflow['section_project_id'] != null
+                      ? 'Team module concepts'
+                      : 'Concept hearing',
                 ),
               ),
               ShadBadge.secondary(
@@ -225,26 +241,203 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 12),
-              if (workflow['section_project_id'] != null) ...[
-                const Text('Propose one corresponding module for each shared system. Faculty confirms module names and connections.'),
-                TextButton.icon(icon: const Icon(Icons.account_tree_outlined), label: const Text('Open shared system proposals'),
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) =>
-                    SectionConceptWorkspace(projectId: workflow['section_project_id'] as int)))),
-              ],
               for (final c in concepts)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: ShadInput(
-                    controller: controllers['${c['key']}'],
-                    enabled: titlesEditable && !busy,
-                    leading: Text('${c['key']}'.toUpperCase()),
-                    placeholder: Text(
-                      assigned
-                          ? 'Awaiting administrator assignment'
-                          : c['system_title'] != null ? 'Module for ${c['system_title'] == '' ? c['key'] : c['system_title']}'
-                          : 'Proposed concept title',
-                    ),
-                  ),
+                Builder(
+                  builder: (context) {
+                    final keyStr = '${c['key']}';
+                    final isShared =
+                        workflow['section_project_id'] != null ||
+                        c['system_title'] != null;
+                    final slotBadge = isShared
+                        ? 'System ${keyStr == 'c1' ? 'A' : (keyStr == 'c2' ? 'B' : 'C')}'
+                        : 'Concept ${keyStr == 'c1' ? '1' : (keyStr == 'c2' ? '2' : '3')}';
+
+                    final decision = c['decision']?.toString();
+                    final hasDecision = decision != null && decision.isNotEmpty;
+                    final isConfirmed = c['faculty_confirmed'] == true;
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? Colors.white.withValues(alpha: 0.03)
+                            : const Color(0xFFF9FAFB),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isConfirmed
+                              ? (Theme.of(context).brightness == Brightness.dark
+                                    ? const Color(0xFF4ADE80)
+                                    : const Color(0xFF16A34A))
+                              : (Theme.of(context).brightness == Brightness.dark
+                                    ? Colors.white12
+                                    : const Color(0xFFE5E7EB)),
+                          width: isConfirmed ? 1.4 : 1.0,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2.5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(
+                                    0xFF720000,
+                                  ).withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: const Color(
+                                      0xFF720000,
+                                    ).withValues(alpha: 0.2),
+                                  ),
+                                ),
+                                child: Text(
+                                  slotBadge,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF720000),
+                                  ),
+                                ),
+                              ),
+                              if (hasDecision)
+                                if (decision == 'approved' ||
+                                    decision == 'approved_with_revisions')
+                                  ShadBadge(
+                                    backgroundColor: const Color(0xFF16A34A),
+                                    child: Text(
+                                      decision == 'approved'
+                                          ? 'Approved'
+                                          : 'Approved w/ Rev',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  )
+                                else if (decision == 'rejected')
+                                  const ShadBadge.destructive(
+                                    child: Text(
+                                      'Rejected',
+                                      style: TextStyle(fontSize: 10),
+                                    ),
+                                  )
+                                else if (decision == 'revise')
+                                  const ShadBadge.secondary(
+                                    child: Text(
+                                      'Revise',
+                                      style: TextStyle(fontSize: 10),
+                                    ),
+                                  )
+                                else
+                                  ShadBadge.outline(
+                                    child: Text(
+                                      decision.replaceAll('_', ' '),
+                                      style: const TextStyle(fontSize: 10),
+                                    ),
+                                  )
+                              else if (isConfirmed)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 7,
+                                    vertical: 2.5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFDCFCE7),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: const Color(0xFF86EFAC),
+                                    ),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.check_rounded,
+                                        size: 10.5,
+                                        color: Color(0xFF15803D),
+                                      ),
+                                      SizedBox(width: 3),
+                                      Text(
+                                        'Confirmed',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF15803D),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else
+                                const ShadBadge.secondary(
+                                  child: Text(
+                                    'Draft',
+                                    style: TextStyle(fontSize: 10),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          ShadInput(
+                            controller: controllers['${c['key']}'],
+                            enabled: titlesEditable && !busy,
+                            leading: Text('${c['key']}'.toUpperCase()),
+                            placeholder: Text(
+                              assigned
+                                  ? 'Awaiting administrator assignment'
+                                  : isShared
+                                  ? 'Enter proposed module title'
+                                  : 'Enter proposed concept title',
+                            ),
+                          ),
+                          if (c['remarks'] != null &&
+                              '${c['remarks']}'.trim().isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEF3C7),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: const Color(0xFFFDE68A),
+                                ),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Icon(
+                                    Icons.info_outline,
+                                    size: 14,
+                                    color: Color(0xFFD97706),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      'Feedback: ${c['remarks']}',
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        color: Color(0xFF92400E),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  },
                 ),
               if (busy) const LinearProgressIndicator(),
               if (error != null)
@@ -265,7 +458,11 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                     if (titlesEditable)
                       ShadButton.outline(
                         enabled: !busy,
-                        child: const Text('Save concept titles'),
+                        child: Text(
+                          workflow['section_project_id'] != null && faculty
+                              ? 'Confirm module names'
+                              : 'Save concept titles',
+                        ),
                         onPressed: () => perform(
                           () => ref
                               .read(capstoneDeliverablesProvider.notifier)
@@ -317,6 +514,63 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
           ),
         ),
       ),
+    );
+    final projectId = int.tryParse('${workflow['section_project_id'] ?? ''}');
+    if (!faculty || projectId == null) return content;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final shared in [false, true])
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: reviewSharedSystem == shared
+                        ? DefensysTokens.maroonTextOf(context)
+                        : DefensysTokens.textSecondaryOf(context),
+                    backgroundColor: reviewSharedSystem == shared
+                        ? DefensysTokens.surfaceHigherOf(context)
+                        : null,
+                    side: BorderSide(
+                      color: reviewSharedSystem == shared
+                          ? DefensysTokens.maroonTextOf(context)
+                          : DefensysTokens.borderOf(context),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                  ),
+                  onPressed: () => setState(() => reviewSharedSystem = shared),
+                  icon: Icon(
+                    shared
+                        ? Icons.account_tree_outlined
+                        : Icons.groups_outlined,
+                    size: 16,
+                  ),
+                  label: Text(shared ? 'Shared system' : 'Team modules'),
+                ),
+            ],
+          ),
+        ),
+        if (reviewSharedSystem)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: SectionConceptWorkspace(
+              key: ValueKey('shared-review-$projectId'),
+              projectId: projectId,
+              embedded: true,
+              onChanged: () => ref
+                  .read(capstoneDeliverablesProvider.notifier)
+                  .fetchDeliverables(),
+            ),
+          )
+        else
+          content,
+      ],
     );
   }
 }
@@ -419,12 +673,17 @@ class ConceptVerdictFields extends StatelessWidget {
                 const SizedBox(height: 6),
                 WorkflowChoice(
                   value: '${concepts[i]['decision'] ?? ''}',
-                  enabled: enabled && (!concepts[i].containsKey('system_title') || concepts.any((c) => c['section_selected'] == true)),
+                  enabled:
+                      enabled &&
+                      (!concepts[i].containsKey('system_title') ||
+                          concepts.any((c) => c['section_selected'] == true)),
                   options: {
                     '': 'Choose concept decision',
-                    if (!concepts[i].containsKey('system_title') || concepts[i]['section_selected'] == true)
+                    if (!concepts[i].containsKey('system_title') ||
+                        concepts[i]['section_selected'] == true)
                       'approved': 'Approved concept',
-                    if (!concepts[i].containsKey('system_title') || concepts[i]['section_selected'] == true)
+                    if (!concepts[i].containsKey('system_title') ||
+                        concepts[i]['section_selected'] == true)
                       'approved_with_revisions': 'Approved with revisions',
                     'rejected': 'Rejected',
                     'not_selected': 'Not selected',

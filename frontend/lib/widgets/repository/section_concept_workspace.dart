@@ -1,11 +1,14 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../services/academic/section_concept_service.dart';
 import '../../services/auth/auth_provider.dart';
 import '../../services/network/authenticated_client.dart';
+import '../../theme/defensys_tokens.dart';
 import '../export/defensys_pdf_viewer.dart';
+import '../shadcn/defensys_shadcn_scope.dart';
 
 List<Map<String, dynamic>> _rows(dynamic value) => (value as List? ?? [])
     .whereType<Map>()
@@ -206,9 +209,122 @@ class _SectionConceptListScreenState
   );
 }
 
-class SectionConceptWorkspace extends ConsumerStatefulWidget {
-  const SectionConceptWorkspace({super.key, required this.projectId});
+/// A configured section's proposals, reviewed without leaving the team list.
+class SectionConceptOverview extends StatefulWidget {
+  const SectionConceptOverview({
+    super.key,
+    required this.projectId,
+    required this.systems,
+    required this.stageLabel,
+    this.onChanged,
+  });
   final int projectId;
+  final List<Map<String, dynamic>> systems;
+  final String stageLabel;
+  final Future<void> Function()? onChanged;
+
+  @override
+  State<SectionConceptOverview> createState() => _SectionConceptOverviewState();
+}
+
+class _SectionConceptOverviewState extends State<SectionConceptOverview> {
+  bool expanded = false;
+  List<Map<String, dynamic>>? updatedSystems;
+
+  @override
+  void didUpdateWidget(covariant SectionConceptOverview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.projectId != widget.projectId ||
+        oldWidget.systems != widget.systems) {
+      updatedSystems = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final systems = updatedSystems ?? widget.systems;
+    final names = systems
+        .where((s) => '${s['title'] ?? ''}'.trim().isNotEmpty)
+        .toList();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Container(
+        decoration: BoxDecoration(
+          color: DefensysTokens.surfaceOf(context),
+          border: Border.all(color: DefensysTokens.borderOf(context)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ListTile(
+              leading: Icon(
+                Icons.account_tree_outlined,
+                size: 20,
+                color: DefensysTokens.maroonTextOf(context),
+              ),
+              title: Text(
+                'Shared system proposals · ${widget.stageLabel}',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              subtitle: Text(
+                names.isEmpty
+                    ? 'Waiting for the section project manager to propose system names.'
+                    : names
+                          .map(
+                            (s) =>
+                                '${s['key'] == 'c1'
+                                    ? 'A'
+                                    : s['key'] == 'c2'
+                                    ? 'B'
+                                    : 'C'}. ${s['title']}',
+                          )
+                          .join('\n'),
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.6,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+              trailing: Icon(
+                expanded ? Icons.expand_less : Icons.expand_more,
+                size: 20,
+              ),
+              onTap: () => setState(() => expanded = !expanded),
+            ),
+            if (expanded)
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: SectionConceptWorkspace(
+                  projectId: widget.projectId,
+                  embedded: true,
+                  onChanged: widget.onChanged,
+                  onSnapshot: (p) =>
+                      setState(() => updatedSystems = _rows(p['systems'])),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class SectionConceptWorkspace extends ConsumerStatefulWidget {
+  const SectionConceptWorkspace({
+    super.key,
+    required this.projectId,
+    this.embedded = false,
+    this.onChanged,
+    this.onSnapshot,
+  });
+  final int projectId;
+  final bool embedded;
+  final Future<void> Function()? onChanged;
+  final ValueChanged<Map<String, dynamic>>? onSnapshot;
   @override
   ConsumerState<SectionConceptWorkspace> createState() =>
       _SectionConceptWorkspaceState();
@@ -219,6 +335,7 @@ class _SectionConceptWorkspaceState
   Map<String, dynamic>? project;
   String? error;
   bool busy = false;
+  String selectedSystem = 'c1';
   SectionConceptService get service => ref.read(sectionConceptServiceProvider);
   @override
   void initState() {
@@ -231,16 +348,24 @@ class _SectionConceptWorkspaceState
       final result = await service.get(widget.projectId);
       if (mounted) {
         setState(() {
+          if (project == null && '${result['selected_key'] ?? ''}'.isNotEmpty) {
+            selectedSystem = '${result['selected_key']}';
+          }
           project = result;
           error = null;
         });
+        widget.onSnapshot?.call(result);
       }
     } catch (e) {
       if (mounted) setState(() => error = _error(e));
     }
   }
 
-  Future<void> perform(Future<Map<String, dynamic>> Function() action) async {
+  Future<void> perform(
+    Future<Map<String, dynamic>> Function() action, {
+    bool notifyChange = true,
+  }) async {
+    if (busy) return;
     setState(() {
       busy = true;
       error = null;
@@ -248,6 +373,8 @@ class _SectionConceptWorkspaceState
     try {
       final result = await action();
       if (mounted) setState(() => project = result);
+      if (mounted && notifyChange) widget.onSnapshot?.call(result);
+      if (mounted && notifyChange) await widget.onChanged?.call();
     } catch (e) {
       if (mounted) setState(() => error = _error(e));
     } finally {
@@ -302,6 +429,38 @@ class _SectionConceptWorkspaceState
           .read(authenticatedHttpClientProvider)
           .fetchAuthenticatedFile('${paper['file_url']}');
       if (!mounted) return project!;
+      if (widget.embedded) {
+        await showDialog<void>(
+          context: context,
+          builder: (context) => Dialog(
+            insetPadding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
+                ListTile(
+                  title: Text(
+                    '${paper['file_name']}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text('Revision ${paper['revision']}'),
+                  trailing: IconButton(
+                    tooltip: 'Close paper',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ),
+                Expanded(
+                  child: DefensysPdfViewer(
+                    pdfBytes: bytes,
+                    title: '${paper['file_name']}',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+        return project!;
+      }
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => Scaffold(
@@ -318,7 +477,7 @@ class _SectionConceptWorkspaceState
         ),
       );
       return project!;
-    });
+    }, notifyChange: false);
   }
 
   Future<void> requestCorrections(Map<String, dynamic> paper) async {
@@ -365,6 +524,7 @@ class _SectionConceptWorkspaceState
   @override
   Widget build(BuildContext context) {
     final p = project;
+    if (widget.embedded) return _inlineReview(p);
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -378,198 +538,690 @@ class _SectionConceptWorkspaceState
           ),
         ],
       ),
-      body: p == null
-          ? Center(
-              child: error == null
-                  ? const CircularProgressIndicator()
-                  : Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(error!),
-                        TextButton(onPressed: load, child: const Text('Retry')),
-                      ],
-                    ),
-            )
-          : Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1100),
-                child: ListView(
-                  padding: const EdgeInsets.all(20),
-                  children: [
-                    Text(
-                      '${p['stage_label']} · Attempt ${p['round']}',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Project manager: ${p['project_manager_name']}\nSystem reviewer: ${p['reviewer_name']}',
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      p['verdict'] != ''
-                          ? 'System outcome: ${p['verdict']}\n${p['remarks']}'
-                          : p['endorsed'] == true
-                          ? 'Shared papers endorsed. Each team also needs module clearance before scheduling.'
-                          : 'Submit three shared system papers. Faculty confirms names, reviews each paper and endorses the set.',
-                    ),
-                    if (busy)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: LinearProgressIndicator(),
-                      ),
-                    if (error != null)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: Text(
-                          error!,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
-                          ),
-                        ),
-                      ),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        if (p['can_edit_names'] == true)
-                          OutlinedButton.icon(
-                            onPressed: busy ? null : () => editNames(),
-                            icon: const Icon(Icons.edit_outlined),
-                            label: Text(
-                              p['can_manage'] == true
-                                  ? 'Confirm system names'
-                                  : 'Propose system names',
-                            ),
-                          ),
-                        if (p['can_review'] == true)
-                          FilledButton(
-                            onPressed: busy || p['endorsed'] == true
-                                ? null
-                                : () => perform(
-                                    () => service.action(p, 'endorse'),
-                                  ),
-                            child: const Text('Endorse shared papers'),
-                          ),
-                        if (p['can_manage'] == true &&
-                            p['can_reassign'] == true)
+      body: DefensysShadcnScope(
+        child: p == null
+            ? Center(
+                child: error == null
+                    ? const CircularProgressIndicator()
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(error!),
                           TextButton(
-                            onPressed: busy ? null : reassign,
-                            child: const Text('Reassign responsibilities'),
+                            onPressed: load,
+                            child: const Text('Retry'),
                           ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    if (p['shared_revisions_pending'] == true)
-                      const Text(
-                        'Shared system revisions are outstanding. Module approvals cannot complete progression until the revised system paper is accepted and cleared.',
+                        ],
                       ),
-                    if (p['can_clear_shared_revisions'] == true)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: FilledButton(
-                          onPressed: busy
-                              ? null
-                              : () async {
-                                  final remarks = await _remarks(
-                                    context,
-                                    'Clear shared system revisions',
-                                  );
-                                  if (remarks != null && mounted) {
-                                    await perform(
-                                      () => service.action(
-                                        p,
-                                        'clear_revisions',
-                                        {'remarks': remarks},
-                                      ),
-                                    );
-                                  }
-                                },
-                          child: const Text('Clear shared system revisions'),
-                        ),
-                      ),
-                    for (final system in _rows(p['systems'])) _system(system),
-                    const SizedBox(height: 20),
-                    Text(
-                      'Corresponding team modules',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Each team proposes one module for each system. The selected system determines which module may proceed.',
-                    ),
-                    for (final team in _rows(p['teams'])) _team(team),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Section hearing',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Schedule each participating team through the defense scheduler with the same day, room and chair, then assemble those schedules here. Team assessments stay separate.',
-                    ),
-                    if ((p['hearing_schedule_ids'] as List? ?? []).isNotEmpty)
-                      Text(
-                        'Hearing assembled with ${(p['hearing_schedule_ids'] as List).length} team schedules.',
-                      ),
-                    if (p['can_manage'] == true && p['verdict'] == '')
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: OutlinedButton(
-                            onPressed: busy
-                                ? null
-                                : () => perform(
-                                    () =>
-                                        service.action(p, 'schedule_hearing', {
-                                          'schedule_ids': _rows(
-                                            p['available_schedules'],
-                                          ).map((s) => s['id']).toList(),
-                                        }),
-                                  ),
-                            child: const Text(
-                              'Assemble current team schedules',
-                            ),
-                          ),
-                        ),
-                      ),
-                    if (p['can_decide'] == true)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: FilledButton(
-                          onPressed: busy ? null : () => decide(),
-                          child: const Text('Record section system decision'),
-                        ),
-                      ),
-                    if (_rows(p['history']).isNotEmpty) ...[
-                      const SizedBox(height: 24),
-                      Text(
-                        'Earlier section hearings',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      for (final history in _rows(p['history']))
-                        ExpansionTile(
-                          title: Text(
-                            'Attempt ${history['round']} · ${history['verdict']}',
-                          ),
+              )
+            : Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1100),
+                  child: ListView(
+                    padding: const EdgeInsets.all(20),
+                    children: [
+                      ShadCard(
+                        width: double.infinity,
+                        title: Row(
                           children: [
-                            ListTile(
-                              title: Text('${history['remarks']}'),
-                              subtitle: Text(
-                                _rows((history['snapshot'] as Map?)?['systems'])
-                                    .map(
-                                      (s) => '${s['title']}: ${s['decision']}',
-                                    )
-                                    .join('\n'),
+                            Expanded(
+                              child: Text(
+                                '${p['stage_label']} · Attempt ${p['round']}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 17,
+                                ),
                               ),
+                            ),
+                            if (p['verdict'] != '')
+                              ShadBadge(
+                                backgroundColor: p['verdict'] == 'approved'
+                                    ? const Color(0xFF16A34A)
+                                    : null,
+                                child: Text(
+                                  '${p['verdict']}'
+                                      .replaceAll('_', ' ')
+                                      .toUpperCase(),
+                                  style: const TextStyle(fontSize: 10),
+                                ),
+                              )
+                            else if (p['endorsed'] == true)
+                              const ShadBadge(
+                                backgroundColor: Color(0xFF16A34A),
+                                child: Text(
+                                  'Shared Papers Endorsed',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              )
+                            else
+                              const ShadBadge.secondary(
+                                child: Text(
+                                  'Review Phase',
+                                  style: TextStyle(fontSize: 10),
+                                ),
+                              ),
+                          ],
+                        ),
+                        description: Text(
+                          'Project manager: ${p['project_manager_name']}\nSystem reviewer: ${p['reviewer_name']}',
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const SizedBox(height: 8),
+                            Text(
+                              p['verdict'] != ''
+                                  ? 'System outcome: ${p['verdict']}\n${p['remarks']}'
+                                  : p['endorsed'] == true
+                                  ? 'Shared papers endorsed. Each team also needs module clearance before scheduling.'
+                                  : 'Submit three shared system papers. Faculty confirms names, reviews each paper and endorses the set.',
+                              style: const TextStyle(fontSize: 13, height: 1.4),
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                if (p['can_edit_names'] == true)
+                                  ShadButton.outline(
+                                    size: ShadButtonSize.sm,
+                                    onPressed: busy ? null : () => editNames(),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.edit_outlined,
+                                          size: 14,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          p['can_manage'] == true
+                                              ? 'Confirm system names'
+                                              : 'Propose system names',
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                if (p['can_review'] == true)
+                                  ShadButton(
+                                    size: ShadButtonSize.sm,
+                                    enabled: !busy && p['endorsed'] != true,
+                                    onPressed: () => perform(
+                                      () => service.action(p, 'endorse'),
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.verified_outlined, size: 14),
+                                        SizedBox(width: 6),
+                                        Text('Endorse shared papers'),
+                                      ],
+                                    ),
+                                  ),
+                                if (p['can_manage'] == true &&
+                                    p['can_reassign'] == true)
+                                  ShadButton.ghost(
+                                    size: ShadButtonSize.sm,
+                                    onPressed: busy ? null : reassign,
+                                    child: const Text(
+                                      'Reassign responsibilities',
+                                    ),
+                                  ),
+                              ],
                             ),
                           ],
                         ),
+                      ),
+                      if (busy)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: LinearProgressIndicator(),
+                        ),
+                      if (error != null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Text(
+                            error!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 20),
+                      const SizedBox(height: 24),
+                      if (p['shared_revisions_pending'] == true)
+                        const Text(
+                          'Shared system revisions are outstanding. Module approvals cannot complete progression until the revised system paper is accepted and cleared.',
+                        ),
+                      if (p['can_clear_shared_revisions'] == true)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: FilledButton(
+                            onPressed: busy
+                                ? null
+                                : () async {
+                                    final remarks = await _remarks(
+                                      context,
+                                      'Clear shared system revisions',
+                                    );
+                                    if (remarks != null && mounted) {
+                                      await perform(
+                                        () => service.action(
+                                          p,
+                                          'clear_revisions',
+                                          {'remarks': remarks},
+                                        ),
+                                      );
+                                    }
+                                  },
+                            child: const Text('Clear shared system revisions'),
+                          ),
+                        ),
+                      for (final system in _rows(p['systems'])) _system(system),
+                      const SizedBox(height: 20),
+                      Text(
+                        'Corresponding team modules',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Each team proposes one module for each system. The selected system determines which module may proceed.',
+                      ),
+                      for (final team in _rows(p['teams'])) _team(team),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Section hearing',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Schedule each participating team through the defense scheduler with the same day, room and chair, then assemble those schedules here. Team assessments stay separate.',
+                      ),
+                      if ((p['hearing_schedule_ids'] as List? ?? []).isNotEmpty)
+                        Text(
+                          'Hearing assembled with ${(p['hearing_schedule_ids'] as List).length} team schedules.',
+                        ),
+                      if (p['can_manage'] == true && p['verdict'] == '')
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: OutlinedButton(
+                              onPressed: busy
+                                  ? null
+                                  : () => perform(
+                                      () => service
+                                          .action(p, 'schedule_hearing', {
+                                            'schedule_ids': _rows(
+                                              p['available_schedules'],
+                                            ).map((s) => s['id']).toList(),
+                                          }),
+                                    ),
+                              child: const Text(
+                                'Assemble current team schedules',
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (p['can_decide'] == true)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: FilledButton(
+                            onPressed: busy ? null : () => decide(),
+                            child: const Text('Record section system decision'),
+                          ),
+                        ),
+                      if (_rows(p['history']).isNotEmpty) ...[
+                        const SizedBox(height: 24),
+                        Text(
+                          'Earlier section hearings',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        for (final history in _rows(p['history']))
+                          ExpansionTile(
+                            title: Text(
+                              'Attempt ${history['round']} · ${history['verdict']}',
+                            ),
+                            children: [
+                              ListTile(
+                                title: Text('${history['remarks']}'),
+                                subtitle: Text(
+                                  _rows(
+                                        (history['snapshot']
+                                            as Map?)?['systems'],
+                                      )
+                                      .map(
+                                        (s) =>
+                                            '${s['title']}: ${s['decision']}',
+                                      )
+                                      .join('\n'),
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
                     ],
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _inlineReview(Map<String, dynamic>? p) {
+    if (p == null) {
+      return Padding(
+        padding: const EdgeInsets.all(20),
+        child: error == null
+            ? const LinearProgressIndicator()
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(error!),
+                  TextButton(
+                    onPressed: load,
+                    child: const Text('Retry shared system'),
+                  ),
+                ],
+              ),
+      );
+    }
+    final systems = _rows(p['systems']);
+    final current =
+        systems.where((s) => s['key'] == selectedSystem).firstOrNull ??
+        systems.firstOrNull;
+    final progress = p['review_progress'] as Map? ?? {};
+    final accepted =
+        progress['papers_accepted'] ??
+        systems
+            .where(
+              (s) => _rows(s['papers']).any(
+                (f) => f['is_current'] == true && f['status'] == 'accepted',
+              ),
+            )
+            .length;
+    final namesConfirmed =
+        systems.length == 3 &&
+        systems.every(
+          (s) =>
+              s['confirmed'] == true && '${s['title'] ?? ''}'.trim().isNotEmpty,
+        );
+    final canEndorse = p['can_endorse'] == true;
+    final secondary = DefensysTokens.textSecondaryOf(context);
+    final brand = DefensysTokens.maroonTextOf(context);
+    final verdict = '${p['verdict'] ?? ''}';
+    final status = verdict.isNotEmpty
+        ? verdict.replaceAll('_', ' ')
+        : p['endorsed'] == true
+        ? 'Endorsed for hearing'
+        : '$accepted of 3 papers accepted';
+    return DefensysShadcnScope(
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: DefensysTokens.surfaceOf(context),
+          border: Border.all(color: DefensysTokens.borderOf(context)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                const Text(
+                  'Shared system review',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                ),
+                Text(
+                  status,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: secondary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${p['section']} · ${p['stage_label']} · Attempt ${p['round']}',
+              style: TextStyle(fontSize: 12, color: secondary),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 20,
+              runSpacing: 6,
+              children: [
+                Text(
+                  'Project manager: ${p['project_manager_name']}',
+                  style: TextStyle(fontSize: 12, color: secondary),
+                ),
+                Text(
+                  'System reviewer: ${p['reviewer_name']}',
+                  style: TextStyle(fontSize: 12, color: secondary),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final system in systems)
+                  OutlinedButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () => setState(
+                            () => selectedSystem = '${system['key']}',
+                          ),
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: current?['key'] == system['key']
+                          ? DefensysTokens.surfaceHigherOf(context)
+                          : null,
+                      foregroundColor: current?['key'] == system['key']
+                          ? brand
+                          : secondary,
+                      side: BorderSide(
+                        color: current?['key'] == system['key']
+                            ? brand
+                            : DefensysTokens.borderOf(context),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                    ),
+                    icon: Icon(
+                      system['key'] == p['selected_key']
+                          ? Icons.check_circle_outline
+                          : Icons.description_outlined,
+                      size: 15,
+                    ),
+                    label: Text('System ${_letter(system['key'])}'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (current != null) _inlineSystem(current),
+            Divider(height: 28, color: DefensysTokens.borderOf(context)),
+            Text(
+              p['shared_revisions_pending'] == true
+                  ? 'Shared system revisions must be accepted and cleared before modules can proceed.'
+                  : verdict.isNotEmpty
+                  ? 'System outcome: ${verdict.replaceAll('_', ' ')}. ${p['remarks'] ?? ''}'
+                  : p['endorsed'] == true
+                  ? 'Shared papers are endorsed. Each team also needs its own module clearance.'
+                  : !namesConfirmed
+                  ? 'Confirm the three system names, then accept their current concept papers.'
+                  : accepted != 3
+                  ? 'Accept all three current concept papers before endorsing the shared system set.'
+                  : 'The shared system set is ready for faculty endorsement.',
+              style: TextStyle(fontSize: 12, height: 1.5, color: secondary),
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (p['can_edit_names'] == true)
+                  OutlinedButton.icon(
+                    onPressed: busy ? null : () => editNames(),
+                    icon: const Icon(Icons.edit_outlined, size: 15),
+                    label: Text(
+                      p['can_review'] == true || p['can_manage'] == true
+                          ? 'Confirm system names'
+                          : 'Propose system names',
+                    ),
+                  ),
+                if (p['can_review'] == true)
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: DefensysTokens.maroon,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                    ),
+                    onPressed: busy || !canEndorse
+                        ? null
+                        : () => perform(() => service.action(p, 'endorse')),
+                    icon: const Icon(Icons.verified_outlined, size: 15),
+                    label: const Text('Endorse shared papers'),
+                  ),
+                if (p['can_clear_shared_revisions'] == true)
+                  FilledButton(
+                    onPressed: busy
+                        ? null
+                        : () async {
+                            final remarks = await _remarks(
+                              context,
+                              'Clear shared system revisions',
+                            );
+                            if (remarks != null && mounted) {
+                              await perform(
+                                () => service.action(p, 'clear_revisions', {
+                                  'remarks': remarks,
+                                }),
+                              );
+                            }
+                          },
+                    child: const Text('Clear shared system revisions'),
+                  ),
+                if (p['can_decide'] == true)
+                  FilledButton(
+                    onPressed: busy ? null : () => decide(),
+                    child: const Text('Record section system decision'),
+                  ),
+                TextButton.icon(
+                  style: TextButton.styleFrom(foregroundColor: brand),
+                  onPressed: busy ? null : load,
+                  icon: const Icon(Icons.refresh, size: 15),
+                  label: const Text('Refresh'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Faculty endorsement clears the papers for hearing. The panel chair records the final system selection.',
+              style: TextStyle(fontSize: 11, height: 1.5, color: secondary),
+            ),
+            if (busy)
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: LinearProgressIndicator(),
+              ),
+            if (error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(
+                  error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            if (_rows(p['history']).isNotEmpty)
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text('Earlier system attempts'),
+                children: [
+                  for (final history in _rows(p['history']))
+                    ListTile(
+                      title: Text(
+                        'Attempt ${history['round']} · ${history['verdict']}',
+                      ),
+                      subtitle: Text('${history['remarks']}'),
+                    ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _letter(dynamic key) => switch (key) {
+    'c1' => 'A',
+    'c2' => 'B',
+    'c3' => 'C',
+    _ => '$key',
+  };
+
+  Widget _inlineSystem(Map<String, dynamic> system) {
+    final papers = _rows(system['papers']);
+    final paper = papers.where((p) => p['is_current'] == true).firstOrNull;
+    final secondary = DefensysTokens.textSecondaryOf(context);
+    final status = switch (paper?['status']) {
+      'accepted' => 'Accepted',
+      'rejected' => 'Corrections requested',
+      _ => paper == null ? 'Awaiting upload' : 'Needs review',
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '${system['title'] ?? ''}'.trim().isEmpty
+              ? 'Awaiting system name'
+              : '${system['title']}',
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          system['key'] == project!['selected_key']
+              ? 'Selected system'
+              : system['confirmed'] == true
+              ? 'Name confirmed by faculty'
+              : 'Name needs faculty confirmation',
+          style: TextStyle(fontSize: 12, color: secondary),
+        ),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: DefensysTokens.surfaceHigherOf(context),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.picture_as_pdf_outlined, size: 20, color: secondary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      paper == null
+                          ? 'Concept paper not submitted'
+                          : '${paper['file_name']}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      paper == null
+                          ? 'The section project manager uploads this paper.'
+                          : 'Revision ${paper['revision']} · $status',
+                      style: TextStyle(fontSize: 12, color: secondary),
+                    ),
                   ],
                 ),
               ),
+            ],
+          ),
+        ),
+        if ('${paper?['feedback'] ?? ''}'.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Text(
+              'Feedback: ${paper!['feedback']}',
+              style: TextStyle(fontSize: 12, color: secondary),
             ),
+          ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            if (paper != null)
+              OutlinedButton.icon(
+                onPressed: busy ? null : () => viewPaper(paper),
+                icon: const Icon(Icons.visibility_outlined, size: 15),
+                label: const Text('Read paper'),
+              ),
+            if (paper != null &&
+                (project!['can_review'] == true ||
+                    system['can_review'] == true)) ...[
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: DefensysTokens.saveActionBg,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                ),
+                onPressed: busy || paper['status'] == 'accepted'
+                    ? null
+                    : () => perform(
+                        () => service.action(project!, 'review', {
+                          'paper_id': paper['id'],
+                          'status': 'accepted',
+                        }),
+                      ),
+                icon: const Icon(Icons.check, size: 15),
+                label: const Text('Accept paper'),
+              ),
+              TextButton(
+                style: TextButton.styleFrom(
+                  foregroundColor: DefensysTokens.maroonTextOf(context),
+                ),
+                onPressed: busy ? null : () => requestCorrections(paper),
+                child: const Text('Request corrections'),
+              ),
+            ],
+            if (system['can_upload'] == true)
+              OutlinedButton.icon(
+                onPressed: busy ? null : () => upload(system),
+                icon: const Icon(Icons.upload_file_outlined, size: 15),
+                label: Text(
+                  paper == null
+                      ? 'Upload concept paper'
+                      : 'Upload revised paper',
+                ),
+              ),
+          ],
+        ),
+        if (papers.length > 1)
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: Text(
+              'Previous paper versions (${papers.length - 1})',
+              style: const TextStyle(fontSize: 12),
+            ),
+            children: [
+              for (final old in papers.where((p) => p['is_current'] != true))
+                ListTile(
+                  dense: true,
+                  title: Text(
+                    '${old['file_name']} · Revision ${old['revision']}',
+                  ),
+                  trailing: const Icon(Icons.visibility_outlined, size: 16),
+                  onTap: busy ? null : () => viewPaper(old),
+                ),
+            ],
+          ),
+      ],
     );
   }
 
@@ -577,131 +1229,473 @@ class _SectionConceptWorkspaceState
     final papers = _rows(system['papers']);
     final current = papers.where((p) => p['is_current'] == true).firstOrNull;
     final selected = project!['selected_key'] == system['key'];
+    final keyStr = '${system['key']}';
+    final letter = keyStr.substring(1) == '1'
+        ? 'A'
+        : (keyStr == 'c2' ? 'B' : 'C');
+    final title = system['title'] == ''
+        ? 'Awaiting proposal name'
+        : system['title'];
+    final isConfirmed = system['confirmed'] == true;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'System ${'${system['key']}'.substring(1) == '1'
-                ? 'A'
-                : system['key'] == 'c2'
-                ? 'B'
-                : 'C'} · ${system['title'] == '' ? 'Awaiting proposal name' : system['title']}${selected ? ' · Selected' : ''}',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          Text(
-            system['confirmed'] == true
-                ? 'Faculty-confirmed name'
-                : 'Name awaiting faculty confirmation',
-          ),
-          if (current == null)
-            const Text('Concept paper missing')
-          else ...[
-            Text('Revision ${current['revision']} · ${current['status']}'),
-            if ('${current['feedback']}'.isNotEmpty)
-              Text('${current['feedback']}'),
+      padding: const EdgeInsets.only(bottom: 14),
+      child: ShadCard(
+        width: double.infinity,
+        backgroundColor: selected
+            ? const Color(0xFF720000).withValues(alpha: 0.03)
+            : null,
+        title: Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFF720000).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color: const Color(0xFF720000).withValues(alpha: 0.3),
+                ),
+              ),
+              child: Text(
+                'System $letter',
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF720000),
+                ),
+              ),
+            ),
+            Text(
+              'System $letter · $title${selected ? ' · Selected' : ''}',
+              style: const TextStyle(
+                fontSize: 14.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (selected)
+              const ShadBadge(
+                backgroundColor: Color(0xFF16A34A),
+                child: Text(
+                  'Selected',
+                  style: TextStyle(color: Colors.white, fontSize: 9.5),
+                ),
+              ),
+            if (isConfirmed)
+              const ShadBadge(
+                child: Text(
+                  'Faculty Confirmed',
+                  style: TextStyle(fontSize: 9.5),
+                ),
+              )
+            else
+              const ShadBadge.secondary(
+                child: Text(
+                  'Pending Confirmation',
+                  style: TextStyle(fontSize: 9.5),
+                ),
+              ),
           ],
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (project!['can_upload'] == true ||
-                  system['can_upload'] == true)
-                OutlinedButton.icon(
-                  onPressed: busy ? null : () => upload(system),
-                  icon: const Icon(Icons.upload_file_outlined),
-                  label: Text(
-                    current == null
-                        ? 'Upload concept paper'
-                        : 'Upload revised paper',
-                  ),
+        ),
+        description: Text(
+          isConfirmed
+              ? 'Faculty-confirmed name'
+              : 'Name awaiting faculty confirmation',
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 10),
+            if (current == null)
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
                 ),
-              if (current != null)
-                TextButton(
-                  onPressed: busy ? null : () => viewPaper(current),
-                  child: const Text('Read paper'),
-                ),
-              if (current != null &&
-                  (project!['can_review'] == true ||
-                      system['can_review'] == true)) ...[
-                TextButton(
-                  onPressed: busy || current['status'] == 'accepted'
-                      ? null
-                      : () => perform(
-                          () => service.action(project!, 'review', {
-                            'paper_id': current['id'],
-                            'status': 'accepted',
-                          }),
-                        ),
-                  child: const Text('Accept paper'),
-                ),
-                TextButton(
-                  onPressed: busy ? null : () => requestCorrections(current),
-                  child: const Text('Request corrections'),
-                ),
-              ],
-            ],
-          ),
-          if (papers.length > 1)
-            ExpansionTile(
-              tilePadding: EdgeInsets.zero,
-              title: const Text('Previous paper versions'),
-              children: [
-                for (final paper in papers.where(
-                  (p) => p['is_current'] != true,
-                ))
-                  ListTile(
-                    title: Text(
-                      'Revision ${paper['revision']} · ${paper['status']}',
+                child: const Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 16,
+                      color: Color(0xFFD97706),
                     ),
-                    onTap: busy ? null : () => viewPaper(paper),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Concept paper missing · Upload the shared system proposal manuscript.',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: Color(0xFF92400E),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Colors.white.withValues(alpha: 0.04)
+                      : const Color(0xFFF9FAFB),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.white12
+                        : const Color(0xFFE5E7EB),
                   ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.picture_as_pdf_rounded,
+                          size: 16,
+                          color: Color(0xFF720000),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Revision ${current['revision']} · ${current['file_name'] ?? 'System Paper'}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12.5,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        if (current['status'] == 'accepted')
+                          const ShadBadge(
+                            backgroundColor: Color(0xFF16A34A),
+                            child: Text(
+                              'Accepted',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 9.5,
+                              ),
+                            ),
+                          )
+                        else if (current['status'] == 'rejected')
+                          const ShadBadge.destructive(
+                            child: Text(
+                              'Revisions',
+                              style: TextStyle(fontSize: 9.5),
+                            ),
+                          )
+                        else
+                          const ShadBadge.secondary(
+                            child: Text(
+                              'Pending Review',
+                              style: TextStyle(fontSize: 9.5),
+                            ),
+                          ),
+                      ],
+                    ),
+                    if ('${current['feedback']}'.trim().isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Feedback: ${current['feedback']}',
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontStyle: FontStyle.italic,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (system['can_upload'] == true)
+                  ShadButton.outline(
+                    size: ShadButtonSize.sm,
+                    onPressed: busy ? null : () => upload(system),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.upload_file_outlined, size: 14),
+                        const SizedBox(width: 6),
+                        Text(
+                          current == null
+                              ? 'Upload concept paper'
+                              : 'Upload revised paper',
+                        ),
+                      ],
+                    ),
+                  ),
+                if (current != null)
+                  ShadButton.ghost(
+                    size: ShadButtonSize.sm,
+                    onPressed: busy ? null : () => viewPaper(current),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.visibility_outlined, size: 14),
+                        SizedBox(width: 6),
+                        Text('Read paper'),
+                      ],
+                    ),
+                  ),
+                if (current != null &&
+                    (project!['can_review'] == true ||
+                        system['can_review'] == true)) ...[
+                  ShadButton(
+                    size: ShadButtonSize.sm,
+                    enabled: !busy && current['status'] != 'accepted',
+                    onPressed: () => perform(
+                      () => service.action(project!, 'review', {
+                        'paper_id': current['id'],
+                        'status': 'accepted',
+                      }),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.check_circle_outline, size: 14),
+                        SizedBox(width: 6),
+                        Text('Accept paper'),
+                      ],
+                    ),
+                  ),
+                  ShadButton.outline(
+                    size: ShadButtonSize.sm,
+                    enabled: !busy,
+                    onPressed: () => requestCorrections(current),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.edit_note_rounded, size: 14),
+                        SizedBox(width: 6),
+                        Text('Request corrections'),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
-          const Divider(height: 24),
-        ],
+            if (papers.length > 1)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Previous paper versions',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  children: [
+                    for (final paper in papers.where(
+                      (p) => p['is_current'] != true,
+                    ))
+                      ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.history_rounded, size: 16),
+                        title: Text(
+                          'Revision ${paper['revision']} · ${paper['status']}',
+                        ),
+                        trailing: const Icon(Icons.chevron_right, size: 16),
+                        onTap: busy ? null : () => viewPaper(paper),
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _team(Map<String, dynamic> team) => Padding(
-    padding: const EdgeInsets.only(top: 18),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('${team['name']}', style: Theme.of(context).textTheme.titleMedium),
-        for (final module in _rows(team['concepts']))
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Text(
-              '${module['system_title'] == '' ? '${module['key']}'.toUpperCase() : module['system_title']} → ${module['title'] == '' ? 'Module name needed' : module['title']}'
-              '${module['faculty_confirmed'] == true ? ' · Confirmed' : ' · Awaiting confirmation'}'
-              '${module['decision'] == null || module['decision'] == '' ? '' : ' · ${module['decision']}'}'
-              '${module['documents_status'] == null ? '' : '\nPapers: ${'${module['documents_status']}'.replaceAll('_', ' ')}'}',
-            ),
-          ),
-        if (team['verdict'] != '')
-          Text('Module hearing outcome: ${team['verdict']}'),
-        Wrap(
-          spacing: 8,
+  Widget _team(Map<String, dynamic> team) {
+    final modules = _rows(team['concepts']);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: ShadCard(
+        width: double.infinity,
+        title: Row(
           children: [
-            if (team['can_confirm_names'] == true &&
-                team['schedule_id'] == null)
-              TextButton(
-                onPressed: busy ? null : () => editNames(team: team),
-                child: const Text('Confirm module names'),
+            CircleAvatar(
+              radius: 13,
+              backgroundColor: const Color(0xFF720000).withValues(alpha: 0.1),
+              child: Text(
+                '${team['name']}'.isNotEmpty
+                    ? '${team['name']}'[0].toUpperCase()
+                    : 'T',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF720000),
+                ),
               ),
-            if (team['can_issue_verdict'] == true)
-              FilledButton(
-                onPressed: busy ? null : () => decide(team: team),
-                child: const Text('Record module outcome'),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '${team['name']}',
+                style: const TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            if (team['verdict'] != null && '${team['verdict']}'.isNotEmpty)
+              ShadBadge(
+                backgroundColor: '${team['verdict']}' == 'approved'
+                    ? const Color(0xFF16A34A)
+                    : null,
+                child: Text(
+                  'Outcome: ${team['verdict']}',
+                  style: const TextStyle(fontSize: 9.5),
+                ),
               ),
           ],
         ),
-      ],
-    ),
-  );
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 10),
+            for (final module in modules) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Colors.white.withValues(alpha: 0.03)
+                      : const Color(0xFFF9FAFB),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? Colors.white12
+                        : const Color(0xFFE5E7EB),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 1.5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(
+                              0xFF2563EB,
+                            ).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            module['system_title'] == ''
+                                ? '${module['key']}'.toUpperCase()
+                                : '${module['system_title']}',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF2563EB),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text(
+                          '→',
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            module['title'] == ''
+                                ? 'Module name needed'
+                                : '${module['title']}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12.5,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        if (module['faculty_confirmed'] == true)
+                          const ShadBadge(
+                            child: Text(
+                              'Confirmed',
+                              style: TextStyle(fontSize: 9),
+                            ),
+                          )
+                        else
+                          const ShadBadge.secondary(
+                            child: Text(
+                              'Pending',
+                              style: TextStyle(fontSize: 9),
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (module['decision'] != null &&
+                        '${module['decision']}'.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Decision: ${module['decision']}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                    if (module['documents_status'] != null &&
+                        '${module['documents_status']}'.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Papers: ${'${module['documents_status']}'.replaceAll('_', ' ')}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (team['can_confirm_names'] == true &&
+                    team['schedule_id'] == null)
+                  ShadButton.outline(
+                    size: ShadButtonSize.sm,
+                    onPressed: busy ? null : () => editNames(team: team),
+                    child: const Text('Confirm module names'),
+                  ),
+                if (team['can_issue_verdict'] == true)
+                  ShadButton(
+                    size: ShadButtonSize.sm,
+                    onPressed: busy ? null : () => decide(team: team),
+                    child: const Text('Record module outcome'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _ProposalNamesDialog extends StatefulWidget {

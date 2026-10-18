@@ -1,9 +1,9 @@
-from django.db.models import Q, Case, When, F, CharField, Prefetch
+from django.db.models import Q, Case, When, F, CharField
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from defensys_backend.read_projection import ReadAPIView as APIView
 
 from academic_period_management.serializers import SemesterSerializer
 from defense.scheduler.models import DefenseSchedule
@@ -15,13 +15,16 @@ from defense.scheduler.serializers import (
     schedule_queryset,
 )
 from authentication_access_control.scopes import (
-    manageable_schedules_for, section_instructor_section_filters, visible_schedules_for,
+    manageable_schedules_for, section_instructor_section_filters,
 )
+from authentication_access_control.workspaces import workspace_schedules_for
 from user_management.permissions import CanManageModule
 
 
-def board_queryset_for_user(user):
-    return visible_schedules_for(user)
+def board_queryset_for_user(user, *, workspace=''):
+    # Faculty records retain independent assignment access. The operations
+    # workspace must use cohort management authority instead of that union.
+    return schedule_queryset(workspace_schedules_for(user, workspace))
 
 
 def counts_payload(base_queryset, current_queryset=None):
@@ -185,19 +188,24 @@ def latest_schedule_changes(queryset):
     return {log.target_id: schedule_change_payload(log) for log in SystemAuditLog.objects.filter(pk__in=ids).select_related('actor')}
 
 
-def board_payload(request, queryset=None):
-    base = board_queryset_for_user(request.user)
+def board_payload(request, queryset=None, *, workspace=None):
+    workspace = request.query_params.get('workspace', '').strip() if workspace is None else workspace
+    base = board_queryset_for_user(request.user, workspace=workspace)
     current = queryset if queryset is not None else base
-    from grading.grades.models import TeamGrade
     # Assessment fields reuse the same fully loaded grade rows for this request.
     from repository.deliverables.timing import with_material_permissions
-    current = with_material_permissions(current).select_related('documenter', 'minutes').prefetch_related(
-        'guest_invitations', 'guest_panelist_codes',
-        Prefetch('grade_records', queryset=TeamGrade.objects.with_relations()),
-    )
+    current = with_material_permissions(current).select_related('documenter', 'minutes')
+    manageable_ids = set(manageable_schedules_for(request.user).filter(
+        pk__in=current.values('pk'),
+    ).values_list('pk', flat=True)) if workspace in ('', 'operations') else set()
+    schedules = DefenseScheduleSerializer(current, many=True, context={
+        'latest_changes': latest_schedule_changes(current.filter(pk__in=manageable_ids)),
+    }).data
+    for row in schedules:
+        row['can_manage'] = row['id'] in manageable_ids
     semester = active_semester()
     return {
-        'schedules': DefenseScheduleSerializer(current, many=True, context={'latest_changes': latest_schedule_changes(current) if request.user.role == 'admin' or request.user.is_superuser or request.user.is_pit_lead else {}}).data,
+        'schedules': schedules,
         'counts': counts_payload(base, current),
         'stage_options': stage_options(base),
         'advisers': adviser_options(base),
@@ -215,7 +223,8 @@ class DefenseBoardListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        queryset = filter_board_queryset(request, board_queryset_for_user(request.user))
+        workspace = request.query_params.get('workspace', '').strip()
+        queryset = filter_board_queryset(request, board_queryset_for_user(request.user, workspace=workspace))
         return Response(board_payload(request, queryset))
 
 
@@ -228,9 +237,10 @@ class DefenseBoardOperationsView(APIView):
         if request.query_params.get('history_for'):
             from rest_framework import serializers
             schedule_id = serializers.IntegerField(min_value=1).run_validation(request.query_params['history_for'])
-            schedule = get_object_or_404(board_queryset_for_user(request.user), pk=schedule_id)
+            managed = board_queryset_for_user(request.user, workspace='operations')
+            schedule = get_object_or_404(managed, pk=schedule_id)
             from authentication_access_control.models import SystemAuditLog
-            schedules = board_queryset_for_user(request.user).filter(session_id=schedule.session_id, semester_id=schedule.semester_id, scope=schedule.scope) if request.query_params.get('session') == '1' else board_queryset_for_user(request.user).filter(pk=schedule.pk)
+            schedules = managed.filter(session_id=schedule.session_id, semester_id=schedule.semester_id, scope=schedule.scope) if request.query_params.get('session') == '1' else managed.filter(pk=schedule.pk)
             names = {str(s.pk): s.team.name for s in schedules}
             logs = SystemAuditLog.objects.filter(target_type='DefenseSchedule', target_id__in=names,
                 action__in=['schedule.operational_change', 'schedule.material_deadline_extended', 'schedule.late_upload_opened']).select_related('actor')[:100]
@@ -270,11 +280,11 @@ class DefenseBoardDetailView(APIView):
         schedule = board_queryset_for_user(request.user).get(pk=schedule.pk)
         return Response({
             'schedule': DefenseScheduleSerializer(schedule).data,
-            **board_payload(request),
+            **board_payload(request, workspace='operations'),
         })
 
     def delete(self, request, schedule_id):
         schedule = self.get_object(request, schedule_id)
         from defense.scheduler.services import delete_schedule
         delete_schedule(schedule, actor=request.user, request=request)
-        return Response(board_payload(request), status=status.HTTP_200_OK)
+        return Response(board_payload(request, workspace='operations'), status=status.HTTP_200_OK)

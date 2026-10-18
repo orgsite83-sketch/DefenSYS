@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from unittest.mock import patch
 from rest_framework.test import APITestCase
 
 from academic_period_management.models import SchoolYear, Semester
@@ -12,6 +13,13 @@ User = get_user_model()
 
 
 class ProjectArchiveApiTests(APITestCase):
+    def test_empty_shelf_does_not_build_the_library(self):
+        from .services import get_user_shelf_payload
+        with patch('repository.archive.services.library_targets', side_effect=AssertionError('Unneeded library read')):
+            with self.assertNumQueries(2):
+                self.assertEqual(get_user_shelf_payload(self.student),
+                                 {'items': [], 'recent': [], 'saved': [], 'activity': []})
+
     def setUp(self):
         self.admin = User.objects.create_user(
             username='admin-user',

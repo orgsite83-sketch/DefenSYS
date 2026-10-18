@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// A successful write marks dependent screens for refresh on their next visit.
-/// This retains their filters and drafts and does no work for hidden screens.
+/// A successful write refreshes the visible dependent section and marks hidden
+/// sections for their next visit, retaining filters and drafts.
 enum DataArea {
   dashboard,
   academicPeriods,
@@ -16,6 +16,10 @@ enum DataArea {
   analytics,
   audit,
   repository,
+  deliverables,
+  adviserGrades,
+  weeklyReports,
+  documenter,
 }
 
 final dataRefreshProvider =

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:defensys/services/defense/team_defense_provider.dart';
+import 'package:defensys/services/defense/defense_board_provider.dart';
 import 'package:defensys/services/network/authenticated_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,6 +20,24 @@ class _Client implements AuthenticatedHttpClient {
 }
 
 void main() {
+  test('operations retain their workspace when filters change', () async {
+    final client = _Client();
+    final container = ProviderContainer(
+      overrides: [authenticatedHttpClientProvider.overrideWithValue(client)],
+    );
+    addTearDown(container.dispose);
+    final board = container.read(defenseBoardProvider.notifier);
+    await board.fetchBoard(scope: 'pit');
+    await board.fetchBoard(search: 'Showcase', section: 'BSIT-2A');
+    expect(client.requested.first.queryParameters, {
+      'workspace': 'operations', 'scope': 'pit',
+    });
+    expect(client.requested.last.queryParameters, {
+      'workspace': 'operations', 'scope': 'pit',
+      'search': 'Showcase', 'section': 'BSIT-2A',
+    });
+  });
+
   test(
     'generic defense records retain student and other faculty access',
     () async {

@@ -2566,16 +2566,16 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFECFDF5),
+                            color: _peerGradingEnabled ? const Color(0xFFECFDF5) : const Color(0xFFF1F5F9),
                             borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: const Color(0xFFA7F3D0)),
+                            border: Border.all(color: _peerGradingEnabled ? const Color(0xFFA7F3D0) : const Color(0xFFE2E8F0)),
                           ),
-                          child: const Text(
-                            'Open by Default',
+                          child: Text(
+                            _peerGradingEnabled ? 'Enabled' : 'Closed',
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w800,
-                              color: Color(0xFF047857),
+                              color: _peerGradingEnabled ? const Color(0xFF047857) : const Color(0xFF64748B),
                               fontFamily: DefensysTokens.fontFamily,
                             ),
                           ),
@@ -2585,8 +2585,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                     const SizedBox(height: 2),
                     Text(
                       _peerGradingEnabled
-                          ? 'Open — students can submit peer rubrics once defenses are scheduled.'
-                          : 'Closed — students cannot submit peer evaluations for this event.',
+                          ? 'Enabled — students can grade their teammates after their scheduled defense finishes.'
+                          : 'Closed — students cannot grade their teammates for this event.',
                       style: TextStyle(
                         fontSize: 12,
                         color: _peerGradingEnabled ? const Color(0xFF0369A1) : Colors.grey.shade600,
@@ -2651,7 +2651,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
-                    'Post-deliverables unlock once presentation finishes. Teams transition to "Awaiting Peers" until teammate evaluations are complete.',
+                    'Peer grading unlocks for each team after all assigned panelists finish evaluating its scheduled defense. Teams then await any remaining teammate grades.',
                     style: TextStyle(
                       fontSize: 11.5,
                       color: Color(0xFF475569),

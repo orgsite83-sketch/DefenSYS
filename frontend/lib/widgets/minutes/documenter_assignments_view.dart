@@ -44,6 +44,17 @@ class _DocumenterAssignmentsViewState
 
   Future<void> _refresh() =>
       ref.read(documenterProvider.notifier).fetchAssignments();
+
+  @override
+  void didUpdateWidget(covariant DocumenterAssignmentsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.recordsOnly != widget.recordsOnly) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _refresh();
+      });
+    }
+  }
+
   void _select(DocumenterFilter filter) => setState(() {
     _filter = filter;
     _pickedInitialFilter = true;
@@ -81,250 +92,246 @@ class _DocumenterAssignmentsViewState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (widget.showHeader) ...[
-                          Text(
-                            'Defense documentation',
-                            style: TextStyle(
-                              color: DefensysTokens.maroonTextOf(context),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                        ],
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (widget.showHeader) ...[
                         Text(
-                          widget.recordsOnly
-                              ? 'Minutes records'
-                              : widget.showHeader
-                              ? 'Documenter workspace'
-                              : 'Your defense desk',
+                          'Defense documentation',
                           style: TextStyle(
-                            fontFamily: DefensysTokens.fontFamilyInter,
-                            fontSize: widget.showHeader ? 28 : 24,
-                            height: 1.25,
-                            letterSpacing: -0.6,
+                            color: DefensysTokens.maroonTextOf(context),
+                            fontSize: 12,
                             fontWeight: FontWeight.w600,
-                            color: DefensysTokens.textPrimaryOf(context),
                           ),
                         ),
                         const SizedBox(height: 6),
-                        Text(
-                          widget.recordsOnly
-                              ? 'Follow signatures through to the final record.'
-                              : 'Capture panel feedback and track signed minutes.',
-                          style: TextStyle(
-                            color: secondary,
-                            fontSize: 13,
-                            height: 1.5,
-                          ),
-                        ),
                       ],
-                    ),
-                  ),
-                  Tooltip(
-                    message: 'Refresh assignments',
-                    child: ShadButton.outline(
-                      width: 40,
-                      height: 40,
-                      padding: EdgeInsets.zero,
-                      enabled: !state.isLoading,
-                      onPressed: _refresh,
-                      child: const Icon(LucideIcons.refreshCw, size: 17),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              if (!widget.recordsOnly) ...[
-                Row(
-                  children: [
-                    for (final filter in [
-                      DocumenterFilter.today,
-                      DocumenterFilter.needsAction,
-                      DocumenterFilter.records,
-                    ]) ...[
-                      if (filter != DocumenterFilter.today)
-                        const SizedBox(width: 8),
-                      Expanded(
-                        child: _summary(
-                          filter,
-                          count(filter),
-                          selected == filter,
-                          loading: state.isLoading && assignments.isEmpty,
+                      Text(
+                        widget.recordsOnly
+                            ? 'Minutes records'
+                            : widget.showHeader
+                            ? 'Documenter workspace'
+                            : 'Your defense desk',
+                        style: TextStyle(
+                          fontFamily: DefensysTokens.fontFamilyInter,
+                          fontSize: widget.showHeader ? 28 : 24,
+                          height: 1.25,
+                          letterSpacing: -0.6,
+                          fontWeight: FontWeight.w600,
+                          color: DefensysTokens.textPrimaryOf(context),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        widget.recordsOnly
+                            ? 'Follow signatures through to the final record.'
+                            : 'Capture panel feedback and track signed minutes.',
+                        style: TextStyle(
+                          color: secondary,
+                          fontSize: 13,
+                          height: 1.5,
                         ),
                       ),
                     ],
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 22),
-                ShadTabs<DocumenterFilter>(
-                  value: selected,
-                  onChanged: _select,
-                  scrollable: true,
-                  gap: 0,
-                  tabBarAlignment: Alignment.centerLeft,
-                  padding: const EdgeInsets.all(4),
-                  tabs: [
-                    for (final filter in DocumenterFilter.values)
-                      ShadTab(
-                        value: filter,
-                        height: 40,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Text(
-                          '${_label(filter)} (${count(filter)})',
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                      ),
-                  ],
+                Tooltip(
+                  message: 'Refresh assignments',
+                  child: ShadButton.outline(
+                    width: 40,
+                    height: 40,
+                    padding: EdgeInsets.zero,
+                    enabled: !state.isLoading,
+                    onPressed: _refresh,
+                    child: const Icon(LucideIcons.refreshCw, size: 17),
+                  ),
                 ),
-                const SizedBox(height: 16),
               ],
-              ShadInput(
-                controller: _searchController,
-                onChanged: (value) =>
-                    setState(() => _search = value.trim().toLowerCase()),
-                leading: const Icon(LucideIcons.search, size: 18),
-                placeholder: const Text('Search team, project or stage'),
-                style: const TextStyle(fontSize: 13),
-                placeholderStyle: const TextStyle(fontSize: 13),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 12,
-                ),
-                trailing: _searchController.text.isEmpty
-                    ? null
-                    : Tooltip(
-                        message: 'Clear search',
-                        child: ShadButton.ghost(
-                          width: 24,
-                          height: 24,
-                          padding: EdgeInsets.zero,
-                          onPressed: () => setState(() {
-                            _searchController.clear();
-                            _search = '';
-                          }),
-                          child: const Icon(LucideIcons.x, size: 16),
-                        ),
-                      ),
-              ),
-              const SizedBox(height: 24),
+            ),
+            const SizedBox(height: 24),
+            if (!widget.recordsOnly) ...[
               Row(
                 children: [
-                  Expanded(
-                    child: Text(
-                      _sectionLabel(selected),
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.2,
+                  for (final filter in [
+                    DocumenterFilter.today,
+                    DocumenterFilter.needsAction,
+                    DocumenterFilter.records,
+                  ]) ...[
+                    if (filter != DocumenterFilter.today)
+                      const SizedBox(width: 8),
+                    Expanded(
+                      child: _summary(
+                        filter,
+                        count(filter),
+                        selected == filter,
+                        loading: state.isLoading && assignments.isEmpty,
                       ),
                     ),
-                  ),
-                  Text(
-                    '${visible.length} ${visible.length == 1 ? 'defense' : 'defenses'}',
-                    style: TextStyle(fontSize: 12, color: secondary),
-                  ),
+                  ],
                 ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                selected == DocumenterFilter.records
-                    ? 'Most recent first'
-                    : 'In schedule order',
-                style: TextStyle(fontSize: 12, color: secondary),
+              const SizedBox(height: 22),
+              ShadTabs<DocumenterFilter>(
+                value: selected,
+                onChanged: _select,
+                scrollable: true,
+                gap: 0,
+                tabBarAlignment: Alignment.centerLeft,
+                padding: const EdgeInsets.all(4),
+                tabs: [
+                  for (final filter in DocumenterFilter.values)
+                    ShadTab(
+                      value: filter,
+                      height: 40,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        '${_label(filter)} (${count(filter)})',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(height: 16),
-              if (state.isLoading && assignments.isEmpty) _loading(),
-              if (state.isLoading && assignments.isNotEmpty) ...[
-                const LinearProgressIndicator(minHeight: 2),
-                const SizedBox(height: 12),
-              ],
-              if (state.error != null)
-                _message(
-                  icon: Icons.cloud_off_outlined,
-                  title: 'Could not refresh assignments',
-                  detail: state.error!,
-                  action: ShadButton.outline(
-                    onPressed: _refresh,
-                    leading: const Icon(LucideIcons.refreshCw, size: 16),
-                    child: const Text('Try again'),
+            ],
+            ShadInput(
+              controller: _searchController,
+              onChanged: (value) =>
+                  setState(() => _search = value.trim().toLowerCase()),
+              leading: const Icon(LucideIcons.search, size: 18),
+              placeholder: const Text('Search team, project or stage'),
+              style: const TextStyle(fontSize: 13),
+              placeholderStyle: const TextStyle(fontSize: 13),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              trailing: _searchController.text.isEmpty
+                  ? null
+                  : Tooltip(
+                      message: 'Clear search',
+                      child: ShadButton.ghost(
+                        width: 24,
+                        height: 24,
+                        padding: EdgeInsets.zero,
+                        onPressed: () => setState(() {
+                          _searchController.clear();
+                          _search = '';
+                        }),
+                        child: const Icon(LucideIcons.x, size: 16),
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _sectionLabel(selected),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2,
+                    ),
                   ),
                 ),
-              if (!state.isLoading && state.error == null && visible.isEmpty)
-                _message(
-                  icon: _search.isNotEmpty
-                      ? Icons.search_off_rounded
-                      : Icons.assignment_turned_in_outlined,
-                  title: _search.isNotEmpty
-                      ? 'No matching defenses'
-                      : assignments.isEmpty
-                      ? 'No assigned defenses yet'
-                      : selected == DocumenterFilter.needsAction
-                      ? 'You are all caught up'
-                      : selected == DocumenterFilter.records
-                      ? 'No signed minutes yet'
-                      : 'No defenses in this view',
-                  detail: _search.isNotEmpty
-                      ? 'Try another team, project title or stage.'
-                      : assignments.isEmpty
-                      ? 'Your coordinator will assign defenses here.'
-                      : selected == DocumenterFilter.records
-                      ? 'Minutes appear here after you sign them.'
-                      : 'Choose another view to see your assignments.',
-                  action: _search.isEmpty
-                      ? null
-                      : ShadButton.ghost(
-                          onPressed: () => setState(() {
-                            _searchController.clear();
-                            _search = '';
-                          }),
-                          child: const Text('Clear search'),
-                        ),
+                Text(
+                  '${visible.length} ${visible.length == 1 ? 'defense' : 'defenses'}',
+                  style: TextStyle(fontSize: 12, color: secondary),
                 ),
-              LayoutBuilder(
-                builder: (context, constraints) => Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (var index = 0; index < visible.length; index++) ...[
-                      if (index == 0 ||
-                          visible[index].date != visible[index - 1].date)
-                        Padding(
-                          padding: EdgeInsets.only(
-                            top: index == 0 ? 0 : 12,
-                            bottom: 10,
-                          ),
-                          child: Text(
-                            _dayLabel(visible[index].date, now),
-                            style: TextStyle(
-                              color: secondary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      DocumenterAssignmentTile(
-                        assignment: visible[index],
-                        wide: constraints.maxWidth >= 900,
-                        onOpen: () =>
-                            visible[index].minutesStatus == 'completed'
-                            ? _preview(visible[index])
-                            : widget.onOpenMinutes(visible[index].id),
-                        onPreview: () => _preview(visible[index]),
-                      ),
-                    ],
-                  ],
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              selected == DocumenterFilter.records
+                  ? 'Most recent first'
+                  : 'In schedule order',
+              style: TextStyle(fontSize: 12, color: secondary),
+            ),
+            const SizedBox(height: 16),
+            if (state.isLoading && assignments.isEmpty) _loading(),
+            if (state.isLoading && assignments.isNotEmpty) ...[
+              const LinearProgressIndicator(minHeight: 2),
+              const SizedBox(height: 12),
+            ],
+            if (state.error != null)
+              _message(
+                icon: Icons.cloud_off_outlined,
+                title: 'Could not refresh assignments',
+                detail: state.error!,
+                action: ShadButton.outline(
+                  onPressed: _refresh,
+                  leading: const Icon(LucideIcons.refreshCw, size: 16),
+                  child: const Text('Try again'),
                 ),
               ),
-            ],
-          ),
+            if (!state.isLoading && state.error == null && visible.isEmpty)
+              _message(
+                icon: _search.isNotEmpty
+                    ? Icons.search_off_rounded
+                    : Icons.assignment_turned_in_outlined,
+                title: _search.isNotEmpty
+                    ? 'No matching defenses'
+                    : assignments.isEmpty
+                    ? 'No assigned defenses yet'
+                    : selected == DocumenterFilter.needsAction
+                    ? 'You are all caught up'
+                    : selected == DocumenterFilter.records
+                    ? 'No signed minutes yet'
+                    : 'No defenses in this view',
+                detail: _search.isNotEmpty
+                    ? 'Try another team, project title or stage.'
+                    : assignments.isEmpty
+                    ? 'Your coordinator will assign defenses here.'
+                    : selected == DocumenterFilter.records
+                    ? 'Minutes appear here after you sign them.'
+                    : 'Choose another view to see your assignments.',
+                action: _search.isEmpty
+                    ? null
+                    : ShadButton.ghost(
+                        onPressed: () => setState(() {
+                          _searchController.clear();
+                          _search = '';
+                        }),
+                        child: const Text('Clear search'),
+                      ),
+              ),
+            LayoutBuilder(
+              builder: (context, constraints) => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var index = 0; index < visible.length; index++) ...[
+                    if (index == 0 ||
+                        visible[index].date != visible[index - 1].date)
+                      Padding(
+                        padding: EdgeInsets.only(
+                          top: index == 0 ? 0 : 12,
+                          bottom: 10,
+                        ),
+                        child: Text(
+                          _dayLabel(visible[index].date, now),
+                          style: TextStyle(
+                            color: secondary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    DocumenterAssignmentTile(
+                      assignment: visible[index],
+                      wide: constraints.maxWidth >= 900,
+                      onOpen: () => visible[index].minutesStatus == 'completed'
+                          ? _preview(visible[index])
+                          : widget.onOpenMinutes(visible[index].id),
+                      onPreview: () => _preview(visible[index]),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
         ),
-      );
+      ),
+    );
   }
 
   Widget _summary(

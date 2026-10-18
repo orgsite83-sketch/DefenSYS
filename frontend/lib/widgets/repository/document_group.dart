@@ -3,9 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../services/auth_provider.dart';
-import '../../models/team_workflow_status.dart';
-import 'workflow_status_style.dart';
 import '../../services/capstone_deliverables_provider.dart';
+import '../../theme/defensys_tokens.dart';
 import '../../utils/universal_file_viewer.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
 
@@ -26,6 +25,7 @@ class DocumentGroup extends ConsumerStatefulWidget {
 class _DocumentGroupState extends ConsumerState<DocumentGroup> {
   bool busy = false;
   String? error;
+
   Future<void> perform(Future<bool> Function() action) async {
     setState(() {
       busy = true;
@@ -168,140 +168,200 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
     final status = file == null
         ? (required ? 'Missing' : 'Optional')
         : defenseTimed && file['status'] != 'rejected'
-        ? 'Uploaded'
-        : switch (file['status']) {
-            'accepted' =>
-              item['type'] == 'post' ? 'Accepted' : 'Accepted for presentation',
-            'rejected' => 'Corrections requested',
-            _ => 'Awaiting review',
-          };
-    final fileStyle = WorkflowStatusStyle.of(
-      context,
-      file == null
-          ? WorkflowStatusTone.neutral
-          : file['status'] == 'rejected'
-          ? WorkflowStatusTone.attention
-          : accepted || defenseTimed
-          ? WorkflowStatusTone.success
-          : WorkflowStatusTone.active,
-    );
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+            ? 'Uploaded'
+            : switch (file['status']) {
+                'accepted' =>
+                  item['type'] == 'post' ? 'Accepted' : 'Accepted for presentation',
+                'rejected' => 'Corrections requested',
+                _ => 'Awaiting review',
+              };
+
+    final isUploaded = file != null;
+    final isRejected = file?['status'] == 'rejected';
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: DefensysTokens.panelOf(context),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: accepted
+              ? const Color(0xFF86EFAC)
+              : isRejected
+                  ? const Color(0xFFFECACA)
+                  : DefensysTokens.borderOf(context),
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Padding(
-                padding: EdgeInsets.only(top: 2),
-                child: Icon(LucideIcons.fileText, size: 17),
+              // Squircle File Extension Badge (Image 3 style)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isUploaded
+                      ? const Color(0xFFDC2626).withValues(alpha: 0.1)
+                      : DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: isUploaded
+                        ? const Color(0xFFDC2626).withValues(alpha: 0.25)
+                        : DefensysTokens.maroonOf(context).withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Text(
+                  isUploaded ? 'PDF' : 'DOC',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    color: isUploaded ? const Color(0xFFDC2626) : DefensysTokens.maroonOf(context),
+                    letterSpacing: 0.3,
+                  ),
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      label,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      isUploaded ? '${file['file_name']}' : label,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: DefensysTokens.textPrimaryOf(context),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 3),
                     Text(
                       file == null
                           ? status
-                          : '${file['file_name']} · Revision ${file['revision'] ?? 1}',
-                      style: Theme.of(context).textTheme.bodySmall,
+                          : '${label.split('·').first.trim()} · Rev ${file['revision'] ?? 1}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: accepted
+                            ? const Color(0xFF16A34A)
+                            : isRejected || (file == null && required)
+                                ? const Color(0xFFDC2626)
+                                : DefensysTokens.textSecondaryOf(context),
+                        fontWeight: (accepted || isRejected || (file == null && required))
+                            ? FontWeight.w500
+                            : FontWeight.normal,
+                      ),
                     ),
                   ],
                 ),
               ),
-              if (file != null)
+              if (file != null) ...[
+                const SizedBox(width: 8),
                 Flexible(
                   child: ShadBadge.outline(
-                    backgroundColor: fileStyle.background,
-                    foregroundColor: fileStyle.foreground,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(4),
-                      side: BorderSide(color: fileStyle.border),
-                    ),
                     child: Text(status),
                   ),
                 ),
-            ],
-          ),
-          if ('${file?['feedback'] ?? ''}'.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text('${file!['feedback']}'),
-            ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              if (file?['file_url'] != null)
-                ShadButton.ghost(
-                  size: ShadButtonSize.sm,
-                  child: const Text('View'),
-                  onPressed: () => viewFileInDialog(
-                    context: context,
-                    fileUrl: '${file!['file_url']}',
-                    fileName: '${file['file_name']}',
-                  ),
-                ),
-              if (canUpload && (!accepted || defenseTimed))
+              ],
+              if (file == null && canUpload) ...[
+                const SizedBox(width: 8),
                 ShadButton.outline(
                   size: ShadButtonSize.sm,
                   enabled: !busy,
-                  child: Text(
-                    file == null ? 'Upload document' : 'Upload revision',
-                  ),
                   onPressed: () => upload(slot, file),
+                  child: const Text('Upload document'),
                 ),
-              if (canUpload && file != null && !accepted)
-                ShadButton.ghost(
-                  size: ShadButtonSize.sm,
-                  enabled: !busy,
-                  onPressed: () => perform(
-                    () => ref
-                        .read(capstoneDeliverablesProvider.notifier)
-                        .removeDeliverable({
-                          'team_id': widget.teamId,
-                          'stage_label': widget.stageLabel,
-                          'deliverable_id': widget.item['id'],
-                          'file_id': file['id'],
-                        }),
+              ],
+            ],
+          ),
+          if (file != null) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                if (file['file_url'] != null)
+                  ShadButton.ghost(
+                    size: ShadButtonSize.sm,
+                    onPressed: () => viewFileInDialog(
+                      context: context,
+                      fileUrl: '${file['file_url']}',
+                      fileName: '${file['file_name']}',
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('Details', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                        SizedBox(width: 2),
+                        Icon(Icons.chevron_right_rounded, size: 14),
+                      ],
+                    ),
                   ),
-                  child: const Text('Remove'),
-                ),
-              if (canReview &&
-                  file != null &&
-                  !defenseTimed &&
-                  !(item['type'] == 'post' && accepted)) ...[
-                if (!accepted)
+                if (canUpload && (!accepted || defenseTimed))
                   ShadButton.outline(
                     size: ShadButtonSize.sm,
                     enabled: !busy,
-                    child: const Text('Accept'),
-                    onPressed: () => review(file, 'accepted'),
+                    onPressed: () => upload(slot, file),
+                    child: const Text('Upload revision'),
                   ),
-                ShadButton.ghost(
-                  size: ShadButtonSize.sm,
-                  enabled: !busy,
-                  child: const Text('Request corrections'),
-                  onPressed: () => review(file, 'rejected'),
-                ),
+                if (canUpload && !accepted)
+                  ShadButton.ghost(
+                    size: ShadButtonSize.sm,
+                    enabled: !busy,
+                    onPressed: () => perform(
+                      () => ref
+                          .read(capstoneDeliverablesProvider.notifier)
+                          .removeDeliverable({
+                            'team_id': widget.teamId,
+                            'stage_label': widget.stageLabel,
+                            'deliverable_id': widget.item['id'],
+                            'file_id': file['id'],
+                          }),
+                    ),
+                    child: const Text('Remove'),
+                  ),
+                if (canReview && !defenseTimed && !(item['type'] == 'post' && accepted)) ...[
+                  if (!accepted)
+                    ShadButton.outline(
+                      size: ShadButtonSize.sm,
+                      enabled: !busy,
+                      onPressed: () => review(file, 'accepted'),
+                      child: const Text('Accept'),
+                    ),
+                  ShadButton.ghost(
+                    size: ShadButtonSize.sm,
+                    enabled: !busy,
+                    onPressed: () => review(file, 'rejected'),
+                    child: const Text('Request corrections'),
+                  ),
+                ],
+                if (canReview && defenseTimed)
+                  ShadButton.ghost(
+                    size: ShadButtonSize.sm,
+                    enabled: !busy,
+                    onPressed: () => review(file, 'rejected'),
+                    child: const Text('Request corrections'),
+                  ),
               ],
-              if (canReview && file != null && defenseTimed)
-                ShadButton.ghost(
-                  size: ShadButtonSize.sm,
-                  enabled: !busy,
-                  child: const Text('Request corrections'),
-                  onPressed: () => review(file, 'rejected'),
-                ),
-            ],
-          ),
+            ),
+          ],
+          if ('${file?['feedback'] ?? ''}'.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFFFDE68A)),
+              ),
+              child: Text(
+                'Feedback: ${file!['feedback']}',
+                style: const TextStyle(fontSize: 11, color: Color(0xFF92400E)),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -329,94 +389,165 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
         ? (policy['min_files'] ?? 1)
         : slots.where((s) => s['required'] != false).length;
     final user = ref.watch(authProvider).user ?? {};
+
+    final allAccepted = files.isNotEmpty && files.length >= minimum && files.every((f) => f['status'] == 'accepted');
+    final anyRejected = files.any((f) => f['status'] == 'rejected');
+    final allUploaded = files.length >= minimum;
+
+    final Color cardBorderColor = allAccepted
+        ? const Color(0xFF86EFAC)
+        : anyRejected
+            ? const Color(0xFFFECACA)
+            : allUploaded
+                ? const Color(0xFFFDE68A)
+                : const Color(0xFFE2E8F0);
+
     return DefensysShadcnScope(
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: ShadCard(
-          width: double.infinity,
-          title: Text('${item['label']}'),
-          description: Text(
-            '${files.length} uploaded · $minimum required${multiple ? ' · up to ${policy['max_files'] ?? 10}' : ''}',
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (busy)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8),
-                  child: LinearProgressIndicator(),
-                ),
-              if (error != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: DefensysTokens.surfaceOf(context),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: cardBorderColor, width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.025),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
                   child: Text(
-                    error!,
+                    '${item['label']}',
                     style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: DefensysTokens.textPrimaryOf(context),
                     ),
                   ),
                 ),
-              if (multiple) ...[
-                for (final file in files)
-                  documentRow(
-                    '${file['file_name']}',
-                    '${file['slot_key']}',
-                    file,
+                if (allAccepted)
+                  const ShadBadge(
+                    backgroundColor: Color(0xFF16A34A),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.check, size: 12, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text('Approved', style: TextStyle(color: Colors.white, fontSize: 10.5)),
+                      ],
+                    ),
+                  )
+                else if (anyRejected)
+                  const ShadBadge.destructive(
+                    child: Text('Corrections Requested', style: TextStyle(fontSize: 10.5)),
+                  )
+                else if (allUploaded)
+                  const ShadBadge.secondary(
+                    child: Text('Under Review', style: TextStyle(fontSize: 10.5)),
+                  )
+                else
+                  ShadBadge.outline(
+                    child: Text(
+                      '${files.length}/$minimum Uploaded',
+                      style: const TextStyle(fontSize: 10.5),
+                    ),
                   ),
-                if (item['can_upload'] == true &&
-                    (user['role'] == 'student' ||
-                        user['role'] == 'admin' ||
-                        user['is_superuser'] == true) &&
-                    files.length < (policy['max_files'] as int? ?? 10))
-                  ShadButton.outline(
-                    enabled: !busy,
-                    child: const Text('Add attachments'),
-                    onPressed: () => upload('', null, multiple: true),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${files.length} uploaded · $minimum required${multiple ? ' · up to ${policy['max_files'] ?? 10}' : ''}',
+              style: TextStyle(
+                fontSize: 11.5,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+            ),
+            if (busy)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: LinearProgressIndicator(),
+              ),
+            if (error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  error!,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 12,
                   ),
-              ] else
-                for (final slot in slots) ...[
-                  documentRow(
-                    '${slot['label']}',
-                    '${slot['key']}',
-                    files
-                        .where((f) => f['slot_key'] == slot['key'])
-                        .firstOrNull,
-                    required: slot['required'] != false,
-                  ),
-                  if (slot != slots.last) const Divider(height: 1),
-                ],
-              if (history.isNotEmpty)
-                ExpansionTile(
-                  tilePadding: EdgeInsets.zero,
-                  title: Text(
-                    'Earlier file revisions (${history.length})',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  children: [
-                    for (final file in history)
-                      ListTile(
-                        dense: true,
-                        contentPadding: EdgeInsets.zero,
-                        title: Text('${file['file_name']}'),
-                        subtitle: Text(
-                          'Revision ${file['revision']} · Previous upload',
-                        ),
-                        trailing: ShadButton.ghost(
-                          size: ShadButtonSize.sm,
-                          onPressed: file['file_url'] == null
-                              ? null
-                              : () => viewFileInDialog(
-                                  context: context,
-                                  fileUrl: '${file['file_url']}',
-                                  fileName: '${file['file_name']}',
-                                ),
-                          child: const Text('View'),
-                        ),
-                      ),
-                  ],
                 ),
-            ],
-          ),
+              ),
+            const SizedBox(height: 4),
+            if (multiple) ...[
+              for (final file in files)
+                documentRow(
+                  '${file['file_name']}',
+                  '${file['slot_key']}',
+                  file,
+                ),
+              if (item['can_upload'] == true &&
+                  (user['role'] == 'student' ||
+                      user['role'] == 'admin' ||
+                      user['is_superuser'] == true) &&
+                  files.length < (policy['max_files'] as int? ?? 10)) ...[
+                const SizedBox(height: 8),
+                ShadButton.outline(
+                  enabled: !busy,
+                  child: const Text('Add attachments'),
+                  onPressed: () => upload('', null, multiple: true),
+                ),
+              ],
+            ] else
+              for (final slot in slots) ...[
+                documentRow(
+                  '${slot['label']}',
+                  '${slot['key']}',
+                  files
+                      .where((f) => f['slot_key'] == slot['key'])
+                      .firstOrNull,
+                  required: slot['required'] != false,
+                ),
+              ],
+            if (history.isNotEmpty)
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: Text(
+                  'Earlier file revisions (${history.length})',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                children: [
+                  for (final file in history)
+                    ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('${file['file_name']}'),
+                      subtitle: Text(
+                        'Revision ${file['revision']} · Previous upload',
+                      ),
+                      trailing: ShadButton.ghost(
+                        size: ShadButtonSize.sm,
+                        onPressed: file['file_url'] == null
+                            ? null
+                            : () => viewFileInDialog(
+                                context: context,
+                                fileUrl: '${file['file_url']}',
+                                fileName: '${file['file_name']}',
+                              ),
+                        child: const Text('View'),
+                      ),
+                    ),
+                ],
+              ),
+          ],
         ),
       ),
     );

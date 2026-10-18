@@ -1954,9 +1954,14 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     );
   }
 
-  bool _canManageSession(_SessionGroup group) {
+  bool _canManageSchedule(Map<String, dynamic> schedule) {
     final user = ref.read(authProvider).user;
-    return user?['role'] == 'admin' || user?['is_superuser'] == true || (user?['is_pit_lead'] == true && group.scope == 'pit');
+    return user?['role'] == 'admin' || user?['is_superuser'] == true ||
+        (user?['is_pit_lead'] == true && schedule['can_manage'] == true);
+  }
+
+  bool _canManageSession(_SessionGroup group) {
+    return group.schedules.isNotEmpty && group.schedules.every(_canManageSchedule);
   }
 
   Widget _buildSessionHeader(_SessionGroup group, bool isCollapsed) {
@@ -2673,9 +2678,8 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   ) {
     final user = ref.watch(authProvider).user;
     final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
-    final isPitLead = user?['is_pit_lead'] == true;
     final isSchedulePit = schedule['scope'] == 'pit';
-    final canManage = isAdmin || (isPitLead && isSchedulePit);
+    final canManage = _canManageSchedule(schedule);
     final editable = schedule['can_edit'] != false &&
         !const ['done', 'archived'].contains(schedule['status']) &&
         schedule['grade_status'] != 'published';

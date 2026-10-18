@@ -49,5 +49,5 @@ dynamic setupDropzoneListener(
 Future<void> downloadBinaryFile({
   required String filename,
   required List<int> bytes,
-  String mimeType = 'application/pdf',
+  String? mimeType,
 }) async {}

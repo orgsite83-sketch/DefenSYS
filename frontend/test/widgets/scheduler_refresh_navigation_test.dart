@@ -12,6 +12,7 @@ import 'package:defensys/l10n/app_localizations.dart';
 import 'package:defensys/navigation/admin_route_paths.dart';
 import 'package:defensys/screens/web/admin/admin_shell.dart';
 import 'package:defensys/services/api_http.dart';
+import 'package:defensys/services/app/data_refresh_provider.dart';
 import 'package:defensys/services/defense/defense_scheduler_provider.dart';
 import 'package:defensys/services/grading/rubric_engine_provider.dart';
 
@@ -63,6 +64,7 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       var published = false;
+      var rubricLabel = 'Fresh panel rubric';
       var schedulerLoads = 0;
       setApiHttpClientForTesting(
         MockClient((request) async {
@@ -71,7 +73,7 @@ void main() {
             return http.Response(
               jsonEncode({
                 'rubrics': [
-                  if (published) {'id': 7, 'name': 'Fresh panel rubric'},
+                  if (published) {'id': 7, 'name': rubricLabel},
                 ],
               }),
               200,
@@ -152,6 +154,18 @@ void main() {
       expect(schedulerLoads, 2);
       expect(find.text('Fresh panel rubric'), findsOneWidget);
       expect(find.text('Room 301 draft'), findsOneWidget);
+      // A retained section also refreshes while visible; no leave/return needed.
+      rubricLabel = 'Latest panel rubric';
+      final changes = container.read(dataRefreshProvider.notifier);
+      changes.markChanged(const [DataArea.scheduler]);
+      changes.markChanged(const [DataArea.scheduler]);
+      await tester.pumpAndSettle();
+      expect(schedulerLoads, 3);
+      expect(find.text('Latest panel rubric'), findsOneWidget);
+      expect(find.text('Room 301 draft'), findsOneWidget);
+      changes.markChanged(const [DataArea.audit]);
+      await tester.pumpAndSettle();
+      expect(schedulerLoads, 3);
       expect(tester.takeException(), isNull);
     },
   );

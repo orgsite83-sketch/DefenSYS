@@ -11,6 +11,7 @@ import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/utils/export/team_roster_excel_generator.dart';
 import 'package:defensys/utils/import/team_bulk_import_file.dart';
 import 'package:defensys/utils/import/team_bulk_import_csv.dart';
+import 'package:defensys/utils/import/class_list_template.dart';
 import '../widgets/team_bulk_import_review_table.dart';
 import 'dialogs/generate_teams_dialog.dart';
 
@@ -60,16 +61,14 @@ class TeamCreationPage extends ConsumerStatefulWidget {
 
 class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
   Map<String, dynamic>? config;
-  String? level, event, error, sectionLevel;
-  String? get currentSection {
-    if (level == sectionLevel && widget.initialSection?.isNotEmpty == true) {
-      return widget.initialSection;
-    }
+  String? level, event, error, selectedSection;
+  String? get currentSection => selectedSection;
+  List<String> get assignedSections {
     final sections = _maps(config?['assignments'])
         .where((a) => a['year_level'] == level?.split(' ').take(2).join(' '))
-        .map((a) => a['section'].toString())
-        .toSet();
-    return sections.length == 1 ? sections.single : null;
+        .map((a) => a['section']?.toString().trim() ?? '')
+        .where((section) => section.isNotEmpty).toSet().toList()..sort();
+    return sections;
   }
 
   late int tab;
@@ -115,7 +114,9 @@ class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
                   : '3rd Year Capstone')
             : widget.initialLevel;
         level = levels.contains(preferred) ? preferred : levels.firstOrNull;
-        sectionLevel = level;
+        selectedSection = assignedSections.contains(widget.initialSection)
+            ? widget.initialSection
+            : assignedSections.firstOrNull ?? widget.initialSection;
         event = events.any((e) => e['event_name'] == widget.initialEvent)
             ? widget.initialEvent
             : events.firstOrNull?['event_name']?.toString();
@@ -192,6 +193,9 @@ class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
       dirtyTabs.clear();
       busyTabs.clear();
       level = nextLevel;
+      if (!assignedSections.contains(selectedSection)) {
+        selectedSection = assignedSections.firstOrNull;
+      }
       event = events.any((e) => e['event_name'] == nextEvent)
           ? nextEvent
           : events.firstOrNull?['event_name']?.toString();
@@ -199,10 +203,20 @@ class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
     guard.setDirty(false);
   }
 
+  Future<void> changeSection(String nextSection) async {
+    if (!assignedSections.contains(nextSection) || !await canLeave() || !mounted) return;
+    setState(() {
+      dirtyTabs.clear();
+      busyTabs.clear();
+      selectedSection = nextSection;
+    });
+    guard.setDirty(false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final levels = List<String>.from(config?['levels'] as List? ?? []);
-    final scopeKey = '$level-$event';
+    final scopeKey = '$level-$event-$currentSection';
     return PopScope(
       canPop: !busy && !dirty,
       onPopInvokedWithResult: (popped, _) {
@@ -232,67 +246,100 @@ class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  config?['semester']?['display_name']?.toString() ??
-                      'Active semester',
-                ),
-                const SizedBox(height: 16),
-                if (config != null && levels.isNotEmpty)
-                  Wrap(
-                    spacing: 16,
-                    runSpacing: 12,
-                    children: [
-                      SizedBox(
-                        width: 260,
-                        child: DropdownButtonFormField<String>(
-                          key: ValueKey('creation-level-$level'),
-                          initialValue: level,
-                          isExpanded: true,
-                          decoration: const InputDecoration(
-                            labelText: 'Program and year',
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      config?['semester']?['display_name']?.toString() ??
+                          'Active semester',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
-                          items: levels
-                              .map(
-                                (v) =>
-                                    DropdownMenuItem(value: v, child: Text(v)),
-                              )
-                              .toList(),
-                          onChanged: busy
-                              ? null
-                              : (v) => changeContext(v, null),
-                        ),
-                      ),
-                      if (level?.contains('PIT') == true)
-                        SizedBox(
-                          width: 340,
-                          child: DropdownButtonFormField<String>(
-                            key: ValueKey('creation-event-$event'),
-                            initialValue: event,
-                            isExpanded: true,
-                            decoration: const InputDecoration(
-                              labelText: 'PIT event',
+                    ),
+                    if (config != null && levels.isNotEmpty) ...[
+                      if (level != null)
+                        if (levels.length > 1)
+                          PopupMenuButton<String>(
+                            tooltip: 'Switch year level',
+                            initialValue: level,
+                            onSelected: busy ? null : (v) => changeContext(v, null),
+                            itemBuilder: (context) => levels
+                                .map((v) => PopupMenuItem(value: v, child: Text(v)))
+                                .toList(),
+                            child: Chip(
+                              avatar: const Icon(Icons.school_outlined, size: 16),
+                              label: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(level!),
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.arrow_drop_down, size: 16),
+                                ],
+                              ),
                             ),
-                            items: events
+                          )
+                        else
+                          Chip(
+                            avatar: const Icon(Icons.school_outlined, size: 16),
+                            label: Text(level!),
+                          ),
+                      if (currentSection?.isNotEmpty == true)
+                        if (assignedSections.length > 1)
+                          PopupMenuButton<String>(
+                            key: const ValueKey('team-creation-section'),
+                            tooltip: 'Switch assigned section',
+                            initialValue: currentSection,
+                            onSelected: busy ? null : changeSection,
+                            itemBuilder: (context) => assignedSections.map((section) =>
+                              PopupMenuItem(value: section, child: Text(section))).toList(),
+                            child: Chip(
+                              avatar: const Icon(Icons.groups_outlined, size: 16),
+                              label: Row(mainAxisSize: MainAxisSize.min, children: [
+                                Text('Section $currentSection'),
+                                const Icon(Icons.arrow_drop_down, size: 16),
+                              ]),
+                            ),
+                          )
+                        else Chip(
+                          avatar: const Icon(Icons.groups_outlined, size: 16),
+                          label: Text('Section $currentSection'),
+                        ),
+                      if (event?.isNotEmpty == true)
+                        if (events.length > 1)
+                          PopupMenuButton<String>(
+                            tooltip: 'Switch PIT event',
+                            initialValue: event,
+                            onSelected: busy ? null : (v) => changeContext(level, v),
+                            itemBuilder: (context) => events
                                 .map(
-                                  (e) => DropdownMenuItem(
+                                  (e) => PopupMenuItem(
                                     value: e['event_name'].toString(),
-                                    child: Text(
-                                      e['event_name'].toString(),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
+                                    child: Text(e['event_name'].toString()),
                                   ),
                                 )
                                 .toList(),
-                            onChanged: busy
-                                ? null
-                                : (v) => changeContext(level, v),
+                            child: Chip(
+                              avatar: const Icon(Icons.event_outlined, size: 16),
+                              label: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(event!),
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.arrow_drop_down, size: 16),
+                                ],
+                              ),
+                            ),
+                          )
+                        else
+                          Chip(
+                            avatar: const Icon(Icons.event_outlined, size: 16),
+                            label: Text(event!),
                           ),
-                        ),
-                      if (currentSection?.isNotEmpty == true)
-                        Chip(label: Text('Section $currentSection')),
                     ],
-                  ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -369,6 +416,7 @@ class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
                     embedded: true,
                     levels: [level!],
                     initialLevel: level!,
+                    semester: Map<String, dynamic>.from(config!['semester'] as Map),
                     initialSection: currentSection,
                     initialEvent: event,
                     events: events,
@@ -540,14 +588,12 @@ class _PreparedTeamsPaneState extends ConsumerState<_PreparedTeamsPane> {
 
   Future<void> template() async {
     await downloadBinaryFile(
-      filename: 'defensys-${pit ? 'pit' : 'capstone'}-teams.xlsx',
+      filename: importTemplateFilename(kind: '${pit ? 'pit' : 'capstone'}-teams',
+        section: widget.section, level: widget.level.split(' ').take(2).join(' '), extension: 'xlsx'),
       bytes: generateOfficialTeamRosterExcelBytes(
         isCapstone: !pit,
         assignedSection: widget.section,
-        instructorName:
-            (ref.read(authProvider).user?['full_name'] ??
-                    ref.read(authProvider).user?['username'])
-                ?.toString(),
+        instructorName: templateInstructorName(ref.read(authProvider).user),
       ),
     );
   }

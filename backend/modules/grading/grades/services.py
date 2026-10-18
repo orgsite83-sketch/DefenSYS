@@ -1,4 +1,5 @@
 from decimal import Decimal
+from defensys_backend.read_projection import read_memoize
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
@@ -98,13 +99,13 @@ def guest_panelist_remark_key(guest_name, guest_code):
 
 
 def breakdowns_for_panelist(team_grade, panelist_key):
-    return [
-        row
-        for row in team_grade.breakdowns.select_related('student').filter(
-            evaluation_type=GradeBreakdown.EVAL_PANEL, is_void=False,
-        ).order_by('display_order', 'id')
-        if _panelist_key_from_breakdown_remarks(row.remarks) == panelist_key
-    ]
+    rows = team_grade.breakdowns.all()
+    if 'breakdowns' not in getattr(team_grade, '_prefetched_objects_cache', {}):
+        rows = rows.select_related('student')
+    return sorted((row for row in rows
+        if row.evaluation_type == GradeBreakdown.EVAL_PANEL and not row.is_void
+        and _panelist_key_from_breakdown_remarks(row.remarks) == panelist_key),
+        key=lambda row: (row.display_order, row.id))
 
 
 def panelist_result_payload(team_grade, panelist_key):
@@ -128,11 +129,15 @@ def panelist_result_payload(team_grade, panelist_key):
     peer_w = team_grade.peer_weight
 
     member_grades = []
-    sg_by_student = {
-        sg.student_id: sg for sg in team_grade.student_grades.select_related('student')
-    }
+    student_grades = team_grade.student_grades.all()
+    if 'student_grades' not in getattr(team_grade, '_prefetched_objects_cache', {}):
+        student_grades = student_grades.select_related('student')
+    sg_by_student = {sg.student_id: sg for sg in student_grades}
 
-    for membership in team.memberships.select_related('student').order_by('order', 'id'):
+    memberships = team.memberships.all()
+    if 'memberships' not in getattr(team, '_prefetched_objects_cache', {}):
+        memberships = memberships.select_related('student')
+    for membership in sorted(memberships, key=lambda row: (row.order, row.id)):
         student = membership.student
         sg_row = sg_by_student.get(student.id)
 
@@ -731,12 +736,13 @@ def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=Non
     ])
 
     recompute_panel_score(team_grade)
-    if team_grade.scope == TeamGrade.SCOPE_CAPSTONE and peer_grading_allowed_for_grade(team_grade):
+    if peer_grading_allowed_for_grade(team_grade):
         from realtime.broadcast import notify_team_peer_open
         student_ids = list(team_grade.team.memberships.values_list('student_id', flat=True))
         transaction.on_commit(lambda: notify_team_peer_open(
             semester_id=team_grade.semester_id, team_id=team_grade.team_id,
             stage_label=team_grade.stage_label, student_ids=student_ids,
+            scope=team_grade.scope,
         ))
     submission.refresh_from_db()
     return submission
@@ -1606,6 +1612,7 @@ def _stage_grading_config_for_grade(grade):
     return get_or_create_stage_grading_config(stage, grade.semester)
 
 
+@read_memoize
 def find_matching_rubric(grade, evaluation_type):
     if grade.scope == TeamGrade.SCOPE_CAPSTONE:
         if evaluation_type == Rubric.EVAL_PANEL and grade.schedule and grade.schedule.rubric_id:
@@ -1859,6 +1866,7 @@ def _capstone_group_settings(semester, stage_label=None, *, defense_stage=None):
     }
 
 
+@read_memoize(copy=True)
 def group_settings_for_grade(grade):
     if grade.scope == TeamGrade.SCOPE_PIT:
         return _pit_group_settings(
@@ -1895,7 +1903,7 @@ def build_group_settings_map(grades_queryset, semester, *, user=None):
         item.update(counts)
         result[key] = item
 
-    for scope, stage_label, defense_stage_id, pit_event_config_id in grades_queryset.values_list(
+    for scope, stage_label, defense_stage_id, pit_event_config_id in grades_queryset.order_by().values_list(
         'scope',
         'stage_label',
         'defense_stage_id',
@@ -2047,6 +2055,7 @@ def _grades_for_group(semester, scope, stage_label, *, config=None, year_level=N
     return grades.filter(stage_label__iexact=label)
 
 
+@read_memoize(copy=True)
 def team_grading_readiness(grade, semester, scope, config=None):
     from .peer_eval import is_team_peer_eval_complete, peer_completion_summary
 
@@ -2722,6 +2731,7 @@ def update_group_settings(
     return settings_payload
 
 
+@read_memoize
 def require_grade_editable(grade):
     if grade.scope == TeamGrade.SCOPE_PIT and grade.pit_event_config_id:
         config = grade.pit_event_config

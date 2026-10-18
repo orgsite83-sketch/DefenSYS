@@ -24,6 +24,7 @@ class PitLeadCohortState {
   final Map<String, dynamic> historyCounts;
   final String search;
   final String teamStatusFilter;
+  final String scope;
 
   PitLeadCohortState({
     this.isLoading = false,
@@ -39,6 +40,7 @@ class PitLeadCohortState {
     this.historyCounts = const {},
     this.search = '',
     this.teamStatusFilter = 'all',
+    this.scope = 'active',
   });
 
   PitLeadCohortState copyWith({
@@ -55,6 +57,7 @@ class PitLeadCohortState {
     Map<String, dynamic>? historyCounts,
     String? search,
     String? teamStatusFilter,
+    String? scope,
     bool clearError = false,
   }) {
     return PitLeadCohortState(
@@ -71,11 +74,13 @@ class PitLeadCohortState {
       historyCounts: historyCounts ?? this.historyCounts,
       search: search ?? this.search,
       teamStatusFilter: teamStatusFilter ?? this.teamStatusFilter,
+      scope: scope ?? this.scope,
     );
   }
 }
 
 class PitLeadCohortNotifier extends Notifier<PitLeadCohortState> {
+  int _fetchRevision = 0;
   AuthenticatedHttpClient get _client =>
       ref.read(authenticatedHttpClientProvider);
 
@@ -89,11 +94,14 @@ class PitLeadCohortNotifier extends Notifier<PitLeadCohortState> {
   }) async {
     final nextSearch = search ?? state.search;
     final nextFilter = teamStatusFilter ?? state.teamStatusFilter;
+    final nextScope = scope ?? state.scope;
+    final revision = ++_fetchRevision;
 
     state = state.copyWith(
       isLoading: true,
       search: nextSearch,
       teamStatusFilter: nextFilter,
+      scope: nextScope,
       clearError: true,
     );
 
@@ -105,8 +113,8 @@ class PitLeadCohortNotifier extends Notifier<PitLeadCohortState> {
       if (nextFilter != 'all') {
         query['team_status'] = nextFilter;
       }
-      if (scope != null && scope.isNotEmpty) {
-        query['scope'] = scope;
+      if (nextScope.isNotEmpty) {
+        query['scope'] = nextScope;
       }
 
       final uri = Uri.parse(
@@ -114,6 +122,7 @@ class PitLeadCohortNotifier extends Notifier<PitLeadCohortState> {
       ).replace(queryParameters: query.isEmpty ? null : query);
 
       final response = await _client.get(uri);
+      if (!ref.mounted || revision != _fetchRevision) return;
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -159,6 +168,7 @@ class PitLeadCohortNotifier extends Notifier<PitLeadCohortState> {
         );
       }
     } catch (e) {
+      if (!ref.mounted || revision != _fetchRevision) return;
       state = state.copyWith(
         isLoading: false,
         isSaving: false,

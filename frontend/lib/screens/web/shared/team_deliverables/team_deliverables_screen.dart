@@ -113,6 +113,7 @@ class _TeamDeliverablesScreenState
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+        workspace: widget.isAdviser ? 'adviser' : widget.isPitInstructor ? 'instructor' : 'operations',
         search: widget.initialTeamId != null ? '' : null,
         status: widget.initialTeamId != null ? '' : null,
         scope: widget.initialScope,
@@ -123,7 +124,7 @@ class _TeamDeliverablesScreenState
       ref.read(adviserGradingProvider.notifier).fetchAll();
       ref.read(weeklyProgressProvider.notifier).fetchReports();
       if (widget.isAdviser) {
-        ref.read(adviserDefenseProvider.notifier).fetch();
+        ref.read(adviserDefenseProvider.notifier).fetch(workspace: 'adviser');
       } else if (widget.isPitInstructor) {
         ref.read(pitInstructorDefenseProvider.notifier).fetch();
       }

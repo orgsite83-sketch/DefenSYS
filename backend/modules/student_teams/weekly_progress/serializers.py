@@ -8,6 +8,11 @@ class WeeklyProgressReportSerializer(serializers.ModelSerializer):
     team_name = serializers.SerializerMethodField()
     file_url = serializers.SerializerMethodField()
 
+    def validate_team(self, value):
+        if self.instance and value.pk != self.instance.team_id:
+            raise serializers.ValidationError('A submitted report cannot be moved to another team.')
+        return value
+
     class Meta:
         model = WeeklyProgressReport
         fields = [

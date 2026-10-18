@@ -5,8 +5,16 @@ import '../../../navigation/admin_route_paths.dart';
 import '../../../navigation/web_section_navigation.dart';
 import '../../../navigation/workspace_access.dart';
 import '../../../services/dashboard_provider.dart';
+import '../../../services/academic_period_provider.dart';
 import '../../../services/documenter_provider.dart';
 import '../../../services/app/data_refresh_provider.dart';
+import '../../../services/capstone_deliverables_provider.dart';
+import '../../../services/adviser_grading_provider.dart';
+import '../../../services/defense/adviser_defense_provider.dart';
+import '../../../services/defense/team_defense_provider.dart';
+import '../../../services/repository_provider.dart';
+import '../../../services/project_archive_provider.dart';
+import '../../../services/weekly_progress_provider.dart';
 import '../../../services/academic/student_teams_provider.dart';
 import '../../../services/academic/student_academic_records_provider.dart';
 import '../../../services/admin/user_management_provider.dart';
@@ -15,6 +23,7 @@ import '../../../services/grading/rubric_engine_provider.dart';
 import '../../../services/defense/defense_scheduler_provider.dart';
 import '../../../services/defense/defense_board_provider.dart';
 import '../../../services/pit/pit_lead_cohort_provider.dart';
+import '../../../services/pit/pit_instructor_provider.dart';
 import '../../../services/admin/system_audit_provider.dart';
 import '../../../services/auth_provider.dart';
 import '../../../theme/defensys_tokens.dart';
@@ -99,7 +108,19 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   final _sectionState = WebSectionState();
   final _refreshGate = WebSectionRefreshGate();
   String? _refreshSection;
+  final Set<String> _queuedRefreshes = {};
   bool _isCollapsed = false;
+
+  void _queueSectionRefresh(String section, String sectionKey) {
+    if (!_queuedRefreshes.add(sectionKey)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _queuedRefreshes.remove(sectionKey);
+      if (mounted && _refreshSection == sectionKey) {
+        _refreshSectionData(section);
+      }
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
 
   void _toggleCollapse() {
     setState(() {
@@ -141,17 +162,20 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           _refreshGate.activate(
             sectionKey,
             revision: ref.read(dataRefreshProvider)[area] ?? 0,
-            alwaysRefresh: _activeSection == 'defense_scheduler' ||
-                _activeSection == 'pit_events',
+            alwaysRefresh: true,
           )) {
-        final section = _activeSection;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _refreshSection == sectionKey) {
-            _refreshSectionData(section);
-          }
-        });
+        _queueSectionRefresh(_activeSection, sectionKey);
       }
     }
+    final visibleSection = _activeSection;
+    ref.listen(dataRefreshProvider, (previous, next) {
+      if (area == null) return;
+      final revision = next[area] ?? 0;
+      if ((previous?[area] ?? 0) == revision) return;
+      if (_refreshGate.activate(sectionKey, revision: revision)) {
+        _queueSectionRefresh(visibleSection, sectionKey);
+      }
+    });
     // Check if user is ONLY an uploader (no other roles)
     final isOnlyUploader =
         roles['uploader'] == true &&
@@ -199,14 +223,14 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                   child: WebSectionStateScope(
                     notifier: _sectionState,
                     child:
-                      widget.navigationShell ??
-                      widget.routeChild ??
-                      _buildSectionContent(
-                        dashState,
-                        roles,
-                        _activeSection,
-                        routerState,
-                      ),
+                        widget.navigationShell ??
+                        widget.routeChild ??
+                        _buildSectionContent(
+                          dashState,
+                          roles,
+                          _activeSection,
+                          routerState,
+                        ),
                   ),
                 ),
               ),
@@ -252,6 +276,11 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     'pit_student_import' => DataArea.academicRecords,
     'pit_instructors' => DataArea.users,
     'audit_compliance' => DataArea.audit,
+    'deliverables' => DataArea.deliverables,
+    'adviser_grading' => DataArea.adviserGrades,
+    'weekly_reports' => DataArea.weeklyReports,
+    'documenter_records' => DataArea.documenter,
+    'project_archive' || 'repository_audit' => DataArea.repository,
     _ => null,
   };
 
@@ -261,10 +290,55 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         ref
             .read(dashboardProvider('faculty').notifier)
             .fetchDashboardData(silent: true);
+        final roles =
+            (ref.read(dashboardProvider('faculty')).data?['roles'] as Map?)
+                ?.cast<String, dynamic>() ??
+            {};
+        final workspace = _resolvedWorkspace(roles);
+        switch (workspace.type) {
+          case FacultyWorkspace.adviser:
+            ref
+                .read(capstoneDeliverablesProvider.notifier)
+                .fetchDeliverables(
+                  workspace: 'adviser',
+                  scope: 'capstone',
+                  yearLevel: '',
+                  section: '',
+                );
+            ref
+                .read(adviserDefenseProvider.notifier)
+                .fetch(workspace: 'adviser');
+            ref.read(adviserGradingProvider.notifier).fetchAll();
+          case FacultyWorkspace.pitInstructor:
+            ref
+                .read(capstoneDeliverablesProvider.notifier)
+                .fetchDeliverables(
+                  workspace: 'instructor',
+                  scope: 'pit',
+                  yearLevel: workspace.yearLevel ?? '',
+                  section: workspace.section ?? '',
+                );
+            ref.read(pitInstructorDefenseProvider.notifier).fetch();
+          case FacultyWorkspace.documenter:
+            ref.read(documenterProvider.notifier).fetchAssignments();
+          case FacultyWorkspace.faculty:
+            ref.read(repositoryProvider.notifier).fetchForStudent();
+          case FacultyWorkspace.pitLead:
+            break;
+        }
       case 'cohort':
         ref.read(pitLeadCohortProvider.notifier).fetchCohort();
+        ref.read(pitInstructorProvider.notifier).fetchAssignments();
+        ref.read(academicPeriodProvider.notifier).fetchPeriods();
+        ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
+        ref.read(userManagementProvider.notifier).fetchUsers();
       case 'student_teams':
-        ref.read(studentTeamsProvider.notifier).fetchTeams();
+        final roles = (ref.read(dashboardProvider('faculty')).data?['roles'] as Map?)?.cast<String, dynamic>() ?? {};
+        final workspace = _resolvedWorkspace(roles);
+        ref.read(studentTeamsProvider.notifier).fetchTeams(
+          workspace: workspace.type == FacultyWorkspace.pitInstructor ? 'instructor' : 'operations',
+          yearLevel: workspace.yearLevel ?? '', section: workspace.section ?? '',
+        );
       case 'rubrics':
         ref.read(rubricEngineProvider.notifier).fetchRubrics();
       case 'grade_center':
@@ -281,16 +355,36 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
       case 'audit_compliance':
         ref.read(systemAuditProvider.notifier).fetch();
+      case 'deliverables':
+        ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
+        ref.read(adviserGradingProvider.notifier).fetchAll();
+        ref.read(weeklyProgressProvider.notifier).fetchReports();
+        if (ref.read(capstoneDeliverablesProvider).scope == 'capstone') {
+          ref.read(adviserDefenseProvider.notifier).fetch(workspace: 'adviser');
+        } else {
+          ref.read(pitInstructorDefenseProvider.notifier).fetch();
+        }
+      case 'adviser_grading':
+        ref.read(adviserGradingProvider.notifier).fetchAll();
+      case 'weekly_reports':
+        ref.read(weeklyProgressProvider.notifier).fetchReports();
+      case 'documenter_records':
+        ref.read(documenterProvider.notifier).fetchAssignments();
+      case 'project_archive':
+      case 'repository_audit':
+        ref.read(projectArchiveProvider.notifier).fetchEntries();
     }
   }
 
   List<WorkspaceOption> _availableWorkspaces(Map<String, dynamic> roles) {
     final workspaces = <WorkspaceOption>[];
     if (roles['pit_lead'] == true) {
-      workspaces.add(WorkspaceOption(
-        type: FacultyWorkspace.pitLead,
-        yearLevel: roles['pit_lead_year']?.toString(),
-      ));
+      workspaces.add(
+        WorkspaceOption(
+          type: FacultyWorkspace.pitLead,
+          yearLevel: roles['pit_lead_year']?.toString(),
+        ),
+      );
     }
     if (roles['adviser'] == true) {
       workspaces.add(const WorkspaceOption(type: FacultyWorkspace.adviser));
@@ -300,26 +394,32 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       if (sections != null && sections.isNotEmpty) {
         for (final item in sections) {
           if (item is Map) {
-            workspaces.add(WorkspaceOption(
-              type: FacultyWorkspace.pitInstructor,
-              yearLevel: item['year_level']?.toString(),
-              section: item['section']?.toString(),
-            ));
+            workspaces.add(
+              WorkspaceOption(
+                type: FacultyWorkspace.pitInstructor,
+                yearLevel: item['year_level']?.toString(),
+                section: item['section']?.toString(),
+              ),
+            );
           }
         }
       } else {
         final years = List<String>.from(roles['pit_instructor_years'] ?? []);
         if (years.isEmpty) {
-          workspaces.add(const WorkspaceOption(
-            type: FacultyWorkspace.pitInstructor,
-            yearLevel: '1st Year',
-          ));
+          workspaces.add(
+            const WorkspaceOption(
+              type: FacultyWorkspace.pitInstructor,
+              yearLevel: '1st Year',
+            ),
+          );
         } else {
           for (final yr in years) {
-            workspaces.add(WorkspaceOption(
-              type: FacultyWorkspace.pitInstructor,
-              yearLevel: yr,
-            ));
+            workspaces.add(
+              WorkspaceOption(
+                type: FacultyWorkspace.pitInstructor,
+                yearLevel: yr,
+              ),
+            );
           }
         }
       }
@@ -333,7 +433,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     return workspaces;
   }
 
-  bool _isSectionSupportedByWorkspace(String section, FacultyWorkspace workspace) {
+  bool _isSectionSupportedByWorkspace(
+    String section,
+    FacultyWorkspace workspace,
+  ) {
     if (section == 'profile') return true;
     switch (workspace) {
       case FacultyWorkspace.faculty:
@@ -393,12 +496,17 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     }
 
     final routerState = GoRouterState.of(context);
-    final sectionFromRoute = FacultyRoutes.sectionForLocation(routerState.uri.path);
+    final sectionFromRoute = FacultyRoutes.sectionForLocation(
+      routerState.uri.path,
+    );
     final currentSection = sectionFromRoute ?? _activeSection;
 
     if (_activeWorkspaceOption != null &&
         available.contains(_activeWorkspaceOption) &&
-        _isSectionSupportedByWorkspace(currentSection, _activeWorkspaceOption!.type)) {
+        _isSectionSupportedByWorkspace(
+          currentSection,
+          _activeWorkspaceOption!.type,
+        )) {
       return _activeWorkspaceOption!;
     }
 
@@ -432,19 +540,39 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     }
   }
 
+  void _clearWorkspaceData() {
+    // Shared providers must not carry rows, filters or late responses into
+    // another role's workspace. Server policies still authorize every request.
+    ref.invalidate(studentTeamsProvider);
+    ref.invalidate(capstoneDeliverablesProvider);
+    ref.invalidate(defenseBoardProvider);
+    ref.invalidate(defenseSchedulerProvider);
+    ref.invalidate(gradeCenterProvider);
+    ref.invalidate(adviserDefenseProvider);
+    ref.invalidate(pitInstructorDefenseProvider);
+    ref.invalidate(adviserGradingProvider);
+    ref.invalidate(weeklyProgressProvider);
+    ref.invalidate(documenterProvider);
+  }
+
   void _switchWorkspace(WorkspaceOption workspaceOption) async {
     final hasUnsaved = ref.read(unsavedChangesProvider);
     if (hasUnsaved) {
       final saveDraftCallback = ref.read(unsavedChangesSaveDraftProvider);
-      final action = await showDiscardUnsavedChangesDialog(context, onSaveDraft: saveDraftCallback);
+      final action = await showDiscardUnsavedChangesDialog(
+        context,
+        onSaveDraft: saveDraftCallback,
+      );
       if (action == UnsavedChangesAction.cancel || !mounted) return;
-      if (action == UnsavedChangesAction.saveDraft && saveDraftCallback != null) {
+      if (action == UnsavedChangesAction.saveDraft &&
+          saveDraftCallback != null) {
         final ok = await saveDraftCallback();
         if (!ok || !mounted) return;
       }
     }
     ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
     ref.read(unsavedChangesProvider.notifier).setDirty(false);
+    _clearWorkspaceData();
     setState(() {
       _activeWorkspaceOption = workspaceOption;
       _activeSection = workspaceOption.type == FacultyWorkspace.faculty
@@ -462,16 +590,21 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     );
   }
 
-  void _goToSection(String section, {
+  void _goToSection(
+    String section, {
     Map<String, String>? queryParameters,
     WorkspaceOption? workspace,
   }) async {
     final hasUnsaved = ref.read(unsavedChangesProvider);
     if (hasUnsaved) {
       final saveDraftCallback = ref.read(unsavedChangesSaveDraftProvider);
-      final action = await showDiscardUnsavedChangesDialog(context, onSaveDraft: saveDraftCallback);
+      final action = await showDiscardUnsavedChangesDialog(
+        context,
+        onSaveDraft: saveDraftCallback,
+      );
       if (action == UnsavedChangesAction.cancel || !mounted) return;
-      if (action == UnsavedChangesAction.saveDraft && saveDraftCallback != null) {
+      if (action == UnsavedChangesAction.saveDraft &&
+          saveDraftCallback != null) {
         final ok = await saveDraftCallback();
         if (!ok || !mounted) return;
       }
@@ -487,6 +620,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     }
     FocusManager.instance.primaryFocus?.unfocus();
     if (workspace != null) {
+      if (workspace != _activeWorkspaceOption) _clearWorkspaceData();
       setState(() => _activeWorkspaceOption = workspace);
     }
     final path = FacultyRoutes.pathForSection(section);
@@ -513,28 +647,27 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     required bool showMenuButton,
     bool showWorkspaceBack = false,
   }) {
-    final roles = (ref.watch(dashboardProvider('faculty')).data?['roles'] as Map?)?.cast<String, dynamic>() ?? {};
+    final roles =
+        (ref.watch(dashboardProvider('faculty')).data?['roles'] as Map?)
+            ?.cast<String, dynamic>() ??
+        {};
     final workspace = _resolvedWorkspace(roles);
-    final inbox = _activeSection == 'uploader' ? 'uploader' : switch (workspace.type) {
-      FacultyWorkspace.faculty => 'faculty',
-      FacultyWorkspace.pitLead => 'pit_lead',
-      FacultyWorkspace.adviser => 'adviser',
-      FacultyWorkspace.pitInstructor => 'pit_instructor',
-      FacultyWorkspace.documenter => 'documenter',
-    };
+    final inbox = _activeSection == 'uploader'
+        ? 'uploader'
+        : switch (workspace.type) {
+            FacultyWorkspace.faculty => 'faculty',
+            FacultyWorkspace.pitLead => 'pit_lead',
+            FacultyWorkspace.adviser => 'adviser',
+            FacultyWorkspace.pitInstructor => 'pit_instructor',
+            FacultyWorkspace.documenter => 'documenter',
+          };
     return Container(
       height: DefensysTokens.topNavHeight,
-      padding: EdgeInsets.only(
-        left: showMenuButton ? 8 : 32,
-        right: 40,
-      ),
+      padding: EdgeInsets.only(left: showMenuButton ? 8 : 32, right: 40),
       decoration: BoxDecoration(
         color: DefensysTokens.panelOf(context),
         border: Border(
-          bottom: BorderSide(
-            color: DefensysTokens.borderOf(context),
-            width: 1,
-          ),
+          bottom: BorderSide(color: DefensysTokens.borderOf(context), width: 1),
         ),
       ),
       child: Row(
@@ -556,14 +689,28 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             const SizedBox(width: 8),
           ],
           const Spacer(),
-          if (WorkspaceAccess.canDocument(ref.watch(authProvider).user ?? widget.userData ?? {}))
-            IconButton(icon: const Icon(Icons.edit_note_rounded), tooltip: 'Open documenter app workspace',
-              onPressed: () => context.push(AppRoutes.documenter)),
-          if (WorkspaceAccess.canEvaluate(ref.watch(authProvider).user ?? widget.userData ?? {}))
-            IconButton(icon: const Icon(Icons.rate_review_outlined), tooltip: 'Panelist evaluations',
-              onPressed: () => context.push(AppRoutes.panelist)),
-          NotificationsBell(workspace: inbox,
-            workspaceLabel: inbox == 'uploader' ? 'Uploader' : _workspaceLabel(workspace)),
+          if (WorkspaceAccess.canDocument(
+            ref.watch(authProvider).user ?? widget.userData ?? {},
+          ))
+            IconButton(
+              icon: const Icon(Icons.edit_note_rounded),
+              tooltip: 'Open documenter app workspace',
+              onPressed: () => context.push(AppRoutes.documenter),
+            ),
+          if (WorkspaceAccess.canEvaluate(
+            ref.watch(authProvider).user ?? widget.userData ?? {},
+          ))
+            IconButton(
+              icon: const Icon(Icons.rate_review_outlined),
+              tooltip: 'Panelist evaluations',
+              onPressed: () => context.push(AppRoutes.panelist),
+            ),
+          NotificationsBell(
+            workspace: inbox,
+            workspaceLabel: inbox == 'uploader'
+                ? 'Uploader'
+                : _workspaceLabel(workspace),
+          ),
           const SizedBox(width: 10),
           const DefensysThemeToggle(),
         ],
@@ -597,13 +744,18 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     if (_activeWorkspaceOption != workspaceOption) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
+          if (_activeWorkspaceOption != null) _clearWorkspaceData();
           setState(() => _activeWorkspaceOption = workspaceOption);
         }
       });
     }
 
-    final facultyName = widget.userData?['name']?.toString() ??
-        ref.read(dashboardProvider('faculty')).data?['faculty']?['name']?.toString() ??
+    final facultyName =
+        widget.userData?['name']?.toString() ??
+        ref
+            .read(dashboardProvider('faculty'))
+            .data?['faculty']?['name']
+            ?.toString() ??
         'Faculty';
 
     final groups = _sidebarGroupsForWorkspace(
@@ -661,7 +813,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                                 'DefenSYS',
                                 style: TextStyle(
                                   fontFamily: DefensysTokens.fontFamily,
-                                  color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+                                  color: isDark
+                                      ? const Color(0xFFF4F4F5)
+                                      : const Color(0xFF0F172A),
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,
                                   letterSpacing: -0.3,
@@ -678,7 +832,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                                 vertical: 1,
                               ),
                               decoration: BoxDecoration(
-                                color: isDark ? const Color(0xFF28272D) : const Color(0xFFF1F5F9),
+                                color: isDark
+                                    ? const Color(0xFF28272D)
+                                    : const Color(0xFFF1F5F9),
                                 borderRadius: BorderRadius.circular(4),
                                 border: Border.all(
                                   color: DefensysTokens.borderOf(context),
@@ -688,7 +844,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                                 _roleBadgeText(workspaceOption.type),
                                 style: TextStyle(
                                   fontFamily: DefensysTokens.fontFamily,
-                                  color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569),
+                                  color: isDark
+                                      ? const Color(0xFFA1A1AA)
+                                      : const Color(0xFF475569),
                                   fontSize: 9.5,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -701,7 +859,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                           'Academic Portal',
                           style: TextStyle(
                             fontFamily: DefensysTokens.fontFamily,
-                            color: isDark ? const Color(0xFF71717A) : const Color(0xFF94A3B8),
+                            color: isDark
+                                ? const Color(0xFF71717A)
+                                : const Color(0xFF94A3B8),
                             fontSize: 10.5,
                             fontWeight: FontWeight.w500,
                           ),
@@ -729,12 +889,18 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           if (available.length > 1) ...[
             if (isCollapsed)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 4,
+                ),
                 child: PopupMenuButton<WorkspaceOption>(
                   tooltip: _workspaceLabel(workspaceOption),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
-                    side: BorderSide(color: DefensysTokens.borderOf(context), width: 1),
+                    side: BorderSide(
+                      color: DefensysTokens.borderOf(context),
+                      width: 1,
+                    ),
                   ),
                   color: DefensysTokens.panelOf(context),
                   elevation: 4,
@@ -757,7 +923,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                                   : FontWeight.w500,
                               color: ws == workspaceOption
                                   ? DefensysTokens.maroonOf(context)
-                                  : (isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A)),
+                                  : (isDark
+                                        ? const Color(0xFFF4F4F5)
+                                        : const Color(0xFF0F172A)),
                             ),
                           ),
                         ),
@@ -767,15 +935,21 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                     width: 40,
                     height: 32,
                     decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF28272D) : const Color(0xFFF1F5F9),
+                      color: isDark
+                          ? const Color(0xFF28272D)
+                          : const Color(0xFFF1F5F9),
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: DefensysTokens.borderOf(context)),
+                      border: Border.all(
+                        color: DefensysTokens.borderOf(context),
+                      ),
                     ),
                     child: Center(
                       child: Icon(
                         Icons.swap_horiz_rounded,
                         size: 16,
-                        color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569),
+                        color: isDark
+                            ? const Color(0xFFA1A1AA)
+                            : const Color(0xFF475569),
                       ),
                     ),
                   ),
@@ -784,22 +958,34 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             else
               Container(
                 margin: const EdgeInsets.fromLTRB(10, 4, 10, 6),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 2,
+                ),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF28272D) : const Color(0xFFF8FAFC),
+                  color: isDark
+                      ? const Color(0xFF28272D)
+                      : const Color(0xFFF8FAFC),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: DefensysTokens.borderOf(context), width: 1),
+                  border: Border.all(
+                    color: DefensysTokens.borderOf(context),
+                    width: 1,
+                  ),
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<WorkspaceOption>(
                     isExpanded: true,
                     value: workspaceOption,
                     dropdownColor: DefensysTokens.panelOf(context),
-                    iconEnabledColor: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF64748B),
+                    iconEnabledColor: isDark
+                        ? const Color(0xFFA1A1AA)
+                        : const Color(0xFF64748B),
                     icon: const Icon(Icons.unfold_more_rounded, size: 18),
                     style: TextStyle(
                       fontFamily: DefensysTokens.fontFamily,
-                      color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+                      color: isDark
+                          ? const Color(0xFFF4F4F5)
+                          : const Color(0xFF0F172A),
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -811,7 +997,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                               _workspaceLabel(ws),
                               style: TextStyle(
                                 fontFamily: DefensysTokens.fontFamily,
-                                color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+                                color: isDark
+                                    ? const Color(0xFFF4F4F5)
+                                    : const Color(0xFF0F172A),
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -834,7 +1022,11 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           ],
 
           // Hairline divider below header
-          Divider(height: 1, thickness: 1, color: DefensysTokens.borderOf(context)),
+          Divider(
+            height: 1,
+            thickness: 1,
+            color: DefensysTokens.borderOf(context),
+          ),
 
           // Scrollable Navigation List (Clean direct groups)
           Expanded(
@@ -842,8 +1034,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               padding: const EdgeInsets.only(top: 8, bottom: 8),
               children: [
                 for (int i = 0; i < groups.length; i++) ...[
-                  if (i > 0)
-                    SizedBox(height: isCollapsed ? 8 : 20),
+                  if (i > 0) SizedBox(height: isCollapsed ? 8 : 20),
                   _FacultySectionHeader(
                     title: groups[i].title,
                     isCollapsed: isCollapsed,
@@ -864,7 +1055,11 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           ),
 
           // Hairline divider above profile
-          Divider(height: 1, thickness: 1, color: DefensysTokens.borderOf(context)),
+          Divider(
+            height: 1,
+            thickness: 1,
+            color: DefensysTokens.borderOf(context),
+          ),
 
           // User Profile Card
           _buildUserProfileCard(
@@ -897,7 +1092,11 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         height: 38,
         child: Row(
           children: [
-            Icon(Icons.person_outline_rounded, size: 16, color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569)),
+            Icon(
+              Icons.person_outline_rounded,
+              size: 16,
+              color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569),
+            ),
             const SizedBox(width: 10),
             Text(
               'Profile',
@@ -905,7 +1104,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 fontFamily: DefensysTokens.fontFamily,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+                color: isDark
+                    ? const Color(0xFFF4F4F5)
+                    : const Color(0xFF0F172A),
               ),
             ),
           ],
@@ -916,7 +1117,11 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         height: 38,
         child: Row(
           children: [
-            Icon(Icons.draw_outlined, size: 16, color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569)),
+            Icon(
+              Icons.draw_outlined,
+              size: 16,
+              color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF475569),
+            ),
             const SizedBox(width: 10),
             Text(
               'E-Signature',
@@ -924,7 +1129,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 fontFamily: DefensysTokens.fontFamily,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+                color: isDark
+                    ? const Color(0xFFF4F4F5)
+                    : const Color(0xFF0F172A),
               ),
             ),
           ],
@@ -973,9 +1180,13 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         final hasUnsaved = ref.read(unsavedChangesProvider);
         if (hasUnsaved) {
           final saveDraftCallback = ref.read(unsavedChangesSaveDraftProvider);
-          final action = await showDiscardUnsavedChangesDialog(context, onSaveDraft: saveDraftCallback);
+          final action = await showDiscardUnsavedChangesDialog(
+            context,
+            onSaveDraft: saveDraftCallback,
+          );
           if (action == UnsavedChangesAction.cancel || !mounted) return;
-          if (action == UnsavedChangesAction.saveDraft && saveDraftCallback != null) {
+          if (action == UnsavedChangesAction.saveDraft &&
+              saveDraftCallback != null) {
             final ok = await saveDraftCallback();
             if (!ok || !mounted) return;
           }
@@ -1042,10 +1253,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF28272D) : const Color(0xFFFAFAFA),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: DefensysTokens.borderOf(context),
-          width: 1,
-        ),
+        border: Border.all(color: DefensysTokens.borderOf(context), width: 1),
       ),
       child: Row(
         children: [
@@ -1065,7 +1273,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                             : DefensysTokens.maroon.withValues(alpha: 0.25),
                         width: 1.5,
                       ),
-                      color: isDark ? DefensysTokens.mistMaroon : DefensysTokens.maroon,
+                      color: isDark
+                          ? DefensysTokens.mistMaroon
+                          : DefensysTokens.maroon,
                       image: avatarUrl != null
                           ? DecorationImage(
                               image: NetworkImage(avatarUrl),
@@ -1093,7 +1303,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                           facultyName,
                           style: TextStyle(
                             fontFamily: DefensysTokens.fontFamily,
-                            color: isDark ? const Color(0xFFF4F4F5) : const Color(0xFF0F172A),
+                            color: isDark
+                                ? const Color(0xFFF4F4F5)
+                                : const Color(0xFF0F172A),
                             fontSize: 12.5,
                             fontWeight: FontWeight.w700,
                           ),
@@ -1106,7 +1318,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                           roleLabel,
                           style: TextStyle(
                             fontFamily: DefensysTokens.fontFamily,
-                            color: isDark ? const Color(0xFFA1A1AA) : const Color(0xFF64748B),
+                            color: isDark
+                                ? const Color(0xFFA1A1AA)
+                                : const Color(0xFF64748B),
                             fontSize: 10.5,
                             fontWeight: FontWeight.w500,
                           ),
@@ -1133,7 +1347,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             splashRadius: 16,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
-              side: BorderSide(color: DefensysTokens.borderOf(context), width: 1),
+              side: BorderSide(
+                color: DefensysTokens.borderOf(context),
+                width: 1,
+              ),
             ),
             color: DefensysTokens.panelOf(context),
             elevation: 4,
@@ -1162,7 +1379,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 section: 'project_archive',
                 icon: Icons.folder_rounded,
                 label: 'Research Repository',
-                isActive: _activeSection == 'project_archive' ||
+                isActive:
+                    _activeSection == 'project_archive' ||
                     _activeSection == 'repository_audit' ||
                     _activeSection == 'dashboard',
                 onTap: () => _afterSidebarAction(
@@ -1210,10 +1428,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 icon: Icons.checklist_rounded,
                 label: 'Rubrics',
                 isActive: _activeSection == 'rubrics',
-                onTap: () => _afterSidebarAction(
-                  isWide,
-                  () => _goToSection('rubrics'),
-                ),
+                onTap: () =>
+                    _afterSidebarAction(isWide, () => _goToSection('rubrics')),
               ),
             ],
           ),
@@ -1224,13 +1440,12 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 section: 'cohort',
                 icon: Icons.manage_accounts_rounded,
                 label: 'User Management',
-                isActive: _activeSection == 'cohort' ||
+                isActive:
+                    _activeSection == 'cohort' ||
                     _activeSection == 'pit_student_import' ||
                     _activeSection == 'pit_instructors',
-                onTap: () => _afterSidebarAction(
-                  isWide,
-                  () => _goToSection('cohort'),
-                ),
+                onTap: () =>
+                    _afterSidebarAction(isWide, () => _goToSection('cohort')),
               ),
               _FacultyNavEntry(
                 section: 'student_teams',
@@ -1251,7 +1466,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 section: 'defense_board',
                 icon: Icons.view_agenda_rounded,
                 label: 'Defense Operations',
-                isActive: _activeSection == 'defense_board' ||
+                isActive:
+                    _activeSection == 'defense_board' ||
                     _activeSection == 'defense_scheduler',
                 onTap: () => _afterSidebarAction(
                   isWide,
@@ -1277,7 +1493,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 section: 'project_archive',
                 icon: Icons.folder_rounded,
                 label: 'Project Archive',
-                isActive: _activeSection == 'project_archive' ||
+                isActive:
+                    _activeSection == 'project_archive' ||
                     _activeSection == 'repository_audit',
                 onTap: () => _afterSidebarAction(
                   isWide,
@@ -1387,8 +1604,12 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 isActive: _activeSection == 'dashboard',
                 onTap: () => _afterSidebarAction(
                   isWide,
-                  () => _goToSection('dashboard',
-                    workspace: const WorkspaceOption(type: FacultyWorkspace.documenter)),
+                  () => _goToSection(
+                    'dashboard',
+                    workspace: const WorkspaceOption(
+                      type: FacultyWorkspace.documenter,
+                    ),
+                  ),
                 ),
               ),
               _FacultyNavEntry(
@@ -1398,8 +1619,12 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 isActive: _activeSection == 'documenter_records',
                 onTap: () => _afterSidebarAction(
                   isWide,
-                  () => _goToSection('documenter_records',
-                    workspace: const WorkspaceOption(type: FacultyWorkspace.documenter)),
+                  () => _goToSection(
+                    'documenter_records',
+                    workspace: const WorkspaceOption(
+                      type: FacultyWorkspace.documenter,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -1418,10 +1643,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               icon: Icons.upload_file_rounded,
               label: 'Upload Documents',
               isActive: _activeSection == 'uploader',
-              onTap: () => _afterSidebarAction(
-                isWide,
-                () => _goToSection('uploader'),
-              ),
+              onTap: () =>
+                  _afterSidebarAction(isWide, () => _goToSection('uploader')),
             ),
           ],
         ),
@@ -1495,20 +1718,34 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         );
       case 'deliverables':
         final ws = _resolvedWorkspace(roles);
-        final initialScope = (ws.type == FacultyWorkspace.pitLead || ws.type == FacultyWorkspace.pitInstructor) ? 'pit' : 'capstone';
+        final initialScope =
+            (ws.type == FacultyWorkspace.pitLead ||
+                ws.type == FacultyWorkspace.pitInstructor)
+            ? 'pit'
+            : 'capstone';
         final queryParams = routerState.uri.queryParameters;
         final teamIdParam = queryParams['teamId'];
         final tabParam = queryParams['tab'];
-        final initialTeamId = teamIdParam != null ? int.tryParse(teamIdParam) : null;
+        final initialTeamId = teamIdParam != null
+            ? int.tryParse(teamIdParam)
+            : null;
         final initialTab = tabParam != null ? int.tryParse(tabParam) : null;
         final initialStage = queryParams['stage'];
         return TeamDeliverablesScreen(
-          key: ValueKey('deliverables_${initialTeamId ?? 'all'}_${initialTab ?? 'default'}_${initialStage ?? 'default'}'),
+          key: ValueKey(
+            'deliverables_${initialTeamId ?? 'all'}_${initialTab ?? 'default'}_${initialStage ?? 'default'}',
+          ),
           initialScope: initialScope,
           isAdviser: ws.type == FacultyWorkspace.adviser,
           isPitInstructor: ws.type == FacultyWorkspace.pitInstructor,
-          pitYearLevel: (ws.type == FacultyWorkspace.pitLead || ws.type == FacultyWorkspace.pitInstructor) ? ws.yearLevel : null,
-          pitSection: ws.type == FacultyWorkspace.pitInstructor ? ws.section : null,
+          pitYearLevel:
+              (ws.type == FacultyWorkspace.pitLead ||
+                  ws.type == FacultyWorkspace.pitInstructor)
+              ? ws.yearLevel
+              : null,
+          pitSection: ws.type == FacultyWorkspace.pitInstructor
+              ? ws.section
+              : null,
           initialTeamId: initialTeamId,
           initialTab: initialTab,
           initialStage: initialStage,
@@ -1533,7 +1770,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         final queryParams = routerState.uri.queryParameters;
         final teamIdParam = queryParams['teamId'];
         final tabParam = queryParams['tab'];
-        final initialTeamId = teamIdParam != null ? int.tryParse(teamIdParam) : null;
+        final initialTeamId = teamIdParam != null
+            ? int.tryParse(teamIdParam)
+            : null;
         final initialTab = tabParam != null ? int.tryParse(tabParam) : null;
         return TeamDeliverablesScreen(
           initialScope: 'capstone',
@@ -1562,8 +1801,14 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           color: DefensysTokens.surfaceOf(context),
           child: StudentTeamsScreen(
             mode: mode,
-            pitYearLevel: (ws.type == FacultyWorkspace.pitLead || ws.type == FacultyWorkspace.pitInstructor) ? ws.yearLevel : null,
-            pitSection: ws.type == FacultyWorkspace.pitInstructor ? ws.section : null,
+            pitYearLevel:
+                (ws.type == FacultyWorkspace.pitLead ||
+                    ws.type == FacultyWorkspace.pitInstructor)
+                ? ws.yearLevel
+                : null,
+            pitSection: ws.type == FacultyWorkspace.pitInstructor
+                ? ws.section
+                : null,
           ),
         );
       case 'pit_events':
@@ -1591,7 +1836,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       case 'audit_compliance':
         if (workspaceOption.type == FacultyWorkspace.adviser) {
           return const TeamDeliverablesScreen(
-            initialScope: 'capstone', isAdviser: true, initialTab: 1,
+            initialScope: 'capstone',
+            isAdviser: true,
+            initialTab: 1,
           );
         }
         return Container(
@@ -1599,11 +1846,16 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           child: const AuditComplianceScreen(),
         );
       case 'uploader':
-        return Container(color: DefensysTokens.surfaceOf(context), child: const UploaderDashboard());
+        return Container(
+          color: DefensysTokens.surfaceOf(context),
+          child: const UploaderDashboard(),
+        );
       case 'defense_scheduler':
         final user = ref.watch(authProvider).user;
-        final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
-        final isPitLead = roles['pit_lead'] == true || user?['is_pit_lead'] == true;
+        final isAdmin =
+            user?['role'] == 'admin' || user?['is_superuser'] == true;
+        final isPitLead =
+            roles['pit_lead'] == true || user?['is_pit_lead'] == true;
         if (!isAdmin && !isPitLead) {
           return SingleChildScrollView(
             padding: const EdgeInsets.all(24),
@@ -1628,7 +1880,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       case 'defense_board':
         if (workspaceOption.type == FacultyWorkspace.adviser) {
           return const TeamDeliverablesScreen(
-            initialScope: 'capstone', isAdviser: true, initialTab: 3,
+            initialScope: 'capstone',
+            isAdviser: true,
+            initialTab: 3,
           );
         }
         final isImport =
@@ -1638,7 +1892,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           child: DefenseBoardScreen(initialBulkImport: isImport),
         );
       case 'grade_center':
-        return Container(color: DefensysTokens.surfaceOf(context), child: const GradeCenterScreen());
+        return Container(
+          color: DefensysTokens.surfaceOf(context),
+          child: const GradeCenterScreen(),
+        );
       case 'rubrics':
         return Container(
           color: DefensysTokens.surfaceOf(context),
@@ -1649,8 +1906,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         if (workspaceOption.type == FacultyWorkspace.faculty) {
           return const RepositoryTab();
         }
-        final capstoneTeams = (dashState.data?['capstone_info_teams'] as List?) ?? [];
-        final hasCapstoneInfo = capstoneTeams.isNotEmpty || roles['capstone_instructor'] == true;
+        final capstoneTeams =
+            (dashState.data?['capstone_info_teams'] as List?) ?? [];
+        final hasCapstoneInfo =
+            capstoneTeams.isNotEmpty || roles['capstone_instructor'] == true;
         return SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: SizedBox(
@@ -1668,7 +1927,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 if (hasCapstoneInfo)
                   CapstoneInstructorInfoSection(
                     capstoneTeams: capstoneTeams,
-                    capstoneYears: (roles['capstone_instructor_years'] as List?)?.cast<String>(),
+                    capstoneYears: (roles['capstone_instructor_years'] as List?)
+                        ?.cast<String>(),
                   ),
               ],
             ),
@@ -1704,18 +1964,29 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         return AdviserDashboardContent(
           data: dashState.data,
           facultyName: facultyName,
-          onOpenGrades: (teamId, stageLabel) => _goToSection('deliverables', queryParameters: {
-            'teamId': teamId.toString(), 'tab': '1', 'stage': stageLabel,
-          }),
-          onOpenDeliverables: (teamId) => _goToSection('deliverables', queryParameters: {
-            if (teamId != null) 'teamId': teamId.toString(),
-            'tab': '0',
-          }),
-          onOpenDefense: (teamId, stageLabel) => _goToSection('deliverables', queryParameters: {
-            if (teamId != null) 'teamId': teamId.toString(),
-            'tab': '3',
-            if (stageLabel.isNotEmpty) 'stage': stageLabel,
-          }),
+          onOpenGrades: (teamId, stageLabel) => _goToSection(
+            'deliverables',
+            queryParameters: {
+              'teamId': teamId.toString(),
+              'tab': '1',
+              'stage': stageLabel,
+            },
+          ),
+          onOpenDeliverables: (teamId) => _goToSection(
+            'deliverables',
+            queryParameters: {
+              if (teamId != null) 'teamId': teamId.toString(),
+              'tab': '0',
+            },
+          ),
+          onOpenDefense: (teamId, stageLabel) => _goToSection(
+            'deliverables',
+            queryParameters: {
+              if (teamId != null) 'teamId': teamId.toString(),
+              'tab': '3',
+              if (stageLabel.isNotEmpty) 'stage': stageLabel,
+            },
+          ),
         );
       case FacultyWorkspace.pitInstructor:
         return PitInstructorDashboardContent(
@@ -1723,14 +1994,20 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           facultyName: facultyName,
           yearLevel: yearLevel,
           section: section,
-          onOpenDeliverables: (teamId) => _goToSection('deliverables', queryParameters: {
-            if (teamId != null) 'teamId': teamId.toString(),
-            'tab': '0',
-          }),
-          onOpenGrading: (teamId) => _goToSection('deliverables', queryParameters: {
-            if (teamId != null) 'teamId': teamId.toString(),
-            'tab': '1',
-          }),
+          onOpenDeliverables: (teamId) => _goToSection(
+            'deliverables',
+            queryParameters: {
+              if (teamId != null) 'teamId': teamId.toString(),
+              'tab': '0',
+            },
+          ),
+          onOpenGrading: (teamId) => _goToSection(
+            'deliverables',
+            queryParameters: {
+              if (teamId != null) 'teamId': teamId.toString(),
+              'tab': '1',
+            },
+          ),
         );
       case FacultyWorkspace.documenter:
         return DocumenterDashboardContent(
@@ -1754,10 +2031,7 @@ class _FacultyNavGroup {
   final String title;
   final List<_FacultyNavEntry> entries;
 
-  const _FacultyNavGroup({
-    required this.title,
-    required this.entries,
-  });
+  const _FacultyNavGroup({required this.title, required this.entries});
 }
 
 class _FacultyNavEntry {
@@ -1794,7 +2068,11 @@ class _FacultySectionHeader extends StatelessWidget {
       if (isFirst) return const SizedBox(height: 4);
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-        child: Divider(height: 1, thickness: 1, color: DefensysTokens.borderOf(context)),
+        child: Divider(
+          height: 1,
+          thickness: 1,
+          color: DefensysTokens.borderOf(context),
+        ),
       );
     }
     return Padding(
@@ -1911,11 +2189,7 @@ class _FacultyNavItemState extends State<_FacultyNavItem> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Center(
-                  child: Icon(
-                    widget.icon,
-                    size: 18,
-                    color: iconColor,
-                  ),
+                  child: Icon(widget.icon, size: 18, color: iconColor),
                 ),
               ),
             ),
@@ -1947,11 +2221,7 @@ class _FacultyNavItemState extends State<_FacultyNavItem> {
                 SizedBox(
                   width: 48,
                   child: Center(
-                    child: Icon(
-                      widget.icon,
-                      size: 18,
-                      color: iconColor,
-                    ),
+                    child: Icon(widget.icon, size: 18, color: iconColor),
                   ),
                 ),
                 Expanded(
@@ -1963,7 +2233,9 @@ class _FacultyNavItemState extends State<_FacultyNavItem> {
                         fontFamily: DefensysTokens.fontFamily,
                         color: textColor,
                         fontSize: 13,
-                        fontWeight: isHighlighted ? FontWeight.w600 : FontWeight.w500,
+                        fontWeight: isHighlighted
+                            ? FontWeight.w600
+                            : FontWeight.w500,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -1982,9 +2254,7 @@ class _FacultyNavItemState extends State<_FacultyNavItem> {
 class _SidebarPanelIcon extends StatelessWidget {
   final double size;
 
-  const _SidebarPanelIcon({
-    this.size = 18,
-  });
+  const _SidebarPanelIcon({this.size = 18});
 
   @override
   Widget build(BuildContext context) {
@@ -2038,7 +2308,8 @@ class _SidebarPanelPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_SidebarPanelPainter oldDelegate) => oldDelegate.color != color;
+  bool shouldRepaint(_SidebarPanelPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 /// The shell owns workspace controls; section screens own their retained state.
@@ -2057,8 +2328,14 @@ class FacultySectionContent extends ConsumerWidget {
     return KeyedSubtree(
       // Workspace changes must not reuse filters/forms from a different role,
       // year or class section. Ordinary sidebar switches keep this key stable.
-      key: ValueKey((scope.workspace, scope.revision,
-        WebSectionStateScope.generationOf(context, FacultyRoutes.pathForSection(section)))),
+      key: ValueKey((
+        scope.workspace,
+        scope.revision,
+        WebSectionStateScope.generationOf(
+          context,
+          FacultyRoutes.pathForSection(section),
+        ),
+      )),
       child: scope.dashboard._buildSectionContent(
         dashboard,
         roles,
@@ -2085,6 +2362,7 @@ class _FacultyContentScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(_FacultyContentScope oldWidget) =>
-      workspace != oldWidget.workspace || revision != oldWidget.revision ||
+      workspace != oldWidget.workspace ||
+      revision != oldWidget.revision ||
       minutesRevision != oldWidget.minutesRevision;
 }

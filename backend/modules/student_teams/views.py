@@ -16,6 +16,7 @@ from academic_period_management.serializers import SemesterSerializer
 from authentication_access_control.audit import audit_scope_metadata, log_high_impact_action
 from authentication_access_control.models import SystemAuditLog
 from authentication_access_control.scopes import visible_teams_for
+from authentication_access_control.workspaces import workspace_teams_for
 from user_management.academic_records.models import StudentAcademicRecord
 from user_management.academic_records.serializers import StudentOptionSerializer
 from user_management.models import SectionInstructorAssignment
@@ -38,6 +39,7 @@ from .term_scope import (
     term_scope_payload,
 )
 from .models import StudentTeam, TeamAdviserAssignment, TeamMembership, SectionAssignment
+from .section_access import sections_for, require_section_write, audit_section
 from .serializers import (
     AdviserOptionSerializer,
     BulkTeamRowSerializer,
@@ -99,7 +101,7 @@ def filter_students_for_pit_roster(students, active, *, pit_lead_year=None, user
     return students.filter(pk__in=student_ids)
 
 
-def options_payload(team_id=None, team_level=None, user=None, include_roster_options=True, event_name=None):
+def options_payload(team_id=None, team_level=None, user=None, include_roster_options=True, event_name=None, workspace=None):
     """
     Get options for team creation/editing.
     
@@ -117,7 +119,7 @@ def options_payload(team_id=None, team_level=None, user=None, include_roster_opt
     if active:
         from defense.scheduler.models import PitEventGradingConfig
         from defense.scheduler.event_scope import pit_events_for_user
-        pit_configs = pit_events_for_user(user, semester=active).order_by('event_name') if user else PitEventGradingConfig.objects.none()
+        pit_configs = pit_events_for_user(user, semester=active, workspace=workspace).order_by('event_name') if user else PitEventGradingConfig.objects.none()
         for cfg in pit_configs:
             ev_year = cfg.year_level
             pit_events.append({
@@ -250,7 +252,7 @@ class StudentTeamListCreateView(APIView):
         ).data
 
     def get(self, request):
-        visible = teams_queryset_for_user(request.user)
+        visible = workspace_teams_for(request.user, request.query_params.get('workspace'))
         scope = request.query_params.get('scope', 'active').strip()
         queryset = apply_team_scope(visible, scope=scope, user=request.user)
         search = request.query_params.get('search', '').strip()
@@ -288,7 +290,8 @@ class StudentTeamListCreateView(APIView):
         event_name = request.query_params.get('event_name', '').strip()
         if event_name:
             from defense.scheduler.event_scope import pit_events_for_user
-            event_config = pit_events_for_user(request.user, semester=active_semester()).filter(event_name__iexact=event_name).first()
+            event_config = pit_events_for_user(request.user, semester=active_semester(),
+                workspace=request.query_params.get('workspace')).filter(event_name__iexact=event_name).first()
             event_year = event_config.year_level if event_config else None
             if event_config is None:
                 queryset = queryset.none()
@@ -309,7 +312,7 @@ class StudentTeamListCreateView(APIView):
 
         # Get team_level from query params for filtering students
         team_level_filter = request.query_params.get('team_level', '').strip()
-        full_dir = user_can_see_full_team_directory(request.user)
+        full_dir = user_can_see_full_team_directory(request.user) and request.query_params.get('workspace', '') in ('', 'operations')
 
         stats_base = apply_team_scope(visible, scope='active', user=request.user)
         if level == 'Capstone':
@@ -325,6 +328,7 @@ class StudentTeamListCreateView(APIView):
                 user=request.user,
                 include_roster_options=full_dir,
                 event_name=event_name or None,
+                workspace=request.query_params.get('workspace'),
             ),
         })
 
@@ -347,18 +351,23 @@ class StudentTeamDetailView(APIView):
     permission_classes = [CanManageTeams]
 
     def get_object(self, team_id):
-        return get_object_or_404(teams_queryset_for_user(self.request.user), pk=team_id)
+        return get_object_or_404(workspace_teams_for(self.request.user,
+            self.request.query_params.get('workspace')), pk=team_id)
 
     def get(self, request, team_id):
         """Get team details with available students for editing"""
         team = self.get_object(team_id)
         return Response({
             'team': StudentTeamSerializer(team, context={'user': request.user}).data,
-            **options_payload(team_id=team_id, team_level=team.level, user=request.user),
+            **options_payload(team_id=team_id, team_level=team.level, user=request.user,
+                              workspace=request.query_params.get('workspace'),
+                              include_roster_options=request.query_params.get('workspace', '') in ('', 'operations')),
         })
 
     def patch(self, request, team_id):
         team = self.get_object(team_id)
+        from .term_scope import assert_team_writable
+        assert_team_writable(request.user, team)
         
         # Prevent overriding a grade-derived team status
         if 'status' in request.data:
@@ -597,27 +606,6 @@ class BulkImportTeamsView(APIView):
                     if row_pm and not section_meta[sec]['project_manager']:
                         section_meta[sec]['project_manager'] = row_pm
 
-        if section_meta:
-            active = active_semester()
-            if active:
-                for sec, meta in section_meta.items():
-                    pm_user = None
-                    if meta['project_manager']:
-                        pm_user, pm_err = resolve_user_by_full_name(meta['project_manager'], role='student', field_label='Project Manager')
-                        if pm_err and effective_section:
-                            return Response({'detail': pm_err}, status=status.HTTP_400_BAD_REQUEST)
-                    sec_digits = ''.join(c for c in sec if c.isdigit())
-                    sec_year = '4th Year' if sec_digits.startswith('4') else (getattr(request.user, 'pit_lead_year', None) or '2nd Year').strip()
-                    SectionAssignment.objects.update_or_create(
-                        section=sec,
-                        semester=active,
-                        defaults={
-                            'system_name': meta['system_name'],
-                            'project_manager': pm_user,
-                            'year_level': sec_year,
-                        }
-                    )
-
         adviser_filter = _normalize_adviser_filter(request.data.get('adviser_filter'))
         csv_columns = request.data.get('csv_columns')
         if csv_columns is not None and not isinstance(csv_columns, list):
@@ -627,8 +615,17 @@ class BulkImportTeamsView(APIView):
         errors = []
         imported_rows = []
 
+        preflight, _ = preview_bulk_teams(rows, adviser_filter=adviser_filter,
+            user=request.user, csv_columns=csv_columns, section_import=bool(effective_section),
+            import_section=effective_section)
+        batch_conflicts = {r['row']: r['issues'] for r in preflight if r.get('batch_conflict')}
+
         for index, row in enumerate(rows, start=1):
             team_name = (row.get('team_name') or '').strip()
+            if index in batch_conflicts:
+                errors.append({'row': index, 'sheet_row': index + 1,
+                    'team_name': team_name, 'errors': batch_conflicts[index]})
+                continue
             prepared, prep_issues = prepare_bulk_row(
                 row,
                 request.user,
@@ -710,16 +707,47 @@ class BulkImportTeamsView(APIView):
 
             # Commit the section instructor with the team so failed rows cannot
             # create assignments, and PIT imports never promote a project adviser.
-            with transaction.atomic():
-                team = serializer.save(concept_assignment=result['concept_assignment'])
-                if result['instructor'] is not None:
-                    SectionInstructorAssignment.objects.update_or_create(
-                        faculty=result['instructor'],
-                        semester=team.semester,
-                        year_level=team.year_level,
-                        section=team.section,
-                        defaults={'assigned_by': request.user, 'is_active': True},
-                    )
+            from rest_framework.exceptions import PermissionDenied, ValidationError
+            try:
+                with transaction.atomic():
+                    selected_semester = Semester.objects.select_for_update().get(pk=serializer.validated_data['semester'].pk)
+                    if not selected_semester.is_active:
+                        raise PermissionDenied('The target academic period is no longer active.')
+                    list(SectionAssignment.objects.select_for_update().filter(semester=selected_semester, section=serializer.validated_data.get('section', '')))
+                    result = validate_bulk_team_row(row_serializer.validated_data, adviser_filter=adviser_filter,
+                        user=request.user, csv_columns=csv_columns, section_import=bool(effective_section), import_section=effective_section)
+                    if not result['ready']:
+                        raise ValidationError(result['issues'] or 'The import context changed. Refresh the preview.')
+                    team = serializer.save(concept_assignment=result['concept_assignment'])
+                    meta = section_meta.get(team.section)
+                    if meta:
+                        pm_user = None
+                        if meta['project_manager']:
+                            pm_user, pm_error = resolve_user_by_full_name(meta['project_manager'], role='student', field_label='Project Manager')
+                            if pm_error:
+                                raise ValidationError(pm_error)
+                        existing = SectionAssignment.objects.select_for_update().filter(semester=team.semester, section=team.section).first()
+                        if existing:
+                            require_section_write(request.user, team.semester, existing.year_level, existing.section)
+                            pm_user = pm_user or existing.project_manager
+                        require_section_write(request.user, team.semester, team.year_level, team.section, pm_user)
+                        old = SectionAssignmentSerializer(existing).data if existing else {}
+                        assignment, new_section = SectionAssignment.objects.update_or_create(semester=team.semester, section=team.section,
+                            defaults={'year_level': team.year_level,
+                                'system_name': meta['system_name'] or (existing.system_name if existing else ''),
+                                'project_manager': pm_user or (existing.project_manager if existing else None)})
+                        audit_section(request, assignment, 'section_assignment.create' if new_section else 'section_assignment.update', old)
+                    if result['instructor'] is not None:
+                        SectionInstructorAssignment.objects.update_or_create(
+                            faculty=result['instructor'],
+                            semester=team.semester,
+                            year_level=team.year_level,
+                            section=team.section,
+                            defaults={'assigned_by': request.user, 'is_active': True},
+                        )
+            except (PermissionDenied, ValidationError) as exc:
+                errors.append({'row': index, 'sheet_row': index + 1, 'team_name': team_name, 'errors': [str(exc.detail)]})
+                continue
             created.append(team)
             imported_rows.append(index)
 
@@ -762,10 +790,11 @@ class SectionAssignmentListCreateView(APIView):
         active = active_semester()
         if not active:
             return Response([])
-        queryset = SectionAssignment.objects.filter(semester=active)
+        queryset = sections_for(request.user).filter(semester=active)
         serializer = SectionAssignmentSerializer(queryset, many=True)
         return Response(serializer.data)
 
+    @transaction.atomic
     def post(self, request):
         active = active_semester()
         if not active:
@@ -785,6 +814,11 @@ class SectionAssignmentListCreateView(APIView):
         if pm_id:
             pm = get_object_or_404(User, pk=pm_id, role='student')
 
+        existing = SectionAssignment.objects.select_for_update().filter(semester=active, section=section).first()
+        if existing:
+            require_section_write(request.user, active, existing.year_level, existing.section)
+        require_section_write(request.user, active, year_level, section, pm)
+        old = SectionAssignmentSerializer(existing).data if existing else {}
         assignment, created = SectionAssignment.objects.update_or_create(
             section=section,
             semester=active,
@@ -794,6 +828,7 @@ class SectionAssignmentListCreateView(APIView):
                 'project_manager': pm,
             }
         )
+        audit_section(request, assignment, 'section_assignment.create' if created else 'section_assignment.update', old)
         return Response(SectionAssignmentSerializer(assignment).data, status=status.HTTP_201_CREATED)
 
 
@@ -801,14 +836,18 @@ class SectionAssignmentDetailView(APIView):
     permission_classes = [CanManageTeams]
 
     def get_object(self, pk):
-        return get_object_or_404(SectionAssignment, pk=pk)
+        return get_object_or_404(sections_for(self.request.user), pk=pk)
 
     def get(self, request, pk):
         assignment = self.get_object(pk)
         return Response(SectionAssignmentSerializer(assignment).data)
 
+    @transaction.atomic
     def patch(self, request, pk):
         assignment = self.get_object(pk)
+        assignment = SectionAssignment.objects.select_for_update().select_related('semester').get(pk=assignment.pk)
+        require_section_write(request.user, assignment.semester, assignment.year_level, assignment.section)
+        old = SectionAssignmentSerializer(assignment).data
         data = request.data
         if 'year_level' in data:
             assignment.year_level = data['year_level']
@@ -820,11 +859,17 @@ class SectionAssignmentDetailView(APIView):
                 assignment.project_manager = get_object_or_404(User, pk=pm_id, role='student')
             else:
                 assignment.project_manager = None
+        require_section_write(request.user, assignment.semester, assignment.year_level, assignment.section, assignment.project_manager)
         assignment.save()
+        audit_section(request, assignment, 'section_assignment.update', old)
         return Response(SectionAssignmentSerializer(assignment).data)
 
+    @transaction.atomic
     def delete(self, request, pk):
         assignment = self.get_object(pk)
+        assignment = SectionAssignment.objects.select_for_update().select_related('semester').get(pk=assignment.pk)
+        require_section_write(request.user, assignment.semester, assignment.year_level, assignment.section)
+        audit_section(request, assignment, 'section_assignment.delete', SectionAssignmentSerializer(assignment).data)
         assignment.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 

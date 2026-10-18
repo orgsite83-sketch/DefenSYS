@@ -103,6 +103,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   late String _rubricScale;
   late int? _semesterId;
   int? _defenseStageId;
+  int? _pitEventId;
   String? _eventName;
   late List<RubricCriterionDraft> _criteria;
   late List<String> _scales;
@@ -236,6 +237,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   }) {
     setState(() {
       _scope = scope;
+      _pitEventId = null;
       if (scope == 'pit') {
         _defenseStageId = null;
         if (_evaluationType == 'adviser') {
@@ -253,7 +255,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
 
   String _createSubtitle() {
     if (_scope == 'pit') {
-      return 'PIT rubrics are semester templates (panel or peer). Set the event name when scheduling defenses.';
+      return 'Create a panel or peer rubric and optionally assign it to a configured PIT event.';
     }
     return 'Create a standard rubric for panel/event criteria and grade weights.';
   }
@@ -274,6 +276,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     }
     _semesterId = _asInt(r?['semester_id']) ?? _asInt(state.activeSemester?['id']);
     _defenseStageId = _asInt(r?['defense_stage_id']);
+    _pitEventId = _asInt(r?['pit_event_id']);
     _eventName = r?['event_name']?.toString();
     try {
       _disposeCriteriaList(_criteria);
@@ -359,6 +362,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       }
       _rubricScale = sourceRubric['scale']?.toString() ?? _rubricScale;
       _defenseStageId = null;
+      _pitEventId = null;
 
       _disposeCriteriaList(_criteria);
       final clonedCriteria = sourceRubric['criteria'];
@@ -504,14 +508,162 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     );
   }
 
-  Widget _labeledControl(String label, Widget control) {
+  Widget _labeledControl(String label, Widget control, {String? helpText}) {
+    final helpKey = GlobalKey<TooltipState>();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(label, style: _staticLabelStyle),
+        SizedBox(
+          height: 24,
+          child: Row(
+            children: [
+              Expanded(child: Text(label, style: _staticLabelStyle)),
+              if (helpText != null)
+                Tooltip(
+                  key: helpKey,
+                  message: helpText,
+                  triggerMode: TooltipTriggerMode.tap,
+                  waitDuration: const Duration(milliseconds: 250),
+                  showDuration: const Duration(seconds: 8),
+                  constraints: const BoxConstraints(maxWidth: 320),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: DefensysTokens.maroonOf(context),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  textStyle: const TextStyle(
+                    fontFamily: DefensysUi.fontFamily,
+                    color: Colors.white,
+                    fontSize: 12,
+                    height: 1.5,
+                  ),
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 24,
+                      minHeight: 24,
+                    ),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => helpKey.currentState?.ensureTooltipVisible(),
+                    icon: Icon(
+                      Icons.help_outline_rounded,
+                      size: 16,
+                      color: DefensysTokens.maroonOf(context),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
         const SizedBox(height: 6),
         control,
+      ],
+    );
+  }
+
+  Widget _scoringTargetControl(Widget control) {
+    const peerHelp =
+        'Each student evaluates their teammates separately. Each teammate receives an individual score, so Peer rubrics always use Individual. This setting cannot be changed.';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _labeledControl(
+          'SCORING TARGET',
+          control,
+          helpText: _evaluationType == 'peer'
+              ? peerHelp
+              : 'Team gives all members the same score. Individual grades each student separately. Both allows team criteria and individual criteria in the same rubric.',
+        ),
+        if (_evaluationType == 'peer') ...[
+          const SizedBox(height: 6),
+          Text(
+            'Peer evaluations always grade each student individually.',
+            style: TextStyle(
+              fontFamily: DefensysUi.fontFamily,
+              fontSize: _helperSize,
+              fontWeight: FontWeight.w600,
+              color: DefensysTokens.maroonOf(context),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _pitEventControl(RubricEngineState state, {required bool canEdit}) {
+    final events = state.pitEvents
+        .where((event) => _asInt(event['semester_id']) == _semesterId)
+        .toList();
+    if (_pitEventId != null &&
+        !events.any((event) => _asInt(event['id']) == _pitEventId)) {
+      events.add({
+        'id': _pitEventId,
+        'event_name': _eventName ?? 'Assigned PIT event',
+      });
+    }
+    final selected = events
+        .where((event) => _asInt(event['id']) == _pitEventId)
+        .firstOrNull;
+    final slot = '${_evaluationType}_rubric_id';
+    final existingRubricId = _asInt(selected?[slot]);
+    final replacesRubric =
+        existingRubricId != null &&
+        existingRubricId != _asInt(widget.rubric?['id']);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _labeledControl(
+          'ASSIGN TO PIT EVENT (OPTIONAL)',
+          DropdownButtonFormField<int?>(
+            key: ValueKey('pit-event-$_semesterId-$_pitEventId'),
+            initialValue: _pitEventId,
+            isExpanded: true,
+            style: _dropdownFieldStyle,
+            decoration: _outlineInputDec(),
+            items: [
+              const DropdownMenuItem<int?>(
+                value: null,
+                child: Text('None / Keep as an unassigned template'),
+              ),
+              ...events.map((event) {
+                final id = _asInt(event['id']);
+                final locked = event['is_locked'] == true;
+                return DropdownMenuItem<int?>(
+                  value: id,
+                  enabled: !locked || id == _pitEventId,
+                  child: Text(
+                    '${event['event_name']}${locked ? ' (Locked)' : ''}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              }),
+            ],
+            onChanged: canEdit
+                ? (value) {
+                    setState(() => _pitEventId = value);
+                    _markDirty();
+                  }
+                : null,
+          ),
+          helpText:
+              'Choose an event already created in PIT Events Setup for this semester. Saving assigns this rubric to its panel or peer slot. Events that have started or are complete are locked.',
+        ),
+        const SizedBox(height: 6),
+        Text(
+          replacesRubric
+              ? 'Saving will replace the selected event\'s current ${_evaluationType == 'peer' ? 'peer' : 'panel'} rubric.'
+              : events.isEmpty
+              ? 'No configured PIT events for this semester. Create one in PIT Events Setup, or save this rubric as a template.'
+              : 'Choose a configured event, or leave this rubric unassigned for later.',
+          style: TextStyle(
+            fontFamily: DefensysUi.fontFamily,
+            fontSize: _helperSize,
+            color: replacesRubric
+                ? DefensysTokens.maroonOf(context)
+                : _textSecondaryColor,
+          ),
+        ),
       ],
     );
   }
@@ -1248,6 +1400,19 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
 
     if (showConfirmation && !mounted) return false;
 
+    final selectedEvent = ref
+        .read(rubricEngineProvider)
+        .pitEvents
+        .where((event) => _asInt(event['id']) == _pitEventId)
+        .firstOrNull;
+    final assignedRubricId = _asInt(
+      selectedEvent?['${_evaluationType}_rubric_id'],
+    );
+    final assignmentSummary = _scope == 'pit' && _pitEventId != null
+        ? 'This will assign the rubric to ${selectedEvent?['event_name'] ?? _eventName ?? 'the selected PIT event'} for ${_evaluationType == 'peer' ? 'peer' : 'panel'} evaluation.'
+              '${assignedRubricId != null && assignedRubricId != _asInt(widget.rubric?['id']) ? ' The current rubric in that slot will be replaced.' : ''}'
+        : '';
+
     if (showConfirmation) {
       final confirmed = await showDialog<bool>(
         context: context,
@@ -1282,6 +1447,18 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                       height: 1.4,
                     ),
                   ),
+                  if (assignmentSummary.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      assignmentSummary,
+                      style: TextStyle(
+                        fontFamily: DefensysUi.fontFamily,
+                        fontSize: 13.5,
+                        color: DefensysTokens.maroonOf(context),
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1329,6 +1506,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       'scope': _scope,
       'semester_id': _semesterId,
       'defense_stage_id': _scope == 'capstone' ? _defenseStageId : null,
+      if (_scope == 'pit') 'pit_event_id': _pitEventId,
       'event_name': _eventName ?? '',
       'evaluation_type': _evaluationType,
       'target_type': _targetType,
@@ -1678,7 +1856,10 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                                   ],
                                   onChanged: canEdit
                                       ? (v) {
-                                          setState(() => _semesterId = v);
+                                          setState(() {
+                                            _semesterId = v;
+                                            _pitEventId = null;
+                                          });
                                           _markDirty();
                                         }
                                       : null,
@@ -1840,8 +2021,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              child: _labeledControl(
-                                'SCORING TARGET',
+                              child: _scoringTargetControl(
                                 DropdownButtonFormField<String>(
                                   key: ValueKey('target-$_targetType'),
                                   initialValue: _targetType,
@@ -1949,7 +2129,10 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                                   ],
                                   onChanged: canEdit
                                       ? (v) {
-                                          setState(() => _semesterId = v);
+                                          setState(() {
+                                            _semesterId = v;
+                                            _pitEventId = null;
+                                          });
                                           _markDirty();
                                         }
                                       : null,
@@ -2026,8 +2209,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                             ),
                             const SizedBox(width: 14),
                             Expanded(
-                              child: _labeledControl(
-                                'SCORING TARGET',
+                              child: _scoringTargetControl(
                                 DropdownButtonFormField<String>(
                                   key: ValueKey('target-$_targetType'),
                                   initialValue: _targetType,
@@ -2139,22 +2321,12 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                           },
                         ),
                       ],
-                      if (_evaluationType == 'peer') ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          'Peer evaluations are always scored individually per student.',
-                          style: TextStyle(
-                            fontFamily: DefensysUi.fontFamily,
-                            fontSize: _helperSize,
-                            fontWeight: FontWeight.w600,
-                            color: DefensysUi.primaryMaroon,
-                          ),
-                        ),
-                      ],
                       if (_scope == 'pit') ...[
+                        const SizedBox(height: 14),
+                        _pitEventControl(state, canEdit: canEdit),
                         const SizedBox(height: 12),
                         Text(
-                          'PIT rubrics: panel or peer evaluation only (criteria here). Grade split and event name are set on Defense Scheduler (Step 1) per PIT event.',
+                          'Assign panel or peer criteria to an existing PIT event here. Manage event details and grade weights in PIT Events Setup.',
                           style: TextStyle(
                             fontFamily: DefensysUi.fontFamily,
                             fontSize: _helperSize,

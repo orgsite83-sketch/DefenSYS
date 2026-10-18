@@ -17,6 +17,8 @@ class TeamGradeQuerySet(models.QuerySet):
         return self.select_related(
             'schedule',
             'schedule__rubric',
+            'schedule__team__semester__school_year',
+            'schedule__semester__school_year',
             'schedule__defense_stage',
             'defense_stage',
             'pit_event_config',
@@ -41,7 +43,10 @@ class TeamGradeQuerySet(models.QuerySet):
             'schedule__guest_invitations__evaluator',
             'schedule__guest_panelist_codes__evaluator',
             'panelist_submissions',
-            'attempt_history',
+            'panelist_submissions__criterion_scores',
+            'schedule__rubric__criteria',
+            'schedule__team__memberships__student',
+            'attempt_history__verdict_by',
         )
 
 

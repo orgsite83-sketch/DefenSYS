@@ -45,14 +45,17 @@ class WeeklyProgressState {
 }
 
 class WeeklyProgressNotifier extends Notifier<WeeklyProgressState> {
+  int _requestVersion = 0;
   static String get baseUrl => ApiConfig.weeklyProgressUrl;
 
   @override
   WeeklyProgressState build() {
+    ref.onDispose(() => _requestVersion++);
     return const WeeklyProgressState();
   }
 
   Future<void> fetchReports() async {
+    final version = ++_requestVersion;
     state = state.copyWith(
       isLoading: true,
       clearError: true,
@@ -60,10 +63,8 @@ class WeeklyProgressNotifier extends Notifier<WeeklyProgressState> {
     );
 
     try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/'),
-        
-      );
+      final response = await _client.get(Uri.parse('$baseUrl/'));
+      if (!ref.mounted || version != _requestVersion) return;
 
       if (response.statusCode == 200) {
         final data = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -80,15 +81,13 @@ class WeeklyProgressNotifier extends Notifier<WeeklyProgressState> {
         error: _errorFromResponse(response),
       );
     } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: 'Connection error: $e',
-      );
+      if (!ref.mounted || version != _requestVersion) return;
+      state = state.copyWith(isLoading: false, error: 'Connection error: $e');
     }
   }
 
-  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
-
+  AuthenticatedHttpClient get _client =>
+      ref.read(authenticatedHttpClientProvider);
 
   List<Map<String, dynamic>> _readMapList(dynamic value) {
     if (value is! List) {

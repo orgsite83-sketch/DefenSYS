@@ -23,12 +23,26 @@ def pit_events_for_team(team):
     return PitEventGradingConfig.objects.filter(semester=team.semester, year_level=team.year_level)
 
 
-def pit_events_for_user(user, *, semester=None):
+def pit_events_for_user(user, *, semester=None, workspace=None):
     from authentication_access_control.scopes import is_admin_user, is_pit_lead_only, visible_teams_for
     from .models import PitEventGradingConfig
     events = PitEventGradingConfig.objects.all()
     if semester is not None:
         events = events.filter(semester=semester)
+    if workspace in ('adviser', 'instructor'):
+        from django.db.models import Q
+        from authentication_access_control.workspaces import workspace_teams_for
+        allowed = Q(pk__in=[])
+        for term, year in workspace_teams_for(user, workspace).filter(level__icontains='PIT').values_list(
+                'semester_id', 'year_level').distinct():
+            allowed |= Q(semester_id=term, year_level=year)
+        if workspace == 'instructor':
+            from user_management.models import SectionInstructorAssignment
+            for term, year in SectionInstructorAssignment.objects.filter(
+                    faculty=user, is_active=True).values_list('semester_id', 'year_level').distinct():
+                if pit_year(year):
+                    allowed |= Q(semester_id=term, year_level=year)
+        return events.filter(allowed)
     if is_admin_user(user):
         return events
     if is_pit_lead_only(user):

@@ -121,10 +121,12 @@ class DefenseBoardState {
 }
 
 class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
+  int _fetchVersion = 0;
   static String get baseUrl => ApiConfig.defenseBoardUrl;
 
   @override
   DefenseBoardState build() {
+    ref.onDispose(() => _fetchVersion++);
     return const DefenseBoardState();
   }
 
@@ -219,6 +221,7 @@ class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
     String? section,
     String? successMessage,
   }) async {
+    final version = ++_fetchVersion;
     final nextSearch = search ?? state.search;
     final nextStage = stage ?? state.stage;
     final nextStatus = status ?? state.status;
@@ -242,6 +245,7 @@ class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
     try {
       final uri = Uri.parse(baseUrl).replace(
         queryParameters: {
+          'workspace': 'operations',
           if (nextSearch.trim().isNotEmpty) 'search': nextSearch.trim(),
           if (nextStage.isNotEmpty) 'stage': nextStage,
           if (nextStatus.isNotEmpty) 'status': nextStatus,
@@ -251,6 +255,7 @@ class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
         },
       );
       final response = await _client.get(uri);
+      if (!ref.mounted || version != _fetchVersion) return;
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -264,6 +269,7 @@ class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
         error: _errorFromResponse(response),
       );
     } catch (e) {
+      if (!ref.mounted || version != _fetchVersion) return;
       state = state.copyWith(
         isLoading: false,
         isSaving: false,

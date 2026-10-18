@@ -10,53 +10,17 @@ from student_teams.models import StudentTeam
 
 from .models import TeamDocument
 from .serializers import TeamDocumentSerializer, TeamDocumentUploadSerializer
+from .access import document_teams_for, can_write_documents
 
 
 def team_document_queryset_for_user(user, team_id=None):
     qs = TeamDocument.objects.select_related('team', 'uploaded_by').order_by('-uploaded_at')
-    if not user or not user.is_authenticated:
-        return qs.none()
-
-    if user.is_superuser or getattr(user, 'role', None) == 'admin':
-        if team_id is not None:
-            return qs.filter(team_id=team_id)
-        return qs
-
-    if getattr(user, 'is_pit_lead', False):
-        if team_id is not None:
-            return qs.filter(team_id=team_id)
-        return qs
-
-    if getattr(user, 'is_uploader', False):
-        active_qs = qs.filter(team__semester__is_active=True)
-        if team_id is not None:
-            return active_qs.filter(team_id=team_id)
-        return active_qs
-
-    accessible = StudentTeam.objects.filter(
-        Q(leader=user) | Q(memberships__student=user) | Q(adviser=user)
-    ).distinct()
-    if team_id is not None:
-        if not accessible.filter(pk=team_id).exists():
-            return qs.none()
-        return qs.filter(team_id=team_id)
-    return qs.filter(team_id__in=accessible.values_list('id', flat=True))
+    qs = qs.filter(team__in=document_teams_for(user))
+    return qs.filter(team_id=team_id) if team_id is not None else qs
 
 
 def user_can_access_team(user, team):
-    if not user or not user.is_authenticated:
-        return False
-    if user.is_superuser or getattr(user, 'role', None) == 'admin':
-        return True
-    if getattr(user, 'is_pit_lead', False):
-        return True
-    if getattr(user, 'is_uploader', False):
-        return team.semester.is_active
-    if team.leader_id == user.id:
-        return True
-    if team.adviser_id == user.id:
-        return True
-    return team.memberships.filter(student_id=user.id).exists()
+    return document_teams_for(user).filter(pk=team.pk).exists()
 
 
 def user_can_access_team_document(user, document):
@@ -99,7 +63,7 @@ class TeamDocumentUploadView(APIView):
         uploaded_file = serializer.validated_data['file']
 
         team = get_object_or_404(StudentTeam, pk=team_id)
-        if not user_can_access_team(request.user, team):
+        if not can_write_documents(request.user, team):
             return Response(
                 {'detail': 'You do not have permission to upload documents for this team.'},
                 status=status.HTTP_403_FORBIDDEN,
@@ -140,7 +104,7 @@ class TeamDocumentDetailView(APIView):
 
     def delete(self, request, document_id):
         document = get_object_or_404(TeamDocument, pk=document_id)
-        if not user_can_access_team_document(request.user, document):
+        if not can_write_documents(request.user, document.team):
             return Response(
                 {'detail': 'You do not have permission to delete this document.'},
                 status=status.HTTP_403_FORBIDDEN,

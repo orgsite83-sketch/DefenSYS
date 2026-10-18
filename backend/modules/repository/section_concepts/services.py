@@ -100,10 +100,17 @@ def can_read(user, project):
     return candidates.filter(Q(panel_assignments__panelist=user) | Q(documenter=user)).exists()
 
 
-def visible_projects(user):
+def visible_projects(user, *, team_id=None):
     # Apply exactly the same ownership rules to lists and direct/private file access.
     projects = SectionConceptProject.objects.select_related('section__semester', 'reviewer',
         'project_manager', 'defense_stage', 'pit_event_config').order_by('-pk')
+    if team_id is not None:
+        from django.db.models import F
+        projects = projects.filter(team_links__team_id=team_id,
+            team_links__project_version=F('team_links__team__project_version'),
+            section__semester_id=F('team_links__team__semester_id'),
+            section__section=F('team_links__team__section'),
+            section__year_level=F('team_links__team__year_level')).distinct()
     return [p for p in projects if can_read(user, p)]
 
 
@@ -665,16 +672,21 @@ def payload(project, actor):
     round = latest(project)
     context = project.context
     can_write = writable(project)
+    editable_now = not round.verdict and not round.module_rounds.filter(schedule__isnull=False).exclude(
+        schedule__status='cancelled').exists() and can_write
     systems = []
     for concept in round.systems.prefetch_related('papers'):
+        papers = list(concept.papers.all())
+        current_paper = next((p for p in papers if p.is_current), None)
         systems.append({'id': concept.pk, 'key': concept.key, 'title': concept.title,
             'confirmed': concept.confirmed, 'decision': concept.decision, 'remarks': concept.remarks,
-            'can_upload': can_write and is_pm(actor, project) and correcting(round, concept.key),
+            'can_upload': bool(can_write and is_pm(actor, project) and (correcting(round, concept.key) or
+                (editable_now and (not current_paper or current_paper.status != 'accepted')))),
             'can_review': can_write and is_reviewer(actor, project) and correcting(round, concept.key),
             'papers': [{'id': p.pk, 'file_name': p.file_name, 'revision': p.revision,
                 'is_current': p.is_current, 'status': p.status, 'feedback': p.feedback,
                 'file_url': f'/api/repository/section-concepts/{project.pk}/papers/{p.pk}/'}
-                for p in concept.papers.order_by('-revision')]})
+                for p in sorted(papers, key=lambda p: p.revision, reverse=True)]})
     teams = []
     for link in active_links(project):
         current = latest_round(link.team, context)
@@ -697,7 +709,11 @@ def payload(project, actor):
             c['documents_status'] = ('missing' if not statuses or 'missing' in statuses else
                 'corrections_requested' if 'rejected' in statuses else
                 'accepted' if all(s == 'accepted' for s in statuses) else 'pending_review')
+        leader_name = (link.team.leader.get_full_name() or link.team.leader.username) if link.team.leader else ''
+        members = [{'id': m.student_id, 'name': m.student.get_full_name() or m.student.username, 'is_leader': m.student_id == link.team.leader_id}
+            for m in link.team.memberships.select_related('student').all()]
         teams.append({'id': link.team_id, 'name': link.team.name, 'leader_id': link.team.leader_id,
+            'leader_name': leader_name, 'members': members,
             'endorsed': bool(current and current.endorsed_at),
             'concepts': concepts, 'schedule_id': current.schedule_id if current else None,
             'verdict': current.verdict if current else '',
@@ -705,8 +721,11 @@ def payload(project, actor):
                 admin(actor) or (getattr(actor, 'role', '') == 'faculty' and current.schedule.panel_assignments.filter(panelist=actor, is_chair=True).exists()))),
             'can_confirm_names': can_write and (can_manage(actor, project) or (
                 getattr(actor, 'role', '') == 'faculty' and link.team.adviser_id == actor.pk))})
-    editable_now = not round.verdict and not round.module_rounds.filter(schedule__isnull=False).exclude(
-        schedule__status='cancelled').exists() and can_write
+    current_papers = [p for system in systems for p in system['papers'] if p['is_current']]
+    progress = {'required': 3,
+        'names_confirmed': sum(bool(s['confirmed'] and s['title'].strip()) for s in systems),
+        'papers_uploaded': len(current_papers),
+        'papers_accepted': sum(p['status'] == 'accepted' for p in current_papers)}
     manager_options, reviewer_options = [], []
     if can_manage(actor, project):
         from user_management.academic_records.models import StudentAcademicRecord
@@ -733,6 +752,9 @@ def payload(project, actor):
         'reviewer_id': project.reviewer_id, 'reviewer_name': project.reviewer.get_full_name() or project.reviewer.username,
         'systems': systems, 'teams': teams, 'selected_key': round.selected_key, 'verdict': round.verdict,
         'remarks': round.remarks, 'endorsed': shared_clearance(round), 'editable': editable_now,
+        'review_progress': progress,
+        'can_endorse': bool(editable_now and is_reviewer(actor, project) and not shared_clearance(round)
+            and progress['names_confirmed'] == 3 and progress['papers_accepted'] == 3),
         'shared_revisions_pending': round.verdict == 'approved_with_revisions' and not round.revisions_cleared_at,
         'can_clear_shared_revisions': round.verdict == 'approved_with_revisions' and not round.revisions_cleared_at and (
             is_reviewer(actor, project)) and can_write,

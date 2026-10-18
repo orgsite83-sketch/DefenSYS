@@ -51,11 +51,12 @@ class _ActionClient implements AuthenticatedHttpClient {
   @override
   Future<http.Response> get(Uri uri, {Map<String, String>? headers}) async {
     calls.add(uri);
-    if (uri.path == '/api/users/1/')
+    if (uri.path == '/api/users/1/') {
       return http.Response(
         '{"user":{"id":1,"name":"Requested Faculty","role":"faculty","is_panelist":true,"is_adviser":true,"is_pit_lead":false,"is_documenter":false}}',
         200,
       );
+    }
     return http.Response(
       '{"request":{"id":42,"faculty_id":1,"faculty_name":"Requested Faculty","status":"approved","requested_by_name":"PIT Lead","reviewed_by_name":"Administrator"},"can_review":true}',
       200,
@@ -159,6 +160,7 @@ class _Teams extends StudentTeamsNotifier {
 
   @override
   Future<void> fetchTeams({
+    String? workspace,
     String? search,
     String? level,
     String? status,
@@ -460,7 +462,7 @@ void main() {
       find.text('No weekly progress reports submitted yet.'),
       findsOneWidget,
     );
-    expect(teams.loads, 1); // Quick returns do not reload a whole section.
+    expect(teams.loads, 2); // Revalidate quick returns while retaining the page.
     expect((container.read(teamDetailProvider(1).notifier) as _Team).loads, 1);
 
     router.pop();
@@ -704,13 +706,17 @@ void main() {
           tester.state(find.byType(DefenseScheduleBulkImportView)),
           same(importState),
         );
-        expect(board.loads, 1);
+        expect(board.loads, 2);
 
         router.go('$prefix/defense-board');
         await tester.pumpAndSettle();
         expect(tester.state(find.byType(DefenseBoardScreen)), same(boardState));
         expect(find.byType(DefenseScheduleBulkImportView), findsNothing);
-        expect(board.loads, 1);
+        expect(board.loads, 2);
+        container.read(dataRefreshProvider.notifier).markChanged(const [DataArea.defenseBoard]);
+        await tester.pumpAndSettle();
+        expect(board.loads, 3); // Visible retained branches consume changes now.
+        expect(tester.state(find.byType(DefenseBoardScreen)), same(boardState));
       },
     );
     testWidgets(
@@ -751,7 +757,7 @@ void main() {
         );
         final grades = container.read(gradeCenterProvider.notifier) as _Grades;
         expect(grades.detailLoads, 1);
-        expect(grades.loads, 1);
+        expect(grades.loads, 2); // Refresh the retained list without remounting detail.
         // Detail uses its own segmented control, so verify that the master table
         // content is absent while the individual rubric view is still displayed.
         expect(find.text('Master Student Grade Sheet'), findsNothing);

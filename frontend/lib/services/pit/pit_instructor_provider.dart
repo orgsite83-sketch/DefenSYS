@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
+import '../app/data_refresh_provider.dart';
 
 final pitInstructorProvider =
     NotifierProvider<PitInstructorNotifier, PitInstructorState>(
@@ -57,6 +58,7 @@ class PitInstructorState {
 }
 
 class PitInstructorNotifier extends Notifier<PitInstructorState> {
+  int _fetchRevision = 0;
   static String get baseUrl => '${ApiConfig.usersUrl}/pit-instructors';
 
   AuthenticatedHttpClient get _client =>
@@ -66,6 +68,7 @@ class PitInstructorNotifier extends Notifier<PitInstructorState> {
   PitInstructorState build() => const PitInstructorState();
 
   Future<void> fetchAssignments() async {
+    final revision = ++_fetchRevision;
     state = state.copyWith(
       isLoading: state.assignments.isEmpty,
       clearError: true,
@@ -74,6 +77,7 @@ class PitInstructorNotifier extends Notifier<PitInstructorState> {
 
     try {
       final response = await _client.get(Uri.parse('$baseUrl/'));
+      if (!ref.mounted || revision != _fetchRevision) return;
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
         state = state.copyWith(
@@ -92,6 +96,7 @@ class PitInstructorNotifier extends Notifier<PitInstructorState> {
         error: _errorFromResponse(response),
       );
     } catch (e) {
+      if (!ref.mounted || revision != _fetchRevision) return;
       state = state.copyWith(isLoading: false, error: 'Connection error: $e');
     }
   }
@@ -118,6 +123,7 @@ class PitInstructorNotifier extends Notifier<PitInstructorState> {
           isSaving: false,
           message: 'Instructor assigned.',
         );
+        _markDependentDataChanged();
         return true;
       }
 
@@ -153,6 +159,7 @@ class PitInstructorNotifier extends Notifier<PitInstructorState> {
               ? 'Instructor restored.'
               : 'Instructor deactivated.',
         );
+        _markDependentDataChanged();
         return true;
       }
 
@@ -175,6 +182,16 @@ class PitInstructorNotifier extends Notifier<PitInstructorState> {
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
         .toList();
+  }
+
+  void _markDependentDataChanged() {
+    ref.read(dataRefreshProvider.notifier).markChanged(const [
+      DataArea.dashboard,
+      DataArea.users,
+      DataArea.academicRecords,
+      DataArea.teams,
+      DataArea.scheduler,
+    ]);
   }
 
   String _errorFromResponse(dynamic response) {

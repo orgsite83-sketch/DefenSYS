@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../app/data_refresh_provider.dart';
 import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
@@ -70,12 +71,18 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
   static const _requestTimeout = Duration(seconds: 30);
   int? _activeScheduleId;
   int _detailVersion = 0;
+  int _assignmentsVersion = 0;
 
   bool _isCurrent(int scheduleId, int version) =>
       _activeScheduleId == scheduleId && _detailVersion == version;
 
   @override
   DocumenterState build() {
+    ref.onDispose(() {
+      _detailVersion++;
+      _assignmentsVersion++;
+      _activeScheduleId = null;
+    });
     return const DocumenterState();
   }
 
@@ -83,8 +90,9 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
       ref.read(authenticatedHttpClientProvider);
 
   Future<void> fetchAssignments() async {
+    final version = ++_assignmentsVersion;
     state = state.copyWith(
-      isLoading: true,
+      isLoading: state.assignments.isEmpty,
       clearError: true,
       clearMessage: true,
     );
@@ -92,6 +100,7 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
       final response = await _client
           .get(Uri.parse('$minutesUrl/my-assignments/'))
           .timeout(_requestTimeout);
+      if (!ref.mounted || version != _assignmentsVersion) return;
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
         state = state.copyWith(
@@ -108,6 +117,7 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
         );
       }
     } catch (e) {
+      if (!ref.mounted || version != _assignmentsVersion) return;
       state = state.copyWith(
         isLoading: false,
         error: 'Failed to fetch assignments: $e',
@@ -283,6 +293,7 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
           clearError: true,
         );
         await fetchAssignments(); // refresh dashboard assignments list status
+        _markDependentsChanged();
         return true;
       } else {
         state = state.copyWith(
@@ -324,6 +335,7 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
           message: 'Signed as Adviser successfully.',
           clearError: true,
         );
+        _markDependentsChanged();
         return true;
       } else {
         state = state.copyWith(
@@ -365,6 +377,7 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
           message: 'Signed as Chairman successfully.',
           clearError: true,
         );
+        _markDependentsChanged();
         return true;
       } else {
         state = state.copyWith(
@@ -381,6 +394,14 @@ class DocumenterNotifier extends Notifier<DocumenterState> {
       );
       return false;
     }
+  }
+
+  void _markDependentsChanged() {
+    ref.read(dataRefreshProvider.notifier).markChanged(const [
+      DataArea.dashboard,
+      DataArea.documenter,
+      DataArea.defenseBoard,
+    ]);
   }
 
   Future<Uint8List?> previewPdf(int scheduleId) async {

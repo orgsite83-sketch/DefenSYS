@@ -108,16 +108,18 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
     final operationsReports = group('operations');
     final governanceReports = group('governance');
     final setupReports = group('setup');
-    final totalReports = [...gradingReports, ...operationsReports, ...governanceReports, ...setupReports]
+    final projectReports = group('projects');
+    final totalReports = [...gradingReports, ...operationsReports, ...governanceReports, ...setupReports, ...projectReports]
         .where((report) => catalogScope.isEmpty || report['scope'] == null || report['scope'] == catalogScope).length;
     final visibleGradingReports = _filterReports(gradingReports, 'grading');
     final visibleOperationsReports = _filterReports(operationsReports, 'operations');
     final visibleGovernanceReports = _filterReports(governanceReports, 'governance');
     final visibleSetupReports = _filterReports(setupReports, 'setup');
+    final visibleProjectReports = _filterReports(projectReports, 'projects');
     final visibleCount =
         visibleGradingReports.length +
         visibleOperationsReports.length +
-        visibleGovernanceReports.length + visibleSetupReports.length;
+        visibleGovernanceReports.length + visibleSetupReports.length + visibleProjectReports.length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -183,6 +185,10 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
         const SizedBox(height: 24),
 
         // Section 1: Academic Grading & Evaluation
+        if (visibleProjectReports.isNotEmpty) ...[
+          _buildReportCategoryHeader(title: 'PROJECTS & CONCEPTS', subtitle: 'Concept titles, actual decisions and PIT roster preparation for fresh Capstone intake.', icon: Icons.topic_outlined, count: visibleProjectReports.length),
+          const SizedBox(height: 12), _buildReportList(visibleProjectReports), const SizedBox(height: 24),
+        ],
         if (visibleGradingReports.isNotEmpty) ...[
           _buildReportCategoryHeader(
             title: 'ACADEMIC GRADING & EVALUATION',
@@ -424,6 +430,7 @@ class _AuditReportCenterTabState extends ConsumerState<AuditReportCenterTab> {
                         _catalogCategoryChip('', 'All categories'),
                         _catalogCategoryChip('grading', 'Academic grading & evaluation'),
                         _catalogCategoryChip('operations', 'Defense operations & rosters'),
+                        _catalogCategoryChip('projects', 'Projects & Concepts'),
                         _catalogCategoryChip('setup', 'Academic setup & requirements'),
                         _catalogCategoryChip('governance', 'Governance & system compliance'),
                       ],

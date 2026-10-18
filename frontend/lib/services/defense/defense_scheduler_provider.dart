@@ -276,6 +276,11 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
 
   @override
   DefenseSchedulerState build() {
+    ref.onDispose(() {
+      _fetchSerial++;
+      _fetchInFlight = null;
+      _fetchKey = null;
+    });
     return const DefenseSchedulerState();
   }
 
@@ -353,6 +358,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     try {
       final uri = Uri.parse(baseUrl).replace(
         queryParameters: {
+          'workspace': 'operations',
           if (nextSearch.trim().isNotEmpty) 'search': nextSearch.trim(),
           if (nextScope.isNotEmpty) 'scope': nextScope,
           if (nextStatus.isNotEmpty) 'status': nextStatus,
@@ -747,6 +753,8 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
       DataArea.grades,
       DataArea.teams,
       DataArea.defenseStages,
+      DataArea.deliverables,
+      DataArea.documenter,
       DataArea.audit,
     ]);
   }

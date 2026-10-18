@@ -61,3 +61,19 @@ class ConceptImportTests(APITestCase):
         self.assertFalse(preview.data['rows'][0]['ready'])
         imported = self.client.post('/api/teams/bulk-import/', data, format='json')
         self.assertEqual(imported.data['created_count'], 0)
+
+    def test_section_proposals_policy_does_not_silently_discard_retained_title(self):
+        from .models import SectionAssignment
+        from .concept_policy import context_key
+        self._activate_capstone_intake_semester()
+        stage = DefenseStage.objects.first()
+        stage.concept_config = {'enabled': True, 'required_count': 2}
+        stage.save()
+        SectionAssignment.objects.create(section='BSIT-3A', semester=self.second_semester,
+            year_level='3rd Year', concept_policies={context_key(stage): {'mode': 'proposals', 'required_count': 2}})
+        data = {'teams': [self.rows()[1]]}
+        preview = self.client.post('/api/teams/bulk-import/preview/', data, format='json')
+        self.assertFalse(preview.data['rows'][0]['ready'])
+        self.assertIn('policy conflicts', ' '.join(preview.data['rows'][0]['issues']))
+        imported = self.client.post('/api/teams/bulk-import/', data, format='json')
+        self.assertEqual(imported.data['created_count'], 0)

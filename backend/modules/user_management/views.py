@@ -24,6 +24,8 @@ from authentication_access_control.guest_tokens import (
 from authentication_access_control.models import SystemAuditLog
 from .models import FacultyRoleAssignment, GuestPanelistCode, SectionInstructorAssignment
 from .permissions import IsFacultyRole, IsPitLead, IsPitLeadOrAdmin, IsSystemAdmin
+from .pit_import_scope import require_pit_import_scope, locked_student_for_pit_import
+from rest_framework.exceptions import PermissionDenied
 from student_teams.models import TeamAdviserAssignment
 from student_teams.serializers import TeamAdviserAssignmentSerializer
 
@@ -476,6 +478,7 @@ class BulkImportUsersMixin:
                 return Response({'detail': 'No active semester is configured.'}, status=status.HTTP_400_BAD_REQUEST)
             if not context_year_level:
                 return Response({'detail': 'Your PIT Lead account has no assigned year level.'}, status=status.HTTP_400_BAD_REQUEST)
+            require_pit_import_scope(request.user, context_semester)
         else:
             context_semester = self._resolve_context_semester(student_context)
             context_year_level = _normalize_year_level(student_context.get('year_level') or '')
@@ -599,8 +602,16 @@ class BulkImportUsersMixin:
                 hashed_passwords = dict(zip(unique_new_usernames, hashes))
 
         with transaction.atomic():
+            if self.force_pit_lead_context:
+                require_pit_import_scope(request.user, context_semester)
             for index, username, data, role, year_level, section in validated_rows:
                 existing_user = existing_users_map.get(username)
+                if self.force_pit_lead_context and existing_user:
+                    try:
+                        existing_user = locked_student_for_pit_import(request.user, existing_user, context_semester)
+                    except PermissionDenied as exc:
+                        errors.append({'row': index, 'id_number': username, 'errors': {'year_level': [str(exc.detail)]}})
+                        continue
 
                 if existing_user:
                     if existing_user.role == 'student' and context_semester is not None and year_level:
@@ -705,7 +716,7 @@ class BulkImportUsersMixin:
 
             instructor_warnings = []
             assigned_instructors = []
-            if require_faculty_match and faculty is not None and not is_capstone_scope(context_year_level, context_semester):
+            if (created or records_created) and require_faculty_match and faculty is not None and not is_capstone_scope(context_year_level, context_semester):
                 instructor_assignment, _assignment_created = SectionInstructorAssignment.objects.update_or_create(
                     faculty=faculty,
                     semester=context_semester,
@@ -717,8 +728,10 @@ class BulkImportUsersMixin:
                     },
                 )
                 assigned_instructors.append(instructor_assignment)
-            elif context_semester is not None and section_instructors:
+            elif (created or records_created) and context_semester is not None and section_instructors:
                 for (sec_year, sec_name), instr_name in section_instructors.items():
+                    if not any(r.year_level == sec_year and r.section == sec_name for r in records_created):
+                        continue
                     if is_capstone_scope(sec_year, context_semester):
                         continue
                     matched_faculty, match_status = _match_faculty_by_name(instr_name)
@@ -822,6 +835,7 @@ class PitLeadOfficialClassListImportView(APIView):
                 {'detail': 'Student import for this term is handled under Capstone.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        require_pit_import_scope(request.user, active)
 
         metadata = request.data.get('metadata') or {}
         if not isinstance(metadata, dict):
@@ -939,9 +953,16 @@ class PitLeadOfficialClassListImportView(APIView):
                 hashed_passwords = dict(zip(unique_new_usernames, hashes))
 
         with transaction.atomic():
+            require_pit_import_scope(request.user, active)
             for index, username, first_name, last_name, row_section, phone_number, data in validated_rows:
                 user = existing_users_map.get(username)
                 was_created = False
+                if user:
+                    try:
+                        user = locked_student_for_pit_import(request.user, user, active)
+                    except PermissionDenied as exc:
+                        errors.append({'row': index, 'id_number': username, 'errors': {'year_level': [str(exc.detail)]}})
+                        continue
 
                 if user is None:
                     user = User.objects.create(
@@ -994,16 +1015,11 @@ class PitLeadOfficialClassListImportView(APIView):
                     records_updated += 1
 
         instructor_assignment = None
-        instructor_assignment, _assignment_created = SectionInstructorAssignment.objects.update_or_create(
-            faculty=faculty,
-            semester=active,
-            year_level=pit_year,
-            section=section,
-            defaults={
-                'assigned_by': request.user,
-                'is_active': True,
-            },
-        )
+        if created or updated:
+            instructor_assignment, _assignment_created = SectionInstructorAssignment.objects.update_or_create(
+                faculty=faculty, semester=active, year_level=pit_year, section=section,
+                defaults={'assigned_by': request.user, 'is_active': True},
+            )
 
         return Response({
             'created': [

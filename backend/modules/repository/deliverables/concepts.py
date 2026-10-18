@@ -1,5 +1,6 @@
 """Concept selection, version-specific clearance and hearing history."""
 from copy import deepcopy
+from defensys_backend.read_projection import read_memoize
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
@@ -10,6 +11,7 @@ from .documents import current_files, file_payload, completeness
 from student_teams.concept_policy import resolve_policy, initial_concepts
 
 
+@read_memoize
 def stage_for(team, label):
     from defense.stages.models import DefenseStage
     if team.is_capstone:
@@ -44,6 +46,7 @@ def enabled(stage):
     return bool(stage and (stage.concept_config or {}).get('enabled'))
 
 
+@read_memoize
 def latest_round(team, stage):
     if not enabled(stage):
         return None
@@ -434,6 +437,10 @@ def summary(team, stage):
         else:
             status = 'concept_endorsement_pending' if required_complete(team, stage.label) else 'concept_review_pending'
     return {'enabled': True, 'round': number, 'status': status,
+        'section_project_id': policy.get('section_project_id'),
+        'system_concepts': policy.get('system_concepts', []),
+        'concepts': [{k: c.get(k, '') for k in ('key', 'title', 'decision')}
+            for c in (current.concepts if current else initial_concepts(policy))],
         'assigned': policy.get('mode') == 'assigned', 'required_count': policy['required_count'],
         'can_edit': bool(team.semester.is_active and (not current or not current.schedule_id)),
         'next_step': {

@@ -6,7 +6,7 @@ from django.utils import timezone
 from rest_framework import status, serializers as drf_serializers
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from defensys_backend.read_projection import ReadAPIView as APIView
 
 from grading.grades.models import GradeBreakdown, TeamGrade, PanelistGradeSubmission
 from grading.rubrics.models import Rubric
@@ -26,7 +26,8 @@ from authentication_access_control.guest_authentication import (
     IsGuestPanelist,
 )
 from authentication_access_control.models import SystemAuditLog
-from authentication_access_control.scopes import manageable_schedules_for, visible_schedules_for
+from authentication_access_control.scopes import manageable_schedules_for
+from authentication_access_control.workspaces import workspace_schedules_for
 from user_management.permissions import IsPanelist, CanManageModule
 from user_management.models import GuestPanelistCode
 from user_management.external_evaluators import invitation_payload
@@ -130,7 +131,7 @@ class DefenseScheduleListCreateView(APIView):
         return [CanManageModule()]
 
     def get(self, request):
-        base = visible_schedules_for(request.user)
+        base = schedule_queryset(workspace_schedules_for(request.user, request.query_params.get('workspace')))
         can_manage = CanManageModule().has_permission(request, self)
         return Response(
             list_payload(
@@ -145,7 +146,7 @@ class DefenseScheduleListCreateView(APIView):
         serializer = DefenseScheduleWriteSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         schedule = serializer.save()
-        base = visible_schedules_for(request.user)
+        base = manageable_schedules_for(request.user)
         schedule = base.get(pk=schedule.pk)
         return Response(
             {
@@ -364,7 +365,7 @@ class DefenseScheduleConfirmPlanView(APIView):
         serializer = ConfirmSchedulePlanSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         schedules = serializer.save()
-        base = visible_schedules_for(request.user)
+        base = manageable_schedules_for(request.user)
         schedules = base.filter(pk__in=[schedule.pk for schedule in schedules])
         return Response(
             {
@@ -391,7 +392,7 @@ class DefenseScheduleDetailView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         schedule = serializer.save()
-        base = visible_schedules_for(request.user)
+        base = manageable_schedules_for(request.user)
         schedule = base.get(pk=schedule.pk)
         return Response({
             'schedule': DefenseScheduleSerializer(schedule).data,
@@ -402,7 +403,7 @@ class DefenseScheduleDetailView(APIView):
         schedule = self.get_object(schedule_id)
         from .services import delete_schedule
         delete_schedule(schedule, actor=request.user, request=request)
-        base = visible_schedules_for(request.user)
+        base = manageable_schedules_for(request.user)
         return Response(list_payload(base_queryset=base, user=request.user), status=status.HTTP_200_OK)
 
 
@@ -518,7 +519,7 @@ class PanelistAssignmentsView(APIView):
 
         team_grades = (
             TeamGrade.objects.filter(schedule_id__in=[s.id for s in schedules])
-            .select_related('verdict_by')
+            .with_relations()
         )
         grade_map = {tg.schedule_id: tg for tg in team_grades}
         drafts = {
@@ -595,14 +596,7 @@ class PanelistResultsView(APIView):
         )
         team_grades = (
             TeamGrade.objects.filter(id__in=grade_ids)
-            .select_related('team', 'team__leader', 'schedule', 'verdict_by')
-            .prefetch_related(
-                'breakdowns',
-                'student_grades',
-                'student_grades__student',
-                'team__memberships',
-                'team__memberships__student',
-            )
+            .with_relations()
             .order_by('-schedule__scheduled_date', '-schedule__start_time', 'team__name')
         )
 

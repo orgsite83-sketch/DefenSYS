@@ -218,7 +218,6 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       );
     }
 
-    final roleLead = widget.isCapstone ? 'Capstone Coordinator / Adviser' : 'PIT Lead';
     final scopeName = widget.isCapstone ? 'defense stage' : 'event';
 
     if (!widget.peerEvalAllowed && widget.myPeerSubmissions.isEmpty) {
@@ -256,7 +255,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                           widget.peerEvalUnavailableReason ??
                               (widget.isCapstone
                                   ? 'It opens after your team is endorsed, scheduled, and every assigned panelist finishes grading.'
-                                  : 'It will open once enabled by your $roleLead.'),
+                                  : 'With peer access enabled, you can grade your teammates after all assigned panelists finish evaluating your scheduled defense.'),
                           style: TextStyle(color: Colors.grey.shade600, fontSize: 12.5),
                         ),
                       ],

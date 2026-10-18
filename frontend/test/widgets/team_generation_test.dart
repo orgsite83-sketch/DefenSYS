@@ -143,6 +143,10 @@ void main() {
     'preview remains read-only and reviewed leader is sent on creation',
     (tester) async {
       await pump(tester);
+      expect(
+        requests.last.url.queryParameters.containsKey('event_name'),
+        isFalse,
+      );
       expect(find.text('BSIT-2A · 2/2 available'), findsOneWidget);
       await tester.tap(find.text('Preview teams'));
       await tester.pumpAndSettle();
@@ -158,6 +162,7 @@ void main() {
         requests.singleWhere((r) => r.url.path.endsWith('/create/')).body,
       );
       expect(body['preview_token'], 'signed-preview');
+      expect(body.containsKey('event_name'), isFalse);
       expect(body['teams'][0]['leader_id'], 2);
     },
   );
@@ -167,6 +172,11 @@ void main() {
   ) async {
     options['team_membership_policy'] = 'single';
     await pump(tester);
+    expect(find.text('One team in this event'), findsNothing);
+    await tester.tap(find.text('Unassigned roster'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('PIT Design').last);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('One team in this event'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Multiple teams in this event').last);
@@ -197,35 +207,34 @@ void main() {
     );
   });
 
-  testWidgets(
-    'roster manager chooser offers manual creation and bulk import',
-    (tester) async {
-      var imported = false;
-      await pumpDefensysWidget(
-        tester,
-        Consumer(
-          builder: (context, ref, _) => FilledButton(
-            onPressed: () => showCreateTeamModal(
-              context: context,
-              ref: ref,
-              state: const StudentTeamsState(),
-              isCapstoneAdmin: true,
-              isPitLeadManager: false,
-              pitLeadYear: null,
-              onBulkImport: () => imported = true,
-            ),
-            child: const Text('Open create teams'),
+  testWidgets('roster manager chooser offers manual creation and bulk import', (
+    tester,
+  ) async {
+    var imported = false;
+    await pumpDefensysWidget(
+      tester,
+      Consumer(
+        builder: (context, ref, _) => FilledButton(
+          onPressed: () => showCreateTeamModal(
+            context: context,
+            ref: ref,
+            state: const StudentTeamsState(),
+            isCapstoneAdmin: true,
+            isPitLeadManager: false,
+            pitLeadYear: null,
+            onBulkImport: () => imported = true,
           ),
+          child: const Text('Open create teams'),
         ),
-        overrides: authTestOverrides(),
-      );
-      await tester.tap(find.text('Open create teams'));
-      await tester.pumpAndSettle();
-      expect(find.text('Generate from students'), findsNothing);
-      expect(find.text('Create manually'), findsOneWidget);
-      await tester.tap(find.text('Bulk import'));
-      await tester.pumpAndSettle();
-      expect(imported, isTrue);
-    },
-  );
+      ),
+      overrides: authTestOverrides(),
+    );
+    await tester.tap(find.text('Open create teams'));
+    await tester.pumpAndSettle();
+    expect(find.text('Generate from students'), findsNothing);
+    expect(find.text('Create manually'), findsOneWidget);
+    await tester.tap(find.text('Bulk import'));
+    await tester.pumpAndSettle();
+    expect(imported, isTrue);
+  });
 }

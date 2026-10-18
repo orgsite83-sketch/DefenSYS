@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
+import '../app/data_refresh_provider.dart';
 
 final capstoneDeliverablesProvider =
     NotifierProvider<CapstoneDeliverablesNotifier, CapstoneDeliverablesState>(
@@ -23,6 +24,7 @@ class CapstoneDeliverablesState {
   final String search;
   final String status;
   final String scope;
+  final String workspace;
   final String? yearLevel;
   final String? section;
   final String? error;
@@ -40,6 +42,7 @@ class CapstoneDeliverablesState {
     this.search = '',
     this.status = '',
     this.scope = 'capstone',
+    this.workspace = '',
     this.yearLevel,
     this.section,
     this.error,
@@ -58,6 +61,7 @@ class CapstoneDeliverablesState {
     String? search,
     String? status,
     String? scope,
+    String? workspace,
     String? yearLevel,
     String? section,
     String? error,
@@ -80,6 +84,7 @@ class CapstoneDeliverablesState {
       search: search ?? this.search,
       status: status ?? this.status,
       scope: scope ?? this.scope,
+      workspace: workspace ?? this.workspace,
       yearLevel: yearLevel ?? this.yearLevel,
       section: section ?? this.section,
       error: clearError ? null : error ?? this.error,
@@ -280,18 +285,21 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     if (state.selectedStage.isNotEmpty) 'stage_label': state.selectedStage,
     if (state.status.isNotEmpty) 'status': state.status,
     'scope': state.scope,
+    if (state.workspace.isNotEmpty) 'workspace': state.workspace,
     if (state.yearLevel?.isNotEmpty == true) 'year_level': state.yearLevel!,
     if (state.section?.isNotEmpty == true) 'section': state.section!,
   };
 
   @override
   CapstoneDeliverablesState build() {
+    ref.onDispose(() => _requestVersion++);
     return const CapstoneDeliverablesState();
   }
 
   Future<void> fetchInitialData() => fetchDeliverables();
 
   Future<void> fetchDeliverables({
+    String? workspace,
     String? search,
     String? selectedStage,
     String? status,
@@ -301,12 +309,20 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     String? successMessage,
   }) async {
     final requestVersion = ++_requestVersion;
-    final nextSearch = search ?? state.search;
-    final nextStage = selectedStage ?? state.selectedStage;
-    final nextStatus = status ?? state.status;
     final nextScope = scope ?? state.scope;
-    final nextYearLevel = yearLevel ?? state.yearLevel;
-    final nextSection = section ?? state.section;
+    final nextWorkspace = workspace ?? state.workspace;
+    final workspaceChanged = nextWorkspace != state.workspace || nextScope != state.scope;
+    final nextYearLevel = yearLevel ?? (workspaceChanged ? '' : state.yearLevel);
+    final nextSection = section ?? (workspaceChanged ? '' : state.section);
+    final contextChanged = nextWorkspace != state.workspace || nextScope != state.scope ||
+        nextYearLevel != state.yearLevel || nextSection != state.section;
+    final nextSearch = search ?? (contextChanged ? '' : state.search);
+    final nextStage = selectedStage ?? (contextChanged ? '' : state.selectedStage);
+    final nextStatus = status ?? (contextChanged ? '' : state.status);
+    if (contextChanged) {
+      state = CapstoneDeliverablesState(scope: nextScope, workspace: nextWorkspace,
+        yearLevel: nextYearLevel, section: nextSection);
+    }
 
     state = state.copyWith(
       isLoading: state.teams.isEmpty,
@@ -315,6 +331,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
       selectedStage: nextStage,
       status: nextStatus,
       scope: nextScope,
+      workspace: nextWorkspace,
       yearLevel: nextYearLevel,
       section: nextSection,
       clearError: true,
@@ -328,6 +345,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
           if (nextStage.isNotEmpty) 'stage_label': nextStage,
           if (nextStatus.isNotEmpty) 'status': nextStatus,
           if (nextScope.isNotEmpty) 'scope': nextScope,
+          if (nextWorkspace.isNotEmpty) 'workspace': nextWorkspace,
           if (nextYearLevel != null && nextYearLevel.isNotEmpty)
             'year_level': nextYearLevel,
           if (nextSection != null && nextSection.isNotEmpty)
@@ -335,7 +353,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
         },
       );
       final response = await _client.get(uri);
-      if (requestVersion != _requestVersion) return;
+      if (!ref.mounted || requestVersion != _requestVersion) return;
 
       if (response.statusCode == 200) {
         _applyPayload(
@@ -360,36 +378,65 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     }
   }
 
-  Future<bool> conceptAction(int teamId, String stageLabel, String action,
-      {List<Map<String, dynamic>>? concepts, String? reason}) => _postAction('concepts', {
-    'team_id': teamId, 'stage_label': stageLabel, 'action': action,
+  Future<bool> conceptAction(
+    int teamId,
+    String stageLabel,
+    String action, {
+    List<Map<String, dynamic>>? concepts,
+    String? reason,
+  }) => _postAction('concepts', {
+    'team_id': teamId,
+    'stage_label': stageLabel,
+    'action': action,
     if (concepts != null) 'concepts': concepts,
     if (reason != null) 'reason': reason,
   }, successMessage: 'Concept workflow updated.');
 
-  Future<bool> uploadDocument({required int teamId, required String stageLabel,
-      required String deliverableId, required String slotKey, required String filename,
-      required Uint8List bytes, int? fileId}) async {
+  Future<bool> uploadDocument({
+    required int teamId,
+    required String stageLabel,
+    required String deliverableId,
+    required String slotKey,
+    required String filename,
+    required Uint8List bytes,
+    int? fileId,
+  }) async {
     if (_actionInFlight) return false;
     _actionInFlight = true;
     final version = ++_requestVersion;
     state = state.copyWith(isSaving: true, clearError: true);
     try {
-      final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/upload/').replace(
-        queryParameters: {..._viewParameters, 'response_mode': 'team'}));
-      request.fields.addAll({'team_id': '$teamId', 'stage_label': stageLabel,
-        'deliverable_id': deliverableId, 'slot_key': slotKey, 'file_name': filename,
-        'file_size': '${bytes.length} B', if (fileId != null) 'file_id': '$fileId'});
-      request.files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename));
-      final response = await http.Response.fromStream(await _client.sendAuthenticated(request, retryOn401: false));
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/upload/').replace(
+          queryParameters: {..._viewParameters, 'response_mode': 'team'},
+        ),
+      );
+      request.fields.addAll({
+        'team_id': '$teamId',
+        'stage_label': stageLabel,
+        'deliverable_id': deliverableId,
+        'slot_key': slotKey,
+        'file_name': filename,
+        'file_size': '${bytes.length} B',
+        if (fileId != null) 'file_id': '$fileId',
+      });
+      request.files.add(
+        http.MultipartFile.fromBytes('file', bytes, filename: filename),
+      );
+      final response = await http.Response.fromStream(
+        await _client.sendAuthenticated(request, retryOn401: false),
+      );
       if (response.statusCode != 200) {
         state = state.copyWith(error: _errorFromResponse(response));
         return false;
       }
       final payload = Map<String, dynamic>.from(jsonDecode(response.body));
-      if (version != _requestVersion || !_applyTeamPayload(payload, successMessage: 'Document uploaded.')) {
+      if (version != _requestVersion ||
+          !_applyTeamPayload(payload, successMessage: 'Document uploaded.')) {
         await fetchDeliverables(successMessage: 'Document uploaded.');
       }
+      _markDependentsChanged();
       return true;
     } catch (error) {
       state = state.copyWith(error: 'Could not upload the document: $error');
@@ -578,6 +625,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
         } else {
           await fetchDeliverables(successMessage: successMessage);
         }
+        _markDependentsChanged();
         return true;
       }
 
@@ -593,6 +641,19 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
       _actionInFlight = false;
       state = state.copyWith(isSaving: false);
     }
+  }
+
+  void _markDependentsChanged() {
+    ref.read(dataRefreshProvider.notifier).markChanged(const [
+      DataArea.dashboard,
+      DataArea.teams,
+      DataArea.grades,
+      DataArea.scheduler,
+      DataArea.defenseBoard,
+      DataArea.repository,
+      DataArea.adviserGrades,
+      DataArea.documenter,
+    ]);
   }
 
   bool _applyTeamPayload(

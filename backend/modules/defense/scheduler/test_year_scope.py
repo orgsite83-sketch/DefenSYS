@@ -170,7 +170,7 @@ class PitYearIsolationTests(APITestCase):
         self.event.peer_grading_enabled = False
         self.event.save()
         second_event.refresh_from_db()
-        self.assertFalse(second_event.peer_grading_enabled)
+        self.assertTrue(second_event.peer_grading_enabled)
         self.assertFalse(second_event.is_officially_complete)
         require_grade_editable(second_grade)
 

@@ -30,6 +30,7 @@ class StudentTeamsState {
   final String search;
   final String level;
   final String status;
+  final String workspace;
   final String? yearLevel;
   final String? section;
   final String? eventName;
@@ -55,6 +56,7 @@ class StudentTeamsState {
     this.search = '',
     this.level = '',
     this.status = '',
+    this.workspace = '',
     this.yearLevel,
     this.section,
     this.eventName,
@@ -81,6 +83,7 @@ class StudentTeamsState {
     String? search,
     String? level,
     String? status,
+    String? workspace,
     String? yearLevel,
     String? section,
     String? eventName,
@@ -114,6 +117,7 @@ class StudentTeamsState {
       search: search ?? this.search,
       level: level ?? this.level,
       status: status ?? this.status,
+      workspace: workspace ?? this.workspace,
       yearLevel: clearYearLevel ? null : yearLevel ?? this.yearLevel,
       section: section ?? this.section,
       eventName: clearEventName ? null : eventName ?? this.eventName,
@@ -127,13 +131,16 @@ class StudentTeamsState {
 class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
   static String get baseUrl => ApiConfig.teamsUrl;
   int _previewRequestRevision = 0;
+  int _fetchVersion = 0;
 
   @override
   StudentTeamsState build() {
+    ref.onDispose(() => _fetchVersion++);
     return const StudentTeamsState();
   }
 
   Future<void> fetchTeams({
+    String? workspace,
     String? search,
     String? level,
     String? status,
@@ -145,6 +152,11 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     bool clearYearLevel = false,
     String? successMessage,
   }) async {
+    final version = ++_fetchVersion;
+    final nextWorkspace = workspace ?? state.workspace;
+    if (nextWorkspace != state.workspace) {
+      state = StudentTeamsState(workspace: nextWorkspace);
+    }
     String? resolvedLevel = level;
     if (resolvedLevel == null && state.level.isEmpty) {
       final user = ref.read(authProvider).user;
@@ -179,6 +191,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     try {
       final uri = Uri.parse(baseUrl).replace(
         queryParameters: {
+          if (nextWorkspace.isNotEmpty) 'workspace': nextWorkspace,
           if (nextSearch.trim().isNotEmpty) 'search': nextSearch.trim(),
           if (nextLevel.isNotEmpty) 'level': nextLevel,
           if (nextStatus.isNotEmpty) 'status': nextStatus,
@@ -189,6 +202,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
         },
       );
       final response = await _client.get(uri);
+      if (!ref.mounted || version != _fetchVersion) return;
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -202,6 +216,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
         error: _errorFromResponse(response),
       );
     } catch (e) {
+      if (!ref.mounted || version != _fetchVersion) return;
       state = state.copyWith(
         isLoading: false,
         isSaving: false,
@@ -250,7 +265,9 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
 
     try {
       final response = await _client.patch(
-        Uri.parse('$baseUrl/$teamId/'),
+        Uri.parse('$baseUrl/$teamId/').replace(queryParameters: {
+          if (state.workspace.isNotEmpty) 'workspace': state.workspace,
+        }),
         
         body: jsonEncode(payload),
       );
@@ -280,6 +297,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     String? section,
   }) async {
     final uri = Uri.parse(baseUrl).replace(queryParameters: {
+      if (state.workspace.isNotEmpty) 'workspace': state.workspace,
       if (level.isNotEmpty) 'level': level,
       'scope': scope,
       if (yearLevel?.isNotEmpty == true) 'year_level': yearLevel!,
@@ -351,7 +369,10 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     try {
       final urlStr = force ? '$baseUrl/$teamId/?force=true' : '$baseUrl/$teamId/';
       final response = await _client.delete(
-        Uri.parse(urlStr),
+        Uri.parse(urlStr).replace(queryParameters: {
+          if (force) 'force': 'true',
+          if (state.workspace.isNotEmpty) 'workspace': state.workspace,
+        }),
       );
 
       if (response.statusCode == 200) {

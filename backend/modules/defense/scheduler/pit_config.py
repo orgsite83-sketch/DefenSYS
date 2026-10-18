@@ -19,6 +19,10 @@ def default_pit_weights():
     }
 
 
+from defensys_backend.read_projection import read_memoize
+
+
+@read_memoize
 def get_pit_event_config(semester, event_name, *, year_level=None):
     if not semester or not (event_name or '').strip():
         return None
@@ -62,6 +66,7 @@ def peer_rubric_for_pit_event(semester, event_name, *, year_level=None):
     return config.peer_rubric
 
 
+@read_memoize
 def check_pit_event_locked(config, semester=None):
     if not config:
         return False, None
@@ -255,15 +260,17 @@ def upsert_pit_event_config(
     if archive_file_template is not None:
         defaults['archive_file_template'] = archive_file_template.strip()
 
-    if peer_weight == 0 or peer_rubric is None:
+    if peer_weight == 0:
         defaults['peer_grading_enabled'] = False
     elif peer_grading_enabled is not None:
         if existing_config and existing_config.is_officially_complete and peer_grading_enabled:
             raise ValidationError({'peer_grading_enabled': 'Peer grading cannot be enabled while the event is officially complete.'})
         defaults['peer_grading_enabled'] = bool(peer_grading_enabled)
     elif not existing_config:
-        # Smart default on creation: open peer grading if a peer rubric is set and peer_weight > 0
-        defaults['peer_grading_enabled'] = bool(peer_weight > 0 and peer_rubric is not None)
+        # Persist the access preference even when rubrics are attached later.
+        # Per-team availability separately requires a configured peer rubric
+        # and a finished panel assessment of the scheduled defense.
+        defaults['peer_grading_enabled'] = True
 
     with transaction.atomic():
         config, _created = PitEventGradingConfig.objects.update_or_create(
@@ -377,6 +384,7 @@ def pit_event_audit_values(config):
             'semester_id': config.semester_id}
 
 
+@read_memoize(copy=True)
 def pit_event_config_payload(config):
     if config is None:
         return None

@@ -29,6 +29,16 @@ class _LockedAdviserGrades extends AdviserGradingNotifier {
 }
 
 void main() {
+  testWidgets('PIT peer form explains the finished-defense rule and keeps scoring locked', (tester) async {
+    await pumpDefensysWidget(tester, const PeerEvalTab(
+      isCapstone: false, peerEvalAllowed: false,
+      teammates: [{'id': 2, 'name': 'Member Two'}],
+      peerCriteria: [{'name': 'Contribution', 'maxScore': 5}], studentId: '1', teamId: '7',
+    ));
+    expect(find.textContaining('after all assigned panelists finish evaluating your scheduled defense'), findsOneWidget);
+    expect(find.text('Submit Evaluation'), findsNothing);
+  });
+
   testWidgets('locked peer form explains the panel completion requirement', (tester) async {
     await pumpDefensysWidget(tester, const PeerEvalTab(
       isCapstone: true, peerEvalAllowed: false,

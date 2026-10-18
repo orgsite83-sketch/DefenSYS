@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timedelta
 
 from django.contrib.auth import get_user_model
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from django.db import transaction
 from rest_framework import serializers
 
@@ -94,19 +94,29 @@ def display_name(user):
 from academic_period_management.services import active_semester
 
 
-def schedule_queryset():
+def schedule_queryset(queryset=None):
+    from grading.grades.models import TeamGrade
+    from repository.deliverables.models import DeliverableSubmission
     return (
-        DefenseSchedule.objects.select_related(
+        (queryset if queryset is not None else DefenseSchedule.objects.all())
+        .prefetch_related(None).select_related(
             'semester',
             'semester__school_year',
             'team',
             'team__leader',
             'team__adviser',
+            'team__semester__school_year',
             'defense_stage',
             'rubric',
             'created_by',
         )
-        .prefetch_related('panel_assignments', 'panel_assignments__panelist', 'grade_records')
+        .prefetch_related('panel_assignments', 'panel_assignments__panelist',
+                          Prefetch('grade_records', queryset=TeamGrade.objects.with_relations()),
+                          'team__memberships__student',
+                          Prefetch('team__deliverable_submissions', queryset=DeliverableSubmission.objects
+                                   .select_related('uploaded_by', 'reviewed_by').prefetch_related('files')),
+                          'guest_invitations__evaluator', 'guest_panelist_codes__evaluator',
+                          'panelist_grade_submissions', 'evaluation_drafts', 'rubric__criteria')
     )
 
 
@@ -202,7 +212,9 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             if prog.status in [TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_ARCHIVED]:
                 if prog.defense_stage:
                     completed.add(prog.defense_stage.label)
-        for grade in TeamGrade.objects.filter(team=obj, semester=obj.semester):
+        for grade in obj.grade_records.all():
+            if grade.semester_id != obj.semester_id:
+                continue
             if grade.status == TeamGrade.STATUS_PUBLISHED and grade.result == 'passed' and grade.defense_stage:
                 completed.add(grade.defense_stage.label)
             elif (grade.scope == TeamGrade.SCOPE_PIT and grade.status == TeamGrade.STATUS_PUBLISHED
@@ -223,7 +235,9 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
         from grading.grades.models import TeamGrade
         redefense = set()
         completed = set(self.get_completed_stages(obj))
-        for grade in TeamGrade.objects.filter(team=obj, semester=obj.semester):
+        for grade in obj.grade_records.all():
+            if grade.semester_id != obj.semester_id:
+                continue
             if getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE and grade.uses_defense_verdict:
                 label = grade.stage_label
                 if label not in completed:
@@ -1684,7 +1698,7 @@ def _panelist_request_options(user):
 
 
 def schedule_options_payload(user=None, semester=None, pit_lead_only=None):
-    from authentication_access_control.scopes import is_admin_user, is_pit_lead_only, visible_teams_for
+    from authentication_access_control.scopes import is_admin_user, is_pit_lead_only, manageable_teams_for
     from student_teams.term_scope import (
         PIT_MODE_AUDIT,
         pit_lead_operating_message,
@@ -1745,14 +1759,16 @@ def schedule_options_payload(user=None, semester=None, pit_lead_only=None):
     panelists = User.objects.filter(role__in=['faculty', 'admin'], is_panelist=True, is_active=True).order_by('last_name', 'first_name', 'username')
     documenters = User.objects.filter(role__in=['faculty', 'admin'], is_documenter=True, is_active=True).order_by('last_name', 'first_name', 'username')
     faculty = User.objects.filter(role__in=['faculty', 'admin'], is_active=True).order_by('last_name', 'first_name', 'username')
-    teams = visible_teams_for(user) if user else StudentTeam.objects.select_related('semester', 'leader', 'adviser')
+    teams = manageable_teams_for(user) if user else StudentTeam.objects.select_related('semester', 'leader', 'adviser')
     if semester:
         teams = teams.filter(semester=semester)
     else:
         teams = teams.none()
-    teams = teams.prefetch_related(
-        'stage_progress__defense_stage', 'defense_schedules__grade_records',
-        'defense_schedules__panel_assignments',
+    from grading.grades.models import TeamGrade
+    teams = teams.select_related('semester__school_year').prefetch_related(
+        'stage_progress__defense_stage',
+        Prefetch('grade_records', queryset=TeamGrade.objects.select_related('defense_stage', 'pit_event_config')),
+        Prefetch('defense_schedules', queryset=schedule_queryset()),
     )
 
     from .models import PitEventGradingConfig

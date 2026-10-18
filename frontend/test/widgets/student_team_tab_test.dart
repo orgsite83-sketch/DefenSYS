@@ -18,6 +18,7 @@ class _TestDeliverablesNotifier extends CapstoneDeliverablesNotifier {
 
   @override
   Future<void> fetchDeliverables({
+    String? workspace,
     String? search,
     String? selectedStage,
     String? status,

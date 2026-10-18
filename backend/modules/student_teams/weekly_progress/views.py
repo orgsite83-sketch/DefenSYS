@@ -10,6 +10,7 @@ from student_teams.models import StudentTeam
 
 from .models import WeeklyProgressReport
 from .serializers import WeeklyProgressReportSerializer
+from .access import reports_for, can_write_report
 
 
 class StudentWeeklyProgressListCreateView(APIView):
@@ -29,20 +30,7 @@ class StudentWeeklyProgressListCreateView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        if user.role == 'student':
-            reports = WeeklyProgressReport.objects.filter(student=user).select_related('team', 'student')
-        elif user.role == 'faculty' and user.is_adviser:
-            reports = WeeklyProgressReport.objects.filter(
-                team__adviser=user
-            ).select_related('team', 'student')
-        elif user.role == 'admin' or getattr(user, 'is_superuser', False):
-            reports = WeeklyProgressReport.objects.all().select_related('team', 'student')
-        elif getattr(user, 'is_uploader', False):
-            reports = WeeklyProgressReport.objects.filter(team__semester__is_active=True).select_related('team', 'student')
-        elif getattr(user, 'is_pit_lead', False):
-            reports = WeeklyProgressReport.objects.all().select_related('team', 'student')
-        else:
-            reports = WeeklyProgressReport.objects.none()
+        reports = reports_for(user)
 
         if team_id is not None:
             reports = reports.filter(team_id=team_id)
@@ -65,10 +53,21 @@ class StudentWeeklyProgressListCreateView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        team = StudentTeam.objects.filter(memberships__student=user).first()
+        eligible = StudentTeam.objects.filter(memberships__student=user, semester__is_active=True,
+            level__icontains='Capstone').select_related('semester').distinct()
+        team_id = request.data.get('team_id') or request.data.get('team')
+        if request.data.get('team_id') and request.data.get('team') and str(request.data['team_id']) != str(request.data['team']):
+            return Response({'team_id': 'Team selections must match.'}, status=400)
+        if team_id:
+            if not str(team_id).isdigit():
+                return Response({'team_id': 'Choose a valid team.'}, status=400)
+            team = eligible.filter(pk=int(team_id)).first()
+        else:
+            candidates = list(eligible[:2])
+            team = candidates[0] if len(candidates) == 1 else None
         if not team:
             return Response(
-                {'detail': 'You are not assigned to a team.'},
+                {'detail': 'Select an assigned active capstone team for this report.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -109,16 +108,7 @@ class StudentWeeklyProgressDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get_object(self, pk, user):
-        report = get_object_or_404(WeeklyProgressReport, pk=pk)
-
-        if user.role == 'student' and report.student != user:
-            return None
-        if user.role == 'faculty' and user.is_adviser and report.team.adviser != user:
-            return None
-        if user.role not in ['student', 'faculty', 'admin']:
-            return None
-
-        return report
+        return get_object_or_404(reports_for(user), pk=pk)
 
     def get(self, request, pk):
         report = self.get_object(pk, request.user)
@@ -139,7 +129,7 @@ class StudentWeeklyProgressDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        if request.user.role != 'student' or report.team.leader != request.user:
+        if not can_write_report(request.user, report):
             return Response(
                 {'detail': 'Only the team leader can edit weekly progress reports.'},
                 status=status.HTTP_403_FORBIDDEN,
@@ -160,7 +150,7 @@ class StudentWeeklyProgressDetailView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        if request.user.role != 'student' or report.team.leader != request.user:
+        if not can_write_report(request.user, report):
             return Response(
                 {'detail': 'Only the team leader can delete weekly progress reports.'},
                 status=status.HTTP_403_FORBIDDEN,
@@ -186,21 +176,7 @@ class WeeklyProgressReportFileView(APIView):
                 pass
 
         user = request.user
-        report = get_object_or_404(WeeklyProgressReport, pk=pk)
-
-        can_access = False
-        if user.role == 'student' and report.student == user:
-            can_access = True
-        elif user.role == 'faculty' and user.is_adviser and report.team.adviser == user:
-            can_access = True
-        elif user.role == 'admin':
-            can_access = True
-
-        if not can_access:
-            return Response(
-                {'detail': 'You do not have permission to access this file.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        report = get_object_or_404(reports_for(user), pk=pk)
 
         if not report.report_file:
             raise Http404('No file attached to this report.')

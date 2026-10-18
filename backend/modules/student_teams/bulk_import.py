@@ -30,7 +30,10 @@ def imported_concept_requirement(data):
         level=data.get('level', ''), year_level=data.get('year_level', ''),
         section=data.get('section', ''), semester=get_active_semester(), concept_assignment=assignment,
         current_defense_stage=data.get('current_defense_stage') or None)
-    stage = contexts_for(candidate).first()
+    contexts = contexts_for(candidate)
+    if candidate.is_pit and candidate.current_defense_stage:
+        contexts = contexts.filter(event_name=candidate.current_defense_stage)
+    stage = contexts.first()
     if stage:
         assignment['context_key'] = context_key(stage)
     policy = resolve_policy(candidate, stage, use_round=False) if stage else {
@@ -474,35 +477,36 @@ def _existing_team_membership_issues(member_user_ids, *, team_name='', level='',
     """Mirror StudentTeamWriteSerializer membership and duplicate-name checks."""
     issues = []
     if not member_user_ids:
-        return issues
+        return issues, []
 
     from .term_scope import get_active_semester
     from .membership_policy import allows_multiple, pit_event_memberships
     semester = get_active_semester()
     pit = 'PIT' in level.upper()
     unrestricted = pit and allows_multiple(semester, event_name)
-    for student_id in ([] if unrestricted else member_user_ids):
-        memberships = TeamMembership.objects.filter(student_id=student_id, team__semester=semester)
-        if pit:
-            memberships = pit_event_memberships(memberships.filter(team__level__icontains='PIT'), event_name)
-        membership = (
-            memberships
-            .select_related('team', 'student')
-            .first()
-        )
-        if membership is None:
+    memberships = TeamMembership.objects.filter(student_id__in=member_user_ids, team__semester=semester)
+    if pit:
+        memberships = pit_event_memberships(memberships.filter(team__level__icontains='PIT'), event_name)
+    conflicts = {}
+    for membership in memberships.select_related('team', 'student').order_by('team_id', 'student_id'):
+        conflicts[membership.team_id] = {'id': membership.team_id, 'name': membership.team.name,
+            'event_name': membership.team.current_defense_stage or '', 'section': membership.team.section}
+        if unrestricted:
             continue
         student_name = display_name(membership.student)
         issues.append(
             f'{student_name} is already assigned to team "{membership.team.name}". '
-            'The selected membership policy allows one team in this context.'
+            + ('This PIT roster already exists for the active semester. '
+               'Review the existing roster and its concept proposals before importing another team.'
+               if pit and not event_name else
+               'The selected membership policy allows one team in this context.')
         )
 
     if team_name and level:
         if StudentTeam.objects.filter(name=team_name, level=level).exists():
             issues.append('A team with this name already exists for this level.')
 
-    return issues
+    return issues, list(conflicts.values())
 
 
 def row_passes_adviser_filter(adviser_status, adviser_filter):
@@ -528,6 +532,7 @@ def validate_bulk_team_row(
     """
     issues = []
     warnings = []
+    membership_conflicts = []
     pit_row = is_pit_bulk_row(data, user)
     raw_adviser = (data.get('adviser_name') or data.get('adviser_id') or '').strip()
     adviser_ref = '' if pit_row else raw_adviser
@@ -639,16 +644,26 @@ def validate_bulk_team_row(
                 issues.append('A section is required to assign a PIT instructor.')
 
     if member_user_ids and not issues:
-        issues.extend(
-            _existing_team_membership_issues(
+        membership_issues, membership_conflicts = _existing_team_membership_issues(
                 list(member_user_ids),
                 team_name=(data.get('team_name') or '').strip(),
                 level=(data.get('level') or '').strip(),
                 event_name=(data.get('current_defense_stage') or '').strip(),
             )
-        )
+        issues.extend(membership_issues)
+        from .membership_policy import allows_multiple, pit_event_memberships
+        from .term_scope import get_active_semester
+        event_name = (data.get('current_defense_stage') or '').strip()
+        if pit_row and allows_multiple(get_active_semester(), event_name):
+            names = [team['name'] for team in membership_conflicts]
+            if names:
+                warnings.append(f'These students already belong to {", ".join(names)}. '
+                    f'The multiple-team policy for "{event_name}" permits an additional roster; '
+                    'existing concepts, files and approvals stay with their original teams.')
 
     concept_assignment, concept_requirement = imported_concept_requirement(data)
+    if concept_requirement['mode'] != concept_assignment['mode']:
+        issues.append('The section concept policy conflicts with this team\'s title choice. Review the section policy before importing retained titles or new proposals.')
     if concept_requirement['mode'] == 'assigned' and not concept_requirement.get('assigned_title'):
         issues.append('This section requires one assigned concept. Supply this team’s project/module title.')
     adviser_filter_ok = True if pit_row else row_passes_adviser_filter(adviser_status, adviser_filter)
@@ -669,6 +684,7 @@ def validate_bulk_team_row(
         'ready': ready,
         'issues': issues,
         'warnings': warnings,
+        'membership_conflicts': membership_conflicts,
         'leader': leader,
         'adviser': adviser,
         'member_ref_map': member_ref_map,
@@ -688,6 +704,7 @@ def preview_bulk_teams(
     import_section='',
 ):
     preview_rows = []
+    checked_rows = []
     summary = {
         'total': 0,
         'ready': 0,
@@ -768,6 +785,7 @@ def preview_bulk_teams(
             import_section=import_section,
         )
         row_data = result['data']
+        checked_rows.append((len(preview_rows), row_data, set(result['member_ref_map'].values())))
         preview_rows.append({
             'row': index,
             'sheet_row': index + 1,
@@ -783,6 +801,7 @@ def preview_bulk_teams(
             'ready': result['ready'],
             'issues': result['issues'],
             'warnings': result.get('warnings', []),
+            'membership_conflicts': result['membership_conflicts'],
             'concept_requirement': result['concept_requirement'],
         })
 
@@ -796,6 +815,33 @@ def preview_bulk_teams(
         if result['ready']:
             summary['ready'] += 1
 
+    # Validate the file as a batch, not just against records already in the DB.
+    # Mark both conflicting rows so neither is misleadingly shown as Ready.
+    from .membership_policy import allows_multiple
+    from .term_scope import get_active_semester
+    semester = get_active_semester()
+    multiple_events = {}
+    for offset, (row_index, data, members) in enumerate(checked_rows):
+        if 'PIT' not in data.get('level', '').upper():
+            continue
+        event = (data.get('current_defense_stage') or '').strip()
+        if event not in multiple_events:
+            multiple_events[event] = allows_multiple(semester, event)
+        for other_index, other, other_members in checked_rows[:offset]:
+            other_event = (other.get('current_defense_stage') or '').strip()
+            same_program = ('PIT' in data.get('level', '').upper()) == ('PIT' in other.get('level', '').upper())
+            same_context = not event or not other_event or event == other_event
+            multiple = event and event == other_event and multiple_events[event]
+            duplicate_name = data['team_name'].strip().casefold() == other['team_name'].strip().casefold() and data.get('level') == other.get('level')
+            if duplicate_name or (same_program and same_context and members.intersection(other_members) and not multiple):
+                for current, conflict in ((row_index, other_index), (other_index, row_index)):
+                    preview_rows[current]['batch_conflict'] = True
+                    preview_rows[current]['issues'].append(
+                        f'Conflicts with row {preview_rows[conflict]["row"]} ("{preview_rows[conflict]["team_name"]}"): '
+                        + ('the team name is repeated in this file.' if duplicate_name else
+                           'a student appears in both rosters. Resolve the roster or select distinct PIT events.'))
+                    preview_rows[current]['ready'] = False
+    summary['ready'] = sum(row['ready'] for row in preview_rows)
     sections = {}
     for row in preview_rows:
         policy = row.get('concept_requirement')

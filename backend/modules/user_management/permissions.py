@@ -137,6 +137,9 @@ class CanManageModule(BasePermission):
 
     def has_permission(self, request, view):
         user = request.user
+        workspace = (getattr(request, 'query_params', {}).get('workspace') or '').strip()
+        if workspace and workspace != 'operations':
+            return False
         return bool(
             user
             and user.is_authenticated

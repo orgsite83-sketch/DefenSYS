@@ -106,6 +106,71 @@ class SharedSystemConceptTests(APITestCase):
             self.assertEqual(concepts.get_round(team, self.event).section_round_id, services.latest(self.project).pk)
         self.assertEqual(self.project.rounds.get().systems.count(), 3)
 
+    def test_team_list_exposes_proposals_before_official_project_selection_without_writes(self):
+        services.save_system_titles(self.project, self.pm, self.titles('Proposed system'))
+        concepts.save_titles(self.team, self.event, self.titles('Proposed module'), actor=self.pm)
+        self.team.project_title = ''
+        self.team.project_pending = True
+        self.team.save(update_fields=['project_title', 'project_pending'])
+        before = (ConceptRound.objects.count(), SectionConceptProject.objects.count(), SectionConceptPaper.objects.count())
+        self.client.force_authenticate(self.first)
+        response = self.client.get('/api/teams/?workspace=operations&scope=active')
+        self.assertEqual(response.status_code, 200, response.data)
+        team = next(t for t in response.data['teams'] if t['id'] == self.team.pk)
+        workflow = team['defense_context']['concept_workflow']
+        self.assertEqual(workflow['section_project_id'], self.project.pk)
+        self.assertEqual([s['title'] for s in workflow['system_concepts']],
+                         [t['title'] for t in self.titles('Proposed system')])
+        self.assertEqual([s['title'] for s in workflow['concepts']],
+                         [t['title'] for t in self.titles('Proposed module')])
+        self.assertEqual(team['project_title'], '')
+        self.assertTrue(team['project_pending'])
+        self.assertEqual(before, (ConceptRound.objects.count(), SectionConceptProject.objects.count(), SectionConceptPaper.objects.count()))
+
+    def test_inline_review_readiness_requires_confirmed_names_and_all_accepted_papers(self):
+        self.assertFalse(services.payload(self.project, self.first)['can_endorse'])
+        services.save_system_titles(self.project, self.pm, self.titles())
+        for key in services.KEYS:
+            paper = services.upload(self.project, self.pm, key,
+                SimpleUploadedFile(f'{key}.pdf', b'%PDF-1.4 readiness paper'))
+            services.review(self.project, self.first, paper.pk, 'accepted')
+        state = services.payload(self.project, self.first)
+        self.assertEqual(state['review_progress'], {'required': 3, 'names_confirmed': 0,
+            'papers_uploaded': 3, 'papers_accepted': 3})
+        self.assertFalse(state['can_endorse'])
+        services.save_system_titles(self.project, self.first, self.titles())
+        self.assertTrue(services.payload(self.project, self.first)['can_endorse'])
+        self.assertFalse(services.payload(self.project, self.pm)['can_endorse'])
+        services.endorse(self.project, self.first)
+        self.assertFalse(services.payload(self.project, self.first)['can_endorse'])
+        row = services.latest(self.project).systems.get(key='c1').papers.get(is_current=True)
+        services.review(self.project, self.first, row.pk, 'rejected', 'Clarify the system scope.')
+        self.assertFalse(services.payload(self.project, self.first)['can_endorse'])
+
+    def test_per_system_upload_permission_matches_accepted_paper_replacement_rules(self):
+        state = services.payload(self.project, self.pm)
+        self.assertTrue(all(s['can_upload'] for s in state['systems']))
+        row = services.upload(self.project, self.pm, 'c1', SimpleUploadedFile('p.pdf', b'%PDF-1.4'))
+        services.review(self.project, self.first, row.pk, 'accepted')
+        state = services.payload(self.project, self.pm)
+        self.assertFalse(next(s for s in state['systems'] if s['key'] == 'c1')['can_upload'])
+        self.assertTrue(next(s for s in state['systems'] if s['key'] == 'c2')['can_upload'])
+        self.assertFalse(any(s['can_upload'] for s in services.payload(self.project, self.first)['systems']))
+        services.review(self.project, self.first, row.pk, 'rejected', 'Clarify scope before replacing.')
+        self.assertTrue(next(s for s in services.payload(self.project, self.pm)['systems']
+            if s['key'] == 'c1')['can_upload'])
+
+    def test_project_list_team_filter_requires_current_link_and_keeps_year_permissions(self):
+        self.client.force_authenticate(self.first)
+        self.assertEqual([p['id'] for p in self.client.get(f'{URL}?team_id={self.team.pk}').data['projects']],
+                         [self.project.pk])
+        self.client.force_authenticate(self.second)
+        self.assertEqual(self.client.get(f'{URL}?team_id={self.team.pk}').data['projects'], [])
+        self.client.force_authenticate(self.first)
+        self.team.project_version += 1
+        self.team.save(update_fields=['project_version'])
+        self.assertEqual(self.client.get(f'{URL}?team_id={self.team.pk}').data['projects'], [])
+
     def test_project_manager_leader_receives_both_tasks(self):
         self.client.force_authenticate(self.pm)
         response = self.client.get('/api/teams/my-setup/')

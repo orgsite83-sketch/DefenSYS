@@ -178,6 +178,38 @@ Future<void> _capture(WidgetTester tester, GlobalKey key, String name) async {
 
 void main() {
   testWidgets(
+    'Roster layout selects Excel and exports through the concept report',
+    (tester) async {
+      tester.view.physicalSize = const Size(1500, 960);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final reports = _Reports();
+      await _open(
+        tester,
+        ReportCatalog.find('concept-projects')!,
+        reports,
+        params: {
+          'semester_id': '3',
+          'scope': 'pit',
+          'year_level': '3rd Year',
+          'pit_event_config_id': '9',
+          'layout': 'roster',
+        },
+      );
+      final bar = tester.widget<DefensysExportFormatBar>(
+        find.byType(DefensysExportFormatBar),
+      );
+      expect(bar.supportedFormats, ['xlsx']);
+      expect(bar.selectedFormat, 'xlsx');
+      await tester.tap(find.text('Download XLSX Export'));
+      await tester.pumpAndSettle();
+      expect(reports.format, 'xlsx');
+      expect(reports.download?['layout'], 'roster');
+      expect(reports.download?['pit_event_config_id'], '9');
+    },
+  );
+  testWidgets(
     'Stage export uses a named dropdown and clears its selection when the period changes',
     (tester) async {
       tester.view.physicalSize = const Size(1500, 960);

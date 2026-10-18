@@ -120,6 +120,7 @@ class RubricSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
+        data['pit_event_id'] = None
         if instance.scope == Rubric.SCOPE_CAPSTONE:
             from defense.stages.models import StageGradingConfig
             if not instance.defense_stage_id:
@@ -258,6 +259,7 @@ class RubricWriteSerializer(serializers.Serializer):
     scope = serializers.ChoiceField(choices=[choice[0] for choice in Rubric.SCOPE_CHOICES])
     semester_id = serializers.IntegerField(required=False)
     defense_stage_id = serializers.IntegerField(required=False, allow_null=True)
+    pit_event_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
     event_name = serializers.CharField(required=False, allow_blank=True, max_length=120)
     evaluation_type = serializers.ChoiceField(choices=[choice[0] for choice in Rubric.EVALUATION_TYPE_CHOICES])
     target_type = serializers.ChoiceField(choices=[choice[0] for choice in Rubric.TARGET_CHOICES], default=Rubric.TARGET_TEAM)
@@ -350,6 +352,7 @@ class RubricWriteSerializer(serializers.Serializer):
         )
         self._sync_criteria(rubric, criteria)
         self._sync_stage_grading_config(rubric)
+        self._sync_pit_event_assignment(rubric, validated_data)
         return rubric
 
     @transaction.atomic
@@ -370,7 +373,15 @@ class RubricWriteSerializer(serializers.Serializer):
         instance.save()
         self._sync_criteria(instance, criteria)
         self._sync_stage_grading_config(instance)
+        self._sync_pit_event_assignment(instance, validated_data)
         return instance
+
+    def _sync_pit_event_assignment(self, rubric, validated_data):
+        from .pit_assignment import sync_pit_event_assignment
+        sync_pit_event_assignment(
+            rubric, validated_data.get('pit_event_id', serializers.empty),
+            request=self.context.get('request'),
+        )
 
     def _sync_stage_grading_config(self, rubric):
         if rubric.scope == Rubric.SCOPE_CAPSTONE:

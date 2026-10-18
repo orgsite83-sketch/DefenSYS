@@ -1839,6 +1839,7 @@ class StudentTeamApiTests(APITestCase):
         self.assertIn('not a valid', response.data['level'][0])
 
     def test_section_assignment_list_create(self):
+        StudentAcademicRecord.objects.filter(student=self.student_1, semester=self.first_semester).update(year_level='2nd Year', section='BSIT-2A')
         self.client.force_authenticate(user=self.admin)
         response = self.client.post(
             '/api/teams/section-assignments/',
@@ -1861,6 +1862,7 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.data[0]['section'], 'BSIT-2A')
 
     def test_bulk_import_unified_section_csv(self):
+        StudentAcademicRecord.objects.filter(student=self.student_1, semester=self.first_semester).update(year_level='2nd Year', section='BSIT-2A')
         self.client.force_authenticate(user=self.admin)
         response = self.client.post(
             '/api/teams/bulk-import/',

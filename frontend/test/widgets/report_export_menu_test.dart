@@ -99,6 +99,29 @@ class _Options extends AuthenticatedHttpClient {
 }
 
 void main() {
+  testWidgets(
+    'Projects & Concepts appears in the Report Center category and search',
+    (tester) async {
+      tester.view.physicalSize = const Size(1500, 1100);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await pumpDefensysWidget(
+        tester,
+        const SingleChildScrollView(child: AuditReportCenterTab()),
+        overrides: [
+          authProvider.overrideWith(() => FakeAuthNotifier({'role': 'admin'})),
+          academicPeriodProvider.overrideWith(FakeAcademicPeriodNotifier.new),
+          studentTeamsProvider.overrideWith(FakeStudentTeamsNotifier.new),
+          defenseStagesProvider.overrideWith(FakeDefenseStagesNotifier.new),
+          gradeCenterProvider.overrideWith(FakeGradeCenterNotifier.new),
+          reportsProvider.overrideWith(_Reports.new),
+        ],
+      );
+      expect(find.text('PROJECTS & CONCEPTS'), findsOneWidget);
+      expect(find.text('Concept Project Register'), findsOneWidget);
+    },
+  );
   testWidgets('Quick assessment export preserves all-record coverage', (
     tester,
   ) async {

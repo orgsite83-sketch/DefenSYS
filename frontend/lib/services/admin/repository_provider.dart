@@ -65,6 +65,7 @@ class RepositoryState {
 }
 
 class RepositoryNotifier extends Notifier<RepositoryState> {
+  int _requestVersion = 0;
   static String get baseUrl => ApiConfig.repositoryUrl;
 
   @override
@@ -74,7 +75,13 @@ class RepositoryNotifier extends Notifier<RepositoryState> {
 
   /// Public project library. Private team uploads stay in the team's workspace.
   Future<void> fetchForStudent({String? search}) {
-    return fetchEntries(search: search, type: '', yearLevel: '', stage: '', academicYear: '');
+    return fetchEntries(
+      search: search,
+      type: '',
+      yearLevel: '',
+      stage: '',
+      academicYear: '',
+    );
   }
 
   Future<void> fetchEntries({
@@ -85,6 +92,7 @@ class RepositoryNotifier extends Notifier<RepositoryState> {
     String? academicYear,
     bool includeTeamDocuments = false,
   }) async {
+    final version = ++_requestVersion;
     final nextSearch = search ?? state.search;
     final nextType = type ?? state.type;
     final nextYearLevel = yearLevel ?? state.yearLevel;
@@ -113,12 +121,14 @@ class RepositoryNotifier extends Notifier<RepositoryState> {
       );
 
       final response = await _client.get(uri);
+      if (!ref.mounted || version != _requestVersion) return;
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
         var entries = _readMapList(payload['entries']);
         if (includeTeamDocuments) {
           entries = [...entries, ...await _fetchTeamDocumentEntries()];
         }
+        if (!ref.mounted || version != _requestVersion) return;
         state = state.copyWith(
           isLoading: false,
           entries: entries,
@@ -138,8 +148,10 @@ class RepositoryNotifier extends Notifier<RepositoryState> {
         error: _errorFromResponse(response),
       );
     } on SessionExpiredException {
+      if (!ref.mounted || version != _requestVersion) return;
       state = state.copyWith(isLoading: false);
     } catch (e) {
+      if (!ref.mounted || version != _requestVersion) return;
       state = state.copyWith(isLoading: false, error: 'Connection error: $e');
     }
   }
@@ -173,8 +185,7 @@ class RepositoryNotifier extends Notifier<RepositoryState> {
           'year_level': '—',
           'stage': map['document_type'] ?? 'other',
           'type': 'uploader',
-          'deliverable_label':
-              description.isNotEmpty ? description : fileName,
+          'deliverable_label': description.isNotEmpty ? description : fileName,
         };
       }).toList();
     } catch (_) {
@@ -182,8 +193,8 @@ class RepositoryNotifier extends Notifier<RepositoryState> {
     }
   }
 
-  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
-
+  AuthenticatedHttpClient get _client =>
+      ref.read(authenticatedHttpClientProvider);
 
   List<Map<String, dynamic>> _readMapList(dynamic value) {
     if (value is! List) {

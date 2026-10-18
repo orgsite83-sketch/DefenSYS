@@ -65,15 +65,15 @@ def visible_teams_for(user):
         return base.none()
     if is_admin_user(user):
         return base
-    if is_pit_lead_only(user):
-        pit_year = _pit_year(user)
-        if not pit_year:
-            return base.none()
-        return base.filter(level__icontains='PIT', year_level=pit_year)
+    if getattr(user, 'role', None) == 'faculty':
+        allowed = Q(adviser=user) | section_instructor_section_filters(user)
+        if is_pit_lead_only(user) and _pit_year(user):
+            allowed |= Q(level__icontains='PIT', year_level=_pit_year(user))
+        if getattr(user, 'is_uploader', False):
+            allowed |= Q(semester__is_active=True)
+        return base.filter(allowed).distinct()
     if getattr(user, 'is_uploader', False):
         return base.filter(semester__is_active=True)
-    if getattr(user, 'role', None) == 'faculty':
-        return base.filter(Q(adviser=user) | section_instructor_section_filters(user)).distinct()
     if getattr(user, 'role', None) == 'student':
         from student_teams.models import SectionAssignment
         pm_section = SectionAssignment.objects.filter(
@@ -92,8 +92,10 @@ def visible_teams_for(user):
 
 def manageable_teams_for(user):
     queryset = visible_teams_for(user)
-    if is_admin_user(user) or is_pit_lead_only(user):
+    if is_admin_user(user):
         return queryset
+    if is_pit_lead_only(user) and _pit_year(user):
+        return queryset.filter(level__icontains='PIT', year_level=_pit_year(user))
     return queryset.none()
 
 
@@ -186,29 +188,38 @@ def grade_records_for(user, *, include_previous_projects=False):
         return base.none()
     if is_admin_user(user):
         return base
-    if is_pit_lead_only(user):
-        pit_year = _pit_year(user)
-        if not pit_year:
-            return base.none()
-        return (
-            base.filter(
-                scope=TeamGrade.SCOPE_PIT,
-                team__level__icontains='PIT',
-                team__year_level=pit_year,
-            ).filter(Q(pit_event_config__year_level=pit_year) | Q(pit_event_config__isnull=True))
-            .exclude(team__year_level='3rd Year', semester__label='2nd Semester')
-        )
     if getattr(user, 'role', None) == 'faculty':
-        return base.filter(
+        from student_teams.models import StudentTeam
+        allowed = (
             Q(team__adviser=user)
             | Q(schedule__panel_assignments__panelist=user)
-            | Q(team__in=visible_teams_for(user))
-        ).distinct()
+            | Q(team__in=StudentTeam.objects.filter(section_instructor_section_filters(user)))
+        )
+        if is_pit_lead_only(user) and _pit_year(user):
+            allowed |= pit_grade_filters(user)
+        return base.filter(allowed).distinct()
     if getattr(user, 'role', None) == 'student':
         return base.filter(
             Q(team__leader=user) | Q(team__memberships__student=user)
         ).distinct()
     return base.none()
+
+
+def pit_grade_filters(user):
+    year = _pit_year(user)
+    if not is_pit_lead_only(user) or not year:
+        return Q(pk__in=[])
+    return (Q(scope='pit', team__level__icontains='PIT', team__year_level=year)
+            & (Q(pit_event_config__year_level=year) | Q(pit_event_config__isnull=True))
+            & ~Q(team__year_level='3rd Year', semester__label='2nd Semester'))
+
+
+def manageable_grades_for(user):
+    """Independent adviser/panel reads never grant grade publishing authority."""
+    base = grade_records_for(user)
+    if is_admin_user(user):
+        return base
+    return base.filter(pit_grade_filters(user)) if is_pit_lead_only(user) else base.none()
 
 
 def audit_logs_for(user):

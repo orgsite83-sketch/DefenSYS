@@ -60,6 +60,7 @@ class _PitInstructorDashboardContentState
     ref
         .read(capstoneDeliverablesProvider.notifier)
         .fetchDeliverables(
+          workspace: 'instructor',
           scope: 'pit',
           search: '',
           status: '',

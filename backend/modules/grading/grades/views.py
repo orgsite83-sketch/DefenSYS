@@ -6,14 +6,15 @@ from rest_framework import serializers as drf_serializers
 from rest_framework import status
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from defensys_backend.read_projection import ReadAPIView as APIView
 
 from academic_period_management.serializers import SemesterSerializer
 from defense.stages.models import DefenseStage
 from defense.stages.serializers import DefenseStageSerializer
 from authentication_access_control.audit import log_high_impact_action
 from authentication_access_control.models import SystemAuditLog
-from authentication_access_control.scopes import grade_records_for
+from authentication_access_control.scopes import grade_records_for, manageable_grades_for
+from authentication_access_control.workspaces import workspace_grades_for
 from user_management.permissions import IsSystemAdmin, CanManageModule
 from .models import TeamGrade
 from .serializers import TeamGradeSerializer, TeamGradeUpdateSerializer
@@ -134,7 +135,7 @@ def options_payload(queryset):
 
 
 def grade_center_payload(request, queryset=None, sync_info=None):
-    raw_base = grade_records_for(request.user)
+    raw_base = workspace_grades_for(request.user, request.query_params.get('workspace'))
     base = without_stale_unscheduled_placeholders(grade_review_queryset(raw_base))
     current = without_stale_unscheduled_placeholders(
         grade_review_queryset(queryset if queryset is not None else raw_base)
@@ -194,7 +195,7 @@ class GradeCenterListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        queryset = filter_grade_queryset(request, grade_records_for(request.user))
+        queryset = filter_grade_queryset(request, workspace_grades_for(request.user, request.query_params.get('workspace')))
         return Response(grade_center_payload(request, queryset))
 
 
@@ -203,7 +204,7 @@ class GradeCenterSyncView(APIView):
 
     def post(self, request):
         sync_info = sync_missing_grade_rows(user=request.user)
-        queryset = filter_grade_queryset(request, grade_records_for(request.user))
+        queryset = filter_grade_queryset(request, workspace_grades_for(request.user, request.query_params.get('workspace')))
         return Response(grade_center_payload(request, queryset, sync_info=sync_info))
 
 
@@ -211,10 +212,11 @@ class GradeCenterDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get_object(self, request, grade_id):
-        return get_object_or_404(grade_records_for(request.user), pk=grade_id)
+        return get_object_or_404(workspace_grades_for(request.user, request.query_params.get('workspace')), pk=grade_id)
 
     def get(self, request, grade_id):
-        grade = get_object_or_404(grade_records_for(request.user, include_previous_projects=True), pk=grade_id)
+        grade = get_object_or_404(workspace_grades_for(request.user,
+            request.query_params.get('workspace'), include_previous_projects=True), pk=grade_id)
         return Response({'grade': TeamGradeSerializer(grade).data})
 
     def patch(self, request, grade_id):
@@ -267,7 +269,7 @@ class GradeCenterPublishView(APIView):
 
     @transaction.atomic
     def post(self, request, grade_id):
-        grade = get_object_or_404(grade_records_for(request.user), pk=grade_id)
+        grade = get_object_or_404(manageable_grades_for(request.user), pk=grade_id)
         old_values = grade_audit_values(grade)
         try:
             require_grade_editable(grade)
@@ -452,7 +454,9 @@ class TeamGradeVerdictView(APIView):
     permission_classes = [IsAuthenticated]
 
     def patch(self, request, grade_id):
-        grade = get_object_or_404(TeamGrade.objects.with_relations(), pk=grade_id)
+        workspace = request.query_params.get('workspace')
+        queryset = workspace_grades_for(request.user, workspace) if workspace else TeamGrade.objects.with_relations()
+        grade = get_object_or_404(queryset, pk=grade_id)
 
         is_admin = (
             request.user.is_staff
@@ -520,12 +524,12 @@ class TeamGradeWorkflowView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, grade_id):
-        grade = get_object_or_404(grade_records_for(request.user), pk=grade_id)
+        grade = get_object_or_404(workspace_grades_for(request.user, request.query_params.get('workspace')), pk=grade_id)
         from .defense_workflow import workflow_payload
         return Response({'workflow': workflow_payload(grade)})
 
     def post(self, request, grade_id):
-        grade = get_object_or_404(grade_records_for(request.user), pk=grade_id)
+        grade = get_object_or_404(workspace_grades_for(request.user, request.query_params.get('workspace')), pk=grade_id)
         from .defense_workflow import apply_workflow_action
         review_date = drf_serializers.DateField(allow_null=True).run_validation(request.data.get('review_date'))
         action = request.data.get('action', '')

@@ -345,7 +345,7 @@ ParsedBulkCsvResult _parseMultiColumnTeamMatrix(
 }
 
 ParsedBulkCsvResult parseTeamBulkCsv(String csv, {bool isSubBlock = false}) {
-  final rawLines = csv.split(RegExp(r'\r?\n')).map((line) => line.replaceAll('\r', '')).toList();
+  final rawLines = _csvRecords(csv);
   if (rawLines.isEmpty) {
     return const ParsedBulkCsvResult(rows: [], csvColumns: []);
   }
@@ -1098,4 +1098,33 @@ List<Map<String, dynamic>> trimRowsAfterImport({
     }
   }
   return kept;
+}
+
+// Keep quoted multiline project titles in one logical row, including when an
+// XLSX cell is converted to CSV for the existing roster parser.
+List<String> _csvRecords(String csv) {
+  final records = <String>[];
+  var record = StringBuffer();
+  var quoted = false;
+  for (var index = 0; index < csv.length; index++) {
+    final char = csv[index];
+    if (char == '"') {
+      record.write(char);
+      if (quoted && index + 1 < csv.length && csv[index + 1] == '"') {
+        record.write(csv[++index]);
+      } else {
+        quoted = !quoted;
+      }
+    } else if ((char == '\n' || char == '\r') && !quoted) {
+      records.add(record.toString());
+      record = StringBuffer();
+      if (char == '\r' && index + 1 < csv.length && csv[index + 1] == '\n') {
+        index++;
+      }
+    } else {
+      record.write(char);
+    }
+  }
+  records.add(record.toString());
+  return records;
 }

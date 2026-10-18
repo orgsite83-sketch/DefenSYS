@@ -67,6 +67,10 @@ def verdict_unavailable_reason(schedule, grade=None):
     return ''
 
 
+from defensys_backend.read_projection import read_memoize
+
+
+@read_memoize
 def evaluation_context(schedule, grade=None):
     rubric = schedule.rubric
     context = {
@@ -75,10 +79,10 @@ def evaluation_context(schedule, grade=None):
         'date': str(schedule.scheduled_date),
         'rubric': schedule.rubric_id,
         'target': rubric.target_type if rubric else None,
-        'criteria': list(rubric.criteria.order_by('id').values(
-            'id', 'name', 'max_score', 'weight', 'target_type', 'scale',
-        )) if rubric else [],
-        'members': sorted(schedule.team.memberships.values_list('student_id', flat=True)),
+        'criteria': [{name: getattr(criterion, name) for name in
+                      ('id', 'name', 'max_score', 'weight', 'target_type', 'scale')}
+                     for criterion in sorted(rubric.criteria.all(), key=lambda item: item.pk)] if rubric else [],
+        'members': sorted(member.student_id for member in schedule.team.memberships.all()),
         'attempt': grade.attempt_count if grade else 1,
     }
     return hashlib.sha256(json.dumps(context, sort_keys=True, default=str).encode()).hexdigest()
@@ -90,6 +94,7 @@ def draft_payload(draft, context):
     return {'submissions': draft.submissions, 'saved_at': draft.updated_at.isoformat()}
 
 
+@read_memoize(copy=True)
 def validate_evaluation_submissions(schedule, submissions, *, partial=False):
     """Validate every member before any final write, or allow missing scores in drafts."""
     if not schedule.rubric_id:
@@ -100,7 +105,7 @@ def validate_evaluation_submissions(schedule, submissions, *, partial=False):
     criteria = list(rubric.criteria.all())
     if not criteria:
         raise ValidationError('The assigned panel rubric has no criteria.')
-    members = set(schedule.team.memberships.values_list('student_id', flat=True))
+    members = {member.student_id for member in schedule.team.memberships.all()}
     expected = {}
     if rubric.target_type == 'team':
         expected[None] = criteria

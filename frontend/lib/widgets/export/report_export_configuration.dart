@@ -115,6 +115,11 @@ class _ReportConfigurationState extends ConsumerState<_ReportConfiguration> {
         defaultFilename:
             'DefenSYS_${report.id}_${DateTime.now().toIso8601String().substring(0, 10)}',
         initialFormat: widget.initialFormat,
+        formatsForParams: report.id == 'concept-projects'
+            ? (params) => params['layout'] == 'roster'
+                  ? const ['xlsx']
+                  : const ['pdf', 'xlsx']
+            : null,
         initialParams: _scoped(widget.params),
         leftPaneWidth: 380,
         leftPaneBuilder: (_, params, update, refresh) => _ReportFilters(
@@ -146,6 +151,15 @@ class _ReportConfigurationState extends ConsumerState<_ReportConfiguration> {
           final missing = report.missingSelection(params);
           if (missing != null) {
             showValidationToast(context, missing);
+            return false;
+          }
+          if (report.id == 'concept-projects' &&
+              params['layout'] == 'roster' &&
+              format != 'xlsx') {
+            showValidationToast(
+              context,
+              'Choose Excel for the importable roster template.',
+            );
             return false;
           }
           final success = await ref
@@ -236,12 +250,24 @@ class _ReportFiltersState extends State<_ReportFilters> {
         'stage',
         'pit_event',
         'stage_id',
+        'pit_event_config_id',
       ]) {
         next.remove(selector);
       }
       if (next['coverage'] == 'specific') next['coverage'] = 'latest';
     }
     if (key == 'coverage' && value != 'specific') next.remove('grade_id');
+    if (key == 'year_level') next.remove('pit_event_config_id');
+    if (key == 'pit_event_config_id' && value.isNotEmpty) {
+      next.remove('stage_id');
+    }
+    if (key == 'stage_id' && value.isNotEmpty) {
+      next.remove('pit_event_config_id');
+    }
+    if (key == 'layout' && value == 'roster') {
+      next.remove('concept_status');
+      next['include_history'] = '0';
+    }
     widget.onChanged(next);
   }
 
@@ -293,6 +319,7 @@ class _ReportFiltersState extends State<_ReportFilters> {
       'team_id': 'teams',
       'student_id': 'students',
       'stage_id': 'stages',
+      'pit_event_config_id': 'pit_events',
     }[key];
     // Choices are filtered locally so changing period or scope cannot offer stale records.
     if (source != null) {
@@ -304,6 +331,9 @@ class _ReportFiltersState extends State<_ReportFilters> {
                     (widget.params['semester_id'] ?? '').isEmpty ||
                     row['semester_id'].toString() ==
                         widget.params['semester_id']) &&
+                (row['year_level'] == null ||
+                    (widget.params['year_level'] ?? '').isEmpty ||
+                    row['year_level'] == widget.params['year_level']) &&
                 (row['scope'] == null ||
                     (widget.params['scope'] ?? '').isEmpty ||
                     row['scope'] == widget.params['scope']),
@@ -314,6 +344,33 @@ class _ReportFiltersState extends State<_ReportFilters> {
               'label': (row['label'] ?? row['name']).toString(),
             },
           )
+          .toList();
+    }
+    final conceptChoices = <String, Map<String, String>>{
+      'layout': {
+        'register': 'Concept register (PDF / Excel)',
+        'roster': 'Capstone intake roster (Excel)',
+      },
+      'include_history': {
+        '0': 'Current rounds',
+        '1': 'Include historical rounds',
+      },
+      'concept_status': {
+        'approved': 'Approved',
+        'approved_with_revisions': 'Approved with revisions',
+        'awaiting_decision': 'Awaiting decision',
+        'rejected': 'Rejected',
+        'not_selected': 'Not selected',
+        'revise': 'Revision required',
+        'for_redefense': 'Re-defense required',
+        'replacement_required': 'Replacement required',
+        'not_submitted': 'No concept submitted',
+        'not_configured': 'Concepts not configured',
+      },
+    }[key];
+    if (conceptChoices != null) {
+      return conceptChoices.entries
+          .map((e) => {'value': e.key, 'label': e.value})
           .toList();
     }
     final fixed = <String, List<String>>{
@@ -387,6 +444,13 @@ class _ReportFiltersState extends State<_ReportFilters> {
           ],
         ),
         const SizedBox(height: 14),
+        if (widget.report.id == 'concept-projects') ...[
+          const Text(
+            'Roster template: select a 3rd Year, 1st Semester PIT period and concept event. Admin keeps or clears titles and assigns advisers in the existing team import review. All Capstone files, reviews and approvals start fresh.',
+            style: TextStyle(fontSize: 12),
+          ),
+          const SizedBox(height: 14),
+        ],
         if (widget.loading) const LinearProgressIndicator(),
         if (widget.error != null) ...[
           Text(widget.error!, style: const TextStyle(fontSize: 12)),
@@ -519,6 +583,7 @@ class _ReportFiltersState extends State<_ReportFilters> {
   }
 
   bool sourceIdField(String key) => [
+    'pit_event_config_id',
     'semester_id',
     'rubric_id',
     'team_id',

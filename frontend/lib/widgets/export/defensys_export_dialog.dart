@@ -36,6 +36,10 @@ class _DefensysExportDialogState extends State<DefensysExportDialog> {
   ReportPreviewData? _previewData;
   int _previewRequestId = 0;
 
+  List<String> get _supportedFormats =>
+      widget.config.formatsForParams?.call(_currentParams) ??
+      widget.config.supportedFormats;
+
   List<DefensysSignatory> get _defaultSignatories =>
       widget.config.initialSignatories.isNotEmpty
       ? List.of(widget.config.initialSignatories)
@@ -64,6 +68,9 @@ class _DefensysExportDialogState extends State<DefensysExportDialog> {
     _includeSignatures = widget.config.initialIncludeSignatures;
     _signatories = _defaultSignatories;
     _currentParams = Map.of(widget.config.initialParams);
+    if (!_supportedFormats.contains(_selectedFormat)) {
+      _selectedFormat = _supportedFormats.first;
+    }
     _filenameController = TextEditingController(
       text: widget.config.defaultFilename,
     );
@@ -104,7 +111,12 @@ class _DefensysExportDialogState extends State<DefensysExportDialog> {
   }
 
   void _updateParams(Map<String, String> updated) {
-    setState(() => _currentParams = Map.of(updated));
+    setState(() {
+      _currentParams = Map.of(updated);
+      if (!_supportedFormats.contains(_selectedFormat)) {
+        _selectedFormat = _supportedFormats.first;
+      }
+    });
     _loadPreview();
   }
 
@@ -215,7 +227,7 @@ class _DefensysExportDialogState extends State<DefensysExportDialog> {
         selectedFormat: _selectedFormat,
       ),
       footer: DefensysExportFormatBar(
-        supportedFormats: widget.config.supportedFormats,
+        supportedFormats: _supportedFormats,
         selectedFormat: _selectedFormat,
         onFormatChanged: (format) => setState(() => _selectedFormat = format),
         includeSignatures: _includeSignatures,

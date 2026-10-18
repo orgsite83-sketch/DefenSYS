@@ -3887,8 +3887,8 @@ void showPeerGradingHelpDialog(BuildContext context, {required bool isPit}) {
                 stepNum: '1',
                 title: isPit ? 'Configured Per Event' : 'Configured Term-Wide',
                 description: isPit
-                    ? 'Peer grading is enabled whenever an event has a Peer Rubric and peer weight > 0%. Leads can also toggle it in PIT Events Setup or here in Grade Center.'
-                    : 'Configured globally in Academic Periods. When enabled, all Capstone teams in the active term have access to peer evaluations without per-stage manual gates.',
+                    ? 'Peer access is enabled by default for new events with a positive peer weight. The setting is kept when a peer rubric is attached later. Leads can close or reopen access in PIT Events Setup or Grade Center.'
+                    : 'Peer evaluation is enabled in Academic Periods. Each team can grade teammates only after its scheduled defense has been evaluated by all assigned panelists.',
                 icon: Icons.tune_rounded,
                 color: const Color(0xFF059669),
                 bgColor: const Color(0xFFECFDF5),
@@ -3898,8 +3898,8 @@ void showPeerGradingHelpDialog(BuildContext context, {required bool isPit}) {
                 stepNum: '2',
                 title: 'Student Access & Criteria',
                 description: isPit
-                    ? 'Students access their team roster and criteria in the Peer Eval tab once defense schedules are confirmed. They evaluate each teammate on teamwork and contributions.'
-                    : 'Students access their team roster and criteria in the Peer Eval tab once defense schedules are confirmed. Each member scores teammates on individual contribution.',
+                    ? 'With access enabled, a peer rubric assigned and a positive peer weight, students can grade each teammate after all assigned faculty and external panelists finish evaluating their scheduled defense. Scheduling alone does not unlock peer grading.'
+                    : 'After all assigned faculty and external panelists finish evaluating the scheduled defense, each student can grade teammates on individual contribution in the Peer Eval tab.',
                 icon: Icons.people_outline_rounded,
                 color: const Color(0xFF2563EB),
                 bgColor: const Color(0xFFEFF6FF),
@@ -3909,7 +3909,7 @@ void showPeerGradingHelpDialog(BuildContext context, {required bool isPit}) {
                 stepNum: '3',
                 title: 'Post-Defense "Awaiting Peers" Alert',
                 description: isPit
-                    ? 'When panelists submit their scores, post-deliverables unlock immediately and teams with pending peer reviews transition to "Awaiting Peers" with dashboard alerts until teammate ratings finish.'
+                    ? 'After the scheduled defense has been fully evaluated by the panel, students grade their teammates. Teams await any remaining peer grades before grades can be finalized. Official event completion is a later step.'
                     : 'When panelists submit scores, teams transition to "Awaiting Peers", showing a red "Due Soon" alert on student dashboards to prompt any remaining evaluations before grades finalize.',
                 icon: Icons.notifications_active_outlined,
                 color: const Color(0xFFD97706),

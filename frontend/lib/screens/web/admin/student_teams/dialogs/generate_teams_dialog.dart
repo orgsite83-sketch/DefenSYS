@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:defensys/services/academic/team_formation_service.dart';
 import 'package:defensys/services/student_teams_provider.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import '../components/team_roster_import_panel.dart';
 
 List<Map<String, dynamic>> _maps(dynamic value) => (value as List? ?? [])
@@ -16,6 +17,7 @@ class GenerateTeamsDialog extends ConsumerStatefulWidget {
     required this.initialLevel,
     required this.events,
     this.initialSection,
+    this.semester,
     this.initialEvent,
     this.embedded = false,
     this.onCreated,
@@ -26,6 +28,7 @@ class GenerateTeamsDialog extends ConsumerStatefulWidget {
   final String initialLevel;
   final List<Map<String, dynamic>> events;
   final String? initialSection;
+  final Map<String, dynamic>? semester;
   final String? initialEvent;
   final bool embedded;
   final VoidCallback? onCreated;
@@ -70,9 +73,7 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
   void initState() {
     super.initState();
     level = widget.initialLevel;
-    event = events.any((e) => e['event_name'] == widget.initialEvent)
-        ? widget.initialEvent
-        : events.firstOrNull?['event_name']?.toString();
+    event = null;
     Future.microtask(loadOptions);
   }
 
@@ -91,18 +92,26 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
         sharedSystem = false;
         projectManagerId = null;
         systemReviewerId = null;
-        conceptStage = _maps(result['concept_contexts']).firstOrNull?['label']?.toString();
+        conceptStage = _maps(
+          result['concept_contexts'],
+        ).firstOrNull?['label']?.toString();
         sources.clear();
+        final allSections = _maps(
+          result['sections'],
+        ).map((s) => s['name'].toString()).toSet();
         final available = _maps(result['sections'])
             .where((s) => (s['eligible_count'] as num) > 0)
             .map((s) => s['name'].toString())
             .toSet();
         sections.clear();
         selectedStudents.clear();
-        if (available.contains(widget.initialSection)) {
+        if (widget.initialSection != null &&
+            widget.initialSection!.isNotEmpty) {
           sections.add(widget.initialSection!);
         } else if (available.length == 1) {
           sections.add(available.single);
+        } else if (allSections.length == 1) {
+          sections.add(allSections.single);
         }
       });
     } catch (e) {
@@ -121,7 +130,7 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
 
   Map<String, dynamic> get request => {
     'level': level,
-    if (isPit) 'event_name': event,
+    if (isPit && event != null) 'event_name': event,
     'sections': sections.toList(),
     'method': method,
     'group_size': size,
@@ -130,17 +139,31 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
     'roster_mode': rosterMode,
     'include_assigned': includeAssigned,
     if (rosterMode == 'custom') 'student_ids': selectedStudents.toList(),
-    if (sharedSystem) 'shared_system': {
-      'project_manager_id': projectManagerId, 'reviewer_id': systemReviewerId,
-      'title_mode': titleMode, 'stage_label': conceptStage,
-    },
+    if (sharedSystem)
+      'shared_system': {
+        'project_manager_id': projectManagerId,
+        'reviewer_id': systemReviewerId,
+        'title_mode': titleMode,
+        'stage_label': conceptStage,
+      },
   };
 
   Future<void> preview() async {
-    if (sharedSystem && (rosterMode != 'sections' || sections.length != 1 ||
-        projectManagerId == null || systemReviewerId == null || conceptStage == null ||
-        !_maps(options?['students']).any((s) => s['id'] == projectManagerId && s['section'] == sections.single))) {
-      setState(() => error = 'For a shared system, select one section, its student project manager, a faculty reviewer and a concept stage/event.');
+    if (sharedSystem &&
+        (rosterMode != 'sections' ||
+            sections.length != 1 ||
+            projectManagerId == null ||
+            systemReviewerId == null ||
+            conceptStage == null ||
+            !_maps(options?['students']).any(
+              (s) =>
+                  s['id'] == projectManagerId &&
+                  s['section'] == sections.single,
+            ))) {
+      setState(
+        () => error =
+            'For a shared system, select one section, its student project manager, a faculty reviewer and a concept stage/event.',
+      );
       return;
     }
     setState(() {
@@ -326,8 +349,15 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
                 busy ||
                     rosterBusy ||
                     (!reviewing &&
-                        ((isPit && event == null) ||
-                            options == null ||
+                        (options == null ||
+                            !_maps(options?['students']).any(
+                              (s) =>
+                                  s['eligible'] == true &&
+                                  (includeAssigned || s['assigned'] != true) &&
+                                  (rosterMode == 'custom'
+                                      ? selectedStudents.contains(s['id'])
+                                      : sections.contains(s['section'])),
+                            ) ||
                             (rosterMode == 'custom'
                                 ? selectedStudents.isEmpty
                                 : sections.isEmpty) ||
@@ -365,6 +395,31 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
   }
 
   Widget settings() {
+    final isInstructorSectionMode =
+        widget.embedded ||
+        (widget.initialSection != null && widget.initialSection!.isNotEmpty);
+    final effectiveSection =
+        widget.initialSection ??
+        sections.firstOrNull ??
+        _maps(options?['sections']).firstOrNull?['name']?.toString() ??
+        '';
+    if (isInstructorSectionMode &&
+        effectiveSection.isNotEmpty &&
+        !sections.contains(effectiveSection)) {
+      sections.add(effectiveSection);
+    }
+    final eligibleCount = _maps(options?['students'])
+        .where(
+          (student) =>
+              student['section'] == effectiveSection &&
+              student['eligible'] == true &&
+              (includeAssigned || student['assigned'] != true),
+        )
+        .length;
+    final totalCount = _maps(
+      options?['students'],
+    ).where((student) => student['section'] == effectiveSection).length;
+
     final sourceTeams = _maps(options?['source_teams'])
         .where(
           (s) => rosterMode == 'custom'
@@ -398,8 +453,7 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
                           if (value == null) return;
                           setState(() {
                             level = value;
-                            event = events.firstOrNull?['event_name']
-                                ?.toString();
+                            event = null;
                           });
                           loadOptions();
                         },
@@ -410,24 +464,34 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
                   width: 330,
                   child: DropdownButtonFormField<String>(
                     key: ValueKey('event-$level-$event'),
-                    initialValue: event,
+                    initialValue: event ?? '',
                     isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'PIT event'),
-                    items: events
-                        .map(
-                          (e) => DropdownMenuItem(
-                            value: e['event_name'].toString(),
-                            child: Text(
-                              e['event_name'].toString(),
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                    decoration: const InputDecoration(
+                      labelText: 'PIT event (optional)',
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: '',
+                        child: Text('Unassigned roster'),
+                      ),
+                      ...events.map(
+                        (e) => DropdownMenuItem(
+                          value: e['event_name'].toString(),
+                          child: Text(
+                            e['event_name'].toString(),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                        )
-                        .toList(),
+                        ),
+                      ),
+                    ],
                     onChanged: busy
                         ? null
                         : (value) {
-                            setState(() => event = value);
+                            setState(() {
+                              event = value == '' ? null : value;
+                              method = 'random';
+                              leaderMethod = 'random';
+                            });
                             loadOptions();
                           },
                   ),
@@ -437,6 +501,7 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
         if (widget.embedded) ...[
           TeamRosterImportPanel(
             level: level,
+            semester: widget.semester,
             section: widget.initialSection,
             sections: _maps(options?['sections']),
             students: _maps(options?['students']),
@@ -447,11 +512,11 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
           ),
           const SizedBox(height: 20),
         ],
-        if (isPit && events.isEmpty)
+        if (isPit)
           const Padding(
             padding: EdgeInsets.only(top: 16),
             child: Text(
-              'Create a PIT event for this year level in PIT Events, then return here.',
+              'Prepare an unassigned roster first, or choose an event to form different teams or retain rosters from another event. Scheduling happens later.',
             ),
           ),
         if (options != null) ...[
@@ -500,136 +565,209 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
-          const SizedBox(height: 22),
-          DropdownButtonFormField<String>(
-            initialValue: rosterMode,
-            decoration: const InputDecoration(labelText: 'Roster selection'),
-            items: const [
-              DropdownMenuItem(value: 'sections', child: Text('By section')),
-              DropdownMenuItem(
-                value: 'custom',
-                child: Text('Choose a custom roster'),
+          if (isInstructorSectionMode) ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Theme.of(context).dividerColor.withValues(alpha: 0.6),
+                ),
               ),
-            ],
-            onChanged: busy
-                ? null
-                : (v) => setState(() {
-                    rosterMode = v!;
-                    sources.clear();
-                  }),
-          ),
-          const SizedBox(height: 12),
-          if (options!['team_membership_policy'] == 'multiple')
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Include students already in teams'),
-              subtitle: const Text(
-                'The PIT lead permits additional memberships in this event.',
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.groups_outlined,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      effectiveSection.isNotEmpty
+                          ? 'Target Roster: Section $effectiveSection'
+                          : 'Target Roster: Current Assigned Section',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: eligibleCount > 0
+                          ? Theme.of(
+                              context,
+                            ).colorScheme.primary.withValues(alpha: 0.1)
+                          : Theme.of(
+                              context,
+                            ).colorScheme.error.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      effectiveSection.isNotEmpty
+                          ? '$effectiveSection · $eligibleCount/$totalCount available'
+                          : (eligibleCount > 0
+                                ? '$eligibleCount eligible students'
+                                : '0 students available'),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: eligibleCount > 0
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              value: includeAssigned,
+            ),
+          ] else ...[
+            const SizedBox(height: 22),
+            DropdownButtonFormField<String>(
+              initialValue: rosterMode,
+              decoration: const InputDecoration(labelText: 'Roster selection'),
+              items: const [
+                DropdownMenuItem(value: 'sections', child: Text('By section')),
+                DropdownMenuItem(
+                  value: 'custom',
+                  child: Text('Choose a custom roster'),
+                ),
+              ],
               onChanged: busy
                   ? null
                   : (v) => setState(() {
-                      includeAssigned = v;
-                      if (!v) {
-                        selectedStudents.removeWhere(
-                          (id) => _maps(
-                            options!['students'],
-                          ).any((s) => s['id'] == id && s['assigned'] == true),
-                        );
-                      }
+                      rosterMode = v!;
+                      sources.clear();
                     }),
             ),
-          if (rosterMode == 'custom') ...[
-            const Text(
-              'Explicitly select students to include. Their academic sections will be preserved.',
-            ),
-            ..._maps(options!['students'])
-                .where(
-                  (s) =>
-                      s['eligible'] == true &&
-                      (includeAssigned || s['assigned'] != true),
-                )
-                .map(
-                  (s) => CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text('${s['name']} · ${s['username']}'),
-                    subtitle: Text(
-                      '${s['section'].toString().isEmpty ? 'Unassigned' : s['section']}${s['assigned'] == true ? ' · Already in a team' : ''}',
-                    ),
-                    value: selectedStudents.contains(s['id']),
-                    onChanged: busy
-                        ? null
-                        : (v) => setState(() {
-                            v == true
-                                ? selectedStudents.add(s['id'] as int)
-                                : selectedStudents.remove(s['id']);
-                          }),
-                  ),
+            const SizedBox(height: 12),
+            if (options!['team_membership_policy'] == 'multiple')
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Include students already in teams'),
+                subtitle: const Text(
+                  'The PIT lead permits additional memberships in this event.',
                 ),
-          ],
-          if (rosterMode == 'sections') ...[
-            Text('Sections', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            if (_maps(options!['sections']).isEmpty)
+                value: includeAssigned,
+                onChanged: busy
+                    ? null
+                    : (v) => setState(() {
+                        includeAssigned = v;
+                        if (!v) {
+                          selectedStudents.removeWhere(
+                            (id) => _maps(options!['students']).any(
+                              (s) => s['id'] == id && s['assigned'] == true,
+                            ),
+                          );
+                        }
+                      }),
+              ),
+            if (rosterMode == 'custom') ...[
               const Text(
-                'No enrolled section rosters are available for this year and term.',
+                'Explicitly select students to include. Their academic sections will be preserved.',
               ),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _maps(options!['sections']).map((s) {
-                final name = s['name'].toString();
-                final count = _maps(options!['students'])
-                    .where(
-                      (student) =>
-                          student['section'] == name &&
-                          student['eligible'] == true &&
-                          (includeAssigned || student['assigned'] != true),
-                    )
-                    .length;
-                return FilterChip(
-                  label: Text('$name · $count/${s['total_count']} available'),
-                  selected: sections.contains(name),
-                  onSelected: busy || count == 0
-                      ? null
-                      : (selected) => setState(() {
-                          selected ? sections.add(name) : sections.remove(name);
-                          sources.clear();
-                        }),
-                );
-              }).toList(),
-            ),
-          ],
-          const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            key: ValueKey('leader-method-$method'),
-            initialValue: leaderMethod,
-            decoration: const InputDecoration(labelText: 'Leader selection'),
-            items: [
-              const DropdownMenuItem(
-                value: 'random',
-                child: Text('Randomize leaders'),
-              ),
-              const DropdownMenuItem(
-                value: 'manual',
-                child: Text('Choose leaders in preview'),
-              ),
-              if (method == 'reuse')
-                const DropdownMenuItem(
-                  value: 'keep',
-                  child: Text('Keep previous leaders'),
-                ),
+              ..._maps(options!['students'])
+                  .where(
+                    (s) =>
+                        s['eligible'] == true &&
+                        (includeAssigned || s['assigned'] != true),
+                  )
+                  .map(
+                    (s) => CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('${s['name']} · ${s['username']}'),
+                      subtitle: Text(
+                        '${s['section'].toString().isEmpty ? 'Unassigned' : s['section']}${s['assigned'] == true ? ' · Already in a team' : ''}',
+                      ),
+                      value: selectedStudents.contains(s['id']),
+                      onChanged: busy
+                          ? null
+                          : (v) => setState(() {
+                              v == true
+                                  ? selectedStudents.add(s['id'] as int)
+                                  : selectedStudents.remove(s['id']);
+                            }),
+                    ),
+                  ),
             ],
-            onChanged: busy ? null : (v) => setState(() => leaderMethod = v!),
-          ),
-          const SizedBox(height: 22),
+            if (rosterMode == 'sections') ...[
+              Text('Sections', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              if (_maps(options!['sections']).isEmpty)
+                const Text(
+                  'No enrolled section rosters are available for this year and term.',
+                ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _maps(options!['sections']).map((s) {
+                  final name = s['name'].toString();
+                  final count = _maps(options!['students'])
+                      .where(
+                        (student) =>
+                            student['section'] == name &&
+                            student['eligible'] == true &&
+                            (includeAssigned || student['assigned'] != true),
+                      )
+                      .length;
+                  return FilterChip(
+                    selectedColor: DefensysTokens.surfaceHigherOf(context),
+                    checkmarkColor: DefensysTokens.maroonTextOf(context),
+                    side: BorderSide(
+                      color: sections.contains(name)
+                          ? DefensysTokens.maroonTextOf(context)
+                          : DefensysTokens.borderOf(context),
+                    ),
+                    label: Text('$name · $count/${s['total_count']} available'),
+                    selected: sections.contains(name),
+                    onSelected: busy || count == 0
+                        ? null
+                        : (selected) => setState(() {
+                            selected
+                                ? sections.add(name)
+                                : sections.remove(name);
+                            sources.clear();
+                          }),
+                  );
+                }).toList(),
+              ),
+            ],
+          ],
+          const SizedBox(height: 18),
           Wrap(
             spacing: 16,
-            runSpacing: 16,
+            runSpacing: 14,
             children: [
               SizedBox(
-                width: 280,
+                width: 190,
+                child: DropdownButtonFormField<int>(
+                  initialValue: size,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Maximum team size',
+                  ),
+                  items: [1, 2, 3, 4, 5]
+                      .map(
+                        (n) => DropdownMenuItem(
+                          value: n,
+                          child: Text('$n students'),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: busy ? null : (v) => setState(() => size = v!),
+                ),
+              ),
+              SizedBox(
+                width: 250,
                 child: DropdownButtonFormField<String>(
                   initialValue: method,
                   isExpanded: true,
@@ -645,7 +783,7 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
                       value: 'alphabetical',
                       child: Text('Alphabetical by surname'),
                     ),
-                    if (isPit)
+                    if (isPit && event != null)
                       const DropdownMenuItem(
                         value: 'reuse',
                         child: Text('Reuse team rosters'),
@@ -662,29 +800,35 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
                 ),
               ),
               SizedBox(
-                width: 200,
-                child: DropdownButtonFormField<int>(
-                  initialValue: size,
+                width: 250,
+                child: DropdownButtonFormField<String>(
+                  key: ValueKey('leader-method-$method'),
+                  initialValue: leaderMethod,
                   isExpanded: true,
                   decoration: const InputDecoration(
-                    labelText: 'Maximum team size',
+                    labelText: 'Leader selection',
                   ),
-                  items: [1, 2, 3, 4]
-                      .map(
-                        (n) => DropdownMenuItem(
-                          value: n,
-                          child: Text('$n students'),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: busy ? null : (v) => setState(() => size = v!),
+                  items: [
+                    const DropdownMenuItem(
+                      value: 'random',
+                      child: Text('Randomize leaders'),
+                    ),
+                    const DropdownMenuItem(
+                      value: 'manual',
+                      child: Text('Choose leaders in preview'),
+                    ),
+                    if (method == 'reuse')
+                      const DropdownMenuItem(
+                        value: 'keep',
+                        child: Text('Keep previous leaders'),
+                      ),
+                  ],
+                  onChanged: busy
+                      ? null
+                      : (v) => setState(() => leaderMethod = v!),
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'Remaining students are distributed evenly. You can change members and leaders in the preview.',
           ),
           if (method == 'reuse') ...[
             const SizedBox(height: 20),
@@ -720,47 +864,375 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
               ),
             ),
           ],
-          const SizedBox(height: 24),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('One shared system for this section'),
-            subtitle: const Text('Three system proposals for the project manager; three corresponding module proposals for every team.'),
-            value: sharedSystem,
-            onChanged: busy || _maps(options?['concept_contexts']).isEmpty ? null : (v) => setState(() => sharedSystem = v),
+          const SizedBox(height: 22),
+          const SizedBox(height: 22),
+          Text(
+            'Project Architecture',
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
           ),
-          if (_maps(options?['concept_contexts']).isEmpty)
-            const Text('Enable concept selection in stage/event setup to use shared system proposals.'),
+          const SizedBox(height: 10),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isWide = constraints.maxWidth >= 640;
+              final cardWidth = isWide
+                  ? (constraints.maxWidth - 16) / 2
+                  : constraints.maxWidth;
+              return Wrap(
+                spacing: 16,
+                runSpacing: 12,
+                children: [
+                  // Option 1: Independent Projects (Default)
+                  SizedBox(
+                    width: cardWidth,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: busy
+                          ? null
+                          : () => setState(() => sharedSystem = false),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: !sharedSystem
+                              ? Theme.of(
+                                  context,
+                                ).colorScheme.primary.withValues(alpha: 0.04)
+                              : Theme.of(context).colorScheme.surface,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: !sharedSystem
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(
+                                    context,
+                                  ).dividerColor.withValues(alpha: 0.7),
+                            width: !sharedSystem ? 2 : 1,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  !sharedSystem
+                                      ? Icons.radio_button_checked
+                                      : Icons.radio_button_unchecked,
+                                  size: 18,
+                                  color: !sharedSystem
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'Independent Projects (Default)',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13.5,
+                                      color: !sharedSystem
+                                          ? Theme.of(
+                                              context,
+                                            ).colorScheme.primary
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Each team proposes and builds their own standalone concept.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                                height: 1.35,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Option 2: Shared Section System
+                  SizedBox(
+                    width: cardWidth,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: busy || _maps(options?['concept_contexts']).isEmpty
+                          ? null
+                          : () => setState(() => sharedSystem = true),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: sharedSystem
+                              ? Theme.of(
+                                  context,
+                                ).colorScheme.primary.withValues(alpha: 0.04)
+                              : Theme.of(context).colorScheme.surface,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: sharedSystem
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(
+                                    context,
+                                  ).dividerColor.withValues(alpha: 0.7),
+                            width: sharedSystem ? 2 : 1,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  sharedSystem
+                                      ? Icons.radio_button_checked
+                                      : Icons.radio_button_unchecked,
+                                  size: 18,
+                                  color: sharedSystem
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'Shared Section System',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13.5,
+                                      color: sharedSystem
+                                          ? Theme.of(
+                                              context,
+                                            ).colorScheme.primary
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'One section-wide system with 1 PM; teams build module papers.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                                height: 1.35,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'One shared system for this section',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: sharedSystem
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant
+                                          .withValues(alpha: 0.7),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
           if (sharedSystem) ...[
-            if (rosterMode != 'sections' || sections.length != 1)
-              const Text('Select one enrolled section for the shared system.'),
-            DropdownButtonFormField<int>(
-              key: ValueKey('shared-manager-${sections.join(',')}'),
-              initialValue: _maps(options?['students']).any((s) => s['id'] == projectManagerId && sections.contains(s['section'])) ? projectManagerId : null,
-              isExpanded: true, decoration: const InputDecoration(labelText: 'Section project manager'),
-              items: [for (final s in _maps(options?['students']).where((s) => sections.contains(s['section'])))
-                DropdownMenuItem(value: s['id'] as int, child: Text('${s['name']}'))],
-              onChanged: busy ? null : (v) => setState(() => projectManagerId = v),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Theme.of(
+                  context,
+                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.35),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.hub_rounded,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Configure Shared Section System',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (rosterMode != 'sections' || sections.length != 1)
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        'Select one enrolled section for the shared system.',
+                        style: TextStyle(fontSize: 12, color: Colors.amber),
+                      ),
+                    ),
+                  DropdownButtonFormField<int>(
+                    key: ValueKey('shared-manager-${sections.join(',')}'),
+                    initialValue:
+                        _maps(options?['students']).any(
+                          (s) =>
+                              s['id'] == projectManagerId &&
+                              sections.contains(s['section']),
+                        )
+                        ? projectManagerId
+                        : null,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Section project manager',
+                      helperText:
+                          'Student leader coordinating all section module teams',
+                    ),
+                    items: [
+                      for (final s in _maps(
+                        options?['students'],
+                      ).where((s) => sections.contains(s['section'])))
+                        DropdownMenuItem(
+                          value: s['id'] as int,
+                          child: Text('${s['name']}'),
+                        ),
+                    ],
+                    onChanged: busy
+                        ? null
+                        : (v) => setState(() => projectManagerId = v),
+                  ),
+                  const SizedBox(height: 14),
+                  DropdownButtonFormField<int>(
+                    initialValue: systemReviewerId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'System faculty reviewer',
+                    ),
+                    items: [
+                      for (final r in _maps(options?['system_reviewers']))
+                        DropdownMenuItem(
+                          value: r['id'] as int,
+                          child: Text('${r['name']}'),
+                        ),
+                    ],
+                    onChanged: busy
+                        ? null
+                        : (v) => setState(() => systemReviewerId = v),
+                  ),
+                  const SizedBox(height: 14),
+                  DropdownButtonFormField<String>(
+                    initialValue: conceptStage,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Concept stage / event',
+                    ),
+                    items: [
+                      for (final c in _maps(options?['concept_contexts']))
+                        DropdownMenuItem(
+                          value: '${c['label']}',
+                          child: Text('${c['label']}'),
+                        ),
+                    ],
+                    onChanged: busy
+                        ? null
+                        : (v) => setState(() => conceptStage = v),
+                  ),
+                  const SizedBox(height: 14),
+                  DropdownButtonFormField<String>(
+                    initialValue: titleMode,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Proposal names',
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'student_proposed',
+                        child: Text('Students propose; faculty confirms'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'faculty_provided',
+                        child: Text('Faculty provides names'),
+                      ),
+                    ],
+                    onChanged: busy
+                        ? null
+                        : (v) => setState(() => titleMode = v!),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<int>(initialValue: systemReviewerId, isExpanded: true,
-              decoration: const InputDecoration(labelText: 'System faculty reviewer'),
-              items: [for (final r in _maps(options?['system_reviewers'])) DropdownMenuItem(value: r['id'] as int, child: Text('${r['name']}'))],
-              onChanged: busy ? null : (v) => setState(() => systemReviewerId = v)),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(initialValue: conceptStage, isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Concept stage / event'),
-              items: [for (final c in _maps(options?['concept_contexts'])) DropdownMenuItem(value: '${c['label']}', child: Text('${c['label']}'))],
-              onChanged: busy ? null : (v) => setState(() => conceptStage = v)),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(initialValue: titleMode, isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Proposal names'),
-              items: const [DropdownMenuItem(value: 'student_proposed', child: Text('Students propose; faculty confirms')),
-                DropdownMenuItem(value: 'faculty_provided', child: Text('Faculty provides names'))],
-              onChanged: busy ? null : (v) => setState(() => titleMode = v!)),
           ],
-          const SizedBox(height: 16),
-          const Text(
-            'New teams start without a selected project. Leaders will be asked for their team name and the concepts configured for their stage or event.',
+          if (_maps(options?['concept_contexts']).isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Enable concept selection in stage/event setup to use shared system proposals.',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ),
+            ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: Theme.of(context).dividerColor.withValues(alpha: 0.4),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Remaining students will be distributed evenly. Teams start with provisional names and no selected project. You can review, rename, and reassign leaders and members in the preview step before saving.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ],

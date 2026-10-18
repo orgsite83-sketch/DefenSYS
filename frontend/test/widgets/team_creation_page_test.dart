@@ -49,6 +49,7 @@ class _Deliverables extends CapstoneDeliverablesNotifier {
   );
   @override
   Future<void> fetchDeliverables({
+    String? workspace,
     String? search,
     String? selectedStage,
     String? status,

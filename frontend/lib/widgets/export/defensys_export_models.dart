@@ -14,11 +14,7 @@ class DefensysSignatory {
     required this.role,
   });
 
-  DefensysSignatory copyWith({
-    String? label,
-    String? name,
-    String? role,
-  }) {
+  DefensysSignatory copyWith({String? label, String? name, String? role}) {
     return DefensysSignatory(
       label: label ?? this.label,
       name: name ?? this.name,
@@ -27,11 +23,7 @@ class DefensysSignatory {
   }
 
   Map<String, String> toJson() {
-    return {
-      'label': label,
-      'name': name,
-      'role': role,
-    };
+    return {'label': label, 'name': name, 'role': role};
   }
 
   factory DefensysSignatory.fromJson(Map<String, dynamic> json) {
@@ -94,10 +86,7 @@ class DefensysExportFormat {
   static List<DefensysExportFormat> get all => [pdf, xlsx, csv, doc];
 
   static DefensysExportFormat fromId(String id) {
-    return all.firstWhere(
-      (f) => f.id == id.toLowerCase(),
-      orElse: () => pdf,
-    );
+    return all.firstWhere((f) => f.id == id.toLowerCase(), orElse: () => pdf);
   }
 }
 
@@ -120,6 +109,7 @@ class DefensysExportConfig {
 
   /// Supported report formats.
   final List<String> supportedFormats;
+  final List<String> Function(Map<String, String> params)? formatsForParams;
 
   /// Default format selected initially
   final String initialFormat;
@@ -137,7 +127,8 @@ class DefensysExportConfig {
   final Map<String, String> initialParams;
 
   /// Callback to fetch structured live preview data for the right pane / main pane
-  final Future<ReportPreviewData?> Function(Map<String, String> currentParams) onFetchPreview;
+  final Future<ReportPreviewData?> Function(Map<String, String> currentParams)
+  onFetchPreview;
 
   /// Callback triggered when user clicks "Download Export"
   final Future<bool> Function(
@@ -145,7 +136,8 @@ class DefensysExportConfig {
     String format,
     List<DefensysSignatory> signatories,
     bool includeSignatures,
-  ) onDownload;
+  )
+  onDownload;
 
   /// Optional builder for Left Filter / Selector Pane (enables 2-pane Master-Detail Mode)
   final Widget Function(
@@ -153,7 +145,8 @@ class DefensysExportConfig {
     Map<String, String> currentParams,
     void Function(Map<String, String> updatedParams) updateParams,
     VoidCallback refreshPreview,
-  )? leftPaneBuilder;
+  )?
+  leftPaneBuilder;
 
   /// Width of the left pane if leftPaneBuilder is provided
   final double leftPaneWidth;
@@ -165,6 +158,7 @@ class DefensysExportConfig {
     this.icon = Icons.file_download_outlined,
     required this.defaultFilename,
     this.supportedFormats = const ['pdf', 'xlsx'],
+    this.formatsForParams,
     this.initialFormat = 'pdf',
     this.initialSignatories = const [],
     this.allowSignatoryCustomization = true,

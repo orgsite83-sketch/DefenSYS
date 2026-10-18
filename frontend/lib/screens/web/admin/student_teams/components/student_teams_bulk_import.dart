@@ -108,6 +108,8 @@ class StudentTeamsBulkImportView extends StatefulWidget {
     this.isPreviewLoading = false,
     this.fileImportError,
     this.onRetryPreview,
+    this.onEventChanged,
+    this.onOpenExistingTeam,
   });
 
   final StudentTeamsState state;
@@ -120,6 +122,8 @@ class StudentTeamsBulkImportView extends StatefulWidget {
   final bool isPreviewLoading;
   final String? fileImportError;
   final VoidCallback? onRetryPreview;
+  final ValueChanged<String?>? onEventChanged;
+  final ValueChanged<int>? onOpenExistingTeam;
   final bool showIssuesOnly;
   final String? templateWarning;
   final bool isBulkImportDirty;
@@ -248,6 +252,48 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
               _notice(widget.state.message!),
             ],
             const SizedBox(height: 20),
+
+            if (!widget.isCapstoneAdmin) ...[
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: DropdownButtonFormField<String>(
+                  key: ValueKey('import-event-${widget.state.eventName ?? ''}'),
+                  initialValue: widget.state.eventName ?? '',
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Import roster for',
+                  ),
+                  items: [
+                    const DropdownMenuItem(
+                      value: '',
+                      child: Text('Unassigned roster'),
+                    ),
+                    for (final event in widget.state.pitEvents.where(
+                      (e) =>
+                          widget.pitLeadYear == null ||
+                          e['year_level'] == widget.pitLeadYear,
+                    ))
+                      DropdownMenuItem(
+                        value: '${event['event_name']}',
+                        child: Text(
+                          '${event['event_name']}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: widget.state.isSaving || widget.isPreviewLoading
+                      ? null
+                      : widget.onEventChanged,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Unassigned rosters are checked against existing PIT teams in this semester. '
+                'Choose a different event explicitly when creating another roster for the same students.',
+                style: TextStyle(fontSize: 12, color: _muted, height: 1.5),
+              ),
+              const SizedBox(height: 20),
+            ],
 
             // Top 2-Column Section: Left is Smart Format Guide, Right is Primary Upload Action
             LayoutBuilder(
@@ -1259,6 +1305,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                       bulkPreview: widget.bulkPreview,
                     ),
                   TeamBulkImportReviewTable(
+                    onOpenExistingTeam: widget.onOpenExistingTeam,
                     rows: widget.parsedBulkRows,
                     previewRows: previewRows,
                     isCapstoneAdmin: widget.isCapstoneAdmin,

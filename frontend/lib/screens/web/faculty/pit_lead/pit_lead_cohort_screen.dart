@@ -291,7 +291,9 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
     final pitYear = cohortState.pitLeadYear ?? '1st Year';
     final semester = cohortState.activeSemester ?? 'Current Semester';
 
-    final studentCount = cohortState.students.length;
+    final studentCount = cohortState.counts['all'] is num
+        ? (cohortState.counts['all'] as num).toInt()
+        : cohortState.students.length;
     final activeInstructorsCount = instructorState.assignments
         .where((a) => a['is_active'] == true)
         .length;
@@ -328,7 +330,11 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
                 icon: Icons.assignment_ind_rounded,
               ),
             ],
-            onChanged: (tab) => setState(() => _currentTab = tab),
+            onChanged: (tab) {
+              if (tab == _currentTab) return;
+              setState(() => _currentTab = tab);
+              _refreshAllData();
+            },
           ),
           const SizedBox(height: 20),
 
@@ -444,7 +450,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
         ? (state.counts['all'] as num).toInt()
         : state.students.length;
     final filteredCount = list.length;
-    final distinctStudents = state.students.length;
+    final distinctStudents = totalCount;
     final activeTerm = state.activeSemester ?? 'Active Term';
 
     final start = _studentPage * _studentRowsPerPage;

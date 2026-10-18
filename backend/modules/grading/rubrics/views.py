@@ -25,6 +25,7 @@ def rubric_audit_values(rubric):
         'name', 'scope', 'evaluation_type', 'semester', 'school_year',
         'defense_stage_id', 'defense_stage_label', 'scale', 'status',
         'target_type', 'criteria',
+        'pit_event_id', 'event_name',
     )}
 
 
@@ -115,12 +116,14 @@ def _scopes_for_user(user):
 
 
 def options_payload(user=None):
+    from .pit_assignment import pit_event_options
     semesters = Semester.objects.select_related('school_year').order_by('-school_year__label', 'label')
     stages = DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label')
     return {
         'active_semester': SemesterSerializer(active_semester()).data if active_semester() else None,
         'semesters': SemesterSerializer(semesters, many=True).data,
         'defense_stages': DefenseStageSerializer(stages, many=True).data,
+        'pit_events': pit_event_options(user),
         'scopes': _scopes_for_user(user),
         'evaluation_types': [
             {'value': key, 'label': label}

@@ -17,6 +17,7 @@ class RubricEngineState {
   final List<Map<String, dynamic>> rubrics;
   final List<Map<String, dynamic>> semesters;
   final List<Map<String, dynamic>> defenseStages;
+  final List<Map<String, dynamic>> pitEvents;
   final List<Map<String, dynamic>> scopes;
   final List<String> scaleOptions;
   final List<String> statuses;
@@ -38,6 +39,7 @@ class RubricEngineState {
     this.rubrics = const [],
     this.semesters = const [],
     this.defenseStages = const [],
+    this.pitEvents = const [],
     this.scopes = const [],
     this.scaleOptions = const [],
     this.statuses = const [],
@@ -58,6 +60,7 @@ class RubricEngineState {
     List<Map<String, dynamic>>? rubrics,
     List<Map<String, dynamic>>? semesters,
     List<Map<String, dynamic>>? defenseStages,
+    List<Map<String, dynamic>>? pitEvents,
     List<Map<String, dynamic>>? scopes,
     List<String>? scaleOptions,
     List<String>? statuses,
@@ -80,6 +83,7 @@ class RubricEngineState {
       rubrics: rubrics ?? this.rubrics,
       semesters: semesters ?? this.semesters,
       defenseStages: defenseStages ?? this.defenseStages,
+      pitEvents: pitEvents ?? this.pitEvents,
       scopes: scopes ?? this.scopes,
       scaleOptions: scaleOptions ?? this.scaleOptions,
       statuses: statuses ?? this.statuses,
@@ -381,6 +385,7 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
       rubrics: _readMapList(payload['rubrics']),
       semesters: _readMapList(payload['semesters']),
       defenseStages: _readMapList(payload['defense_stages']),
+      pitEvents: _readMapList(payload['pit_events']),
       scopes: _readMapList(payload['scopes']),
       scaleOptions: _readStringList(payload['scale_options']),
       statuses: _readStringList(payload['statuses']),

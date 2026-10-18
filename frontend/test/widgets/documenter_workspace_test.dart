@@ -15,6 +15,7 @@ import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/services/documenter_provider.dart';
 import 'package:defensys/services/dashboard_provider.dart';
 import 'package:defensys/screens/web/faculty/faculty_dashboard.dart';
+import 'package:defensys/screens/app/documenter_dashboard.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/widgets/minutes/documenter_assignments_view.dart';
 import 'package:defensys/widgets/minutes/minutes_pdf_dialog.dart';
@@ -93,6 +94,7 @@ class _Admin extends AuthNotifier {
 }
 
 class _Assignments extends DocumenterNotifier {
+  int reads = 0;
   @override
   DocumenterState build() {
     final today = DocumenterAssignment.manilaNow
@@ -129,7 +131,9 @@ class _Assignments extends DocumenterNotifier {
   }
 
   @override
-  Future<void> fetchAssignments() async {}
+  Future<void> fetchAssignments() async {
+    reads++;
+  }
 }
 
 class _Minutes extends DocumenterNotifier {
@@ -248,6 +252,39 @@ Future<void> capture(WidgetTester tester, GlobalKey key, String name) async {
 void _ignoreMinutes(int _) {}
 
 void main() {
+  testWidgets(
+    'assignment and records switches refresh while retaining search',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final assignments = _Assignments();
+      await pumpDefensysWidget(
+        tester,
+        const DocumenterDashboard(),
+        overrides: [
+          authProvider.overrideWith(_Doc.new),
+          notificationsProvider.overrideWith2(_Notifications.new),
+          documenterProvider.overrideWith(() => assignments),
+          connectivityProvider.overrideWith(_Online.new),
+        ],
+      );
+      expect(assignments.reads, 1);
+      await tester.enterText(find.byType(ShadInput), 'AgriSense');
+      final navigation = tester.widget<NavigationBar>(
+        find.byType(NavigationBar),
+      );
+      navigation.onDestinationSelected!(1);
+      await tester.pumpAndSettle();
+      expect(assignments.reads, 2);
+      tester
+          .widget<NavigationBar>(find.byType(NavigationBar))
+          .onDestinationSelected!(0);
+      await tester.pumpAndSettle();
+      expect(assignments.reads, 3);
+      expect(find.text('AgriSense'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
   setUp(() => SharedPreferences.setMockInitialValues({}));
   setUpAll(() => registerFallbackValue(Uri.parse('https://example.test')));
   for (final (width, pitLead) in [

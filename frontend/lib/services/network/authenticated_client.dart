@@ -9,9 +9,12 @@ import '../../config/api_config.dart';
 import 'api_http.dart';
 import '../auth/auth_provider.dart';
 import '../auth/jwt_utils.dart';
+import '../app/data_refresh_provider.dart';
 import '../session/session_expired.dart';
 
-final authenticatedHttpClientProvider = Provider<AuthenticatedHttpClient>((ref) {
+final authenticatedHttpClientProvider = Provider<AuthenticatedHttpClient>((
+  ref,
+) {
   return AuthenticatedHttpClient(ref);
 });
 
@@ -21,6 +24,37 @@ class AuthenticatedHttpClient {
 
   final Ref _ref;
   Completer<bool>? _refreshCompleter;
+  final Map<String, Future<http.Response>> _pendingReads = {};
+
+  Future<http.Response> _getShared(Uri uri, Map<String, String> headers) {
+    // Share only concurrent reads with the same token and complete headers.
+    // Completed responses are never cached, so a later visit always reads anew.
+    final names = headers.keys.toList()..sort();
+    final revisions = _ref.read(dataRefreshProvider);
+    final key = jsonEncode([
+      uri.toString(),
+      for (final name in names) [name, headers[name]],
+      for (final area in DataArea.values) revisions[area] ?? 0,
+    ]);
+    final pending = _pendingReads[key];
+    if (pending != null) return pending;
+    late final Future<http.Response> read;
+    read = apiHttpClient.get(uri, headers: headers).whenComplete(() {
+      if (identical(_pendingReads[key], read)) _pendingReads.remove(key);
+    });
+    _pendingReads[key] = read;
+    return read;
+  }
+
+  Future<T> _write<T>(Future<T> Function() request) async {
+    // A read made before or during a save cannot satisfy a post-save refresh.
+    _pendingReads.clear();
+    try {
+      return await request();
+    } finally {
+      _pendingReads.clear();
+    }
+  }
 
   AuthNotifier get _auth => _ref.read(authProvider.notifier);
 
@@ -30,16 +64,10 @@ class AuthenticatedHttpClient {
     SessionExpiredReason reason = SessionExpiredReason.refreshFailed,
   }) async {
     if (_auth.isLoggingOut) {
-      throw SessionExpiredException(
-        sessionExpiredMessageFor(reason),
-        reason,
-      );
+      throw SessionExpiredException(sessionExpiredMessageFor(reason), reason);
     }
     await _auth.handleSessionExpired(reason: reason);
-    throw SessionExpiredException(
-      sessionExpiredMessageFor(reason),
-      reason,
-    );
+    throw SessionExpiredException(sessionExpiredMessageFor(reason), reason);
   }
 
   Future<void> _ensureReady() async {
@@ -124,10 +152,7 @@ class AuthenticatedHttpClient {
   }
 
   Future<http.Response> get(Uri uri, {Map<String, String>? headers}) {
-    return _send(
-      (h) => apiHttpClient.get(uri, headers: h),
-      headers: headers,
-    );
+    return _send((h) => _getShared(uri, h), headers: headers);
   }
 
   Future<http.Response> post(
@@ -135,9 +160,11 @@ class AuthenticatedHttpClient {
     Map<String, String>? headers,
     Object? body,
   }) {
-    return _send(
-      (h) => apiHttpClient.post(uri, headers: h, body: body),
-      headers: headers,
+    return _write(
+      () => _send(
+        (h) => apiHttpClient.post(uri, headers: h, body: body),
+        headers: headers,
+      ),
     );
   }
 
@@ -146,9 +173,11 @@ class AuthenticatedHttpClient {
     Map<String, String>? headers,
     Object? body,
   }) {
-    return _send(
-      (h) => apiHttpClient.put(uri, headers: h, body: body),
-      headers: headers,
+    return _write(
+      () => _send(
+        (h) => apiHttpClient.put(uri, headers: h, body: body),
+        headers: headers,
+      ),
     );
   }
 
@@ -157,9 +186,11 @@ class AuthenticatedHttpClient {
     Map<String, String>? headers,
     Object? body,
   }) {
-    return _send(
-      (h) => apiHttpClient.patch(uri, headers: h, body: body),
-      headers: headers,
+    return _write(
+      () => _send(
+        (h) => apiHttpClient.patch(uri, headers: h, body: body),
+        headers: headers,
+      ),
     );
   }
 
@@ -168,9 +199,11 @@ class AuthenticatedHttpClient {
     Map<String, String>? headers,
     Object? body,
   }) {
-    return _send(
-      (h) => apiHttpClient.delete(uri, headers: h, body: body),
-      headers: headers,
+    return _write(
+      () => _send(
+        (h) => apiHttpClient.delete(uri, headers: h, body: body),
+        headers: headers,
+      ),
     );
   }
 
@@ -193,13 +226,23 @@ class AuthenticatedHttpClient {
   Future<http.StreamedResponse> sendAuthenticated(
     http.BaseRequest request, {
     bool retryOn401 = true,
+  }) {
+    if (request.method == 'GET' || request.method == 'HEAD') {
+      return _sendAuthenticated(request, retryOn401: retryOn401);
+    }
+    return _write(() => _sendAuthenticated(request, retryOn401: retryOn401));
+  }
+
+  Future<http.StreamedResponse> _sendAuthenticated(
+    http.BaseRequest request, {
+    required bool retryOn401,
   }) async {
     await _ensureReady();
     var token = await _accessToken();
     request.headers['Authorization'] = 'Bearer $token';
 
     var streamed = await apiHttpClient.send(request);
-  if (streamed.statusCode != 401 || !retryOn401) {
+    if (streamed.statusCode != 401 || !retryOn401) {
       return streamed;
     }
 

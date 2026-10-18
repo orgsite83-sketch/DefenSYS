@@ -86,6 +86,78 @@ void main() {
     ],
   };
 
+  Future<_FakeScheduler> openPeerSetup(WidgetTester tester, {
+    Map<String, dynamic>? config,
+  }) async {
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final scheduler = _FakeScheduler(configs: [if (config != null) config]);
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        authProvider.overrideWith(_FakeAuth.new),
+        dashboardProvider('faculty').overrideWith(_FakeDashboard.new),
+        defenseSchedulerProvider.overrideWith(() => scheduler),
+      ],
+      child: MaterialApp(theme: AppTheme.theme,
+        home: const Scaffold(body: PitEventsManagementScreen())),
+    ));
+    await tester.pumpAndSettle();
+    if (config == null) {
+      await tester.tap(find.text('Add Event'));
+      await tester.pumpAndSettle();
+      final name = find.byWidgetPredicate((widget) => widget is TextFormField &&
+        widget.controller?.text == '');
+      await tester.enterText(name.first, 'New peer grading event');
+    } else {
+      await tester.tap(find.byKey(const ValueKey('pit-event-menu-1')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit event'));
+    }
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2. Grading & Rubrics'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Peer Evaluation Access'));
+    await tester.pumpAndSettle();
+    return scheduler;
+  }
+
+  testWidgets('new event keeps access enabled before rubrics are attached', (tester) async {
+    final scheduler = await openPeerSetup(tester);
+    expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+    expect(find.text('Enabled'), findsOneWidget);
+    expect(find.text('Open by Default'), findsNothing);
+    expect(find.text('Enabled — students can grade their teammates after their scheduled defense finishes.'), findsOneWidget);
+    expect(find.textContaining('submit peer rubrics'), findsNothing);
+    await tester.tap(find.text('3. Deliverables'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save Configuration'));
+    await tester.pumpAndSettle();
+    expect(scheduler.saved?['peer_grading_enabled'], isTrue);
+    expect(scheduler.saved?['peer_rubric_id'], isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('closed event badge and evaluation guide explain the actual policy', (tester) async {
+    await openPeerSetup(tester, config: {...sampleConfig, 'peer_grading_enabled': false});
+    expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
+    expect(find.text('Closed'), findsWidgets);
+    expect(find.text('Open by Default'), findsNothing);
+    expect(find.text('Closed — students cannot grade their teammates for this event.'), findsOneWidget);
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+    expect(find.text('Enabled'), findsOneWidget);
+    await tester.ensureVisible(find.text('Evaluation Guide'));
+    await tester.tap(find.text('Evaluation Guide'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Scheduling alone does not unlock peer grading.'), findsOneWidget);
+    expect(find.textContaining('peer rubric is attached later'), findsOneWidget);
+    await tester.tap(find.text('Got it'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'PIT Lead saves concept selection and concept papers in the assigned year',
     (tester) async {

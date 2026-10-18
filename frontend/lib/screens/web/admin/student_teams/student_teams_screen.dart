@@ -217,6 +217,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   void _fetchTeamsForCurrentRole({String? scope}) {
     final initialLevel = _isCapstoneAdmin ? 'Capstone' : '';
     ref.read(studentTeamsProvider.notifier).fetchTeams(
+          workspace: _isPitInstructor ? 'instructor' : 'operations',
           level: initialLevel,
           scope: (_isPitLeadManager || _isPitInstructor) ? (scope ?? _teamListScope) : null,
           yearLevel: widget.pitYearLevel,
@@ -881,6 +882,20 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         isPreviewLoading: _isBulkPreviewLoading,
         fileImportError: _fileImportError,
         onRetryPreview: _refreshBulkPreview,
+        onOpenExistingTeam: (teamId) async {
+          await _persistBulkDraft();
+          if (mounted) _openTeamDetailRoute(teamId);
+        },
+        onEventChanged: (value) async {
+          setState(() {
+            _bulkPreviewRevision++;
+            _bulkPreview = null;
+            _isBulkPreviewLoading = true;
+          });
+          await ref.read(studentTeamsProvider.notifier).fetchTeams(
+            eventName: value == '' ? null : value, clearEventName: value == '');
+          if (mounted) await _refreshBulkPreview();
+        },
         showIssuesOnly: _showIssuesOnly,
         templateWarning: _templateWarning,
         isBulkImportDirty: _isBulkImportDirty,

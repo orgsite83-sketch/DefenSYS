@@ -13,6 +13,9 @@ import '../../services/capstone_deliverables_provider.dart';
 import '../../services/dashboard_provider.dart';
 import '../../services/auth_provider.dart';
 import '../../services/academic/student_team_selection_provider.dart';
+import '../../services/academic/student_teams_provider.dart';
+import '../../services/repository_provider.dart';
+import '../../services/app/data_refresh_provider.dart';
 import '../../theme/defensys_tokens.dart';
 import '../../l10n/l10n_ext.dart';
 import '../../widgets/confirm_dialog.dart';
@@ -26,22 +29,29 @@ class StudentDashboard extends ConsumerStatefulWidget {
   final Map<String, dynamic>? userData;
   final String? initialStage;
   final bool openDeliverables;
-  const StudentDashboard({super.key, this.userData, this.initialStage, this.openDeliverables = false});
+  const StudentDashboard({
+    super.key,
+    this.userData,
+    this.initialStage,
+    this.openDeliverables = false,
+  });
 
   @override
   ConsumerState<StudentDashboard> createState() => _StudentDashboardState();
 }
 
 class _StudentDashboardState extends ConsumerState<StudentDashboard> {
-
   int _selectedIndex = 0;
+  final _visitedTabs = <String>{};
   final _eventsSubTabNotifier = ValueNotifier<int>(0);
   late final StudentProfile _profile;
 
   @override
   void initState() {
     super.initState();
-    if (widget.initialStage != null || widget.openDeliverables) _selectedIndex = 1;
+    if (widget.initialStage != null || widget.openDeliverables) {
+      _selectedIndex = 1;
+    }
     if (widget.openDeliverables) _eventsSubTabNotifier.value = 1;
     final u = widget.userData;
     _profile = StudentProfile(
@@ -62,40 +72,106 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
   }
 
   Future<void> _refreshDashboardAndNotifications() async {
-    final team = (ref.read(dashboardProvider('student')).data?['team']) as Map<String, dynamic>?;
+    final team =
+        (ref.read(dashboardProvider('student')).data?['team'])
+            as Map<String, dynamic>?;
     final isCapstone = team?['isCapstone'] == true;
-    final yearLevel = ref.read(dashboardProvider('student')).data?['year_level']?.toString().trim();
+    final yearLevel = ref
+        .read(dashboardProvider('student'))
+        .data?['year_level']
+        ?.toString()
+        .trim();
 
     await Future.wait([
       ref.read(dashboardProvider('student').notifier).fetchDashboardData(),
       ref.read(notificationsProvider('student').notifier).fetchNotifications(),
       if (team != null)
-        ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
-          scope: isCapstone ? 'capstone' : 'pit',
-          selectedStage: widget.initialStage,
-          yearLevel: isCapstone ? null : (yearLevel?.isNotEmpty == true ? yearLevel : null),
-        ),
+        ref
+            .read(capstoneDeliverablesProvider.notifier)
+            .fetchDeliverables(
+              scope: isCapstone ? 'capstone' : 'pit',
+              selectedStage: widget.initialStage,
+              yearLevel: isCapstone
+                  ? null
+                  : (yearLevel?.isNotEmpty == true ? yearLevel : null),
+            ),
     ]);
+  }
+
+  String _tabKey(int index) {
+    final data = ref.read(dashboardProvider('student')).data;
+    final isPM =
+        widget.userData?['is_project_manager'] == true ||
+        data?['student']?['is_project_manager'] == true;
+    return [
+      'team',
+      'events',
+      'library',
+      if (isPM) 'integration',
+      'profile',
+    ][index];
+  }
+
+  void _selectTab(int index) {
+    if (index == _selectedIndex) return;
+    final key = _tabKey(index);
+    final revisiting = _visitedTabs.contains(key);
+    setState(() => _selectedIndex = index);
+    if (!revisiting) return;
+    switch (key) {
+      case 'team':
+      case 'events':
+        ref
+            .read(dashboardProvider('student').notifier)
+            .fetchDashboardData(silent: true);
+      case 'library':
+        ref.read(repositoryProvider.notifier).fetchForStudent();
+      case 'integration':
+        ref.read(studentTeamsProvider.notifier).fetchTeams();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(dataRefreshProvider, (previous, next) {
+      if ((previous?[DataArea.dashboard] ?? 0) ==
+          (next[DataArea.dashboard] ?? 0)) {
+        return;
+      }
+      if (_selectedIndex != 0) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _selectedIndex == 0) {
+          ref
+              .read(dashboardProvider('student').notifier)
+              .fetchDashboardData(silent: true);
+        }
+      });
+      WidgetsBinding.instance.ensureVisualUpdate();
+    });
     ref.listen(studentTeamSelectionProvider, (previous, next) {
       if (previous != next) {
-        ref.read(dashboardProvider('student').notifier).fetchDashboardData(silent: true);
+        ref
+            .read(dashboardProvider('student').notifier)
+            .fetchDashboardData(silent: true);
       }
     });
     ref.listen(dashboardProvider('student'), (prev, next) {
       if (prev?.data == next.data) return;
+      if (_selectedIndex == 1 && _visitedTabs.contains('events')) return;
       final team = next.data?['team'] as Map<String, dynamic>?;
       if (team != null) {
         final isCapstone = team['isCapstone'] == true;
         final yearLevel = next.data?['year_level']?.toString().trim();
-        ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
-          scope: isCapstone ? 'capstone' : 'pit',
-          selectedStage: widget.initialStage ?? team['currentStage']?.toString(),
-          yearLevel: isCapstone ? null : (yearLevel?.isNotEmpty == true ? yearLevel : null),
-        );
+        ref
+            .read(capstoneDeliverablesProvider.notifier)
+            .fetchDeliverables(
+              scope: isCapstone ? 'capstone' : 'pit',
+              selectedStage:
+                  widget.initialStage ?? team['currentStage']?.toString(),
+              yearLevel: isCapstone
+                  ? null
+                  : (yearLevel?.isNotEmpty == true ? yearLevel : null),
+            );
       }
     });
 
@@ -109,8 +185,14 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     final team = dataToPass['team'] as Map<String, dynamic>?;
     final isCapstone = team?['isCapstone'] == true;
 
-    final isPM = widget.userData?['is_project_manager'] == true ||
+    final isPM =
+        widget.userData?['is_project_manager'] == true ||
         dataToPass['student']?['is_project_manager'] == true;
+
+    final showIntegrationTab = isPM ||
+        team?['section_project_id'] != null ||
+        (team?['system_name']?.toString().trim().isNotEmpty == true) ||
+        (dataToPass['student']?['managed_section']?.toString().trim().isNotEmpty == true);
 
     final hasPendingEvents = StudentTaskBadgeHelper.hasPendingEvents(
       selectedStage: delivState.currentTeamSelectedStage,
@@ -120,23 +202,33 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     final student = dataToPass['student'] as Map<String, dynamic>?;
     final studentName = student?['name']?.toString().trim().isNotEmpty == true
         ? student!['name'].toString().trim()
-        : (widget.userData?['name'] ?? widget.userData?['first_name'] ?? _profile.name);
+        : (widget.userData?['name'] ??
+              widget.userData?['first_name'] ??
+              _profile.name);
 
-    final members = (dataToPass['members'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-    final isLeader = student?['is_leader'] == true ||
+    final members =
+        (dataToPass['members'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final isLeader =
+        student?['is_leader'] == true ||
         student?['isLeader'] == true ||
         widget.userData?['is_leader'] == true ||
         widget.userData?['isLeader'] == true ||
-        members.any((m) =>
-            (m['id'] == student?['id'] || m['username'] == widget.userData?['username']) &&
-            (m['isLeader'] == true || m['is_leader'] == true));
+        members.any(
+          (m) =>
+              (m['id'] == student?['id'] ||
+                  m['username'] == widget.userData?['username']) &&
+              (m['isLeader'] == true || m['is_leader'] == true),
+        );
     final roleTag = isPM ? 'Project Manager' : (isLeader ? 'Leader' : 'Member');
 
     final teamName = team?['name']?.toString();
-    final teamLevel = team?['level']?.toString() ??
+    final teamLevel =
+        team?['level']?.toString() ??
         (isCapstone ? 'Capstone Project' : 'Design Project');
 
-    final deliverables = (dataToPass['deliverables'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final deliverables =
+        (dataToPass['deliverables'] as List?)?.cast<Map<String, dynamic>>() ??
+        [];
     int fileCount = 0;
     for (final d in deliverables) {
       final files = d['files'] as List?;
@@ -152,16 +244,20 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
 
     final schedule = dataToPass['schedule'] as Map<String, dynamic>?;
     final grades = dataToPass['grades'] as Map<String, dynamic>?;
-    final String stageName = schedule?['stage']?.toString() ??
+    final String stageName =
+        schedule?['stage']?.toString() ??
         grades?['stage']?.toString() ??
         team?['currentStage']?.toString() ??
         team?['readyForStage']?.toString() ??
         dataToPass['current_stage']?.toString() ??
         delivState.currentTeamSelectedStage?.toString() ??
-        (delivState.stageOptions.isNotEmpty ? delivState.stageOptions.first : null) ??
+        (delivState.stageOptions.isNotEmpty
+            ? delivState.stageOptions.first
+            : null) ??
         (dataToPass['stage_options'] as List?)?.firstOrNull?.toString() ??
         '';
-    final isPassed = grades?['result'] == 'PASSED' || grades?['is_published'] == true;
+    final isPassed =
+        grades?['result'] == 'PASSED' || grades?['is_published'] == true;
 
     final tabChildren = <Widget>[
       TeamTab(
@@ -171,7 +267,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
           if (subTabIndex != null) {
             _eventsSubTabNotifier.value = subTabIndex;
           }
-          setState(() => _selectedIndex = index);
+          _selectTab(index);
         },
       ),
       StudentEventsTab(
@@ -179,10 +275,10 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         initialStage: widget.initialStage,
         studentData: dataToPass,
         subTabNotifier: _eventsSubTabNotifier,
+        isActive: _selectedIndex == 1,
       ),
       const RepositoryTab(),
-      if (isPM)
-        SectionIntegrationTab(studentData: dataToPass),
+      if (showIntegrationTab) SectionIntegrationTab(studentData: dataToPass),
       const ProfileScreen(showAppBar: false, includeAppSettings: true),
     ];
 
@@ -198,7 +294,9 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
           isLabelVisible: hasPendingEvents,
           smallSize: 8,
           backgroundColor: Colors.redAccent,
-          child: Icon(isCapstone ? Icons.alt_route_rounded : Icons.event_note_rounded),
+          child: Icon(
+            isCapstone ? Icons.alt_route_rounded : Icons.event_note_rounded,
+          ),
         ),
         label: isCapstone ? 'Stages' : 'Events',
       ),
@@ -207,7 +305,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         selectedIcon: const Icon(Icons.folder),
         label: l10n.navRepository,
       ),
-      if (isPM)
+      if (showIntegrationTab)
         const NavigationDestination(
           icon: Icon(Icons.hub_outlined),
           selectedIcon: Icon(Icons.hub),
@@ -221,6 +319,22 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     ];
 
     final safeIndex = _selectedIndex.clamp(0, tabChildren.length - 1);
+    final tabKeys = [
+      'team',
+      'events',
+      'library',
+      if (showIntegrationTab) 'integration',
+      'profile',
+    ];
+    _visitedTabs.add(tabKeys[safeIndex]);
+    for (var i = 0; i < tabChildren.length; i++) {
+      tabChildren[i] = KeyedSubtree(
+        key: ValueKey(tabKeys[i]),
+        child: _visitedTabs.contains(tabKeys[i])
+            ? TickerMode(enabled: i == safeIndex, child: tabChildren[i])
+            : const SizedBox.shrink(),
+      );
+    }
     final initialLoad = dashState.isLoading && dashState.data == null;
     final showFatalError = dashState.error != null && dashState.data == null;
 
@@ -228,16 +342,20 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     String tabSubtitle;
     if (safeIndex == 0) {
       tabTitle = 'Team Workspace';
-      tabSubtitle = teamName != null ? '$teamName · $teamLevel' : 'Roster & Project Overview';
+      tabSubtitle = teamName != null
+          ? '$teamName · $teamLevel'
+          : 'Roster & Project Overview';
     } else if (safeIndex == 1) {
       tabTitle = isCapstone ? 'Defense Roadmap' : 'Defense Events';
       tabSubtitle = isPassed ? '$stageName Cleared ✓' : '$stageName Phase';
     } else if (safeIndex == 2) {
       tabTitle = 'Repository';
-      tabSubtitle = fileCount > 0 ? '$fileCount Files Submitted' : 'Deliverables & Manuscripts';
-    } else if (isPM && safeIndex == 3) {
+      tabSubtitle = fileCount > 0
+          ? '$fileCount Files Submitted'
+          : 'Deliverables & Manuscripts';
+    } else if (showIntegrationTab && safeIndex == 3) {
       tabTitle = 'Section Integration';
-      tabSubtitle = 'Section Deliverables & Reports';
+      tabSubtitle = 'Shared Systems & Section Map';
     } else {
       tabTitle = 'Account & Security';
       tabSubtitle = '$studentName ($roleTag)';
@@ -246,121 +364,141 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
       child: PopScope(
-      canPop: false,
-      child: Scaffold(
-      drawer: _buildStudentDrawer(
-        context,
-        dataToPass: dataToPass,
-        isPM: isPM,
-        studentName: studentName,
-        roleTag: roleTag,
-        teamName: teamName,
-        hasPendingDeliverables: delivState.hasPendingDeliverables,
-        hasPendingPeerEval: StudentTaskBadgeHelper.hasPendingPeerEval(dataToPass),
-      ),
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: DefensysTokens.maroonOf(context),
-        foregroundColor: Colors.white,
-        elevation: 0,
-        leading: Builder(
-          builder: (ctx) => IconButton(
-            icon: const Icon(Icons.menu_rounded, color: Colors.white),
-            tooltip: 'Navigation Menu',
-            onPressed: () => Scaffold.of(ctx).openDrawer(),
+        canPop: false,
+        child: Scaffold(
+          drawer: _buildStudentDrawer(
+            context,
+            dataToPass: dataToPass,
+            isPM: isPM,
+            showIntegrationTab: showIntegrationTab,
+            studentName: studentName,
+            roleTag: roleTag,
+            teamName: teamName,
+            hasPendingDeliverables: delivState.hasPendingDeliverables,
+            hasPendingPeerEval: StudentTaskBadgeHelper.hasPendingPeerEval(
+              dataToPass,
+            ),
           ),
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              tabTitle,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 17,
-                letterSpacing: -0.2,
+          appBar: AppBar(
+            automaticallyImplyLeading: false,
+            backgroundColor: DefensysTokens.maroonOf(context),
+            foregroundColor: Colors.white,
+            elevation: 0,
+            leading: Builder(
+              builder: (ctx) => IconButton(
+                icon: const Icon(Icons.menu_rounded, color: Colors.white),
+                tooltip: 'Navigation Menu',
+                onPressed: () => Scaffold.of(ctx).openDrawer(),
               ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              tabSubtitle,
-              style: TextStyle(
-                fontSize: 11.5,
-                color: Colors.white.withValues(alpha: 0.85),
-                fontWeight: FontWeight.w500,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-        actions: [
-          const NotificationsBell(workspace: 'student', workspaceLabel: 'Student', color: Colors.white),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: OfflineBanner(
-        child: IndexedStack(
-          index: safeIndex == tabChildren.length - 1 ? 1 : 0,
-          children: [
-            showFatalError
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Error loading dashboard',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        dashState.error!,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.grey),
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          ref
-                              .read(dashboardProvider('student').notifier)
-                              .fetchDashboardData();
-                        },
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Retry'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: DefensysTokens.maroonOf(context),
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
-                    ],
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  tabTitle,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 17,
+                    letterSpacing: -0.2,
                   ),
                 ),
-              )
-            : initialLoad
-                ? DefensysSkeleton.tabContent()
-                : IndexedStack(
-                    index: safeIndex.clamp(0, tabChildren.length - 2),
-                    children: tabChildren.sublist(0, tabChildren.length - 1),
+                const SizedBox(height: 2),
+                Text(
+                  tabSubtitle,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontWeight: FontWeight.w500,
                   ),
-            tabChildren.last,
-          ],
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+            actions: [
+              const NotificationsBell(
+                workspace: 'student',
+                workspaceLabel: 'Student',
+                color: Colors.white,
+              ),
+              const SizedBox(width: 4),
+            ],
+          ),
+          body: OfflineBanner(
+            child: IndexedStack(
+              index: safeIndex == tabChildren.length - 1 ? 1 : 0,
+              children: [
+                showFatalError
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.error_outline,
+                                size: 48,
+                                color: Colors.red,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Error loading dashboard',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                dashState.error!,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: Colors.grey),
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                onPressed: () {
+                                  ref
+                                      .read(
+                                        dashboardProvider('student').notifier,
+                                      )
+                                      .fetchDashboardData();
+                                },
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Retry'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: DefensysTokens.maroonOf(
+                                    context,
+                                  ),
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : initialLoad
+                    ? DefensysSkeleton.tabContent()
+                    : IndexedStack(
+                        index: safeIndex.clamp(0, tabChildren.length - 2),
+                        children: tabChildren.sublist(
+                          0,
+                          tabChildren.length - 1,
+                        ),
+                      ),
+                tabChildren.last,
+              ],
+            ),
+          ),
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: safeIndex,
+            onDestinationSelected: _selectTab,
+            indicatorColor: DefensysTokens.maroonOf(
+              context,
+            ).withValues(alpha: 0.15),
+            destinations: destinations,
+          ),
         ),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: safeIndex,
-        onDestinationSelected: (i) => setState(() => _selectedIndex = i),
-        indicatorColor: DefensysTokens.maroonOf(context).withValues(alpha: 0.15),
-        destinations: destinations,
-      ),
-    ),
-    ),
     );
   }
 
@@ -368,6 +506,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     BuildContext context, {
     required Map<String, dynamic> dataToPass,
     required bool isPM,
+    required bool showIntegrationTab,
     required String studentName,
     required String roleTag,
     required String? teamName,
@@ -378,9 +517,12 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     final avatarUrl = user?['avatar'] != null
         ? ApiConfig.publicMediaUrl(user!['avatar'] as String)
         : null;
-    final academicPeriod = dataToPass['academic_period'] as Map<String, dynamic>? ??
-        (dataToPass['team'] as Map<String, dynamic>?)?['academic_period'] as Map<String, dynamic>?;
-    final termName = academicPeriod?['name']?.toString() ??
+    final academicPeriod =
+        dataToPass['academic_period'] as Map<String, dynamic>? ??
+        (dataToPass['team'] as Map<String, dynamic>?)?['academic_period']
+            as Map<String, dynamic>?;
+    final termName =
+        academicPeriod?['name']?.toString() ??
         academicPeriod?['semester']?.toString() ??
         'AY 2026-2027';
 
@@ -444,7 +586,10 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                       ),
                       const Spacer(),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(12),
@@ -467,10 +612,14 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                       CircleAvatar(
                         radius: 22,
                         backgroundColor: Colors.white.withValues(alpha: 0.25),
-                        backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                        backgroundImage: avatarUrl != null
+                            ? NetworkImage(avatarUrl)
+                            : null,
                         child: avatarUrl == null
                             ? Text(
-                                studentName.isNotEmpty ? studentName[0].toUpperCase() : 'S',
+                                studentName.isNotEmpty
+                                    ? studentName[0].toUpperCase()
+                                    : 'S',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
@@ -496,7 +645,9 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              teamName != null ? '$roleTag · $teamName' : roleTag,
+                              teamName != null
+                                  ? '$roleTag · $teamName'
+                                  : roleTag,
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.white.withValues(alpha: 0.85),
@@ -517,7 +668,10 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
             // Navigation Links / Action Shortcuts (Clean Single-Line Items)
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 8,
+                  horizontal: 10,
+                ),
                 children: [
                   _drawerSectionHeader('QUICK ACCESS'),
                   _drawerItem(
@@ -527,7 +681,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                     badgeColor: const Color(0xFFEA580C),
                     onTap: () {
                       Navigator.pop(context);
-                      setState(() => _selectedIndex = 1);
+                      _selectTab(1);
                       _eventsSubTabNotifier.value = 1;
                     },
                   ),
@@ -538,7 +692,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                     badgeColor: const Color(0xFFDC2626),
                     onTap: () {
                       Navigator.pop(context);
-                      setState(() => _selectedIndex = 1);
+                      _selectTab(1);
                       _eventsSubTabNotifier.value = 2;
                     },
                   ),
@@ -547,7 +701,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                     title: 'Defense Schedule',
                     onTap: () {
                       Navigator.pop(context);
-                      setState(() => _selectedIndex = 1);
+                      _selectTab(1);
                       _eventsSubTabNotifier.value = 0;
                     },
                   ),
@@ -556,16 +710,16 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                     title: 'Project Repository',
                     onTap: () {
                       Navigator.pop(context);
-                      setState(() => _selectedIndex = 2);
+                      _selectTab(2);
                     },
                   ),
-                  if (isPM)
+                  if (showIntegrationTab)
                     _drawerItem(
                       icon: Icons.hub_rounded,
                       title: 'Section Integration Hub',
                       onTap: () {
                         Navigator.pop(context);
-                        setState(() => _selectedIndex = 3);
+                        _selectTab(3);
                       },
                     ),
                   _drawerItem(
@@ -573,7 +727,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                     title: 'E-Signature & Security',
                     onTap: () {
                       Navigator.pop(context);
-                      setState(() => _selectedIndex = (isPM ? 4 : 3));
+                      _selectTab(showIntegrationTab ? 4 : 3);
                     },
                   ),
                   _drawerItem(
@@ -582,7 +736,11 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                     badgeCount: notifState.unreadCount,
                     onTap: () {
                       Navigator.pop(context);
-                      showNotificationsPanel(context, workspace: 'student', workspaceLabel: 'Student');
+                      showNotificationsPanel(
+                        context,
+                        workspace: 'student',
+                        workspaceLabel: 'Student',
+                      );
                     },
                   ),
 
@@ -592,10 +750,14 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                   ),
 
                   _drawerSectionHeader('SYSTEM & POLICIES'),
-                  _drawerItem(icon: Icons.person_outline, title: 'Profile & Settings', onTap: () {
-                    Navigator.pop(context);
-                    setState(() => _selectedIndex = (isPM ? 4 : 3));
-                  }),
+                  _drawerItem(
+                    icon: Icons.person_outline,
+                    title: 'Profile & Settings',
+                    onTap: () {
+                      Navigator.pop(context);
+                      _selectTab(isPM ? 4 : 3);
+                    },
+                  ),
                   _drawerItem(
                     icon: Icons.info_outline_rounded,
                     title: 'About DefenSYS',
@@ -614,7 +776,9 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                       Navigator.pop(context);
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const PrivacyScreen()),
+                        MaterialPageRoute(
+                          builder: (_) => const PrivacyScreen(),
+                        ),
                       );
                     },
                   ),
@@ -646,7 +810,10 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                 },
                 borderRadius: BorderRadius.circular(10),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 16,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFEF2F2),
                     borderRadius: BorderRadius.circular(10),
@@ -654,7 +821,11 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                   ),
                   child: const Row(
                     children: [
-                      Icon(Icons.logout_rounded, color: Color(0xFFDC2626), size: 18),
+                      Icon(
+                        Icons.logout_rounded,
+                        color: Color(0xFFDC2626),
+                        size: 18,
+                      ),
                       SizedBox(width: 12),
                       Text(
                         'Logout',
@@ -665,7 +836,11 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                         ),
                       ),
                       Spacer(),
-                      Icon(Icons.chevron_right_rounded, color: Color(0xFFDC2626), size: 18),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        color: Color(0xFFDC2626),
+                        size: 18,
+                      ),
                     ],
                   ),
                 ),
@@ -737,12 +912,17 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                   if (badgeLabel != null) ...[
                     const SizedBox(width: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 1.5,
+                      ),
                       decoration: BoxDecoration(
-                        color: (badgeColor ?? const Color(0xFFDC2626)).withValues(alpha: 0.12),
+                        color: (badgeColor ?? const Color(0xFFDC2626))
+                            .withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color: (badgeColor ?? const Color(0xFFDC2626)).withValues(alpha: 0.3),
+                          color: (badgeColor ?? const Color(0xFFDC2626))
+                              .withValues(alpha: 0.3),
                         ),
                       ),
                       child: Text(

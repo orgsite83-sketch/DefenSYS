@@ -1,4 +1,5 @@
 from defensys_backend.file_cleanup import delete_repository_file_on_commit, replacement_file_name
+from defensys_backend.read_projection import read_memoize
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
@@ -16,16 +17,18 @@ from .timing import due_before_defense, scheduling_requirement
 from .concepts import stage_for as document_context
 
 
+@read_memoize(copy=True)
+def _active_stage_labels():
+    try:
+        return list(DefenseStage.objects.filter(is_active=True)
+                    .order_by('display_order', 'label').values_list('label', flat=True))
+    except Exception:
+        return []
+
+
 class DynamicStageOptionsList(list):
     def _get_stages(self):
-        try:
-            return list(
-                DefenseStage.objects.filter(is_active=True)
-                .order_by('display_order', 'label')
-                .values_list('label', flat=True)
-            )
-        except Exception:
-            return []
+        return _active_stage_labels()
 
     def __iter__(self):
         return iter(self._get_stages())
@@ -56,6 +59,7 @@ def default_stage_label():
     return stages[0] if stages else ''
 
 
+@read_memoize(copy=True)
 def get_deliverable_definitions(stage_label):
     """Load deliverable definitions configured in Defense Stages (database only)."""
     try:
@@ -89,6 +93,7 @@ def get_deliverable_definitions(stage_label):
         return []
 
 
+@read_memoize(copy=True)
 def get_deliverable_definitions_for_team(team, stage_label):
     """Load deliverable definitions configured for a Capstone stage or PIT event."""
     if not team or not stage_label:
@@ -106,6 +111,7 @@ def get_deliverable_definitions_for_team(team, stage_label):
     return definitions
 
 
+@read_memoize(copy=True)
 def get_deliverable_definitions_for_scope(scope, semester_id, stage_label, *, year_level=None):
     """Use the record's term/scope when reading historical defenses."""
     if scope == 'capstone':
@@ -156,6 +162,7 @@ def display_name(user):
 from academic_period_management.services import active_semester
 
 
+@read_memoize
 def defense_stage_for_label(stage_label):
     return DefenseStage.objects.filter(label=stage_label).first()
 
@@ -170,6 +177,7 @@ def definition_for(team, stage_label, deliverable_id):
     return None
 
 
+@read_memoize
 def current_stage_for_team(team):
     if not team:
         return default_stage_label()
@@ -196,6 +204,7 @@ def current_stage_for_team(team):
                 scope=DefenseSchedule.SCOPE_CAPSTONE,
                 status=DefenseSchedule.STATUS_SCHEDULED,
             )
+            .select_related('defense_stage')
             .order_by('scheduled_date', 'start_time')
             .first()
         )
@@ -203,26 +212,16 @@ def current_stage_for_team(team):
             return sched.defense_stage.label
 
         # 2. Check completion for each stage in order
-        completed_stage_ids = set()
-        for stg in stages:
-            # Check if team has passed/archived progress for this stage
-            if TeamStageProgress.objects.filter(
-                team=team,
-                defense_stage=stg,
-                status__in=[TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_ARCHIVED],
-            ).exists():
-                completed_stage_ids.add(stg.id)
-                continue
-
-            # Check if team has a passing published grade for this stage
-            if TeamGrade.objects.filter(
-                team=team,
-                defense_stage=stg,
-                status=TeamGrade.STATUS_PUBLISHED,
-                final_grade__gte=PASS_GRADE_THRESHOLD,
-            ).exists():
-                completed_stage_ids.add(stg.id)
-                continue
+        stage_ids = [stage.pk for stage in stages]
+        completed_stage_ids = set(TeamStageProgress.objects.filter(
+            team=team, defense_stage_id__in=stage_ids,
+            status__in=[TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_ARCHIVED],
+        ).values_list('defense_stage_id', flat=True))
+        completed_stage_ids.update(TeamGrade.objects.filter(
+            team=team, defense_stage_id__in=stage_ids,
+            status=TeamGrade.STATUS_PUBLISHED,
+            final_grade__gte=PASS_GRADE_THRESHOLD,
+        ).values_list('defense_stage_id', flat=True))
 
         # 3. Find the first uncompleted stage in order
         for stg in stages:
@@ -422,6 +421,7 @@ def filter_teams(request, queryset):
     return queryset
 
 
+@read_memoize
 def archive_unlocked(team, stage_label, deliverable_type='post'):
     from .stage_access import manually_locked
     if manually_locked(team, stage_label, deliverable_type):
@@ -437,11 +437,7 @@ def archive_unlocked(team, stage_label, deliverable_type='post'):
         return True
 
     from grading.grades.models import TeamGrade
-    stage_grade = TeamGrade.objects.filter(
-        Q(defense_stage__label=stage_label) | Q(stage_label=stage_label),
-        team=team,
-        semester=team.semester,
-    ).order_by('-updated_at', '-id').first()
+    stage_grade = latest_stage_grade(team, stage_label)
     if stage_grade and stage_grade.uses_defense_verdict:
         if stage_grade.scope == 'pit' and not stage_grade.verdict:
             return False
@@ -471,6 +467,19 @@ def archive_unlocked(team, stage_label, deliverable_type='post'):
 
 
 
+@read_memoize
+def latest_stage_grade(team, stage_label, *, scope=None):
+    from grading.grades.models import TeamGrade
+    label_filter = (Q(pit_event_config__event_name=stage_label) | Q(stage_label=stage_label)
+                    if scope == TeamGrade.SCOPE_PIT else
+                    Q(defense_stage__label=stage_label) | Q(stage_label=stage_label))
+    grades = TeamGrade.objects.filter(label_filter, team=team, semester=team.semester)
+    if scope is not None:
+        grades = grades.filter(scope=scope)
+    return grades.select_related('pit_event_config', 'defense_stage').order_by('-updated_at', '-id').first()
+
+
+@read_memoize
 def submissions_for(team, stage_label):
     return {
         submission.deliverable_id: submission
@@ -479,6 +488,7 @@ def submissions_for(team, stage_label):
     }
 
 
+@read_memoize
 def is_presentation_stage(team, stage_label):
     if not stage_label:
         return False
@@ -487,13 +497,10 @@ def is_presentation_stage(team, stage_label):
         if stage and getattr(stage, 'is_presentation_only', False):
             return True
     else:
-        from defense.scheduler.models import PitEventGradingConfig
+        from defense.scheduler.pit_config import get_pit_event_config
         sem = getattr(team, 'semester', None)
         if sem:
-            config = PitEventGradingConfig.objects.filter(
-                semester=sem, year_level=team.year_level,
-                event_name__iexact=stage_label.strip(),
-            ).prefetch_related('deliverables').first()
+            config = get_pit_event_config(sem, stage_label.strip(), year_level=team.year_level)
             if config and not config.deliverables.exists():
                 return True
     return False
@@ -505,6 +512,7 @@ def stage_deliverables_configured(team, stage_label):
     return bool(get_deliverable_definitions_for_team(team, stage_label))
 
 
+@read_memoize
 def required_complete(team, stage_label):
     if is_presentation_stage(team, stage_label):
         return True
@@ -529,6 +537,7 @@ def required_complete(team, stage_label):
     )
 
 
+@read_memoize
 def post_deliverables_complete(team, stage_label):
     if is_presentation_stage(team, stage_label):
         return True
@@ -543,11 +552,7 @@ def post_deliverables_complete(team, stage_label):
         return True
 
     from grading.grades.models import TeamGrade
-    stage_grade = TeamGrade.objects.filter(
-        Q(defense_stage__label=stage_label) | Q(stage_label=stage_label),
-        team=team,
-        semester=team.semester,
-    ).order_by('-updated_at', '-id').first()
+    stage_grade = latest_stage_grade(team, stage_label)
 
     submitted = submissions_for(team, stage_label)
     for item in post_required:
@@ -643,11 +648,7 @@ def compute_stage_status_detail(team, stage_label, configured, archive_required_
         ).exists()
 
     from grading.grades.models import TeamGrade
-    stage_grade = TeamGrade.objects.filter(
-        Q(defense_stage__label=stage_label) | Q(stage_label=stage_label),
-        team=team,
-        semester=team.semester,
-    ).order_by('-updated_at', '-id').first()
+    stage_grade = latest_stage_grade(team, stage_label)
     has_panel_scored = bool(stage_grade and stage_grade.panel_score is not None)
 
     if stage_grade and stage_grade.uses_defense_verdict:
@@ -680,6 +681,7 @@ def compute_stage_status_detail(team, stage_label, configured, archive_required_
         return 'awaiting_endorsement'
 
 
+@read_memoize
 def is_stage_defense_done(team, stage_label):
     from student_teams.models import TeamStageProgress
     from student_teams.services import get_stage_progress
@@ -727,11 +729,7 @@ def is_stage_defense_done(team, stage_label):
         ).exists()
 
     from grading.grades.models import TeamGrade
-    stage_grade = TeamGrade.objects.filter(
-        Q(defense_stage__label=stage_label) | Q(stage_label=stage_label),
-        team=team,
-        semester=team.semester,
-    ).order_by('-updated_at', '-id').first()
+    stage_grade = latest_stage_grade(team, stage_label)
     if stage_grade:
         if is_capstone:
             is_officially_complete = is_officially_complete and stage_grade.status == TeamGrade.STATUS_PUBLISHED
@@ -772,7 +770,7 @@ def is_stage_unlocked_by_admin(team, stage_label, deliverable_type=None):
     return False
 
 
-def ensure_submission_editable(team, stage_label, deliverable_type, submission=None, *, allow_replacement=False, deliverable_id=None):
+def ensure_submission_editable(team, stage_label, deliverable_type, submission=None, *, allow_replacement=False, deliverable_id=None, lock=None):
     """Keep upload and removal rules aligned with the review state."""
     from .stage_access import manually_locked, deliverable_override
     specific = deliverable_override(team, stage_label, submission.deliverable_id if submission else deliverable_id)
@@ -781,14 +779,11 @@ def ensure_submission_editable(team, stage_label, deliverable_type, submission=N
     definition = definition_for(team, stage_label, submission.deliverable_id if submission else deliverable_id)
     if definition and due_before_defense(definition):
         from .timing import ensure_material_editable
-        ensure_material_editable(team, stage_label, definition, lock=transaction.get_connection().in_atomic_block)
+        ensure_material_editable(team, stage_label, definition,
+                                 lock=transaction.get_connection().in_atomic_block if lock is None else lock)
         return
     from grading.grades.models import TeamGrade
-    stage_grade = TeamGrade.objects.filter(
-        Q(defense_stage__label=stage_label) | Q(stage_label=stage_label),
-        team=team,
-        semester=team.semester,
-    ).order_by('-updated_at', '-id').first()
+    stage_grade = latest_stage_grade(team, stage_label)
     is_redefense = bool(stage_grade and getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE)
 
     if submission and deliverable_type == DeliverableSubmission.TYPE_PRE:
@@ -929,20 +924,8 @@ def stage_payload(team, stage_label, evaluator=None):
 
     # Resolve stage-scoped grade first so deliverable waiver conditions can evaluate it
     from grading.grades.models import TeamGrade
-    if is_capstone:
-        stage_grade = TeamGrade.objects.filter(
-            Q(defense_stage__label=stage_label) | Q(stage_label=stage_label),
-            team=team,
-            semester=team.semester,
-            scope=TeamGrade.SCOPE_CAPSTONE,
-        ).order_by('-updated_at', '-id').first()
-    else:
-        stage_grade = TeamGrade.objects.filter(
-            Q(pit_event_config__event_name=stage_label) | Q(stage_label=stage_label),
-            team=team,
-            semester=team.semester,
-            scope=TeamGrade.SCOPE_PIT,
-        ).order_by('-updated_at', '-id').first()
+    stage_grade = latest_stage_grade(team, stage_label,
+        scope=TeamGrade.SCOPE_CAPSTONE if is_capstone else TeamGrade.SCOPE_PIT)
 
     grade_data = None
     if is_capstone and stage_grade and stage_grade.status != TeamGrade.STATUS_PUBLISHED and (
@@ -1020,7 +1003,7 @@ def stage_payload(team, stage_label, evaluator=None):
 
         try:
             ensure_submission_editable(team, stage_label, item['type'], submission,
-                                       allow_replacement=True, deliverable_id=item['id'])
+                                       allow_replacement=True, deliverable_id=item['id'], lock=False)
             can_upload = True
         except PermissionError:
             can_upload = False
@@ -1203,6 +1186,7 @@ def stage_payload(team, stage_label, evaluator=None):
     }
 
 
+@read_memoize(copy=True)
 def submission_payload(submission):
     if submission is None:
         return None
@@ -1287,20 +1271,8 @@ def team_payload(team, selected_stage=None, evaluator=None):
 
     grade_payload = None
     if selected:
-        if team.is_capstone:
-            grade_obj = TeamGrade.objects.filter(
-                Q(defense_stage__label=selected) | Q(stage_label=selected),
-                team=team,
-                semester=team.semester,
-                scope=TeamGrade.SCOPE_CAPSTONE,
-            ).order_by('-updated_at', '-id').first()
-        else:
-            grade_obj = TeamGrade.objects.filter(
-                Q(pit_event_config__event_name=selected) | Q(stage_label=selected),
-                team=team,
-                semester=team.semester,
-                scope=TeamGrade.SCOPE_PIT,
-            ).order_by('-updated_at', '-id').first()
+        grade_obj = latest_stage_grade(team, selected,
+            scope=TeamGrade.SCOPE_CAPSTONE if team.is_capstone else TeamGrade.SCOPE_PIT)
 
         if grade_obj:
             student_grades = StudentStageGrade.objects.filter(team_grade=grade_obj).select_related('student')

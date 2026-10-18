@@ -41,7 +41,7 @@ def formation_scope(user, data, *, lock=False, roster_only=False, generation=Tru
         raise PermissionDenied('This roster is outside your assigned PIT year level.')
     event = None
     if 'PIT' in level:
-        if roster_only and not data.get('event_name'):
+        if (roster_only or generation) and not data.get('event_name'):
             return semester, level, year, None
         events = pit_events_for_user(user, semester=semester).filter(year_level=year)
         if lock:
@@ -75,7 +75,8 @@ def roster(semester, level, year, event, user=None, *, generation=True):
     elif 'PIT' not in level:
         excluded = set(assigned.filter(team__level__icontains='Capstone').values_list('student_id', flat=True))
     else:
-        excluded = set()
+        assigned = assigned.filter(team__level__icontains='PIT')
+        excluded = set(assigned.values_list('student_id', flat=True))
     assigned_ids = set(assigned.values_list('student_id', flat=True)) if event else excluded
     return [{
         'id': record.student_id, 'name': record.student.get_full_name() or record.student.username,
@@ -99,8 +100,12 @@ def options(user, data, *, generation=True):
         sources = sources.none()
     sources = sources.filter(section__in=sections)
     from defense.stages.models import DefenseStage
-    contexts = ([event] if event and event.concept_config.get('enabled') else []) if 'PIT' in level else list(
-        DefenseStage.objects.filter(concept_config__enabled=True).order_by('display_order'))
+    if 'PIT' in level:
+        contexts = ([event] if event.concept_config.get('enabled') else []) if event else list(
+            pit_events_for_user(user, semester=semester).filter(year_level=year,
+                concept_config__enabled=True, is_officially_complete=False).order_by('pk'))
+    else:
+        contexts = list(DefenseStage.objects.filter(concept_config__enabled=True).order_by('display_order'))
     reviewers = get_user_model().objects.filter(role='faculty', is_active=True)
     if not is_manager(user):
         reviewers = reviewers.filter(pk__in=assignments.values('faculty_id'))
@@ -141,7 +146,7 @@ def preview(user, data):
     if shared_system and (data.get('roster_mode', 'sections') != 'sections' or len(sections) != 1):
         raise ValidationError('Generate a shared system for one enrolled section at a time.')
     if shared_system:
-        generation_concept_context(event, shared_system)
+        generation_concept_context(event, shared_system, semester=semester, pit_year=year if 'PIT' in level else None)
     custom = data.get('roster_mode', 'sections') == 'custom'
     if not custom and (len(sections) != len(set(sections)) or not set(sections) <= {
             s['section'] for s in students if s['section'] and s['section'].upper() != 'BSIT'}):
@@ -272,7 +277,8 @@ def create_from_preview(request, data):
         teams.append(serializer.save(setup_pending=True))
     if data.get('shared_system'):
         from repository.section_concepts.services import configure
-        configure(request.user, teams, generation_concept_context(event, data['shared_system']), data['shared_system'])
+        configure(request.user, teams, generation_concept_context(event, data['shared_system'],
+            semester=semester, pit_year=year if 'PIT' in level else None), data['shared_system'])
     log_high_impact_action(category=SystemAuditLog.CATEGORY_STUDENT_TEAMS, action='teams.generate',
         target=teams[0], request=request, strict=True,
         new_values={'team_ids': [t.pk for t in teams], 'semester_id': semester.pk,
@@ -281,9 +287,14 @@ def create_from_preview(request, data):
     return teams
 
 
-def generation_concept_context(event, data):
+def generation_concept_context(event, data, *, semester=None, pit_year=None):
     if event:
         context = event
+    elif pit_year:
+        from defense.scheduler.models import PitEventGradingConfig
+        context = PitEventGradingConfig.objects.filter(semester=semester, year_level=pit_year,
+            event_name=data.get('stage_label'), concept_config__enabled=True,
+            is_officially_complete=False).first()
     else:
         from defense.stages.models import DefenseStage
         context = DefenseStage.objects.filter(label=data.get('stage_label'), concept_config__enabled=True).first()
