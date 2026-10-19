@@ -44,6 +44,8 @@ class TeamWorkflowStatus {
       'Submit replacement concepts using the panel feedback.',
     'concept_review_pending' =>
       'Review the current concept papers and resolve any requested corrections.',
+    'shared_clearance_pending' =>
+      'The designated system reviewer must confirm the shared titles and accept their current papers.',
     'ready_to_schedule_redefense' =>
       'The administrator can schedule the next defense attempt.',
     'failed' || 'project_rejected' =>
@@ -260,28 +262,51 @@ class TeamWorkflowStatus {
         concept['enabled'] == true &&
         concept['can_edit'] == true) {
       final status = concept['status']?.toString();
-      if (status == 'replacement_concepts_needed')
+      if (status == 'replacement_concepts_needed') {
         return const TeamWorkflowStatus(
           'replacement_concepts_needed',
           'Replacement concepts needed',
           WorkflowStatusTone.attention,
         );
-      if (status == 'concept_review_pending')
-        return TeamWorkflowStatus(
-          'concept_review_pending',
-          scope == 'pit'
-              ? 'Instructor review pending'
-              : 'Adviser review pending',
-          WorkflowStatusTone.active,
+      }
+      if (status == 'concept_review_pending') {
+        if (items(stage).any(
+          (item) =>
+              item['required'] == true &&
+              item['type'] != 'post' &&
+              item['requirement_timing'] != 'defense' &&
+              item['is_waived'] != true &&
+              (item['uploaded'] == false ||
+                  (item['uploaded'] != true && item['submission'] == null)),
+        )) {
+          return describe('awaiting_files');
+        } else {
+          return TeamWorkflowStatus(
+            'concept_review_pending',
+            scope == 'pit'
+                ? 'Instructor review pending'
+                : 'Adviser review pending',
+            WorkflowStatusTone.active,
+          );
+        }
+      }
+      if (status == 'shared_clearance_pending') {
+        return const TeamWorkflowStatus(
+          'shared_clearance_pending',
+          'Awaiting shared paper clearance',
+          WorkflowStatusTone.neutral,
         );
-      if (status == 'concept_endorsement_pending')
+      }
+      if (status == 'concept_endorsement_pending') {
         return describe('awaiting_endorsement');
-      if (status == 'ready_to_schedule_redefense')
+      }
+      if (status == 'ready_to_schedule_redefense') {
         return const TeamWorkflowStatus(
           'ready_to_schedule_redefense',
           'Ready to schedule re-defense',
           WorkflowStatusTone.success,
         );
+      }
       if (status == 'ready_to_schedule') return describe('ready_to_schedule');
       if (status == 'concepts_needed') return describe('awaiting_files');
     }

@@ -25,6 +25,9 @@ class CurriculumExplorerReportView(APIView):
         fmt = request.query_params.get('export_format', 'pdf')
         if fmt not in ('pdf', 'csv', 'xlsx', 'json'):
             raise ValidationError({'export_format': 'Use PDF, XLSX or CSV.'})
+        if data.get('view'):
+            from .workspace_reports import export_workspace
+            return export_workspace(request, data, fmt)
         project_tab = request.query_params.get('tab') == 'projects'
         scope = 'Capstone' if data['scope'] == 'capstone' else f"PIT / Year {data['year_level']}"
         period = data['academic_year'] or 'All academic years'

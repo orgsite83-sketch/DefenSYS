@@ -11,7 +11,7 @@ import '../../../services/unsaved_changes_provider.dart';
 import '../../../utils/unsaved_changes.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../services/academic/student_teams_provider.dart';
-import '../../../services/academic/curriculum_analytics_provider.dart';
+import '../../../services/academic/curriculum_explorer_provider.dart';
 import '../../../services/admin/user_management_provider.dart';
 import '../../../services/academic/student_academic_records_provider.dart';
 import '../../../services/grading/grade_center_provider.dart';
@@ -255,7 +255,10 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       case DefensysAdminSection.defenseStages:
         ref.read(defenseStagesProvider.notifier).fetchStages();
       case DefensysAdminSection.curriculumAnalytics:
-        ref.read(curriculumAnalyticsProvider.notifier).fetchAnalytics();
+        final explorer = ref.read(curriculumExplorerProvider);
+        if (explorer.data.isNotEmpty) {
+          ref.read(curriculumExplorerProvider.notifier).fetch(explorer.query);
+        }
       case DefensysAdminSection.auditCompliance:
         ref.read(systemAuditProvider.notifier).fetch();
       case DefensysAdminSection.repositoryAudit:

@@ -843,6 +843,15 @@ def toggle_global_stage_deliverables_unlock(stage_label, user, scope='capstone',
 
 
 
+def can_submit_files(user, team):
+    """File submission ownership is independent from faculty review authority."""
+    if not user:
+        return False
+    if getattr(user, 'is_superuser', False) or getattr(user, 'role', '') == 'admin':
+        return True
+    return getattr(user, 'role', '') == 'student' and team.memberships.filter(student=user).exists()
+
+
 def stage_payload(team, stage_label, evaluator=None):
     submitted = submissions_for(team, stage_label)
     definitions = get_deliverable_definitions_for_team(team, stage_label)
@@ -957,6 +966,7 @@ def stage_payload(team, stage_label, evaluator=None):
             'workflow': workflow_payload(stage_grade) if is_capstone else {},
         }
 
+    actor_can_submit = evaluator is None or can_submit_files(evaluator, team)
     used_vault_names = set()
     for item in definitions:
         if item.get('source') == 'defense_minutes':
@@ -1004,12 +1014,14 @@ def stage_payload(team, stage_label, evaluator=None):
         try:
             ensure_submission_editable(team, stage_label, item['type'], submission,
                                        allow_replacement=True, deliverable_id=item['id'], lock=False)
-            can_upload = True
+            upload_window_open = True
         except PermissionError:
-            can_upload = False
+            upload_window_open = False
+
+        can_upload = upload_window_open and actor_can_submit
 
         if due_before_defense(item):
-            can_review_item = can_upload and not is_defense_done
+            can_review_item = upload_window_open and not is_defense_done
 
         rows.append({
             'id': item['id'],

@@ -44,8 +44,11 @@ class ArchiveFolderHierarchyTests(TestCase):
                                  ['2nd Year', '3rd Year', '4th Year'])
                 events = self._open(grouping, ['2026-2027', '1st Semester', '2nd Year'])
                 self.assertEqual([f['title'] for f in events['folders']], ['Expo', 'Showcase'])
-                last = 'Pitch deck' if grouping == 'deliverable' else 'Team Atlas'
-                titles = ['2026-2027', '1st Semester', '2nd Year', 'Showcase', last]
+                if grouping == 'stage':
+                    titles = ['2026-2027', '1st Semester', '2nd Year', 'Showcase']
+                else:
+                    last = 'Pitch deck' if grouping == 'deliverable' else 'Team Atlas'
+                    titles = ['2026-2027', '1st Semester', '2nd Year', 'Showcase', last]
                 leaf = self._open(grouping, titles)
                 self.assertTrue(leaf['is_leaf'])
                 self.assertEqual([e['id'] for e in leaf['entries']], ['pit'])
@@ -72,5 +75,19 @@ class ArchiveFolderHierarchyTests(TestCase):
         self.assertEqual(len(payload['folders']), 3)
         self.assertEqual(len({f['key'] for f in payload['folders']}), 3)
 
+    def test_pit_entries_with_and_without_event_config_id_share_same_event_folder(self):
+        entries = [
+            self.base,
+            {**self.base, 'id': 'pit-no-config', 'deliverable_id': 'D2', 'pit_event_config_id': None},
+        ]
+        payload = archive_folder_payload(entries)
+        for _ in range(3):
+            payload = archive_folder_payload(entries, folder_key=payload['folders'][0]['key'])
+        self.assertEqual(len(payload['folders']), 1)
+        showcase_folder = payload['folders'][0]
+        self.assertEqual(showcase_folder['title'], 'Showcase')
+        self.assertEqual(showcase_folder['file_count'], 2)
+
     def test_invalid_folder_key_resets_to_root(self):
         self.assertEqual(archive_folder_payload(self.entries, folder_key='invalid!')['folder_key'], '')
+

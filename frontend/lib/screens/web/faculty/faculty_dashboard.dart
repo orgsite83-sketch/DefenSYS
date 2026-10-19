@@ -16,6 +16,7 @@ import '../../../services/repository_provider.dart';
 import '../../../services/project_archive_provider.dart';
 import '../../../services/weekly_progress_provider.dart';
 import '../../../services/academic/student_teams_provider.dart';
+import '../../../services/academic/curriculum_explorer_provider.dart';
 import '../../../services/academic/student_academic_records_provider.dart';
 import '../../../services/admin/user_management_provider.dart';
 import '../../../services/grading/grade_center_provider.dart';
@@ -42,6 +43,7 @@ import '../admin/audit_compliance_screen.dart';
 import '../admin/defense_scheduler/defense_scheduler_screen.dart';
 import '../admin/defense_board_screen.dart';
 import '../admin/grade_center_screen.dart';
+import '../admin/curriculum_analytics/curriculum_analytics_screen.dart';
 import '../admin/rubric_engine_screen.dart';
 import '../admin/student_teams_screen.dart';
 import '../uploader/uploader_dashboard.dart';
@@ -271,6 +273,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     'student_teams' => DataArea.teams,
     'rubrics' => DataArea.rubrics,
     'grade_center' => DataArea.grades,
+    'curriculum_analytics' => DataArea.analytics,
     'defense_scheduler' || 'pit_events' => DataArea.scheduler,
     'defense_board' => DataArea.defenseBoard,
     'pit_student_import' => DataArea.academicRecords,
@@ -343,6 +346,19 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         ref.read(rubricEngineProvider.notifier).fetchRubrics();
       case 'grade_center':
         ref.read(gradeCenterProvider.notifier).fetchGrades();
+      case 'curriculum_analytics':
+        final query = ref.read(curriculumExplorerProvider).query;
+        final roles =
+            (ref.read(dashboardProvider('faculty')).data?['roles'] as Map?)
+                ?.cast<String, dynamic>() ?? {};
+        final workspace = _resolvedWorkspace(roles);
+        final year = const {
+          '1st Year': '1', '2nd Year': '2', '3rd Year': '3',
+        }[workspace.yearLevel];
+        if (workspace.type == FacultyWorkspace.pitLead &&
+            year != null && query.scope == 'pit' && query.yearLevel == year) {
+          ref.read(curriculumExplorerProvider.notifier).fetch(query);
+        }
       case 'defense_scheduler':
       case 'pit_events':
         ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
@@ -458,6 +474,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           'defense_scheduler',
           'defense_board',
           'grade_center',
+          'curriculum_analytics',
           'project_archive',
           'repository_audit',
           'audit_compliance',
@@ -548,6 +565,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     ref.invalidate(defenseBoardProvider);
     ref.invalidate(defenseSchedulerProvider);
     ref.invalidate(gradeCenterProvider);
+    ref.invalidate(curriculumExplorerProvider);
     ref.invalidate(adviserDefenseProvider);
     ref.invalidate(pitInstructorDefenseProvider);
     ref.invalidate(adviserGradingProvider);
@@ -1484,6 +1502,16 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                   () => _goToSection('grade_center'),
                 ),
               ),
+              _FacultyNavEntry(
+                section: 'curriculum_analytics',
+                icon: Icons.analytics_outlined,
+                label: 'Curriculum Analytics',
+                isActive: _activeSection == 'curriculum_analytics',
+                onTap: () => _afterSidebarAction(
+                  isWide,
+                  () => _goToSection('curriculum_analytics'),
+                ),
+              ),
             ],
           ),
           _FacultyNavGroup(
@@ -1815,6 +1843,16 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         return Container(
           color: DefensysTokens.surfaceOf(context),
           child: const PitEventsManagementScreen(),
+        );
+      case 'curriculum_analytics':
+        if (workspaceOption.type != FacultyWorkspace.pitLead) {
+          return const Center(
+            child: Text('Curriculum analytics requires a PIT Lead assignment.'),
+          );
+        }
+        return CurriculumAnalyticsScreen(
+          key: ValueKey('pit-curriculum-${workspaceOption.yearLevel}'),
+          pitYearLevel: workspaceOption.yearLevel ?? '',
         );
       case 'pit_instructors':
         return Container(

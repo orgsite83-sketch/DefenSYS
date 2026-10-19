@@ -1350,5 +1350,60 @@ class RepositoryAuditApiTests(APITestCase):
         # PIT lead should not get capstone records
         self.assertNotIn('Capstone,', content)
 
+    def test_before_defense_deliverable_status_classification(self):
+        from defense.scheduler.models import DefenseSchedule
+        from .payloads import capstone_entry_payload
+
+        event = PitEventGradingConfig.objects.create(
+            year_level='3rd Year',
+            semester=self.semester,
+            event_name='System Concept Pitching',
+        )
+        PitEventDeliverable.objects.create(
+            pit_event_config=event,
+            deliverable_id='D2',
+            label='Pitch Deck',
+            deliverable_type=PitEventDeliverable.TYPE_PRE,
+            requirement_timing='defense',
+            required=True,
+        )
+        submission = DeliverableSubmission.objects.create(
+            team=self.pit_team,
+            stage_label='System Concept Pitching',
+            deliverable_id='D2',
+            label='Pitch Deck',
+            deliverable_type=DeliverableSubmission.TYPE_PRE,
+            required=True,
+            file_name='01_Pitch_Deck.pptx',
+            status=DeliverableSubmission.STATUS_PENDING,
+            uploaded_by=self.student,
+        )
+
+        # 1. When defense is not yet done -> status is 'Uploaded'
+        payload = capstone_entry_payload(submission)[0]
+        self.assertEqual(payload['status'], 'Uploaded')
+
+        # 2. When defense is completed (status == 'done') -> status is 'Approved'
+        schedule = DefenseSchedule.objects.create(
+            team=self.pit_team,
+            semester=self.semester,
+            project_version=self.pit_team.project_version,
+            scope=DefenseSchedule.SCOPE_PIT,
+            event_name='System Concept Pitching',
+            status=DefenseSchedule.STATUS_DONE,
+            scheduled_date='2026-10-15',
+            start_time='09:00',
+            room='Room 101',
+        )
+        payload = capstone_entry_payload(submission)[0]
+        self.assertEqual(payload['status'], 'Approved')
+
+        # 3. When rejected / corrections requested -> status is 'Needs Revision'
+        submission.status = DeliverableSubmission.STATUS_REJECTED
+        submission.save(update_fields=['status'])
+        payload = capstone_entry_payload(submission)[0]
+        self.assertEqual(payload['status'], 'Needs Revision')
+
+
 
 

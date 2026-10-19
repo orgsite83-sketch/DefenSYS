@@ -1,10 +1,10 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:defensys/screens/web/admin/student_teams/dialogs/generate_teams_dialog.dart';
 import 'package:defensys/services/api_http.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/widgets/repository/section_concept_workspace.dart';
-import 'package:defensys/widgets/repository/concept_workspace.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/screens/app/student/section_integration_tab.dart';
 import 'package:defensys/screens/web/admin/student_teams/components/student_teams_grid.dart';
@@ -182,9 +182,16 @@ void main() {
   );
 
   testWidgets(
-    'team list exposes configured shared systems and module proposal counts',
+    'PIT Lead Teams shows proposed names without loading the review workspace',
     (tester) async {
       final project = projectFixture();
+      final requests = <String>[];
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          requests.add(request.url.path);
+          return http.Response(jsonEncode(project), 200);
+        }),
+      );
       await tester.binding.setSurfaceSize(const Size(1280, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await pumpDefensysWidget(
@@ -213,6 +220,7 @@ void main() {
               ],
             ),
             isPit: true,
+            sharedProposalNamesOnly: true,
             searchQuery: 'Alpha',
             onOpenTeamDetail: (_) {},
           ),
@@ -222,6 +230,8 @@ void main() {
       expect(find.textContaining('3 modules proposed'), findsOneWidget);
       expect(find.textContaining('A. Campus Management'), findsOneWidget);
       expect(find.byType(SectionConceptWorkspace), findsNothing);
+      expect(find.text('Shared system proposals · PIT Design'), findsOneWidget);
+      expect(requests, isEmpty);
       expect(tester.takeException(), isNull);
     },
   );
@@ -254,7 +264,7 @@ void main() {
   }
 
   testWidgets(
-    'instructor reviews shared papers inside the existing concept dossier',
+    'section review clears accepted papers without a separate endorsement',
     (tester) async {
       final project = reviewFixture();
       final actions = <Map<String, dynamic>>[];
@@ -266,11 +276,8 @@ void main() {
             if (action['action'] == 'review') {
               (project['systems'] as List).first['papers'][0]['status'] =
                   'accepted';
-              project['can_endorse'] = true;
-              project['review_progress']['papers_accepted'] = 3;
-            } else if (action['action'] == 'endorse') {
               project['endorsed'] = true;
-              project['can_endorse'] = false;
+              project['review_progress']['papers_accepted'] = 3;
             }
           }
           return http.Response(jsonEncode(project), 200);
@@ -281,50 +288,59 @@ void main() {
       await pumpDefensysWidget(
         tester,
         SingleChildScrollView(
-          child: ConceptWorkspace(
-            teamId: 5,
-            stageLabel: 'PIT Design',
-            stage: {
-              'concept_workflow': {
-                'enabled': true,
-                'section_project_id': 7,
-                'round': 1,
-                'status': 'concept_review_pending',
-                'concepts': project['teams'][0]['concepts'],
-              },
-            },
-          ),
+          child: const SectionConceptWorkspace(projectId: 7, embedded: true),
         ),
         overrides: authTestOverrides(),
       );
-      expect(find.text('Team module concepts'), findsOneWidget);
-      await tester.tap(find.text('Shared system'));
-      await tester.pumpAndSettle();
       expect(find.text('Shared system review'), findsOneWidget);
       expect(find.byType(Scaffold), findsOneWidget);
-      final endorseButton = find.ancestor(
-        of: find.text('Endorse shared papers'),
-        matching: find.byWidgetPredicate(
-          (widget) => widget is ButtonStyleButton,
-        ),
-      );
-      expect(
-        tester.widget<ButtonStyleButton>(endorseButton.first).onPressed,
-        isNull,
-      );
+      expect(find.text('Endorse shared papers'), findsNothing);
       await tester.tap(find.text('Accept paper'));
       await tester.pumpAndSettle();
       expect(actions.single['paper_id'], 41);
       expect(actions.single['round_id'], 12);
       expect(actions.single['review_token'], 'reviewed-current-content');
-      await tester.tap(find.text('Endorse shared papers'));
-      await tester.pumpAndSettle();
-      expect(actions.last['action'], 'endorse');
-      expect(find.text('Endorsed for hearing'), findsOneWidget);
+      expect(actions.single['action'], 'review');
+      expect(find.text('Shared papers cleared for hearing'), findsOneWidget);
       expect(find.byType(Scaffold), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('a delayed refresh cannot undo paper acceptance', (tester) async {
+    final project = reviewFixture();
+    final original = jsonEncode(project);
+    final refresh = Completer<http.Response>();
+    var reads = 0;
+    setApiHttpClientForTesting(
+      MockClient((request) async {
+        if (request.method == 'GET') {
+          if (++reads == 1) return http.Response(original, 200);
+          return refresh.future;
+        }
+        project['endorsed'] = true;
+        project['review_progress']['papers_accepted'] = 3;
+        project['systems'][0]['papers'][0]['status'] = 'accepted';
+        return http.Response(jsonEncode(project), 200);
+      }),
+    );
+    await pumpDefensysWidget(
+      tester,
+      const SingleChildScrollView(
+        child: SectionConceptWorkspace(projectId: 7, embedded: true),
+      ),
+      overrides: authTestOverrides(),
+    );
+    await tester.tap(find.text('Refresh'));
+    await tester.pump();
+    await tester.tap(find.text('Accept paper'));
+    await tester.pumpAndSettle();
+    expect(find.text('Shared papers cleared for hearing'), findsOneWidget);
+    refresh.complete(http.Response(original, 200));
+    await tester.pumpAndSettle();
+    expect(find.text('Shared papers cleared for hearing'), findsOneWidget);
+  });
+
 
   testWidgets('embedded review fits desktop and phone in both themes', (
     tester,
@@ -384,6 +400,7 @@ void main() {
         SingleChildScrollView(
           child: SectionConceptOverview(
             projectId: 7,
+            collapsible: true,
             stageLabel: 'PIT Design',
             systems: (project['systems'] as List).cast<Map<String, dynamic>>(),
           ),

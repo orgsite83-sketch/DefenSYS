@@ -107,7 +107,7 @@ class SectionProjectDetailView(SectionAPIView):
         round = services.latest(project)
         if d['round_id'] != round.pk:
             return Response({'detail': 'The section proposal round changed. Refresh before submitting.'}, status=409)
-        if d['action'] in ('endorse', 'decide', 'save_titles', 'clear_revisions') and d.get('review_token') != services.review_token(round):
+        if d['action'] in ('review', 'endorse', 'decide', 'save_titles', 'clear_revisions') and d.get('review_token') != services.review_token(round):
             return Response({'detail': 'The section names or papers changed. Refresh and review the current versions.'}, status=409)
         action, actor = d['action'], request.user
         if action == 'save_titles':

@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:defensys/l10n/app_localizations.dart';
 import 'package:defensys/notifications/notifications_provider.dart';
 import 'package:defensys/screens/app/app_settings_screen.dart';
+import 'package:defensys/screens/app/documenter_dashboard.dart';
 import 'package:defensys/screens/app/panelist_dashboard.dart';
 import 'package:defensys/screens/app/student/profile_edit_screen.dart';
 import 'package:defensys/screens/app/student_dashboard.dart';
 import 'package:defensys/services/api_http.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/dashboard_provider.dart';
+import 'package:defensys/services/documenter_provider.dart';
 import 'package:defensys/services/network/connectivity_provider.dart';
 import 'package:defensys/services/theme_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
@@ -24,8 +26,9 @@ import '../helpers/auth_test_overrides.dart';
 import '../helpers/capture_preview.dart';
 
 class _Auth extends AuthNotifier {
-  _Auth(this.role);
+  _Auth(this.role, this.documenter);
   final String role;
+  final bool documenter;
 
   @override
   AuthState build() => AuthState(
@@ -39,7 +42,8 @@ class _Auth extends AuthNotifier {
       'last_name': 'Beltran',
       'name': 'Jonathan Beltran',
       'email': 'jonathan@defensys.edu',
-      'is_panelist': role == 'faculty',
+      'is_panelist': role == 'faculty' || role == 'admin',
+      'is_documenter': documenter,
     },
   );
 }
@@ -49,20 +53,34 @@ class _Notifications extends NotificationsNotifier {
   @override
   NotificationsState build() => const NotificationsState();
   @override
-  Future<void> fetchNotifications({bool? unreadOnly, bool loadMore = false}) async {}
+  Future<void> fetchNotifications({
+    bool? unreadOnly,
+    bool loadMore = false,
+  }) async {}
 }
 
 class _Dashboard extends DashboardNotifier {
-  _Dashboard() : super('student');
+  _Dashboard([this.initialState]) : super('student');
+  final DashboardState? initialState;
   @override
-  DashboardState build() => DashboardState(error: 'Connection unavailable');
+  DashboardState build() =>
+      initialState ?? DashboardState(error: 'Connection unavailable');
   @override
   Future<void> fetchDashboardData({bool silent = false}) async {}
+
+  void update(DashboardState next) => state = next;
 }
 
 class _Connectivity extends ConnectivityNotifier {
   @override
   bool build() => true;
+}
+
+class _Documenter extends DocumenterNotifier {
+  @override
+  DocumenterState build() => const DocumenterState();
+  @override
+  Future<void> fetchAssignments() async {}
 }
 
 void main() {
@@ -82,6 +100,8 @@ void main() {
     String role = 'faculty',
     double width = 390,
     ThemeMode theme = ThemeMode.light,
+    DashboardState? dashboardState,
+    bool documenter = false,
   }) async {
     tester.view.physicalSize = Size(width, 844);
     tester.view.devicePixelRatio = 1;
@@ -90,10 +110,13 @@ void main() {
     await loadPreviewFonts(force: true);
     final container = ProviderContainer(
       overrides: [
-        authProvider.overrideWith(() => _Auth(role)),
+        authProvider.overrideWith(() => _Auth(role, documenter)),
         notificationsProvider.overrideWith2(_Notifications.new),
-        dashboardProvider('student').overrideWith(_Dashboard.new),
+        dashboardProvider(
+          'student',
+        ).overrideWith(() => _Dashboard(dashboardState)),
         connectivityProvider.overrideWith(_Connectivity.new),
+        documenterProvider.overrideWith(_Documenter.new),
       ],
     );
     addTearDown(container.dispose);
@@ -117,6 +140,8 @@ void main() {
               key: const ValueKey('preview'),
               child: role == 'student'
                   ? const StudentDashboard()
+                  : documenter
+                  ? const DocumenterDashboard()
                   : const PanelistDashboard(),
             ),
           ),
@@ -132,6 +157,114 @@ void main() {
     matching: find.text(label),
   );
 
+  for (final role in ['faculty', 'admin']) {
+    for (final documenter in [false, true]) {
+      testWidgets(
+        '$role opens phone Profile in ${documenter ? 'documenter' : 'panelist'} workspace',
+        (tester) async {
+          await show(tester, role: role, documenter: documenter, width: 320);
+          await tester.tap(destination('Profile'));
+          await tester.pumpAndSettle();
+          expect(find.byType(ProfileScreen), findsOneWidget);
+          expect(find.text('Account'), findsOneWidget);
+          expect(find.text('Settings'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+
+  for (final (description, data) in <(String, Map<String, dynamic>)>[
+    (
+      'section project member',
+      {
+        'team': {'section_project_id': 7},
+      },
+    ),
+    (
+      'system team member',
+      {
+        'team': {'system_name': 'Shared system'},
+      },
+    ),
+    (
+      'managed section member',
+      {
+        'student': {'managed_section': 'BSIT-2A'},
+      },
+    ),
+    (
+      'project manager',
+      {
+        'student': {'is_project_manager': true},
+      },
+    ),
+  ]) {
+    testWidgets('Student $description opens Profile from the bottom bar', (
+      tester,
+    ) async {
+      await show(
+        tester,
+        role: 'student',
+        dashboardState: DashboardState(data: data),
+      );
+      expect(destination('Integration'), findsOneWidget);
+      await tester.tap(destination('Profile'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byType(ProfileScreen), findsOneWidget);
+      expect(find.text('Account & Security'), findsOneWidget);
+      expect(find.text('Settings'), findsOneWidget);
+    });
+  }
+
+  testWidgets('Student section member opens Profile from the drawer', (
+    tester,
+  ) async {
+    await show(
+      tester,
+      role: 'student',
+      dashboardState: DashboardState(
+        data: {
+          'team': {'section_project_id': 7},
+        },
+      ),
+    );
+    await tester.tap(find.byTooltip('Navigation Menu'));
+    await tester.pumpAndSettle();
+    final shortcut = find.text('Profile & Settings');
+    await tester.ensureVisible(shortcut);
+    await tester.tap(shortcut);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.byType(ProfileScreen), findsOneWidget);
+    expect(find.text('Account & Security'), findsOneWidget);
+  });
+
+  testWidgets(
+    'Student Profile stays selected when Integration appears or disappears',
+    (tester) async {
+      final container = await show(tester, role: 'student');
+      await tester.tap(destination('Profile'));
+      await tester.pumpAndSettle();
+      final dashboard =
+          container.read(dashboardProvider('student').notifier) as _Dashboard;
+      for (final data in <Map<String, dynamic>>[
+        {
+          'team': {'section_project_id': 7},
+        },
+        {},
+      ]) {
+        dashboard.update(DashboardState(data: data));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.byType(ProfileScreen), findsOneWidget);
+        expect(find.text('Account & Security'), findsOneWidget);
+        expect(find.text('Settings'), findsOneWidget);
+      }
+    },
+  );
+
   for (final role in ['faculty', 'student']) {
     for (final theme in [ThemeMode.light, ThemeMode.dark]) {
       testWidgets(
@@ -145,7 +278,10 @@ void main() {
           );
           await tester.tap(destination('Profile'));
           await tester.pumpAndSettle();
-          expect(find.byType(AppSettingsContent, skipOffstage: false), findsOneWidget);
+          expect(
+            find.byType(AppSettingsContent, skipOffstage: false),
+            findsOneWidget,
+          );
           expect(find.text('Account'), findsOneWidget);
           expect(find.text('Settings'), findsOneWidget);
           expect(find.text('Security'), findsOneWidget);

@@ -7,6 +7,9 @@ import '../../services/academic/section_concept_service.dart';
 import '../../services/auth/auth_provider.dart';
 import '../../services/network/authenticated_client.dart';
 import '../../theme/defensys_tokens.dart';
+import '../../theme/defensys_button_styles.dart';
+import '../../models/team_workflow_status.dart';
+import 'workflow_status_style.dart';
 import '../export/defensys_pdf_viewer.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
 
@@ -15,6 +18,95 @@ List<Map<String, dynamic>> _rows(dynamic value) => (value as List? ?? [])
     .map((r) => Map<String, dynamic>.from(r))
     .toList();
 String _error(Object error) => error.toString().replaceFirst('Exception: ', '');
+
+Map<String, dynamic>? sharedReviewForTeam(
+  Map<String, dynamic> team, {
+  String? stageLabel,
+}) {
+  final stages = _rows(team['stages']);
+  final selected = team['selected_stage'];
+  final stage = stageLabel != null && stageLabel.isNotEmpty
+      ? stages.where((s) => s['stage_label'] == stageLabel).firstOrNull ??
+            (selected is Map && selected['stage_label'] == stageLabel
+                ? Map<String, dynamic>.from(selected)
+                : null)
+      : selected is Map
+      ? Map<String, dynamic>.from(selected)
+      : stages.firstOrNull;
+  final workflow = stage?['concept_workflow'] as Map?;
+  final id = int.tryParse('${workflow?['section_project_id'] ?? ''}');
+  if (id == null) return null;
+  return {
+    'project_id': id,
+    'section': team['section'],
+    'stage_label': stage?['stage_label'],
+    'systems': (workflow?['config'] as Map?)?['system_concepts'] ?? [],
+    ...Map<String, dynamic>.from(workflow?['shared_review'] as Map? ?? {}),
+  };
+}
+
+List<Map<String, dynamic>> sharedReviewsForTeams(
+  List<Map<String, dynamic>> teams, {
+  String? stageLabel,
+}) {
+  final reviews = <int, Map<String, dynamic>>{};
+  for (final team in teams) {
+    final review = sharedReviewForTeam(team, stageLabel: stageLabel);
+    if (review != null) reviews[review['project_id'] as int] = review;
+  }
+  return reviews.values.toList();
+}
+
+class SharedSectionStatus extends StatelessWidget {
+  const SharedSectionStatus({
+    super.key,
+    required this.summary,
+    required this.onOpen,
+  });
+  final Map<String, dynamic> summary;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final code = '${summary['status'] ?? 'needs_review'}';
+    final tone = summary['cleared'] == true
+        ? WorkflowStatusTone.success
+        : code == 'failed'
+        ? WorkflowStatusTone.destructive
+        : code == 'awaiting_files'
+        ? WorkflowStatusTone.neutral
+        : const [
+            'changes_requested',
+            'revisions_pending',
+            'replacement_concepts_needed',
+          ].contains(code)
+        ? WorkflowStatusTone.attention
+        : WorkflowStatusTone.active;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          TeamWorkflowBadge(
+            status: TeamWorkflowStatus(
+              summary['cleared'] == true ? 'ready_to_schedule' : code,
+              '${summary['status_label'] ?? 'Shared papers awaiting review'}',
+              tone,
+            ),
+          ),
+          TextButton.icon(
+            style: DefensysButtonStyles.tertiary(context),
+            onPressed: onOpen,
+            icon: const Icon(Icons.account_tree_outlined, size: 16),
+            label: const Text('View shared papers'),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 final sectionConceptIndexProvider =
     FutureProvider.autoDispose<Map<String, dynamic>>((ref) {
@@ -217,19 +309,38 @@ class SectionConceptOverview extends StatefulWidget {
     required this.systems,
     required this.stageLabel,
     this.onChanged,
+    this.collapsible = false,
+    this.summary,
+    this.section,
   });
   final int projectId;
   final List<Map<String, dynamic>> systems;
   final String stageLabel;
   final Future<void> Function()? onChanged;
+  final bool collapsible;
+  final Map<String, dynamic>? summary;
+  final String? section;
 
   @override
-  State<SectionConceptOverview> createState() => _SectionConceptOverviewState();
+  State<SectionConceptOverview> createState() => SectionConceptOverviewState();
 }
 
-class _SectionConceptOverviewState extends State<SectionConceptOverview> {
+class SectionConceptOverviewState extends State<SectionConceptOverview> {
   bool expanded = false;
   List<Map<String, dynamic>>? updatedSystems;
+  Map<String, dynamic>? updatedSummary;
+
+  void openReview() {
+    setState(() => expanded = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Scrollable.ensureVisible(
+          context,
+          duration: const Duration(milliseconds: 250),
+        );
+      }
+    });
+  }
 
   @override
   void didUpdateWidget(covariant SectionConceptOverview oldWidget) {
@@ -237,12 +348,16 @@ class _SectionConceptOverviewState extends State<SectionConceptOverview> {
     if (oldWidget.projectId != widget.projectId ||
         oldWidget.systems != widget.systems) {
       updatedSystems = null;
+      updatedSummary = null;
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final systems = updatedSystems ?? widget.systems;
+    final summary = updatedSummary ?? widget.summary;
+    final progress = summary?['review_progress'] as Map?;
+    final showReview = !widget.collapsible || expanded;
     final names = systems
         .where((s) => '${s['title'] ?? ''}'.trim().isNotEmpty)
         .toList();
@@ -264,14 +379,18 @@ class _SectionConceptOverviewState extends State<SectionConceptOverview> {
                 color: DefensysTokens.maroonTextOf(context),
               ),
               title: Text(
-                'Shared system proposals · ${widget.stageLabel}',
+                widget.section == null
+                    ? 'Shared system proposals · ${widget.stageLabel}'
+                    : 'Shared system papers · ${widget.section} · ${widget.stageLabel}',
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
               ),
               subtitle: Text(
-                names.isEmpty
+                progress != null && !showReview
+                    ? '${progress['papers_accepted']}/3 papers accepted · ${summary?['status_label'] ?? ''}'
+                    : names.isEmpty
                     ? 'Waiting for the section project manager to propose system names.'
                     : names
                           .map(
@@ -289,21 +408,29 @@ class _SectionConceptOverviewState extends State<SectionConceptOverview> {
                   color: DefensysTokens.textSecondaryOf(context),
                 ),
               ),
-              trailing: Icon(
-                expanded ? Icons.expand_less : Icons.expand_more,
-                size: 20,
-              ),
-              onTap: () => setState(() => expanded = !expanded),
+              trailing: widget.collapsible
+                  ? Icon(
+                      expanded ? Icons.expand_less : Icons.expand_more,
+                      size: 20,
+                    )
+                  : null,
+              onTap: widget.collapsible
+                  ? () => setState(() => expanded = !expanded)
+                  : null,
             ),
-            if (expanded)
+            if (showReview)
               Padding(
                 padding: const EdgeInsets.all(12),
                 child: SectionConceptWorkspace(
                   projectId: widget.projectId,
                   embedded: true,
                   onChanged: widget.onChanged,
-                  onSnapshot: (p) =>
-                      setState(() => updatedSystems = _rows(p['systems'])),
+                  onSnapshot: (p) => setState(() {
+                    updatedSystems = _rows(p['systems']);
+                    updatedSummary = Map<String, dynamic>.from(
+                      p['shared_review'] as Map? ?? {},
+                    );
+                  }),
                 ),
               ),
           ],
@@ -336,6 +463,7 @@ class _SectionConceptWorkspaceState
   String? error;
   bool busy = false;
   String selectedSystem = 'c1';
+  int requestVersion = 0;
   SectionConceptService get service => ref.read(sectionConceptServiceProvider);
   @override
   void initState() {
@@ -344,9 +472,10 @@ class _SectionConceptWorkspaceState
   }
 
   Future<void> load() async {
+    final version = ++requestVersion;
     try {
       final result = await service.get(widget.projectId);
-      if (mounted) {
+      if (mounted && version == requestVersion) {
         setState(() {
           if (project == null && '${result['selected_key'] ?? ''}'.isNotEmpty) {
             selectedSystem = '${result['selected_key']}';
@@ -357,7 +486,9 @@ class _SectionConceptWorkspaceState
         widget.onSnapshot?.call(result);
       }
     } catch (e) {
-      if (mounted) setState(() => error = _error(e));
+      if (mounted && version == requestVersion) {
+        setState(() => error = _error(e));
+      }
     }
   }
 
@@ -366,15 +497,18 @@ class _SectionConceptWorkspaceState
     bool notifyChange = true,
   }) async {
     if (busy) return;
+    final version = ++requestVersion;
     setState(() {
       busy = true;
       error = null;
     });
     try {
       final result = await action();
-      if (mounted) setState(() => project = result);
-      if (mounted && notifyChange) widget.onSnapshot?.call(result);
-      if (mounted && notifyChange) await widget.onChanged?.call();
+      if (mounted && version == requestVersion) {
+        setState(() => project = result);
+        if (notifyChange) widget.onSnapshot?.call(result);
+        if (notifyChange) await widget.onChanged?.call();
+      }
     } catch (e) {
       if (mounted) setState(() => error = _error(e));
     } finally {
@@ -589,7 +723,7 @@ class _SectionConceptWorkspaceState
                               const ShadBadge(
                                 backgroundColor: Color(0xFF16A34A),
                                 child: Text(
-                                  'Shared Papers Endorsed',
+                                  'Shared papers cleared for hearing',
                                   style: TextStyle(
                                     color: Colors.white,
                                     fontSize: 10,
@@ -616,8 +750,8 @@ class _SectionConceptWorkspaceState
                               p['verdict'] != ''
                                   ? 'System outcome: ${p['verdict']}\n${p['remarks']}'
                                   : p['endorsed'] == true
-                                  ? 'Shared papers endorsed. Each team also needs module clearance before scheduling.'
-                                  : 'Submit three shared system papers. Faculty confirms names, reviews each paper and endorses the set.',
+                                  ? 'Shared papers cleared. Each team needs its own module review and endorsement before scheduling.'
+                                  : 'The project manager submits three shared papers. Faculty confirms the titles and accepts each current paper for hearing.',
                               style: const TextStyle(fontSize: 13, height: 1.4),
                             ),
                             const SizedBox(height: 12),
@@ -638,26 +772,11 @@ class _SectionConceptWorkspaceState
                                         ),
                                         const SizedBox(width: 6),
                                         Text(
-                                          p['can_manage'] == true
+                                          p['can_manage'] == true ||
+                                                  p['can_review'] == true
                                               ? 'Confirm system names'
                                               : 'Propose system names',
                                         ),
-                                      ],
-                                    ),
-                                  ),
-                                if (p['can_review'] == true)
-                                  ShadButton(
-                                    size: ShadButtonSize.sm,
-                                    enabled: !busy && p['endorsed'] != true,
-                                    onPressed: () => perform(
-                                      () => service.action(p, 'endorse'),
-                                    ),
-                                    child: const Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.verified_outlined, size: 14),
-                                        SizedBox(width: 6),
-                                        Text('Endorse shared papers'),
                                       ],
                                     ),
                                   ),
@@ -849,14 +968,13 @@ class _SectionConceptWorkspaceState
           (s) =>
               s['confirmed'] == true && '${s['title'] ?? ''}'.trim().isNotEmpty,
         );
-    final canEndorse = p['can_endorse'] == true;
     final secondary = DefensysTokens.textSecondaryOf(context);
     final brand = DefensysTokens.maroonTextOf(context);
     final verdict = '${p['verdict'] ?? ''}';
     final status = verdict.isNotEmpty
         ? verdict.replaceAll('_', ' ')
         : p['endorsed'] == true
-        ? 'Endorsed for hearing'
+        ? 'Shared papers cleared for hearing'
         : '$accepted of 3 papers accepted';
     return DefensysShadcnScope(
       child: Container(
@@ -956,12 +1074,12 @@ class _SectionConceptWorkspaceState
                   : verdict.isNotEmpty
                   ? 'System outcome: ${verdict.replaceAll('_', ' ')}. ${p['remarks'] ?? ''}'
                   : p['endorsed'] == true
-                  ? 'Shared papers are endorsed. Each team also needs its own module clearance.'
+                  ? 'Shared papers are cleared for hearing. Each team needs its own module review and endorsement.'
                   : !namesConfirmed
                   ? 'Confirm the three system names, then accept their current concept papers.'
                   : accepted != 3
-                  ? 'Accept all three current concept papers before endorsing the shared system set.'
-                  : 'The shared system set is ready for faculty endorsement.',
+                  ? 'Accept all three current concept papers to clear the shared papers for hearing.'
+                  : 'Confirmed titles and accepted current papers automatically clear the shared set for hearing.',
               style: TextStyle(fontSize: 12, height: 1.5, color: secondary),
             ),
             const SizedBox(height: 10),
@@ -972,6 +1090,7 @@ class _SectionConceptWorkspaceState
               children: [
                 if (p['can_edit_names'] == true)
                   OutlinedButton.icon(
+                    style: DefensysButtonStyles.secondary(context),
                     onPressed: busy ? null : () => editNames(),
                     icon: const Icon(Icons.edit_outlined, size: 15),
                     label: Text(
@@ -980,23 +1099,9 @@ class _SectionConceptWorkspaceState
                           : 'Propose system names',
                     ),
                   ),
-                if (p['can_review'] == true)
-                  FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: DefensysTokens.maroon,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(7),
-                      ),
-                    ),
-                    onPressed: busy || !canEndorse
-                        ? null
-                        : () => perform(() => service.action(p, 'endorse')),
-                    icon: const Icon(Icons.verified_outlined, size: 15),
-                    label: const Text('Endorse shared papers'),
-                  ),
                 if (p['can_clear_shared_revisions'] == true)
                   FilledButton(
+                    style: DefensysButtonStyles.primary(context),
                     onPressed: busy
                         ? null
                         : () async {
@@ -1016,11 +1121,12 @@ class _SectionConceptWorkspaceState
                   ),
                 if (p['can_decide'] == true)
                   FilledButton(
+                    style: DefensysButtonStyles.primary(context),
                     onPressed: busy ? null : () => decide(),
                     child: const Text('Record section system decision'),
                   ),
                 TextButton.icon(
-                  style: TextButton.styleFrom(foregroundColor: brand),
+                  style: DefensysButtonStyles.tertiary(context),
                   onPressed: busy ? null : load,
                   icon: const Icon(Icons.refresh, size: 15),
                   label: const Text('Refresh'),
@@ -1029,7 +1135,7 @@ class _SectionConceptWorkspaceState
             ),
             const SizedBox(height: 6),
             Text(
-              'Faculty endorsement clears the papers for hearing. The panel chair records the final system selection.',
+              'Title confirmation and paper acceptance clear the shared set for hearing. The panel chair records the final system selection.',
               style: TextStyle(fontSize: 11, height: 1.5, color: secondary),
             ),
             if (busy)
@@ -1077,9 +1183,9 @@ class _SectionConceptWorkspaceState
     final paper = papers.where((p) => p['is_current'] == true).firstOrNull;
     final secondary = DefensysTokens.textSecondaryOf(context);
     final status = switch (paper?['status']) {
-      'accepted' => 'Accepted',
+      'accepted' => 'Accepted for hearing',
       'rejected' => 'Corrections requested',
-      _ => paper == null ? 'Awaiting upload' : 'Needs review',
+      _ => paper == null ? 'Awaiting upload' : 'Awaiting review',
     };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1156,6 +1262,7 @@ class _SectionConceptWorkspaceState
           children: [
             if (paper != null)
               OutlinedButton.icon(
+                style: DefensysButtonStyles.secondary(context),
                 onPressed: busy ? null : () => viewPaper(paper),
                 icon: const Icon(Icons.visibility_outlined, size: 15),
                 label: const Text('Read paper'),
@@ -1192,6 +1299,7 @@ class _SectionConceptWorkspaceState
             ],
             if (system['can_upload'] == true)
               OutlinedButton.icon(
+                style: DefensysButtonStyles.secondary(context),
                 onPressed: busy ? null : () => upload(system),
                 icon: const Icon(Icons.upload_file_outlined, size: 15),
                 label: Text(

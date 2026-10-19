@@ -14,6 +14,7 @@ import '../../../../widgets/table/defensys_segmented_control.dart';
 import '../grade_center/grade_center_shared.dart'
     show showPeerGradingHelpDialog;
 import '../widgets/defensys_admin_shell.dart';
+import '../../../../widgets/shadcn/defensys_breadcrumb.dart';
 
 class SemesterDetailScreen extends ConsumerStatefulWidget {
   const SemesterDetailScreen({
@@ -174,9 +175,21 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Top Breadcrumb & Back Action
-            Row(
-              children: [
-                InkWell(
+            DefensysBreadcrumb(
+              onBack: () {
+                if (widget.onBack != null) {
+                  widget.onBack!();
+                } else if (context.canPop()) {
+                  context.pop();
+                } else {
+                  context.go(AdminRoutes.academicPeriods);
+                }
+              },
+              backLabel: 'Back to Academic Cycles',
+              items: [
+                DefensysBreadcrumbItem(
+                  label: 'A.Y. $yearLabel',
+                  icon: const Icon(LucideIcons.calendar, size: 14),
                   onTap: () {
                     if (widget.onBack != null) {
                       widget.onBack!();
@@ -186,47 +199,10 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                       context.go(AdminRoutes.academicPeriods);
                     }
                   },
-                  borderRadius: BorderRadius.circular(8),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.arrow_back_rounded,
-                            size: 16, color: _mutedColor),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Back to Academic Cycles',
-                          style: TextStyle(
-                            color: _mutedColor,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 ),
-                const SizedBox(width: 12),
-                Text('/',
-                    style: TextStyle(color: _borderColor, fontSize: 13)),
-                const SizedBox(width: 12),
-                Text(
-                  'A.Y. $yearLabel',
-                  style: TextStyle(color: _mutedColor, fontSize: 13),
-                ),
-                const SizedBox(width: 8),
-                Text('/',
-                    style: TextStyle(color: _borderColor, fontSize: 13)),
-                const SizedBox(width: 8),
-                Text(
-                  termName,
-                  style: TextStyle(
-                    color: _inkColor,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
+                DefensysBreadcrumbItem(
+                  label: termName,
+                  isCurrent: true,
                 ),
               ],
             ),
@@ -1762,7 +1738,7 @@ class _SemesterDetailScreenState extends ConsumerState<SemesterDetailScreen>
                           : 'Click to turn on student peer evaluation for this event'),
                   child: Switch.adaptive(
                     value: peerEnabled,
-                    activeColor: const Color(0xFF10B981),
+                    activeTrackColor: const Color(0xFF10B981),
                     onChanged: isSaving
                         ? null
                         : (val) => _togglePitEventPeerEval(config, val),

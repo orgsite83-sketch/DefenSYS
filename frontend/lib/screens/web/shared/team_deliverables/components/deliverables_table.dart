@@ -1,6 +1,7 @@
 import 'package:defensys/theme/program_colors.dart';
 import 'package:defensys/widgets/repository/concept_workspace.dart';
 import 'package:defensys/widgets/repository/document_group.dart';
+import 'package:defensys/widgets/repository/deliverable_file_widgets.dart';
 import 'package:defensys/widgets/defense/system_defense_records.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -78,6 +79,7 @@ class DeliverablesTablePane extends ConsumerStatefulWidget {
   final int? initialTeamId;
   final int? initialTab;
   final TeamTriageFilter activeTriageFilter;
+  final ValueChanged<int>? onOpenSharedReview;
 
   const DeliverablesTablePane({
     super.key,
@@ -87,6 +89,7 @@ class DeliverablesTablePane extends ConsumerStatefulWidget {
     this.initialTeamId,
     this.initialTab,
     this.activeTriageFilter = TeamTriageFilter.all,
+    this.onOpenSharedReview,
   });
 
   @override
@@ -661,7 +664,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: AppColors.background.withValues(alpha: 0.5),
+        color: DefensysTokens.panelOf(context),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: DefensysTokens.borderOf(context)),
       ),
@@ -692,6 +695,27 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             ),
           ),
           const SizedBox(width: 8),
+          TextButton(
+            onPressed: () => showDeliverableFileDetails(
+              context: context,
+              label: '${item['label'] ?? 'Document'}',
+              stageLabel: stageLabel,
+              programScope: programTrack(scope: widget.state.scope, data: team).name,
+              file: {...submission, ...fileMap},
+              uploader: submission['uploaded_by_name']?.toString(),
+              status: (fileMap['status'] ?? submission['status']) == 'accepted'
+                  ? item['type'] == 'post' ? 'Archived' : 'Accepted'
+                  : (fileMap['status'] ?? submission['status']) == 'rejected'
+                  ? 'Corrections requested'
+                  : item['requirement_timing'] == 'defense' ? 'Uploaded' : 'Awaiting review',
+            ),
+            style: TextButton.styleFrom(
+              foregroundColor: DefensysTokens.textPrimaryOf(context),
+              textStyle: Theme.of(context).textTheme.labelSmall?.copyWith(fontSize: 11),
+              visualDensity: VisualDensity.compact,
+            ),
+            child: const Text('Details'),
+          ),
           IconButton(
             iconSize: 18,
             visualDensity: VisualDensity.compact,
@@ -763,11 +787,16 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     Map<String, dynamic> item,
     void Function(void Function()) setDialogState,
   ) {
-    if ((item['file_policy'] as Map? ?? {}).isNotEmpty) {
-      return DocumentGroup(teamId: team['id'] as int, stageLabel: stageLabel, item: item);
+    if (usesGroupedDocumentCard(item)) {
+      return DocumentGroup(
+        teamId: team['id'] as int,
+        stageLabel: stageLabel,
+        item: item,
+        programScope: programTrack(scope: widget.state.scope, data: team).name,
+      );
     }
     final submission = item['submission'] as Map?;
-    final uploaded = item['uploaded'] == true || submission != null;
+    final uploaded = hasSubmittedDeliverable(item);
     final isFaculty = widget.isAdviser || widget.state.scope == 'pit' || widget.state.scope == 'capstone';
     final isAdmin = widget.state.scope == 'admin';
 
@@ -800,7 +829,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: fileStyle.background,
+        color: DefensysTokens.surfaceOf(context),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: fileStyle.border),
       ),
@@ -918,192 +947,44 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 ],
                 if (!isFaculty || isAdmin)
                   if (!locked)
-                    ElevatedButton.icon(
+                    OutlinedButton.icon(
                       onPressed: () => _promptUploadOrReplace(team, stageLabel, item),
                       icon: const Icon(Icons.upload_file, size: 14),
                       label: const Text('Upload'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: DefensysTokens.maroonOf(context),
-                        foregroundColor: Colors.white,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: DefensysTokens.textPrimaryOf(context),
+                        side: BorderSide(color: DefensysTokens.borderOf(context)),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         visualDensity: VisualDensity.compact,
                         elevation: 0,
                       ),
                     ),
               ] else if (uploaded && !isWPR) ...[
-                if (isDefense && (isFaculty || isAdmin)) ...[
-                  Text(
-                    subStatus == 'rejected' ? 'Corrections requested' : 'Uploaded',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
-                        color: subStatus == 'rejected' ? AppColors.danger : displayCleared ? AppColors.success : DefensysTokens.textSecondaryOf(context)),
-                  ),
-                  if (canFacultyReview && subStatus != 'rejected') ...[
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      onPressed: widget.state.isSaving ? null : () => _promptRejectDialog(team, stageLabel, item),
-                      icon: const Icon(Icons.edit_note_outlined, size: 14),
-                      label: const Text('Request corrections'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: DefensysTokens.textSecondaryOf(context),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ),
-                  ],
-                ] else if (isFaculty && !isAdmin) ...[
-                  if (subStatus == 'accepted') ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppColors.success.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.check_circle_rounded, size: 12, color: AppColors.success),
-                          const SizedBox(width: 4),
-                          Text(
-                            isPost ? 'Archived' : 'Accepted',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.success,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (canFacultyReview && !isPost) ...[
-                      const SizedBox(width: 6),
-                      OutlinedButton.icon(
-                        onPressed: widget.state.isSaving
-                            ? null
-                            : () => _promptRejectDialog(team, stageLabel, item),
-                        icon: const Icon(Icons.cancel_outlined, size: 14),
-                        label: const Text('Reject'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.danger,
-                          side: const BorderSide(color: AppColors.danger),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                    ],
-                  ] else if (subStatus == 'rejected') ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppColors.danger.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.cancel_rounded, size: 12, color: AppColors.danger),
-                          const SizedBox(width: 4),
-                          Text(
-                            isPost ? 'Needs Revision' : 'Rejected',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.danger,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (canFacultyReview) ...[
-                      const SizedBox(width: 6),
-                      ElevatedButton.icon(
-                        onPressed: widget.state.isSaving
-                            ? null
-                            : () => _promptAcceptDialog(team, stageLabel, item),
-                        icon: const Icon(Icons.check_circle_outline, size: 14),
-                        label: Text(isPost ? 'Approve & Archive' : 'Accept'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.success,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          visualDensity: VisualDensity.compact,
-                          elevation: 0,
-                        ),
-                      ),
-                    ],
-                  ] else ...[
-                    if (canFacultyReview) ...[
-                      ElevatedButton.icon(
-                        onPressed: widget.state.isSaving
-                            ? null
-                            : () => _promptAcceptDialog(team, stageLabel, item),
-                        icon: const Icon(Icons.check_circle_outline, size: 14),
-                        label: Text(isPost ? 'Approve & Archive' : 'Accept'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.success,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          visualDensity: VisualDensity.compact,
-                          elevation: 0,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      OutlinedButton.icon(
-                        onPressed: widget.state.isSaving
-                            ? null
-                            : () => _promptRejectDialog(team, stageLabel, item),
-                        icon: const Icon(Icons.cancel_outlined, size: 14),
-                        label: Text(isPost ? 'Request Revision' : 'Reject'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.danger,
-                          side: const BorderSide(color: AppColors.danger),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                    ] else ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: DefensysTokens.textSecondaryOf(context).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: DefensysTokens.textSecondaryOf(context).withValues(alpha: 0.3)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.lock_outline, size: 12, color: DefensysTokens.textSecondaryOf(context)),
-                            SizedBox(width: 4),
-                            Text(
-                              'Locked (Defense Done)',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: DefensysTokens.textSecondaryOf(context),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ] else if (isAdmin && isPost && subStatus == 'accepted') ...[
-                  Tooltip(
-                    message: 'Use Reopen for Revision in Repository Audit to correct this file.',
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppColors.success.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Text(
-                        'Archived',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.success),
-                      ),
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: isAdmin && isPost && subStatus == 'accepted'
+                      ? 'Use Reopen for Revision in Repository Audit to correct this file.'
+                      : '',
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 180),
+                    child: DeliverableStatusBadge(
+                    label: subStatus == 'rejected'
+                        ? 'Corrections requested'
+                        : subStatus == 'accepted'
+                        ? (isPost ? 'Archived' : 'Accepted')
+                        : isDefense ? 'Uploaded'
+                        : isFaculty && !isAdmin && !canFacultyReview
+                        ? 'Locked (Defense Done)' : 'Awaiting review',
+                    tone: subStatus == 'rejected'
+                        ? WorkflowStatusTone.attention
+                        : displayCleared
+                        ? WorkflowStatusTone.success
+                        : isFaculty && !isAdmin && !canFacultyReview
+                        ? WorkflowStatusTone.neutral
+                        : WorkflowStatusTone.attention,
                     ),
                   ),
-                ],
+                ),
               ],
             ],
           ),
@@ -1154,6 +1035,37 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     ),
                   ),
                 ],
+              ),
+            ),
+          ],
+          if (uploaded && !isWPR &&
+              ((isFaculty && !isAdmin) || (isAdmin && isDefense)) && canFacultyReview &&
+              !(isPost && subStatus == 'accepted')) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerRight,
+              child: DefensysShadcnScope(
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (!isDefense && subStatus != 'accepted')
+                      ShadButton.outline(
+                        size: ShadButtonSize.sm,
+                        enabled: !widget.state.isSaving,
+                        onPressed: () => _promptAcceptDialog(team, stageLabel, item),
+                        child: Text(isPost ? 'Approve & Archive' : 'Accept'),
+                      ),
+                    if (!isDefense || subStatus != 'rejected')
+                      ShadButton.ghost(
+                        size: ShadButtonSize.sm,
+                        enabled: !widget.state.isSaving,
+                        onPressed: () => _promptRejectDialog(team, stageLabel, item),
+                        child: const Text('Request corrections'),
+                      ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -1320,7 +1232,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
 
   bool _canEndorseTeam(Map<String, dynamic> stage) {
     final review = stage['endorsement_review'];
+    final shared = (stage['concept_workflow'] as Map?)?['shared_review'];
     return stage['required_complete'] == true &&
+        (shared is! Map || shared['cleared'] == true) &&
         review is Map &&
         review['can_review_and_endorse'] == true;
   }
@@ -1616,7 +1530,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               ),
             )
           else ...[
-            ConceptWorkspace(teamId: team['id'] as int, stageLabel: selectedStage, stage: stage),
+            ConceptWorkspace(teamId: team['id'] as int, stageLabel: selectedStage, stage: stage,
+              onOpenSharedReview: widget.onOpenSharedReview),
             // Deliverables Progress Summary (Required & Post-Defense Archive)
             LayoutBuilder(
               builder: (context, constraints) {

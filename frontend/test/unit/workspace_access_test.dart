@@ -3,6 +3,20 @@ import 'package:defensys/navigation/workspace_access.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('curriculum analytics route belongs to an assigned PIT Lead', () {
+    const lead = {'role': 'faculty', 'is_pit_lead': true, 'pit_lead_year': '2nd Year'};
+    expect(WorkspaceAccess.redirect(lead, FacultyRoutes.curriculumAnalytics, isWeb: true), isNull);
+    for (final user in [
+      {'role': 'faculty', 'is_adviser': true},
+      {...lead, 'is_pit_lead': false},
+      {...lead, 'pit_lead_year': ''},
+      {...lead, 'pit_lead_year': '4th Year'},
+    ]) {
+      expect(WorkspaceAccess.redirect(user, FacultyRoutes.curriculumAnalytics, isWeb: true), FacultyRoutes.dashboard);
+    }
+    expect(FacultyRoutes.sectionForLocation(FacultyRoutes.curriculumAnalytics), 'curriculum_analytics');
+    expect(FacultyRoutes.pathForSection('curriculum_analytics'), FacultyRoutes.curriculumAnalytics);
+  });
   test('documenter web routes exclude defense management', () {
     const doc = {'role': 'faculty', 'is_documenter': true};
     for (final route in [

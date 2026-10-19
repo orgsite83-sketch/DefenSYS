@@ -2365,15 +2365,18 @@ class _UniversalCodeTextViewerState extends State<UniversalCodeTextViewer> {
             ),
             child: Row(
               children: [
-                Text(
-                  '${_lines.length} lines • ${_fullText.length} characters',
-                  style: TextStyle(
-                    color: DefensysTokens.textSecondaryOf(context),
-                    fontSize: 11,
-                    fontFamily: 'monospace',
+                Expanded(
+                  child: Text(
+                    '${_lines.length} lines • ${_fullText.length} characters',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: DefensysTokens.textSecondaryOf(context),
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                    ),
                   ),
                 ),
-                const Spacer(),
                 IconButton(
                   tooltip: _wrapLines ? 'Line Wrap: ON' : 'Line Wrap: OFF',
                   icon: Icon(

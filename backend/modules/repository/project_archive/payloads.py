@@ -15,14 +15,30 @@ def _submission_kind_for_deliverable(submission):
 def _submission_archive_context(submission):
     team = submission.team
     semester = submission.archive_semester or (team.semester if team else None)
+    pit_event_config_id = submission.pit_event_config_id
+    level = submission.archive_team_level or (team.level if team else '')
+    is_pit = 'PIT' in level or (team and getattr(team, 'is_pit', False))
+    if not pit_event_config_id and is_pit and semester:
+        from defense.scheduler.models import PitEventGradingConfig
+        year_level = submission.archive_year_level or (team.year_level if team else '')
+        config = PitEventGradingConfig.objects.filter(
+            semester=semester,
+            event_name__iexact=submission.stage_label.strip(),
+        )
+        if year_level:
+            config = config.filter(year_level=year_level)
+        matched = config.first()
+        if matched:
+            pit_event_config_id = matched.id
+
     return {
         'team_name': submission.archive_team_name or (team.name if team else ''),
         'project_title': submission.archive_project_title or (team.project_title if team else ''),
         'year_level': submission.archive_year_level or (team.year_level if team else ''),
-        'level': submission.archive_team_level or (team.level if team else ''),
+        'level': level,
         'academic_year': semester.school_year.label if semester else '',
         'semester': semester.label if semester else '',
-        'pit_event_config_id': submission.pit_event_config_id,
+        'pit_event_config_id': pit_event_config_id,
     }
 
 
@@ -152,6 +168,23 @@ def pit_entry_payload(entry, request=None, *, include_ml=False, include_audit_tr
     return payload
 
 
+def _resolve_submission_status_display(submission, review_status, team, definition):
+    if review_status == DeliverableSubmission.STATUS_ACCEPTED:
+        return 'Approved'
+    if review_status == DeliverableSubmission.STATUS_REJECTED:
+        return 'Needs Revision'
+    if review_status == DeliverableSubmission.STATUS_PENDING:
+        from repository.deliverables.timing import due_before_defense
+        is_defense_material = bool(definition and due_before_defense(definition))
+        if is_defense_material:
+            from repository.deliverables.services import is_stage_defense_done
+            if team and is_stage_defense_done(team, submission.stage_label):
+                return 'Approved'
+            return 'Uploaded'
+        return 'Pending Review'
+    return (review_status or 'Approved').title()
+
+
 def capstone_entry_payload(submission, request=None, *, include_ml=False, include_audit_trail=False):
     from defensys_backend.file_urls import resolve_uploaded_file_url
 
@@ -181,16 +214,33 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
                 is_restricted=True
             ).exists()
 
+    from repository.deliverables.services import definition_for
+    definition = definition_for(team, submission.stage_label, submission.deliverable_id) if team else None
+    if definition is None and submission.deliverable_type == DeliverableSubmission.TYPE_PRE:
+        from defense.stages.models import StageDeliverable
+        from defense.scheduler.models import PitEventDeliverable
+        sd = StageDeliverable.objects.filter(
+            defense_stage__label=submission.stage_label,
+            deliverable_id=submission.deliverable_id,
+        ).first()
+        if sd:
+            definition = {'type': sd.deliverable_type, 'requirement_timing': sd.requirement_timing}
+        else:
+            pd = PitEventDeliverable.objects.filter(
+                pit_event_config__event_name__iexact=submission.stage_label,
+                deliverable_id=submission.deliverable_id,
+            ).first()
+            if pd:
+                definition = {'type': pd.deliverable_type, 'requirement_timing': pd.requirement_timing}
+
     from repository.deliverables.documents import current_files
     files = current_files(submission)
 
     if not files:
         entry_id = f'pit-deliverable-{submission.id}' if is_pit else f'capstone-{submission.id}'
-        status_display = {
-            DeliverableSubmission.STATUS_ACCEPTED: 'Approved',
-            DeliverableSubmission.STATUS_REJECTED: 'Needs Revision',
-            DeliverableSubmission.STATUS_PENDING: 'Pending Review',
-        }.get(submission.status, (submission.status or 'Approved').title())
+        status_display = _resolve_submission_status_display(
+            submission, submission.status, team, definition
+        )
         deliverable_type_label = 'Post-Defense' if is_post else 'Pre-Defense'
 
         payload = {
@@ -234,16 +284,13 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
         return [payload]
 
     payloads = []
-    from repository.deliverables.services import definition_for
-    managed = bool((definition_for(team, submission.stage_label, submission.deliverable_id) or {}).get('file_policy'))
+    managed = bool((definition or {}).get('file_policy'))
     for f in files:
         review_status = f.status if managed else submission.status
         entry_id = f'pit-deliverable-{submission.id}-{f.id}' if is_pit else f'capstone-{submission.id}-{f.id}'
-        status_display = {
-            DeliverableSubmission.STATUS_ACCEPTED: 'Approved',
-            DeliverableSubmission.STATUS_REJECTED: 'Needs Revision',
-            DeliverableSubmission.STATUS_PENDING: 'Pending Review',
-        }.get(review_status, (review_status or 'pending').title())
+        status_display = _resolve_submission_status_display(
+            submission, review_status, team, definition
+        )
         deliverable_type_label = 'Post-Defense' if is_post else 'Pre-Defense'
 
         canonical_name = ''

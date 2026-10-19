@@ -12,7 +12,7 @@ from rest_framework.test import APITestCase, APIClient
 from academic_period_management.models import SchoolYear, Semester
 from defense.stages.models import DefenseStage, StageDeliverable, StageGradingConfig
 from defense.scheduler.models import PitEventGradingConfig
-from grading.grades.models import TeamGrade, GradeBreakdown, PeerEvaluationSubmission
+from grading.grades.models import TeamGrade, GradeBreakdown, PeerEvaluationSubmission, StudentStageGrade
 from grading.rubrics.models import Rubric, RubricCriterion
 from repository.deliverables.models import DeliverableSubmission, DeliverableSubmissionFile
 from repository.archive.models import ArchiveEntry
@@ -64,6 +64,137 @@ class CurriculumExplorerTests(APITestCase):
     def get(self, **params):
         return self.client.get('/api/curriculum-analytics/explorer/', {'scope': 'capstone', **params})
 
+    def test_workspace_overview_uses_one_assessment_and_skips_document_ml(self):
+        final = DefenseStage.objects.create(label='Workspace final', display_order=90)
+        StageGradingConfig.objects.create(defense_stage=final, semester=self.sem)
+        grade = TeamGrade.objects.create(team=self.a, semester=self.sem, scope='capstone', defense_stage=final)
+        TeamGrade.all_objects.filter(pk=grade.pk).update(status='published', final_grade=92)
+        TeamGrade.all_objects.filter(pk=self.grade_a.pk).update(status='published', final_grade=60)
+        DeliverableSubmission.objects.create(team=self.a, stage_label=self.stage.label, deliverable_id='PERF',
+            label='Project proposal', deliverable_type='pre', extracted_text='Readable project document for performance.')
+        with patch('curriculum_analytics.explorer.classification_for_document', side_effect=AssertionError('Performance must not classify documents')):
+            response = self.get(view='overview')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['comparison'], f'stage:{final.pk}')
+        self.assertEqual(response.data['annual_performance'][0]['score'], 92)
+        self.assertNotIn('criteria', response.data)
+        self.assertNotIn('project_analytics', response.data)
+        self.assertEqual(response.data['score_unit'], 'teams')
+
+    def test_workspace_year_reveals_stages_and_assessment_reveals_only_its_components(self):
+        response = self.get(view='year', academic_year=self.year.label)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIn(f'stage:{self.stage.pk}', [r['id'] for r in response.data['stage_results']])
+        response = self.get(view='assessment', academic_year=self.year.label, context=f'stage:{self.stage.pk}')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual([r['id'] for r in response.data['performance']['contexts']], [f'stage:{self.stage.pk}'])
+        self.assertEqual(response.data['criteria'][0]['name'], 'Problem relevance')
+
+    def test_workspace_default_range_is_five_recorded_years_and_rubric_changes_are_disclosed(self):
+        for start in range(2020, 2026):
+            year = SchoolYear.objects.create(label=f'{start}-{start + 1}')
+            semester = Semester.objects.create(school_year=year, label=Semester.FIRST)
+            team = self.team(f'History {start}', semester=semester)
+            grade = self.grade(team)
+            TeamGrade.all_objects.filter(pk=grade.pk).update(status='published', final_grade=80)
+        TeamGrade.all_objects.filter(pk=self.grade_a.pk).update(status='published', final_grade=60)
+        response = self.get(view='overview')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['range_years'], ['2022-2023', '2023-2024', '2024-2025', '2025-2026', '2026-2027'])
+        self.assertTrue(response.data['rubric_changed'])
+        self.assertEqual(self.get(view='overview', year_from='2026-2027', year_to='2022-2023').status_code, 400)
+
+    def test_completed_projects_count_once_in_their_first_completion_year(self):
+        for name in ['Project proposal.pdf', 'Project manuscript.pdf']:
+            ArchiveEntry.objects.create(entry_type='capstone', team=self.a, file_name=name,
+                academic_year=self.year.label, semester_label=self.sem.label, status='Approved')
+        future = SchoolYear.objects.create(label='2027-2028')
+        Semester.objects.create(school_year=future, label=Semester.FIRST)
+        ArchiveEntry.objects.create(entry_type='capstone', team=self.a, file_name='Final project manuscript.pdf',
+            academic_year=future.label, semester_label=self.sem.label, status='Approved')
+        response = self.get(view='projects')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['projects_count'], 1)
+        self.assertEqual(response.data['projects'][0]['academic_year'], self.year.label)
+        self.assertEqual(sum(r['count'] for r in response.data['project_output']), 1)
+        later = self.get(view='projects', year_from=future.label, year_to=future.label)
+        self.assertEqual(later.data['projects_count'], 0)
+        self.assertEqual(self.get(view='projects', project_status='all').data['projects_count'], 3)
+        with patch('curriculum_analytics.explorer.classification_for_document', side_effect=AssertionError('Counts must not classify documents')):
+            output = self.get(view='project_output')
+        self.assertEqual(output.data['projects_count'], 1)
+
+    def test_workspace_exports_follow_the_selected_view(self):
+        for view in ['overview', 'year', 'assessment', 'projects', 'project_output']:
+            params = {'scope': 'capstone', 'view': view, 'export_format': 'json'}
+            if view in ('year', 'assessment'):
+                params['academic_year'] = self.year.label
+            response = self.client.get('/api/curriculum-analytics/explorer/report/', params)
+            self.assertEqual(response.status_code, 200, (view, response.data))
+            self.assertIn(view.replace('_', ' ').title(), str(response.data['metadata']))
+        response = self.client.get('/api/curriculum-analytics/explorer/report/', {'view': 'overview', 'export_format': 'pdf'})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.content.startswith(b'%PDF'))
+
+    def test_workspace_year_remains_available_before_any_grades_exist(self):
+        TeamGrade.all_objects.all().delete()
+        response = self.get(view='overview')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['comparison_options'], [])
+        self.assertEqual(response.data['annual_performance'][0]['eligible'], 3)
+        self.assertIsNone(response.data['annual_performance'][0]['score'])
+        year = self.get(view='year', academic_year=self.year.label)
+        self.assertEqual(year.status_code, 200)
+        self.assertEqual(year.data['stage_results'][0]['pending'], 3)
+
+    def test_workspace_stage_coverage_excludes_cohorts_from_an_unconfigured_semester(self):
+        self.team('Later intake', semester=self.second)
+        year = self.get(view='year', academic_year=self.year.label)
+        row = next(r for r in year.data['stage_results'] if r['id'] == f'stage:{self.stage.pk}')
+        self.assertEqual(row['eligible'], 3)
+
+    def test_project_completion_requires_final_closed_assessment_and_cleared_revisions(self):
+        final = DefenseStage.objects.create(label='Completion final', display_order=100)
+        StageGradingConfig.objects.create(defense_stage=final, semester=self.sem, is_officially_complete=True)
+        StageGradingConfig.objects.filter(defense_stage=self.stage, semester=self.sem).update(is_officially_complete=True)
+        TeamGrade.all_objects.filter(pk=self.grade_a.pk).update(status='published', final_grade=90, verdict='approved')
+        # An approved concept-stage archive cannot establish final completion.
+        ArchiveEntry.objects.create(entry_type='capstone', team=self.a, stage_label=self.stage.label,
+            academic_year=self.year.label, semester_label=self.sem.label, file_name='Concept project proposal.pdf', status='Approved')
+        grade = TeamGrade.objects.create(team=self.b, semester=self.sem, scope='capstone', defense_stage=final)
+        TeamGrade.all_objects.filter(pk=grade.pk).update(status='published', final_grade=90, verdict='approved')
+        response = self.get(view='projects')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([p['team_id'] for p in response.data['projects']], [self.b.pk])
+        TeamGrade.all_objects.filter(pk=grade.pk).update(verdict='approved_with_revisions', revisions_cleared_at=None)
+        self.assertEqual(self.get(view='projects').data['projects_count'], 0)
+
+    def test_initial_load_selects_the_recorded_year_in_one_response(self):
+        response = self.get(initial='true')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, self.get(academic_year=self.year.label).data)
+        # The comparison API still retains its all-years default.
+        self.assertIsNone(self.get().data['academic_year'])
+
+    def test_initial_load_ignores_an_active_year_without_cohort_records(self):
+        Semester.objects.filter(pk=self.sem.pk).update(is_active=False)
+        future = SchoolYear.objects.create(label='2027-2028')
+        Semester.objects.create(school_year=future, label=Semester.FIRST, is_active=True)
+        self.assertEqual(self.get(initial='true').data['academic_year'], self.year.label)
+
+    def test_initial_load_selects_the_recorded_year_in_one_response(self):
+        response = self.get(initial='true')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, self.get(academic_year=self.year.label).data)
+        # The comparison API still retains its all-years default.
+        self.assertIsNone(self.get().data['academic_year'])
+
+    def test_initial_load_ignores_an_active_year_without_cohort_records(self):
+        Semester.objects.filter(pk=self.sem.pk).update(is_active=False)
+        future = SchoolYear.objects.create(label='2027-2028')
+        Semester.objects.create(school_year=future, label=Semester.FIRST, is_active=True)
+        self.assertEqual(self.get(initial='true').data['academic_year'], self.year.label)
+
     def test_annual_only_contains_recorded_years_and_published_scores(self):
         TeamGrade.all_objects.filter(pk=self.grade_a.pk).update(status='published', final_grade=61)
         TeamGrade.all_objects.filter(pk=self.grade_b.pk).update(status='published', final_grade=79)
@@ -73,6 +204,107 @@ class CurriculumExplorerTests(APITestCase):
         self.assertEqual(response.data['annual_performance'][0]['score'], 70)
         self.assertEqual(response.data['annual_performance'][0]['assessed'], 2)
         self.assertEqual(response.data['annual_performance'][0]['eligible'], 3)
+
+    def test_component_comparison_uses_published_values_and_individual_peer_scores(self):
+        TeamGrade.all_objects.filter(pk=self.grade_a.pk).update(
+            status='published', panel_score=65, peer_score=99, adviser_score=40)
+        StudentStageGrade.objects.filter(team_grade=self.grade_a, student=self.student).update(peer_score=90)
+        StudentStageGrade.objects.filter(team_grade=self.grade_a, student=self.other).update(peer_score=70)
+        response = self.get(academic_year=self.year.label, subject=f'team:{self.a.pk}')
+        self.assertEqual(response.status_code, 200)
+        components = {r['id']: r for r in response.data['performance']['contexts'][0]['components']}
+        self.assertEqual(components['panel']['score'], 65)  # Not the criterion mean (60).
+        self.assertEqual(components['panel']['shared'], 2)
+        self.assertEqual(components['peer']['score'], 80)  # Not the team peer aggregate (99).
+        self.assertEqual(components['peer']['shared'], 0)
+        self.assertEqual(response.data['criteria'][0]['score'], 60)
+        self.assertEqual(len(response.data['criteria'][0]['teams']), 1)
+        self.assertEqual(response.data['projects_count'], 3)  # Project insights keep the cohort.
+        selected = self.get(academic_year=self.year.label, subject=f'student:{self.student.pk}')
+        source = next(r for r in selected.data['performance']['contexts'][0]['components'] if r['id'] == 'peer')
+        self.assertEqual(source['score'], 90)
+        self.assertEqual(source['assessed'], 1)
+
+    def test_year_comparison_matches_the_assessment_instead_of_latest_mixed_stage(self):
+        final, _ = DefenseStage.objects.get_or_create(label='Comparison final', defaults={'display_order': 20})
+        later = TeamGrade.objects.create(team=self.a, semester=self.sem, scope='capstone', defense_stage=final)
+        TeamGrade.all_objects.filter(pk=later.pk).update(status='published', final_grade=95)
+        TeamGrade.all_objects.filter(pk=self.grade_a.pk).update(status='published', final_grade=61)
+        response = self.get(comparison=f'stage:{self.stage.pk}')
+        self.assertEqual(response.data['annual_performance'][0]['score'], 61)
+        self.assertEqual(response.data['annual_performance'][0]['rubrics'], ['Concept panel'])
+        self.assertTrue(any(o['id'] == f'stage:{final.pk}' for o in response.data['comparison_options']))
+        self.assertEqual(self.get(comparison='stage:999999999').status_code, 400)
+
+    def test_pit_year_comparison_matches_event_name_and_semester_across_configuration_ids(self):
+        from user_management.academic_records.models import StudentAcademicRecord
+        old_year = SchoolYear.objects.create(label='2025-2026')
+        old_sem = Semester.objects.create(school_year=old_year, label=Semester.FIRST)
+        StudentAcademicRecord.objects.create(student=self.student, semester=old_sem, year_level='1st Year')
+        team = self.team('Comparison PIT', StudentTeam.LEVEL_1_PIT, '1st Year')
+        for sem, name, score in [(old_sem, ' Programming EXPO ', 80), (self.sem, 'Programming Expo', 90)]:
+            event = PitEventGradingConfig.objects.create(semester=sem, year_level='1st Year', event_name=name)
+            grade = TeamGrade.objects.create(team=team, semester=sem, scope='pit', pit_event_config=event,
+                panel_weight=80, peer_weight=20, adviser_weight=0)
+            TeamGrade.all_objects.filter(pk=grade.pk).update(status='published', final_grade=score)
+        response = self.get(scope='pit', year_level='1')
+        self.assertEqual(len(response.data['comparison_options']), 1)
+        key = response.data['comparison_options'][0]['id']
+        response = self.get(scope='pit', year_level='1', comparison=key)
+        self.assertEqual([r['score'] for r in response.data['annual_performance']], [80, 90])
+
+    def test_unconfigured_evaluators_are_unavailable_and_selection_normalizes(self):
+        StageGradingConfig.objects.filter(defense_stage=self.stage, semester=self.sem).update(
+            panel_weight=100, peer_weight=0, adviser_weight=0)
+        response = self.get(academic_year=self.year.label, evaluation_type='adviser')
+        components = {r['id']: r for r in response.data['performance']['contexts'][0]['components']}
+        self.assertFalse(components['adviser']['available'])
+        self.assertEqual(response.data['evaluation_type'], 'panel')
+
+    def test_component_comparison_excludes_drafts_and_never_inherits_team_peer(self):
+        TeamGrade.all_objects.filter(pk=self.grade_a.pk).update(panel_score=99, peer_score=95)
+        response = self.get(academic_year=self.year.label, subject=f'team:{self.a.pk}')
+        self.assertTrue(all(r['score'] is None for r in response.data['performance']['contexts'][0]['components']))
+        TeamGrade.all_objects.filter(pk=self.grade_a.pk).update(status='published', panel_score=0)
+        components = {r['id']: r for r in self.get(academic_year=self.year.label,
+            subject=f'team:{self.a.pk}').data['performance']['contexts'][0]['components']}
+        self.assertEqual(components['panel']['score'], 0)
+        self.assertIsNone(components['peer']['score'])
+        self.assertEqual(components['peer']['pending'], 2)
+
+    def test_individual_panel_rubric_does_not_substitute_a_team_aggregate(self):
+        Rubric.objects.filter(pk=self.rubric.pk).update(target_type='individual')
+        TeamGrade.all_objects.filter(pk=self.grade_a.pk).update(status='published', panel_score=99)
+        StudentStageGrade.objects.filter(team_grade=self.grade_a).update(panel_score=None)
+        StudentStageGrade.objects.filter(team_grade=self.grade_a, student=self.student).update(panel_score=73)
+        response = self.get(academic_year=self.year.label, subject=f'team:{self.a.pk}')
+        source = next(r for r in response.data['performance']['contexts'][0]['components'] if r['id'] == 'panel')
+        self.assertEqual(source['score'], 73)
+        self.assertEqual(source['assessed'], 1)
+        self.assertEqual(source['pending'], 1)
+        self.assertEqual(source['shared'], 0)
+
+    def test_component_comparison_does_not_borrow_current_members_for_past_assessments(self):
+        TeamGrade.all_objects.filter(pk=self.grade_a.pk).update(status='published', panel_score=80)
+        StudentStageGrade.objects.filter(team_grade=self.grade_a).delete()
+        self.a.semester = self.second
+        self.a.save(update_fields=['semester'])
+        response = self.get(academic_year=self.year.label, semester=self.sem.pk,
+                            subject=f'team:{self.a.pk}')
+        components = response.data['performance']['contexts'][0]['components']
+        self.assertEqual(next(r for r in components if r['id'] == 'panel')['assessed'], 0)
+
+    def test_performance_selection_is_period_scoped_and_peer_criteria_are_individual(self):
+        self.assertEqual(self.get(academic_year=self.year.label, subject='student:999999999').status_code, 400)
+        peer = Rubric.objects.create(name='Individual collaboration', semester=self.sem,
+            defense_stage=self.stage, evaluation_type='peer', target_type='individual', status='published')
+        for student, score in [(self.student, 8), (self.other, 2)]:
+            GradeBreakdown.objects.create(team_grade=self.grade_a, rubric=peer, evaluation_type='peer',
+                criterion_name='Contribution', score=score, max_score=10, student=student)
+        response = self.get(academic_year=self.year.label, evaluation_type='peer', subject=f'student:{self.student.pk}')
+        criterion = next(c for c in response.data['criteria'] if c['name'] == 'Contribution')
+        self.assertEqual(criterion['score'], 80)
+        self.assertEqual(criterion['assessed'], 1)
 
     def test_criteria_equal_weight_subjects_exclude_void_and_pending(self):
         response = self.get(academic_year='2026-2027')

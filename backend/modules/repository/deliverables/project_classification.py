@@ -8,6 +8,9 @@ import json
 import logging
 import pickle
 import re
+from collections import OrderedDict
+from copy import deepcopy
+from threading import Lock
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -145,6 +148,29 @@ class ProjectFocusClassifier:
         self.is_trained = False
         self.training_source = TRAINING_SOURCE
         self.model_version = MODEL_VERSION
+        # Keep predictions, not manuscript text, in bounded process memory.
+        self._document_predictions = OrderedDict()
+        self._document_prediction_lock = Lock()
+
+    def classify_document(self, text, cached=None):
+        if not self.is_trained:
+            self.train_from_examples()
+        digest = input_hash(text)
+        if (isinstance(cached, dict) and cached.get('model_version') == self.model_version and
+                cached.get('input_hash') == digest):
+            return cached
+        key = (self.model_version, digest)
+        with self._document_prediction_lock:
+            prediction = self._document_predictions.get(key)
+            if prediction is not None:
+                self._document_predictions.move_to_end(key)
+                return deepcopy(prediction)
+        prediction = self.predict(text)
+        with self._document_prediction_lock:
+            self._document_predictions[key] = deepcopy(prediction)
+            while len(self._document_predictions) > 256:
+                self._document_predictions.popitem(last=False)
+        return prediction
 
     def train_from_examples(self, examples=None, *, training_source=TRAINING_SOURCE):
         examples = TRAINING_EXAMPLES if examples is None else examples
@@ -278,7 +304,4 @@ def prediction_for_text(text):
 
 def classification_for_document(text, cached=None):
     from .naive_bayes_classifier import get_classifier
-    classifier = get_classifier()
-    if isinstance(cached, dict) and cached.get('model_version') == classifier.model_version and cached.get('input_hash') == input_hash(text):
-        return cached
-    return classifier.predict(text)
+    return get_classifier().classify_document(text, cached)

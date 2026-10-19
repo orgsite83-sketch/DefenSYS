@@ -4,6 +4,7 @@ STATUS_OPTIONS = [
     {'value': '', 'label': 'All Statuses'},
     {'value': ArchiveEntry.STATUS_APPROVED, 'label': 'Approved'},
     {'value': ArchiveEntry.STATUS_NEEDS_REVISION, 'label': 'Needs Revision'},
+    {'value': 'Uploaded', 'label': 'Uploaded'},
     {'value': 'Pre-Defense', 'label': 'Pre-Defense'},
     {'value': 'Post-Defense', 'label': 'Post-Defense'},
     {'value': 'Missing required', 'label': 'Missing required'},

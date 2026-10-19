@@ -86,6 +86,10 @@ abstract final class WorkspaceAccess {
       _ when location == '/admin' || location.startsWith('/admin/') =>
         isWeb && user['role'] == 'admin',
       FacultyRoutes.documenterRecords => isWeb && canDocument(user),
+      _ when location == FacultyRoutes.curriculumAnalytics ||
+          location.startsWith('${FacultyRoutes.curriculumAnalytics}/') =>
+        isWeb && user['role'] == 'faculty' && user['is_pit_lead'] == true &&
+            const {'1st Year', '2nd Year', '3rd Year'}.contains(user['pit_lead_year']),
       _ when location == FacultyRoutes.defenseScheduleBulkImport ||
           location == FacultyRoutes.defenseScheduler ||
           location.startsWith('${FacultyRoutes.defenseScheduler}/') =>

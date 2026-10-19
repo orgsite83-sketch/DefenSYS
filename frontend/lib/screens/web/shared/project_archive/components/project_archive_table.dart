@@ -8,6 +8,9 @@ import 'package:defensys/widgets/status_badge.dart';
 import 'package:defensys/widgets/table/table.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:defensys/utils/universal_file_viewer.dart';
+import 'package:defensys/screens/web/shared/project_archive/dialogs/archive_file_details_dialog.dart';
+import 'package:defensys/widgets/shadcn/defensys_breadcrumb.dart';
 
 typedef AuditLogTable = ProjectArchiveTable;
 
@@ -47,6 +50,79 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
 
   bool _folderListView = false;
+  String _sortOrder = 'a_z';
+
+  List<Map<String, dynamic>> _applySortingToEntries(
+    List<Map<String, dynamic>> entries,
+  ) {
+    final list = List<Map<String, dynamic>>.from(entries);
+    if (_sortOrder == 'a_z') {
+      list.sort((a, b) {
+        final titleA = (a['deliverable_label'] ??
+                a['file_name'] ??
+                a['team_name'] ??
+                '')
+            .toString()
+            .toLowerCase();
+        final titleB = (b['deliverable_label'] ??
+                b['file_name'] ??
+                b['team_name'] ??
+                '')
+            .toString()
+            .toLowerCase();
+        return titleA.compareTo(titleB);
+      });
+    } else if (_sortOrder == 'z_a') {
+      list.sort((a, b) {
+        final titleA = (a['deliverable_label'] ??
+                a['file_name'] ??
+                a['team_name'] ??
+                '')
+            .toString()
+            .toLowerCase();
+        final titleB = (b['deliverable_label'] ??
+                b['file_name'] ??
+                b['team_name'] ??
+                '')
+            .toString()
+            .toLowerCase();
+        return titleB.compareTo(titleA);
+      });
+    } else if (_sortOrder == 'newest') {
+      list.sort((a, b) {
+        final dateA = a['uploaded_at']?.toString() ?? '';
+        final dateB = b['uploaded_at']?.toString() ?? '';
+        return dateB.compareTo(dateA);
+      });
+    } else if (_sortOrder == 'oldest') {
+      list.sort((a, b) {
+        final dateA = a['uploaded_at']?.toString() ?? '';
+        final dateB = b['uploaded_at']?.toString() ?? '';
+        return dateA.compareTo(dateB);
+      });
+    }
+    return list;
+  }
+
+  List<Map<String, dynamic>> _applySortingToFolders(
+    List<Map<String, dynamic>> folders,
+  ) {
+    final list = List<Map<String, dynamic>>.from(folders);
+    if (_sortOrder == 'z_a') {
+      list.sort((a, b) {
+        final titleA = (a['title'] ?? '').toString().toLowerCase();
+        final titleB = (b['title'] ?? '').toString().toLowerCase();
+        return titleB.compareTo(titleA);
+      });
+    } else {
+      list.sort((a, b) {
+        final titleA = (a['title'] ?? '').toString().toLowerCase();
+        final titleB = (b['title'] ?? '').toString().toLowerCase();
+        return titleA.compareTo(titleB);
+      });
+    }
+    return list;
+  }
 
   String _scopeKey(RepositoryAuditState state) =>
       state.scope['scope']?.toString() ?? 'admin';
@@ -152,14 +228,60 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             ),
           ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(child: _searchField(state)),
-              const SizedBox(width: 12),
-              _advancedFiltersButton(),
-              const SizedBox(width: 12),
-              _clearFiltersButton(),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 920;
+              final searchWidget = _searchField(state);
+              final groupByWidget = SizedBox(
+                width: isNarrow ? double.infinity : 205,
+                child: _groupByFilter(state),
+              );
+              final sortWidget = SizedBox(
+                width: isNarrow ? double.infinity : 155,
+                child: _sortFilter(),
+              );
+              final filtersWidget = _advancedFiltersButton();
+              final clearWidget = _clearFiltersButton();
+
+              if (isNarrow) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    searchWidget,
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(child: groupByWidget),
+                        const SizedBox(width: 8),
+                        Expanded(child: sortWidget),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(child: filtersWidget),
+                        const SizedBox(width: 8),
+                        Expanded(child: clearWidget),
+                      ],
+                    ),
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: searchWidget),
+                  const SizedBox(width: 12),
+                  groupByWidget,
+                  const SizedBox(width: 12),
+                  sortWidget,
+                  const SizedBox(width: 12),
+                  filtersWidget,
+                  const SizedBox(width: 12),
+                  clearWidget,
+                ],
+              );
+            },
           ),
           if (widget.showAdvancedFilters) ...[
             const SizedBox(height: 16),
@@ -260,9 +382,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                     ),
                   ),
                   const SizedBox(width: 14),
-                  Expanded(child: _groupByFilter(state)),
-                  const SizedBox(width: 14),
-                  const Spacer(),
+                  const Spacer(flex: 2),
                 ],
               ),
             ] else ...[
@@ -342,14 +462,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(child: _groupByFilter(state)),
-                  const SizedBox(width: 14),
-                  const Spacer(flex: 2),
-                ],
-              ),
+
             ],
           ],
           const SizedBox(height: 18),
@@ -395,6 +508,20 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           value: state.groupBy,
           isExpanded: true,
           dropdownColor: _isDark ? DefensysTokens.mistSurface : Colors.white,
+          icon: Icon(
+            Icons.keyboard_arrow_down_rounded,
+            size: 18,
+            color: _isDark
+                ? DefensysTokens.textSecondaryDark
+                : const Color(0xFF64748B),
+          ),
+          style: TextStyle(
+            color: _isDark
+                ? DefensysTokens.textPrimaryDark
+                : AppColors.textPrimary,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+          ),
           items: const [
             DropdownMenuItem(value: 'team', child: Text('Group by Team')),
             DropdownMenuItem(
@@ -411,6 +538,56 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
               ref
                   .read(repositoryAuditProvider.notifier)
                   .fetchEntries(groupBy: value);
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _sortFilter() {
+    return _filterShell(
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          key: const ValueKey('archiveSortOrder'),
+          value: _sortOrder,
+          isExpanded: true,
+          dropdownColor: _isDark ? DefensysTokens.mistSurface : Colors.white,
+          icon: Icon(
+            Icons.keyboard_arrow_down_rounded,
+            size: 18,
+            color: _isDark
+                ? DefensysTokens.textSecondaryDark
+                : const Color(0xFF64748B),
+          ),
+          style: TextStyle(
+            color: _isDark
+                ? DefensysTokens.textPrimaryDark
+                : AppColors.textPrimary,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w600,
+          ),
+          items: const [
+            DropdownMenuItem(
+              value: 'a_z',
+              child: Text('Sort: A to Z', overflow: TextOverflow.ellipsis),
+            ),
+            DropdownMenuItem(
+              value: 'z_a',
+              child: Text('Sort: Z to A', overflow: TextOverflow.ellipsis),
+            ),
+            DropdownMenuItem(
+              value: 'newest',
+              child: Text('Sort: Newest', overflow: TextOverflow.ellipsis),
+            ),
+            DropdownMenuItem(
+              value: 'oldest',
+              child: Text('Sort: Oldest', overflow: TextOverflow.ellipsis),
+            ),
+          ],
+          onChanged: (value) {
+            if (value != null) {
+              setState(() => _sortOrder = value);
             }
           },
         ),
@@ -533,6 +710,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       child: OutlinedButton.icon(
         onPressed: () {
           widget.searchController.clear();
+          setState(() => _sortOrder = 'a_z');
           ref
               .read(repositoryAuditProvider.notifier)
               .fetchEntries(
@@ -700,13 +878,13 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     );
   }
 
-  Widget _filterShell({required Widget child}) {
+  Widget _filterShell({required Widget child, double height = 40}) {
     return Container(
-      height: 43,
+      height: height,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: _isDark ? DefensysTokens.mistInputFill : Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
         ),
@@ -764,7 +942,12 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
   Widget _repositoryTable(RepositoryAuditState state) {
     final compact = state.teamId.isNotEmpty;
-    final entries = state.entries;
+    final isInsideTeam = state.teamId.isNotEmpty ||
+        (state.folderBrowser.isNotEmpty &&
+            (state.groupBy == 'team' && state.folderBrowser['is_leaf'] == true ||
+                (state.folderBrowser['breadcrumbs'] is List &&
+                    (state.folderBrowser['breadcrumbs'] as List).length >= 5)));
+    final entries = _applySortingToEntries(state.entries);
     return _wrapWithHorizontalScroll(
       minWidth: compact ? 880.0 : _kRepoMinTableWidth,
       child: Column(
@@ -772,7 +955,11 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         children: [
           _repositoryHeaderData(compactColumns: compact),
           ...entries.map(
-            (entry) => _repositoryRowData(entry, compactColumns: compact),
+            (entry) => _repositoryRowData(
+              entry,
+              compactColumns: compact,
+              showTeamBadge: !isInsideTeam,
+            ),
           ),
         ],
       ),
@@ -948,7 +1135,10 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                       ],
                       Text(
                         deliverableId.isNotEmpty
-                            ? '$deliverableId · ${title.isEmpty ? '—' : title}'
+                            ? (title.startsWith('$deliverableId ·') ||
+                                    title.startsWith('$deliverableId -')
+                                ? title
+                                : '$deliverableId · ${title.isEmpty ? '—' : title}')
                             : (title.isEmpty ? '-' : title),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -1091,7 +1281,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
   Widget _statusBadge(String status) {
     final s = status.trim();
-    if (s == 'Approved' || s == 'Post-Defense' || s == 'Accepted') {
+    if (s == 'Approved' || s == 'Post-Defense' || s == 'Accepted' || s == 'Uploaded') {
       return StatusBadge.success(label: s.isEmpty ? 'Approved' : s);
     }
     if (s == 'Needs Revision' || s == 'Needs Re-upload') {
@@ -1193,6 +1383,15 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           ),
           onSelected: (value) {
             switch (value) {
+              case 'details':
+                ArchiveFileDetailsDialog.show(
+                  context: context,
+                  entry: entry,
+                  onViewPdf: widget.onViewPdf,
+                  onDownloadFile: widget.onDownloadFile,
+                  onOverrideStatus: widget.onOverrideStatus,
+                );
+                break;
               case 'view':
                 widget.onViewPdf(fileUrl, fileName);
                 break;
@@ -1205,6 +1404,33 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             }
           },
           itemBuilder: (context) => [
+            PopupMenuItem<String>(
+              value: 'details',
+              height: 36,
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 15,
+                    color: _isDark
+                        ? DefensysTokens.textSecondaryDark
+                        : const Color(0xFF475569),
+                  ),
+                  const SizedBox(width: 9),
+                  Text(
+                    'File Details',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: _isDark
+                          ? DefensysTokens.textPrimaryDark
+                          : const Color(0xFF0F172A),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const PopupMenuDivider(height: 1),
             PopupMenuItem<String>(
               value: 'download',
               height: 36,
@@ -1289,80 +1515,24 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   }
 
   Widget _buildEntriesBody(RepositoryAuditState state) {
-    if (state.folderBrowser.isEmpty) return _repositoryTable(state);
-    return _buildFolderBrowser(state);
-  }
-
-  Widget _buildFolderBrowser(RepositoryAuditState state) {
-    final browser = state.folderBrowser;
-    final folders = _mapList(browser['folders']);
-    final breadcrumbs = _mapList(browser['breadcrumbs']);
-    final isLeaf = browser['is_leaf'] == true;
-    final fileCount = browser['file_count'] ?? 0;
-    final missingCount = browser['missing_count'] ?? 0;
-    final rootLabel = _scopeKey(state) == 'pit_lead'
-        ? '${state.scope['pit_year_level'] ?? ''} PIT Archive'
-        : 'Project Archive';
-    final parentKey = breadcrumbs.length > 1
-        ? breadcrumbs[breadcrumbs.length - 2]['key']?.toString() ?? ''
-        : '';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            if (state.folderKey.isNotEmpty)
-              OutlinedButton.icon(
-                onPressed: () => ref
-                    .read(repositoryAuditProvider.notifier)
-                    .fetchEntries(folderKey: parentKey),
-                icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                label: const Text('Back'),
-              ),
-            TextButton(
-              onPressed: state.folderKey.isEmpty
-                  ? null
-                  : () => ref
-                        .read(repositoryAuditProvider.notifier)
-                        .fetchEntries(folderKey: ''),
-              child: Text(rootLabel),
-            ),
-            for (final crumb in breadcrumbs) ...[
-              const Icon(Icons.chevron_right_rounded, size: 16),
-              TextButton(
-                onPressed: crumb['key']?.toString() == state.folderKey
-                    ? null
-                    : () => ref
-                          .read(repositoryAuditProvider.notifier)
-                          .fetchEntries(
-                            folderKey: crumb['key']?.toString() ?? '',
-                          ),
-                child: Text(crumb['title']?.toString() ?? ''),
-              ),
-            ],
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                isLeaf
-                    ? '$fileCount ${fileCount == 1 ? 'file' : 'files'}${missingCount == 0 ? '' : ' · $missingCount missing'}'
-                    : '${folders.length} ${folders.length == 1 ? 'folder' : 'folders'} · $fileCount files${missingCount == 0 ? '' : ' · $missingCount missing'}',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: _isDark
-                      ? DefensysTokens.textSecondaryDark
-                      : const Color(0xFF64748B),
+    if (state.folderBrowser.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Showing ${state.entries.length} ${state.entries.length == 1 ? 'record' : 'records'}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: _isDark
+                        ? DefensysTokens.textSecondaryDark
+                        : const Color(0xFF64748B),
+                  ),
                 ),
               ),
-            ),
-            if (!isLeaf) ...[
               IconButton(
                 tooltip: 'List view',
                 onPressed: () => setState(() => _folderListView = true),
@@ -1380,23 +1550,120 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 12),
+          if (_folderListView)
+            _repositoryTable(state)
+          else
+            _fileGrid(state.entries),
+        ],
+      );
+    }
+    return _buildFolderBrowser(state);
+  }
+
+  Widget _buildFolderBrowser(RepositoryAuditState state) {
+    final browser = state.folderBrowser;
+    final folders = _applySortingToFolders(_mapList(browser['folders']));
+    final breadcrumbs = _mapList(browser['breadcrumbs']);
+    final isLeaf = browser['is_leaf'] == true;
+    final fileCount = browser['file_count'] ?? 0;
+    final missingCount = browser['missing_count'] ?? 0;
+    final rootLabel = _scopeKey(state) == 'pit_lead'
+        ? '${state.scope['pit_year_level'] ?? ''} PIT Archive'
+        : 'Project Archive';
+    final parentKey = breadcrumbs.length > 1
+        ? breadcrumbs[breadcrumbs.length - 2]['key']?.toString() ?? ''
+        : '';
+    final crumbItems = <DefensysBreadcrumbItem>[
+      DefensysBreadcrumbItem(
+        label: rootLabel,
+        icon: const Icon(LucideIcons.folderArchive, size: 14),
+        onTap: state.folderKey.isEmpty
+            ? null
+            : () => ref
+                  .read(repositoryAuditProvider.notifier)
+                  .fetchEntries(folderKey: ''),
+        isCurrent: state.folderKey.isEmpty,
+      ),
+      for (final crumb in breadcrumbs)
+        DefensysBreadcrumbItem(
+          label: crumb['title']?.toString() ?? '',
+          onTap: crumb['key']?.toString() == state.folderKey
+              ? null
+              : () => ref
+                    .read(repositoryAuditProvider.notifier)
+                    .fetchEntries(
+                      folderKey: crumb['key']?.toString() ?? '',
+                    ),
+          isCurrent: crumb['key']?.toString() == state.folderKey,
+        ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DefensysBreadcrumb(
+          onBack: state.folderKey.isNotEmpty
+              ? () => ref
+                    .read(repositoryAuditProvider.notifier)
+                    .fetchEntries(folderKey: parentKey)
+              : null,
+          items: crumbItems,
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                isLeaf
+                    ? '$fileCount ${fileCount == 1 ? 'file' : 'files'}${missingCount == 0 ? '' : ' · $missingCount missing'}'
+                    : '${folders.length} ${folders.length == 1 ? 'folder' : 'folders'} · $fileCount files${missingCount == 0 ? '' : ' · $missingCount missing'}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: _isDark
+                      ? DefensysTokens.textSecondaryDark
+                      : const Color(0xFF64748B),
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'List view',
+              onPressed: () => setState(() => _folderListView = true),
+              icon: Icon(
+                Icons.view_list_rounded,
+                color: _folderListView ? AppColors.maroon : null,
+              ),
+            ),
+            IconButton(
+              tooltip: 'Grid view',
+              onPressed: () => setState(() => _folderListView = false),
+              icon: Icon(
+                Icons.grid_view_rounded,
+                color: !_folderListView ? AppColors.maroon : null,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 12),
         if (isLeaf) ...[
-          if (state.groupBy == 'deliverable')
-            _wrapWithHorizontalScroll(
-              minWidth: _kDeliverableMinTableWidth,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _deliverableTableHeaderData(),
-                  ...state.entries.map(_repositoryDeliverableRowData),
-                ],
-              ),
-            )
-          else
-            _repositoryTable(state),
+          if (_folderListView) ...[
+            if (state.groupBy == 'deliverable')
+              _wrapWithHorizontalScroll(
+                minWidth: _kDeliverableMinTableWidth,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _deliverableTableHeaderData(),
+                    ..._applySortingToEntries(state.entries)
+                        .map(_repositoryDeliverableRowData),
+                  ],
+                ),
+              )
+            else
+              _repositoryTable(state),
+          ] else
+            _fileGrid(state.entries),
           _folderPager(state),
         ] else if (folders.isEmpty)
           _emptyRepositoryTable()
@@ -1564,6 +1831,202 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     );
   }
 
+  Widget _fileGrid(List<Map<String, dynamic>> entries) {
+    if (entries.isEmpty) return _emptyRepositoryTable();
+    final sortedEntries = _applySortingToEntries(entries);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 1200
+            ? 4
+            : constraints.maxWidth >= 840
+            ? 3
+            : constraints.maxWidth >= 540
+            ? 2
+            : 1;
+        const gap = 12.0;
+        final cardWidth =
+            (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final entry in sortedEntries)
+              SizedBox(width: cardWidth, child: _fileCard(entry)),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _fileCard(Map<String, dynamic> entry) {
+    final isPit = entry['type'] == 'pit';
+    final isMissing = entry['is_missing'] == true;
+    final hasFile = entry['has_file'] == true && !isMissing;
+    final title = isPit
+        ? entry['file_name']?.toString() ?? ''
+        : entry['deliverable_label']?.toString() ??
+              entry['file_name']?.toString() ??
+              '';
+    final deliverableId = entry['deliverable_id']?.toString() ?? '';
+    final status = entry['status']?.toString() ?? '';
+    final fileName = entry['file_name']?.toString() ?? '';
+    final uploadedAt = _prettyDate(entry['uploaded_at']);
+
+    final format = DeliverableFormatInfo.fromFileName(fileName);
+    final displayTitle = deliverableId.isNotEmpty
+        ? (title.startsWith('$deliverableId ·') ||
+                title.startsWith('$deliverableId -')
+            ? title
+            : '$deliverableId · ${title.isEmpty ? '—' : title}')
+        : (title.isEmpty ? (fileName.isNotEmpty ? fileName : '—') : title);
+
+    return Material(
+      color: _isDark ? DefensysTokens.mistPanel : Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        key: ValueKey('archiveFile_${entry['id'] ?? deliverableId}'),
+        onTap: () => ArchiveFileDetailsDialog.show(
+          context: context,
+          entry: entry,
+          onViewPdf: widget.onViewPdf,
+          onDownloadFile: widget.onDownloadFile,
+          onOverrideStatus: widget.onOverrideStatus,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(minHeight: 180),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: _isDark
+                  ? DefensysTokens.mistBorder
+                  : const Color(0xFFE2E8F0),
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Top row: Status Badge aligned to right
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  _statusBadge(status),
+                ],
+              ),
+              const SizedBox(height: 6),
+
+              // Center: 52x52 Squircle Hero Icon
+              Center(
+                child: Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: isMissing
+                        ? (_isDark
+                            ? const Color(0xFF3F3F46).withValues(alpha: 0.3)
+                            : const Color(0xFFF1F5F9))
+                        : (_isDark
+                            ? format.color.withValues(alpha: 0.25)
+                            : format.color.withValues(alpha: 0.08)),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isMissing
+                          ? (_isDark
+                              ? const Color(0xFF52525B)
+                              : const Color(0xFFCBD5E1))
+                          : (_isDark
+                              ? format.color.withValues(alpha: 0.45)
+                              : format.color.withValues(alpha: 0.22)),
+                      width: 1.2,
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    isMissing ? Icons.description_outlined : format.icon,
+                    color: isMissing
+                        ? (_isDark
+                            ? const Color(0xFFA1A1AA)
+                            : const Color(0xFF64748B))
+                        : format.color,
+                    size: 26,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // File Title (Centered, 2 lines max)
+              Text(
+                displayTitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: _isDark
+                      ? DefensysTokens.textPrimaryDark
+                      : const Color(0xFF0F172A),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  height: 1.25,
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Bottom row: Upload Date + Actions
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    hasFile ? uploadedAt : 'Not uploaded',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: _isDark
+                          ? DefensysTokens.textSecondaryDark
+                          : const Color(0xFF94A3B8),
+                    ),
+                  ),
+                  if (hasFile)
+                    _rowActions(entry)
+                  else
+                    const SizedBox.shrink(),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _metaChip(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: _isDark ? DefensysTokens.mistInputFill : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: _isDark ? DefensysTokens.mistBorder : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: _isDark
+              ? DefensysTokens.textSecondaryDark
+              : const Color(0xFF64748B),
+          fontSize: 10.5,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
   Widget _deliverableTableHeaderData() {
     return Container(
       height: DefensysTableTokens.headerHeight,
@@ -1595,6 +2058,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
   Widget _repositoryDeliverableRowData(Map<String, dynamic> entry) {
     final hasFile = entry['has_file'] == true;
+    final fileName = entry['file_name']?.toString() ?? '';
+    final format = DeliverableFormatInfo.fromFileName(fileName);
     return Container(
       constraints: const BoxConstraints(
         minHeight: DefensysTableTokens.rowHeightStandard,
@@ -1617,7 +2082,38 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           ),
           _tableCell(_bodyText(entry['stage']?.toString() ?? ''), flex: 0.9),
           _tableCell(
-            _bodyText(hasFile ? (entry['file_name']?.toString() ?? '') : '—'),
+            hasFile
+                ? Row(
+                    children: [
+                      Container(
+                        width: 26,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: format.color.withValues(
+                            alpha: _isDark ? 0.25 : 0.1,
+                          ),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: format.color.withValues(
+                              alpha: _isDark ? 0.45 : 0.25,
+                            ),
+                          ),
+                        ),
+                        child: Icon(
+                          format.icon,
+                          size: 14,
+                          color: format.color,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _bodyText(
+                          fileName.isNotEmpty ? fileName : '—',
+                        ),
+                      ),
+                    ],
+                  )
+                : _bodyText('—'),
             flex: 1.6,
           ),
           _tableCell(

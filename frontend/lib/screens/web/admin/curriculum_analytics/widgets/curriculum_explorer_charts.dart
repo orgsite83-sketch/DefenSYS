@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
+import 'curriculum_chart_palette.dart';
 import '../../../../../services/academic/curriculum_explorer_provider.dart';
 import '../../../../../theme/defensys_tokens.dart';
 
@@ -134,11 +135,13 @@ class CurriculumRankedBar extends StatelessWidget {
     required this.caption,
     required this.reference,
     required this.onPressed,
+    this.color,
   });
   final String label, caption;
   final double? value;
   final double reference;
   final VoidCallback onPressed;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) => Semantics(
@@ -176,9 +179,7 @@ class CurriculumRankedBar extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: value != null && value! < reference
-                        ? DefensysTokens.goldOf(context)
-                        : DefensysTokens.textPrimaryOf(context),
+                    color: DefensysTokens.textPrimaryOf(context),
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
@@ -197,9 +198,9 @@ class CurriculumRankedBar extends StatelessWidget {
                         height: 11,
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                            color: value! < reference
-                                ? DefensysTokens.goldOf(context)
-                                : DefensysTokens.maroonOf(context),
+                            color:
+                                color ??
+                                CurriculumChartPalette.primary(context),
                             borderRadius: BorderRadius.circular(2),
                           ),
                         ),
@@ -289,61 +290,11 @@ class CurriculumPercentAxis extends StatelessWidget {
 }
 
 Color curriculumCategoryColor(BuildContext context, String category) {
-  const labels = [
-    'Web Development',
-    'Mobile Development',
-    'IoT',
-    'Data Science',
-    'Machine Learning',
-    'Desktop Applications',
-    'Cloud Computing',
-    'Cybersecurity',
-    'Database Systems',
-    'Network Systems',
-    'Game Development',
-    'Information Systems',
-    'Agriculture & Environment',
-    'Healthcare',
-    'Education',
-    'Business & Commerce',
-    'Transport & Logistics',
-    'Public Services & Safety',
-    'Security & IT Operations',
-    'Entertainment',
-  ];
-  const light = [
-    Color(0xFF8F2922),
-    Color(0xFF246999),
-    Color(0xFF15785E),
-    Color(0xFF7655A6),
-    Color(0xFF925935),
-    Color(0xFF796043),
-    Color(0xFF3F6778),
-    Color(0xFF665474),
-    Color(0xFF64714C),
-    Color(0xFF846277),
-    Color(0xFF687488),
-  ];
-  const dark = [
-    Color(0xFFA74339),
-    Color(0xFF75A9CE),
-    Color(0xFF63B399),
-    Color(0xFFAA92D1),
-    Color(0xFFD09975),
-    Color(0xFFC5A887),
-    Color(0xFF80AABD),
-    Color(0xFFA697B2),
-    Color(0xFFA1AF89),
-    Color(0xFFB497AC),
-    Color(0xFF9AA6BA),
-  ];
-  final i = labels.indexOf(category);
-  if (i < 0) {
-    return DefensysTokens.isDark(context)
-        ? const Color(0xFF66616F)
-        : const Color(0xFF9CA8B8);
+  if (category == 'Unclassified' || category == 'Unresolved domain') {
+    return CurriculumChartPalette.neutral(context);
   }
-  return (DefensysTokens.isDark(context) ? dark : light)[i % light.length];
+  final index = category.codeUnits.fold<int>(0, (sum, code) => sum + code) % 2;
+  return CurriculumChartPalette.slice(context, index);
 }
 
 /// Ranked categories remain readable even when only one category is available.

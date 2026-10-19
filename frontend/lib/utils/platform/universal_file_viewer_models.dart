@@ -481,7 +481,7 @@ class DeliverableFormatInfo {
   }
 }
 
-/// Optional submission audit metadata displayed in the "FILE PROPERTIES & INFO" grid.
+/// Submission metadata and permitted actions supplied by file-detail surfaces.
 class DeliverablePropertiesInfo {
   final String? fileSize;
   final String? fileType;

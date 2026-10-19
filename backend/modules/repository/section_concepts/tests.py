@@ -63,7 +63,7 @@ class SharedSystemConceptTests(APITestCase):
             paper = services.upload(self.project, self.pm, key,
                 SimpleUploadedFile(f'{key}.pdf', b'%PDF-1.4 shared test paper'))
             services.review(self.project, self.first, paper.pk, 'accepted')
-        services.endorse(self.project, self.first)
+        self.assertTrue(services.shared_clearance(services.latest(self.project)))
 
     def prepare_team(self, team):
         concepts.save_titles(team, self.event, self.titles('Module'), actor=self.first)
@@ -139,7 +139,7 @@ class SharedSystemConceptTests(APITestCase):
             'papers_uploaded': 3, 'papers_accepted': 3})
         self.assertFalse(state['can_endorse'])
         services.save_system_titles(self.project, self.first, self.titles())
-        self.assertTrue(services.payload(self.project, self.first)['can_endorse'])
+        self.assertTrue(services.payload(self.project, self.first)['cleared'])
         self.assertFalse(services.payload(self.project, self.pm)['can_endorse'])
         services.endorse(self.project, self.first)
         self.assertFalse(services.payload(self.project, self.first)['can_endorse'])
@@ -159,6 +159,57 @@ class SharedSystemConceptTests(APITestCase):
         services.review(self.project, self.first, row.pk, 'rejected', 'Clarify scope before replacing.')
         self.assertTrue(next(s for s in services.payload(self.project, self.pm)['systems']
             if s['key'] == 'c1')['can_upload'])
+
+    def test_automatic_shared_clearance_keeps_team_endorsements_independent(self):
+        self.prepare_shared()
+        self.assertIsNone(services.latest(self.project).endorsed_at)
+        self.assertEqual(services.task_payload(self.first), [])
+        self.prepare_team(self.team)
+        self.assertFalse(concepts.clearance_blocker(self.team, self.event))
+        self.assertTrue(concepts.clearance_blocker(self.module_team, self.event))
+        self.module_team.refresh_from_db()
+        self.assertIsNone(self.module_team.ready_for_stage)
+
+    def test_title_change_requires_new_acceptance_and_invalidates_unscheduled_team_clearance(self):
+        self.prepare_shared()
+        self.prepare_team(self.team)
+        changed = self.titles()
+        changed[0]['title'] = 'Revised system scope'
+        services.save_system_titles(self.project, self.first, changed)
+        round = services.latest(self.project)
+        self.assertFalse(services.shared_clearance(round))
+        paper = round.systems.get(key='c1').papers.get(is_current=True)
+        self.assertEqual(paper.status, 'pending')
+        self.assertFalse(concepts.clearance_valid(self.team, self.event))
+        self.assertEqual(round.systems.get(key='c2').papers.get(is_current=True).status, 'accepted')
+        services.review(self.project, self.first, paper.pk, 'accepted')
+        self.assertTrue(services.shared_clearance(services.latest(self.project)))
+        self.assertFalse(concepts.clearance_valid(self.team, self.event))
+
+    def test_stale_paper_review_after_title_change_is_rejected(self):
+        self.prepare_shared()
+        state = services.payload(self.project, self.first)
+        paper = state['systems'][0]['papers'][0]
+        services.save_system_titles(self.project, self.first, self.titles('Changed'))
+        self.client.force_authenticate(self.first)
+        response = self.client.post(f'{URL}{self.project.pk}/', {'action': 'review',
+            'round_id': state['round_id'], 'review_token': state['review_token'],
+            'paper_id': paper['id'], 'status': 'accepted'}, format='json')
+        self.assertEqual(response.status_code, 409)
+
+    def test_instructor_reviews_existing_student_files_without_upload_or_remove_access(self):
+        from repository.deliverables.services import stage_payload
+        concepts.save_titles(self.team, self.event, self.titles('Module'), actor=self.first)
+        student_state = stage_payload(self.team, self.event.label, evaluator=self.pm)
+        faculty_state = stage_payload(self.team, self.event.label, evaluator=self.first)
+        self.assertTrue(student_state['pre'][0]['can_upload'])
+        self.assertFalse(faculty_state['pre'][0]['can_upload'])
+        self.assertTrue(faculty_state['pre'][0]['can_faculty_review'])
+        self.client.force_authenticate(self.first)
+        data = {'team_id': self.team.pk, 'stage_label': self.event.label,
+            'deliverable_id': 'CONCEPTS', 'file_name': 'module.pdf', 'slot_key': 'c1:paper'}
+        self.assertEqual(self.client.post('/api/repository/deliverables/upload/', data).status_code, 403)
+        self.assertEqual(self.client.post('/api/repository/deliverables/remove/', data).status_code, 403)
 
     def test_project_list_team_filter_requires_current_link_and_keeps_year_permissions(self):
         self.client.force_authenticate(self.first)
@@ -269,7 +320,7 @@ class SharedSystemConceptTests(APITestCase):
 
     def test_scheduling_requires_both_section_clearance_and_module_name_confirmation(self):
         concepts.save_titles(self.team, self.event, self.titles('Module'), actor=self.pm)
-        self.assertIn('shared system papers', concepts.clearance_blocker(self.team, self.event))
+        self.assertIn('shared system titles', concepts.clearance_blocker(self.team, self.event))
         self.prepare_shared()
         self.assertIn('confirm all three', concepts.clearance_blocker(self.team, self.event))
 
@@ -493,6 +544,20 @@ class SharedCapstoneConceptTests(APITestCase):
         self.assertEqual(current.section_round_id, services.latest(project).pk)
         self.assertTrue(all(c['faculty_confirmed'] for c in current.concepts))
         self.assertEqual(resolve_policy(self.team, self.stage)['required_count'], 3)
+
+    def test_adviser_reviews_student_papers_without_upload_access(self):
+        project = self.project()
+        titles = [{'key': key, 'title': f'Module {key}'} for key in services.KEYS]
+        services.confirm_modules(project, self.adviser, self.team.pk, titles)
+        from repository.deliverables.services import stage_payload
+        item = next(d for d in stage_payload(self.team, self.stage.label, evaluator=self.adviser)['pre'] if d['id'] == 'PAPER')
+        self.assertFalse(item['can_upload'])
+        self.assertTrue(item['can_faculty_review'])
+        self.client.force_authenticate(self.adviser)
+        response = self.client.post('/api/repository/deliverables/upload/', {
+            'team_id': self.team.pk, 'stage_label': self.stage.label,
+            'deliverable_id': 'PAPER', 'file_name': 'paper.pdf', 'slot_key': 'c1:paper'})
+        self.assertEqual(response.status_code, 403)
 
     def test_shared_reviewer_cannot_change_capstone_roster_or_another_advisers_modules(self):
         project = self.project()

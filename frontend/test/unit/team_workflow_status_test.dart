@@ -4,6 +4,53 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test(
+    'incomplete module papers show awaiting files after current uploads are accepted',
+    () {
+      final stage = {
+        'concept_workflow': {
+          'enabled': true,
+          'can_edit': true,
+          'status': 'concept_review_pending',
+        },
+        'pre': [
+          {
+            'required': true,
+            'type': 'pre',
+            'uploaded': false,
+            'submission': {
+              'status': 'pending',
+              'files': [
+                {'is_current': true, 'status': 'accepted'},
+              ],
+            },
+          },
+        ],
+      };
+      expect(
+        TeamWorkflowStatus.fromStage(stage, scope: 'pit').code,
+        'awaiting_files',
+      );
+    },
+  );
+
+  test('shared clearance blocker stays distinct from team endorsement', () {
+    final stage = {
+      'concept_workflow': {
+        'enabled': true,
+        'can_edit': true,
+        'status': 'shared_clearance_pending',
+      },
+    };
+    expect(
+      TeamWorkflowStatus.fromStage(stage).code,
+      'shared_clearance_pending',
+    );
+    expect(
+      TeamWorkflowStatus.fromStage(stage).tone,
+      WorkflowStatusTone.neutral,
+    );
+  });
+  test(
     'post-defense uploads precede finalization, with reviews taking priority',
     () {
       for (final scope in ['pit', 'capstone']) {

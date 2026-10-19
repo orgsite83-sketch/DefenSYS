@@ -11,6 +11,7 @@ import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:defensys/screens/web/admin/curriculum_analytics/curriculum_analytics_screen.dart';
 import 'package:defensys/services/academic/curriculum_explorer_provider.dart';
 import 'package:defensys/services/network/authenticated_client.dart';
+import 'package:defensys/services/auth/auth_provider.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/universal_file_viewer.dart';
 
@@ -38,6 +39,9 @@ Future<void> _mount(
   bool unclassified = false,
   bool unpublished = false,
   bool multipleSources = false,
+  bool startAtAssessment = true,
+  bool noAssessments = false,
+  String? pitYearLevel,
   _SourceFileClient? sourceClient,
 }) async {
   final fonts = FontLoader('Inter');
@@ -56,12 +60,16 @@ Future<void> _mount(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
+        authProvider.overrideWith(_AnalyticsAdmin.new),
         curriculumExplorerProvider.overrideWith(
           () => _FakeExplorer(
             unclassified: unclassified,
             unpublished: unpublished,
             sourceUrl: sourceClient != null,
             multipleSources: multipleSources,
+            startAtAssessment: startAtAssessment,
+            noAssessments: noAssessments,
+            pitYearLevel: pitYearLevel,
           ),
         ),
         if (sourceClient != null)
@@ -78,7 +86,9 @@ Future<void> _mount(
                 ? DefensysTokens.mistBackground
                 : DefensysTokens.background,
           ),
-          home: Scaffold(body: const CurriculumAnalyticsScreen()),
+          home: Scaffold(
+            body: CurriculumAnalyticsScreen(pitYearLevel: pitYearLevel),
+          ),
         ),
       ),
     ),
@@ -87,224 +97,195 @@ Future<void> _mount(
 }
 
 void main() {
+  testWidgets('years remain reachable before assessment results exist', (
+    tester,
+  ) async {
+    await _mount(tester, startAtAssessment: false, noAssessments: true);
+    expect(
+      find.textContaining('No recorded assessment results yet'),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey('year-2026-2027')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('assessment-stage:1')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('overview reveals year then assessment without stacking charts', (
+    tester,
+  ) async {
+    await _mount(tester, startAtAssessment: false);
+    expect(find.text('Performance over time'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('performance-clustered-chart')),
+      findsNothing,
+    );
+    expect(find.byType(SfCartesianChart), findsOneWidget);
+    await _capture(tester, 'workspace-overview');
+    await tester.tap(find.byKey(const ValueKey('year-2026-2027')));
+    await tester.pumpAndSettle();
+    expect(find.text('Stage and event results · 2026-2027'), findsOneWidget);
+    expect(find.byKey(const ValueKey('academic-year-chart')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('assessment-stage:1')));
+    await tester.pumpAndSettle();
+    expect(find.text('Evaluator components'), findsOneWidget);
+    expect(find.text('Performance by criterion'), findsOneWidget);
+    expect(find.text('Review priorities'), findsNothing);
+    await _capture(tester, 'workspace-assessment');
+    await tester.tap(find.byKey(const ValueKey('analytics-root')));
+    await tester.pumpAndSettle();
+    expect(find.text('Performance over time'), findsOneWidget);
+    expect(find.byKey(const ValueKey('criterion-problem')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
-    'year > criterion > team > source evidence, with null and individual states',
+    'assessment retains criterion, team, source and pending drilldowns',
     (tester) async {
       await _mount(tester);
-      expect(find.byType(SfCartesianChart), findsNothing);
-      expect(find.byType(ShadTabs<String>), findsWidgets);
-      expect(find.text('Performance by criterion'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('cohort-primary-metric')),
-        findsOneWidget,
-      );
-      expect(find.text('Review priorities'), findsOneWidget);
-      await _capture(tester, 'performance-overview');
-      await tester.tap(find.byKey(const ValueKey('compare-academic-years')));
-      await tester.pumpAndSettle();
-      expect(find.byType(SfCartesianChart), findsOneWidget);
-      await _capture(tester, 'academic-years');
-      await tester.tap(find.byKey(const ValueKey('year-2026-2027')));
-      await tester.pumpAndSettle();
-      expect(find.text('Performance by criterion'), findsOneWidget);
-      expect(find.byType(SfCartesianChart), findsNothing);
-      await _capture(tester, 'criteria');
       await tester.tap(find.byKey(const ValueKey('criterion-problem')));
       await tester.pumpAndSettle();
-      expect(find.text('Problem relevance / teams'), findsOneWidget);
-      expect(find.byKey(const ValueKey('team-1:1')), findsOneWidget);
-      await _capture(tester, 'teams');
       await tester.tap(find.byKey(const ValueKey('team-1:1')));
       await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('curriculum-evidence-dialog')),
-        findsOneWidget,
-      );
-      expect(find.text('Recorded rubric results'), findsOneWidget);
       expect(find.textContaining('6.00 / 10'), findsOneWidget);
       expect(
         find.textContaining('Support the problem with stakeholder evidence.'),
         findsOneWidget,
       );
-      await _capture(tester, 'evidence');
       await tester.tap(find.text('Close'));
       await tester.pumpAndSettle();
-      expect(find.text('Problem relevance / teams'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('filter-pending')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('team-3:1')), findsOneWidget);
       expect(find.byKey(const ValueKey('team-1:1')), findsNothing);
-      expect(find.text('Awaiting'), findsWidgets);
       expect(tester.takeException(), isNull);
     },
   );
 
-  testWidgets(
-    'project focus bars have independent counts and accessible category drilldown',
-    (tester) async {
-      await _mount(tester);
-      await tester.tap(find.text('Project insights'));
-      await tester.pumpAndSettle();
-      expect(find.byType(SfCircularChart), findsNothing);
-      expect(find.text('Primary computing focus'), findsOneWidget);
-      expect(find.text('Application domains'), findsOneWidget);
-      expect(find.text('Classification coverage'), findsOneWidget);
-      expect(find.text('2 / 3'), findsOneWidget);
-      await _capture(tester, 'project-focus');
-      await tester.tap(find.byKey(const ValueKey('category-Web Development')));
-      await tester.pumpAndSettle();
-      expect(find.text('Web Development projects'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('project-1:1')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('project-overview')), findsOneWidget);
-      expect(find.text('Background of the Study'), findsOneWidget);
-      expect(find.text('Source excerpt'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey('project-dialog-title')),
-        findsOneWidget,
-      );
-      expect(find.text('CloudSync · Version 1'), findsOneWidget);
-      expect(find.text('D1 · Project proposal'), findsOneWidget);
-      expect(find.text('Computing focus source'), findsNothing);
-      expect(find.text('Main features'), findsNothing);
-      expect(find.text('Recorded rubric results'), findsNothing);
-      await _capture(tester, 'project-overview-desktop');
-      await tester.tap(find.byKey(const ValueKey('project-view-sources')));
-      await tester.pumpAndSettle();
-      expect(find.text('Project documents'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  testWidgets(
-    'PIT resets Capstone state and uses its own events and year level',
-    (tester) async {
-      await _mount(tester);
-      await tester.tap(find.text('PIT'));
-      await tester.pumpAndSettle();
-      expect(find.text('PIT year level'), findsOneWidget);
-      expect(find.byType(SfCartesianChart), findsNothing);
-      expect(find.text('Concept Proposal'), findsNothing);
-      expect(find.text('Event'), findsOneWidget);
-      expect(find.text('Adviser'), findsNothing);
-      expect(find.textContaining('Programming Expo'), findsWidgets);
-      await _capture(tester, 'pit-events');
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  testWidgets('unclassified cohort opens real projects without a pie', (
+  testWidgets('PIT Lead overview is locked and exports the selected range', (
     tester,
   ) async {
-    await _mount(tester, unclassified: true);
-    await tester.tap(find.text('Project insights'));
-    await tester.pumpAndSettle();
-    expect(find.byType(SfCircularChart), findsNothing);
-    expect(find.text('Unresolved focus'), findsOneWidget);
-    expect(find.text('0 / 3'), findsOneWidget);
+    await _mount(tester, pitYearLevel: '2nd Year', startAtAssessment: false);
+    expect(find.text('PIT · 2nd Year'), findsOneWidget);
+    expect(find.text('Capstone'), findsNothing);
+    expect(find.text('PIT year level'), findsNothing);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(CurriculumAnalyticsScreen)),
+    );
     expect(
-      find.textContaining('No supported computing estimates yet.'),
-      findsOneWidget,
+      (container.read(curriculumExplorerProvider.notifier) as _FakeExplorer)
+          .fetches,
+      1,
     );
-    await _capture(tester, 'projects-unclassified');
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('category-Unclassified')),
-    );
-    await tester.tap(find.byKey(const ValueKey('category-Unclassified')));
+    expect(container.read(curriculumExplorerProvider).query.yearLevel, '2');
+    expect(container.read(curriculumExplorerProvider).query.year, isEmpty);
+    await tester.tap(find.text('Export report'));
     await tester.pumpAndSettle();
-    expect(find.text('Unclassified projects'), findsOneWidget);
-    expect(find.byKey(const ValueKey('project-1:1')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('project-1:1')));
+    expect(find.text('Export meeting report'), findsOneWidget);
+    expect(find.textContaining('PIT / Year 2'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
-    expect(find.text('Computing focus needs more evidence'), findsOneWidget);
-    expect(
-      find.text(
-        'Platform and technologies have not been identified in the available text.',
-      ),
-      findsOneWidget,
-    );
-    expect(find.text('Platform'), findsNothing);
-    expect(find.text('Documented technologies'), findsNothing);
-    expect(find.textContaining('No readable background'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('project-view-sources')));
-    await tester.pumpAndSettle();
-    expect(find.text('Project documents'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-    'unpublished grades stay empty while rubric evidence remains usable',
-    (tester) async {
-      await _mount(tester, unpublished: true);
-      expect(find.text('—'), findsOneWidget);
-      expect(find.textContaining('No published grades yet.'), findsOneWidget);
-      expect(find.byKey(const ValueKey('criterion-problem')), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('review-problem')));
-      await tester.pumpAndSettle();
-      expect(find.text('Problem relevance / teams'), findsOneWidget);
-      expect(find.byKey(const ValueKey('team-1:1')), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    },
-  );
-
-  testWidgets('project overview fits narrow dark layout', (tester) async {
-    await _mount(tester, width: 320, dark: true, unclassified: true);
-    await tester.ensureVisible(find.text('Project insights'));
-    await tester.tap(find.text('Project insights'));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('category-Unclassified')),
+  testWidgets('missing PIT year assignment cannot load admin analytics', (
+    tester,
+  ) async {
+    await _mount(tester, pitYearLevel: '');
+    expect(
+      find.text(
+        'A PIT year assignment is required to view curriculum analytics.',
+      ),
+      findsOneWidget,
     );
-    await _capture(tester, 'projects-phone-dark');
+    expect(find.byType(SfCartesianChart), findsNothing);
   });
 
   testWidgets(
-    'domain and technology bars open only their contributing projects',
+    'project mix and yearly output replace one another and groups reveal records',
     (tester) async {
-      await _mount(tester);
+      await _mount(tester, startAtAssessment: false);
       await tester.tap(find.text('Project insights'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('domain-Healthcare')));
+      expect(find.byKey(const ValueKey('project-mix-pie')), findsOneWidget);
+      expect(find.text('Documented technologies'), findsOneWidget);
+      expect(find.byType(SfCartesianChart), findsNothing);
+      await _capture(tester, 'workspace-project-mix');
+      await tester.tap(find.byKey(const ValueKey('view-yearly-output')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('project-1:1')), findsOneWidget);
-      expect(find.byKey(const ValueKey('project-2:1')), findsNothing);
-      await tester.tap(find.text('All projects'));
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(
-        find.byKey(const ValueKey('technology-React')),
+      expect(
+        find.byKey(const ValueKey('project-output-chart')),
+        findsOneWidget,
       );
-      await tester.tap(find.byKey(const ValueKey('technology-React')));
+      expect(find.byType(SfCircularChart), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('year-2026-2027')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('project-mix-pie')), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('project-group-category-React')),
+      );
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('project-1:1')), findsOneWidget);
       expect(find.byKey(const ValueKey('project-2:1')), findsOneWidget);
       expect(find.byKey(const ValueKey('project-3:1')), findsNothing);
+      expect(find.byType(SfCircularChart), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
 
   testWidgets(
-    'focus performance cell drills into category-filtered rubric teams',
+    'domain selection and performance evaluator state survive navigation',
     (tester) async {
       await _mount(tester);
+      final tabs = find.byKey(const ValueKey('performance-evaluator-tabs'));
+      await tester.tap(find.descendant(of: tabs, matching: find.text('Peer')));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Project insights'));
       await tester.pumpAndSettle();
-      final cell = find.byKey(
-        const ValueKey('focus-performance-problem-Web Development'),
+      await tester.tap(find.text('Domain'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('project-group-domain-Healthcare')),
       );
-      await tester.ensureVisible(cell);
       await tester.pumpAndSettle();
-      await _capture(tester, 'project-performance-heatmap');
-      await tester.tap(cell);
+      expect(find.byKey(const ValueKey('project-1:1')), findsOneWidget);
+      expect(find.byKey(const ValueKey('project-2:1')), findsNothing);
+      await tester.tap(find.text('Back to project mix'));
       await tester.pumpAndSettle();
-      expect(find.text('Project focus: Web Development'), findsOneWidget);
-      expect(find.byKey(const ValueKey('team-1:1')), findsOneWidget);
-      expect(find.byKey(const ValueKey('team-3:1')), findsNothing);
-      await tester.tap(find.text('Show all teams'));
+      expect(
+        tester
+            .widget<ShadTabs<String>>(
+              find.byKey(const ValueKey('project-mix-tabs')),
+            )
+            .value,
+        'domain',
+      );
+      await tester.tap(find.text('Performance'));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('team-3:1')), findsOneWidget);
+      expect(tester.widget<ShadTabs<String>>(tabs).value, 'peer');
       expect(tester.takeException(), isNull);
     },
   );
+
+  for (final dark in [false, true]) {
+    testWidgets(
+      'workspace overview and mix fit 320px in ${dark ? 'dark' : 'light'} mode',
+      (tester) async {
+        await _mount(tester, width: 320, dark: dark, startAtAssessment: false);
+        expect(tester.takeException(), isNull);
+        await tester.ensureVisible(find.text('Project insights'));
+        await tester.tap(find.text('Project insights'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('view-all-projects')),
+        );
+        expect(tester.takeException(), isNull);
+        await _capture(
+          tester,
+          dark ? 'workspace-phone-dark' : 'workspace-phone-light',
+        );
+      },
+    );
+  }
 
   testWidgets(
     'project evidence explains estimates with actual source passages',
@@ -312,7 +293,11 @@ void main() {
       await _mount(tester);
       await tester.tap(find.text('Project insights'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('category-Web Development')));
+      await tester.tap(find.text('Project focus'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('project-group-category-Web Development')),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('project-1:1')));
       await tester.pumpAndSettle();
@@ -356,7 +341,11 @@ void main() {
       );
       await tester.tap(find.text('Project insights'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('category-Web Development')));
+      await tester.tap(find.text('Project focus'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('project-group-category-Web Development')),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('project-1:1')));
       await tester.pumpAndSettle();
@@ -399,19 +388,6 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
-
-  testWidgets('classified chart layout fits narrow light mode', (tester) async {
-    await _mount(tester, width: 320);
-    await tester.ensureVisible(find.text('Project insights'));
-    await tester.tap(find.text('Project insights'));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('project-trend-year-2026-2027')),
-    );
-    await tester.pumpAndSettle();
-    await _capture(tester, 'project-trends-phone-light');
-    expect(tester.takeException(), isNull);
-  });
 
   testWidgets(
     'short phone keeps the header and close action fixed while sources scroll',
@@ -596,25 +572,122 @@ void main() {
   }
 }
 
+class _AnalyticsAdmin extends AuthNotifier {
+  @override
+  AuthState build() =>
+      const AuthState(user: {'id': 1, 'role': 'admin'}, isRestoring: false);
+}
+
 class _FakeExplorer extends CurriculumExplorerNotifier {
   _FakeExplorer({
     this.unclassified = false,
     this.unpublished = false,
     this.sourceUrl = false,
     this.multipleSources = false,
+    this.startAtAssessment = true,
+    this.noAssessments = false,
+    this.pitYearLevel,
   });
   final bool unclassified, unpublished, sourceUrl, multipleSources;
+  final bool startAtAssessment;
+  final bool noAssessments;
+  final String? pitYearLevel;
+  int fetches = 0;
   @override
-  CurriculumExplorerState build() => const CurriculumExplorerState();
+  CurriculumExplorerState build() => CurriculumExplorerState(
+    query: CurriculumExplorerQuery(
+      scope: pitYearLevel == null ? 'capstone' : 'pit',
+      yearLevel: pitYearLevel?.isNotEmpty == true
+          ? pitYearLevel!.substring(0, 1)
+          : '1',
+      view: startAtAssessment ? 'assessment' : 'overview',
+      year: startAtAssessment ? '2026-2027' : '',
+    ),
+  );
   @override
   Future<void> fetch(CurriculumExplorerQuery q) async {
+    fetches++;
+    if (q.initial && q.year.isEmpty) {
+      q = q.copyWith(year: '2026-2027', initial: false);
+    }
     final ctx = q.scope == 'capstone' ? 'stage:1' : 'event:1';
     state = CurriculumExplorerState(
-      query: q.copyWith(context: q.year.isEmpty ? '' : ctx),
+      query: q.copyWith(
+        context: q.year.isEmpty ? '' : ctx,
+        yearFrom: '2025-2026',
+        yearTo: '2026-2027',
+      ),
       data: {
         'academic_years': ['2025-2026', '2026-2027'],
+        'academic_year': q.year,
+        'year_from': '2025-2026',
+        'year_to': '2026-2027',
+        'range_years': ['2025-2026', '2026-2027'],
+        'comparison': q.scope == 'capstone' ? 'stage:1' : 'pit:1:expo',
+        'comparison_options': [
+          if (!noAssessments)
+            {
+              'id': q.scope == 'capstone' ? 'stage:1' : 'pit:1:expo',
+              'label': q.scope == 'capstone'
+                  ? 'Concept Proposal'
+                  : 'Programming Expo',
+            },
+        ],
+        'stage_results': [
+          {
+            'id': ctx,
+            'label': q.scope == 'capstone'
+                ? 'Concept Proposal'
+                : 'Programming Expo',
+            'score': 70,
+            'assessed': 2,
+            'eligible': 3,
+            'pending': 1,
+          },
+        ],
+        'matched_students': 2,
+        'project_status': q.projectStatus,
+        'project_output': [
+          {'academic_year': '2025-2026', 'count': 1},
+          {'academic_year': '2026-2027', 'count': 2},
+        ],
         'scope': q.scope,
         'projects_count': 3,
+        'performance': {
+          'selections': [
+            {'id': 'team:1', 'label': 'CloudSync', 'kind': 'team'},
+            {'id': 'student:1', 'label': 'Recorded student', 'kind': 'student'},
+          ],
+          'contexts': [
+            if (q.year.isNotEmpty)
+              {
+                'id': ctx,
+                'label': q.scope == 'capstone'
+                    ? 'Concept Proposal'
+                    : 'Programming Expo',
+                'components': [
+                  for (final role in [
+                    'panel',
+                    'peer',
+                    if (q.scope == 'capstone') 'adviser',
+                  ])
+                    {
+                      'id': role,
+                      'label': '${role[0].toUpperCase()}${role.substring(1)}',
+                      'score': unpublished
+                          ? null
+                          : role == 'peer'
+                          ? 80
+                          : 70,
+                      'assessed': unpublished ? 0 : 2,
+                      'eligible': 3,
+                      'shared': role == 'peer' ? 0 : 2,
+                      'available': true,
+                    },
+                ],
+              },
+          ],
+        },
         'assessment_summary': {
           'score': unpublished ? null : 70,
           'assessed': unpublished ? 0 : 2,
@@ -676,6 +749,7 @@ class _FakeExplorer extends CurriculumExplorerNotifier {
         'projects': _projects(false),
         'project_analytics': {
           'coverage': {
+            'with_technologies': unclassified ? 0 : 2,
             'classified': unclassified ? 0 : 2,
             'unresolved': unclassified ? 3 : 1,
             'domains_resolved': 2,

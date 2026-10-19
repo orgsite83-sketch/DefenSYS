@@ -183,7 +183,7 @@ void main() {
         ],
       );
       expect(find.text('Accepted for presentation'), findsOneWidget);
-      expect(find.text('Missing'), findsOneWidget);
+      expect(find.textContaining('Missing'), findsOneWidget);
       await tester.tap(find.text('Accept'));
       await tester.pumpAndSettle();
       expect(notifier.action, containsPair('file_id', 12));

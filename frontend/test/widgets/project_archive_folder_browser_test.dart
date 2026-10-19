@@ -59,7 +59,109 @@ class EmptyTermArchiveNotifier extends FolderArchiveNotifier {
   );
 }
 
+class LeafFolderArchiveNotifier extends ProjectArchiveNotifier {
+  @override
+  ProjectArchiveState build() => const ProjectArchiveState(
+    scope: {'scope': 'admin'},
+    type: 'pit',
+    entries: [
+      {
+        'id': 'pit-doc-1',
+        'type': 'pit',
+        'team_id': 10,
+        'team_name': 'Team CloudPulse',
+        'file_name': 'D3 · CampusLostFound.pdf',
+        'deliverable_id': 'D3',
+        'has_file': true,
+        'status': 'Approved',
+        'uploaded_by': 'Noel ESTRELLA',
+        'academic_year': '2026-2027',
+        'semester': '1st Semester',
+        'year_level': '2nd Year',
+      },
+    ],
+    folderBrowser: {
+      'group_by': 'team',
+      'folder_key': 'cloudpulse-key',
+      'is_leaf': true,
+      'file_count': 1,
+      'missing_count': 0,
+      'breadcrumbs': [
+        {'title': '2026-2027', 'key': 'year-key'},
+        {'title': '1st Semester', 'key': 'semester-key'},
+        {'title': '2nd Year', 'key': 'year-level-key'},
+        {'title': 'Team CloudPulse', 'key': 'cloudpulse-key'},
+      ],
+      'folders': [],
+    },
+  );
+}
+
 void main() {
+  testWidgets('Leaf folder displays file box cards and toggles to table view', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1500, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final search = TextEditingController();
+    final scroll = ScrollController();
+    addTearDown(search.dispose);
+    addTearDown(scroll.dispose);
+
+    await pumpDefensysWidget(
+      tester,
+      Consumer(
+        builder: (context, ref, _) => SingleChildScrollView(
+          child: ProjectArchiveTable(
+            state: ref.watch(projectArchiveProvider),
+            searchController: search,
+            tableHScrollController: scroll,
+            showTableScrollHint: false,
+            showAdvancedFilters: false,
+            onToggleAdvancedFilters: () {},
+            onViewPdf: (_, _) {},
+            onDownloadFile: (_, _) {},
+            onOverrideStatus: (_) {},
+          ),
+        ),
+      ),
+      overrides: [
+        projectArchiveProvider.overrideWith(() => LeafFolderArchiveNotifier()),
+      ],
+    );
+
+    // Group By and Sort controls are accessible outside advanced filters
+    expect(find.byKey(const ValueKey('archiveGroupBy')), findsOneWidget);
+    expect(find.byKey(const ValueKey('archiveSortOrder')), findsOneWidget);
+
+    // Both toggle buttons exist in leaf folder
+    expect(find.byTooltip('Grid view'), findsOneWidget);
+    expect(find.byTooltip('List view'), findsOneWidget);
+
+    // In grid view (default), file is shown as clean box card
+    expect(find.byKey(const ValueKey('archiveFile_pit-doc-1')), findsOneWidget);
+    expect(find.text('D3 · CampusLostFound.pdf'), findsOneWidget);
+
+    // Tapping card opens the File Details popup
+    await tester.tap(find.byKey(const ValueKey('archiveFile_pit-doc-1')));
+    await tester.pumpAndSettle();
+    expect(find.text('Noel ESTRELLA'), findsOneWidget);
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+
+    // Switch to list view (table)
+    await tester.tap(find.byTooltip('List view'));
+    await tester.pumpAndSettle();
+
+    // In list view, table header and uploader are shown
+    expect(find.text('File Name'), findsOneWidget);
+    expect(find.text('Academic Year'), findsOneWidget);
+    expect(find.text('By Noel ESTRELLA'), findsOneWidget);
+
+    // Switch back to grid view (box cards)
+    await tester.tap(find.byTooltip('Grid view'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('archiveFile_pit-doc-1')), findsOneWidget);
+  });
+
   for (final emptyTerm in [false, true]) {
     testWidgets(
       'PIT lead gets folder browser and breadcrumbs (empty term: $emptyTerm)',

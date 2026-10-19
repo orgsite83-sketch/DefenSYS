@@ -174,6 +174,10 @@ def endorse(team, stage, actor):
         raise ValueError('This concept set is already attached to a defense.')
     if current.section_round_id and not all(c.get('faculty_confirmed') for c in current.concepts):
         raise ValueError('Faculty must confirm all three module names and their system connections before endorsement.')
+    from repository.section_concepts.services import scheduling_blocker
+    shared_blocker = scheduling_blocker(team, stage, current)
+    if shared_blocker:
+        raise ValueError(shared_blocker)
     current.endorsed_at, current.endorsed_by = timezone.now(), actor
     current.endorsement_snapshot = documents_snapshot(team, stage, clearance_only=True)
     current.save(update_fields=['endorsed_at', 'endorsed_by', 'endorsement_snapshot'])
@@ -372,9 +376,12 @@ def payload(team, stage, *, history=True):
     concepts = current.concepts if current else initial_concepts(policy)
     shared_policy = policy.get('source') == 'section_system'
     shared_round = current.section_round if current and current.section_round_id else None
+    shared_review = None
     if shared_policy:
         from repository.section_concepts.models import SectionConceptRound
         shared_round = shared_round or SectionConceptRound.objects.filter(pk=policy.get('section_round_id')).first()
+        from repository.section_concepts.services import review_summary
+        shared_review = review_summary(shared_round) if shared_round else None
         names = {s.key: s.title for s in shared_round.systems.all()} if shared_round else {}
         concepts = [{**c, 'system_title': names.get(c['key'], ''),
             'section_selected': bool(shared_round and shared_round.selected_key == c['key'])} for c in concepts]
@@ -387,12 +394,15 @@ def payload(team, stage, *, history=True):
                   'replacement_concepts_needed' if current and current.number > 1 else 'concepts_needed')
     elif ready:
         status = 'ready_to_schedule_redefense' if current and current.number > 1 else 'ready_to_schedule'
+    elif shared_review and not shared_review['cleared'] and required_complete(team, stage.label):
+        status = 'shared_clearance_pending'
     elif required_complete(team, stage.label):
         status = 'concept_endorsement_pending'
     else:
         status = 'concept_review_pending'
     return {'enabled': True, 'config': policy, 'round': current.number if current else 1,
         'section_project_id': policy.get('section_project_id'),
+        'shared_review': shared_review,
         'section_selected_key': shared_round.selected_key if shared_round else '',
         'section_revisions_pending': bool(shared_round and shared_round.verdict == 'approved_with_revisions' and not shared_round.revisions_cleared_at),
         'faculty_names_required': shared_policy and policy.get('title_mode') == 'faculty_provided',
@@ -408,6 +418,7 @@ def payload(team, stage, *, history=True):
             'replacement_concepts_needed': 'Submit replacement concepts using the panel feedback.',
             'concept_review_pending': f'Upload missing documents and have the {reviewer_name(stage)} review the current papers.',
             'concept_endorsement_pending': f'The {reviewer_name(stage)} needs to endorse the reviewed concept set.',
+            'shared_clearance_pending': shared_review['status_label'] if shared_review else '',
             'ready_to_schedule': f'The {"PIT Lead" if team.is_pit else "administrator"} can schedule the concept hearing.',
             'ready_to_schedule_redefense': f'The {"PIT Lead" if team.is_pit else "administrator"} can schedule the next defense attempt.',
             'scheduled': 'Prepare for the scheduled concept hearing.'}.get(status, 'Review the recorded outcome and stage requirements.')),

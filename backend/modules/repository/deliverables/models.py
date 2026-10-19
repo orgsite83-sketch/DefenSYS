@@ -164,12 +164,14 @@ class DeliverableSubmission(models.Model):
         invalidate_changed_pdf_cache(self, kwargs)
         if not self.pk:
             self.project_version = self.team.project_version
+        if self.team_id:
             self.archive_semester = self.archive_semester or self.team.semester
             self.archive_team_name = self.archive_team_name or self.team.name
             self.archive_project_title = self.archive_project_title or self.team.project_title
             self.archive_year_level = self.archive_year_level or self.team.year_level
             self.archive_team_level = self.archive_team_level or self.team.level
-            if self.team.is_pit and not self.pit_event_config_id:
+            is_pit = getattr(self.team, 'is_pit', False) or 'PIT' in (self.archive_team_level or '')
+            if is_pit and not self.pit_event_config_id:
                 from defense.scheduler.models import PitEventGradingConfig
                 self.pit_event_config = PitEventGradingConfig.objects.filter(
                     semester=self.archive_semester, year_level=self.archive_year_level,

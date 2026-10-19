@@ -140,6 +140,7 @@ abstract final class FacultyRoutes {
   static const adviserGrading = '/faculty/adviser-grading';
   static const uploader = '/faculty/uploader';
   static const pitEvents = '/faculty/pit-events';
+  static const curriculumAnalytics = '/faculty/curriculum-analytics';
 
   static String teamDetail(int teamId) => '/faculty/student-teams/$teamId';
 
@@ -199,6 +200,7 @@ abstract final class FacultyRoutes {
     }
     if (location.startsWith('/faculty/uploader')) return 'uploader';
     if (location.startsWith('/faculty/pit-events')) return 'pit_events';
+    if (location.startsWith(curriculumAnalytics)) return 'curriculum_analytics';
     return null;
   }
 
@@ -223,6 +225,7 @@ abstract final class FacultyRoutes {
       'adviser_grading' => adviserGrading,
       'uploader' => uploader,
       'pit_events' => pitEvents,
+      'curriculum_analytics' => curriculumAnalytics,
       _ => dashboard,
     };
   }

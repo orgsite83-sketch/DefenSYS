@@ -196,12 +196,14 @@ class GroupedSectionView extends StatefulWidget {
     required this.isPit,
     required this.searchQuery,
     required this.onOpenTeamDetail,
+    this.sharedProposalNamesOnly = false,
   });
 
   final StudentTeamsState state;
   final bool isPit;
   final String searchQuery;
   final ValueChanged<int> onOpenTeamDetail;
+  final bool sharedProposalNamesOnly;
 
   @override
   State<GroupedSectionView> createState() => _GroupedSectionViewState();
@@ -216,6 +218,34 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
       _isDark ? DefensysTokens.textPrimaryDark : DefensysUi.textDark;
   Color get _textSecondary =>
       _isDark ? DefensysTokens.textSecondaryDark : DefensysUi.steelGrey;
+
+  Widget _sharedProposalNames(Map workflow) {
+    final systems = (workflow['system_concepts'] as List? ?? [])
+        .whereType<Map>()
+        .where((s) => '${s['title'] ?? ''}'.trim().isNotEmpty);
+    final names = systems
+        .map((s) =>
+            '${s['key'] == 'c1' ? 'A' : s['key'] == 'c2' ? 'B' : 'C'}. ${s['title']}')
+        .join('\n');
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Container(
+        decoration: BoxDecoration(
+          color: DefensysTokens.surfaceOf(context),
+          border: Border.all(color: DefensysTokens.borderOf(context)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: ListTile(
+          leading: Icon(Icons.account_tree_outlined, size: 20,
+              color: DefensysTokens.maroonTextOf(context)),
+          title: Text('Shared system proposals · ${workflow['stage_label']}',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          subtitle: Text(names.isEmpty ? 'No proposed system titles yet.' : names,
+              style: TextStyle(fontSize: 12, height: 1.6, color: _textSecondary)),
+        ),
+      ),
+    );
+  }
 
   Widget _buildTeamTitleCell(Map<String, dynamic> team, {required bool isPit}) {
     final teamName = team['name']?.toString() ?? 'Team';
@@ -608,6 +638,9 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                       : const Color(0xFFE5E7EB),
                 ),
                 for (final entry in sharedWorkflows.entries)
+                  if (widget.sharedProposalNamesOnly)
+                    _sharedProposalNames(entry.value)
+                  else
                   Consumer(
                     builder: (context, ref, _) => SectionConceptOverview(
                       key: ValueKey('section-system-${entry.key}'),

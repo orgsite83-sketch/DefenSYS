@@ -36,13 +36,35 @@ def _file_entries(entries):
     return [entry for entry in entries if entry.get('has_file') and not entry.get('is_missing')]
 
 
-def _segments(entry, group_by):
+def _event_cohort_key(entry):
+    track = entry.get('type') or 'capstone'
+    year = entry.get('academic_year') or ''
+    semester = entry.get('semester') or ''
+    year_level = entry.get('year_level') or ''
+    stage = (entry.get('stage') or entry.get('course_code') or '').strip().lower()
+    return (track, year, semester, year_level, stage)
+
+
+def _known_pit_event_ids(entries):
+    mapping = {}
+    for entry in entries:
+        track = entry.get('type') or 'capstone'
+        event_id = entry.get('pit_event_config_id')
+        if track == 'pit' and event_id:
+            key = _event_cohort_key(entry)
+            mapping.setdefault(key, event_id)
+    return mapping
+
+
+def _segments(entry, group_by, known_event_ids=None):
     track = entry.get('type') or 'capstone'
     year = entry.get('academic_year') or 'Unknown academic year'
     semester = entry.get('semester') or 'Unknown semester'
     year_level = entry.get('year_level') or 'Unknown year level'
     stage = entry.get('stage') or entry.get('course_code') or 'Unassigned stage/event'
     event_id = entry.get('pit_event_config_id')
+    if not event_id and track == 'pit' and known_event_ids:
+        event_id = known_event_ids.get(_event_cohort_key(entry))
     stage_id = f'event:{event_id}' if track == 'pit' and event_id else f'label:{stage}'
     team_id = entry.get('team_id')
     team_name = entry.get('team_name') or 'Unmatched records'
@@ -56,7 +78,9 @@ def _segments(entry, group_by):
         (json.dumps(['stage', track, stage_id]), stage,
          'PIT event' if track == 'pit' else 'Capstone stage'),
     ]
-    if group_by in {'team', 'stage'}:
+    if group_by == 'stage':
+        return parents
+    if group_by == 'team':
         return parents + [(json.dumps(['team', team_key]), team_name, year_level)]
     deliverable_id = entry.get('deliverable_id') or 'archive-files'
     deliverable_label = entry.get('deliverable_label') or 'Archive files'
@@ -76,9 +100,10 @@ def entries_in_folder(entries, group_by='team', folder_key=''):
     if not path:
         return entries
     candidates = entries if group_by == 'deliverable' else _file_entries(entries)
+    known = _known_pit_event_ids(candidates)
     return [
         entry for entry in candidates
-        if [segment[0] for segment in _segments(entry, group_by)[:len(path)]] == path
+        if [segment[0] for segment in _segments(entry, group_by, known)[:len(path)]] == path
     ]
 
 
@@ -88,7 +113,8 @@ def archive_folder_payload(entries, group_by='team', folder_key=''):
     if selected_path is None:
         selected_path = []
     candidates = entries if group_by == 'deliverable' else _file_entries(entries)
-    indexed = [(entry, _segments(entry, group_by)) for entry in candidates]
+    known = _known_pit_event_ids(candidates)
+    indexed = [(entry, _segments(entry, group_by, known)) for entry in candidates]
     matching = [
         (entry, segments) for entry, segments in indexed
         if [segment[0] for segment in segments[:len(selected_path)]] == selected_path

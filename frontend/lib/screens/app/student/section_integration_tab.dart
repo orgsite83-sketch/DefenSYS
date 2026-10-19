@@ -308,15 +308,7 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'All team module proposals for System $activeLetter in Section $userSection. Tap a card to view members and deliverables.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: DefensysTokens.textSecondaryOf(context),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
 
                     // 5. Team Modules List
                     if (projectTeams.isEmpty)
@@ -381,12 +373,12 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                                 border: Border.all(
                                   color: isConfirmed
                                       ? (Theme.of(context).brightness == Brightness.dark
-                                          ? const Color(0xFF4ADE80)
-                                          : const Color(0xFF16A34A))
+                                          ? const Color(0xFF4ADE80).withValues(alpha: 0.6)
+                                          : const Color(0xFF86EFAC))
                                       : isOwnTeam
-                                          ? DefensysTokens.maroonOf(context).withValues(alpha: 0.45)
+                                          ? DefensysTokens.maroonOf(context).withValues(alpha: 0.35)
                                           : DefensysTokens.borderOf(context),
-                                  width: isConfirmed ? 1.4 : (isOwnTeam ? 1.2 : 1.0),
+                                  width: 1.0,
                                 ),
                                 boxShadow: [
                                   BoxShadow(
@@ -399,62 +391,49 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  // ── Tier 1: Team Name + "Your Team" on Left, Status Pill + Arrow on Right ──
                                   Row(
                                     children: [
                                       Expanded(
                                         child: Row(
+                                          mainAxisSize: MainAxisSize.min,
                                           children: [
                                             Flexible(
                                               child: Text(
                                                 team['name'] ?? 'Team',
                                                 style: TextStyle(
-                                                  fontSize: 13,
+                                                  fontSize: 14,
                                                   fontWeight: FontWeight.bold,
-                                                  color: isConfirmed
-                                                      ? const Color(0xFF15803D)
-                                                      : isOwnTeam
-                                                          ? DefensysTokens.maroonOf(context)
-                                                          : DefensysTokens.textPrimaryOf(context),
+                                                  color: isOwnTeam
+                                                      ? DefensysTokens.maroonOf(context)
+                                                      : DefensysTokens.textPrimaryOf(context),
                                                 ),
                                                 maxLines: 1,
                                                 overflow: TextOverflow.ellipsis,
                                               ),
                                             ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              '· Lead: $leadName',
-                                              style: TextStyle(
-                                                fontSize: 11.5,
-                                                color: DefensysTokens.steelGrey,
+                                            if (isOwnTeam) ...[
+                                              const SizedBox(width: 6),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                                decoration: BoxDecoration(
+                                                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: Text(
+                                                  'Your Team',
+                                                  style: TextStyle(
+                                                    color: DefensysTokens.maroonOf(context),
+                                                    fontSize: 9.5,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
                                               ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
+                                            ],
                                           ],
                                         ),
                                       ),
-                                      const SizedBox(width: 6),
-                                      if (isOwnTeam) ...[
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: DefensysTokens.maroonOf(context).withValues(alpha: 0.12),
-                                            borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(
-                                              color: DefensysTokens.maroonOf(context).withValues(alpha: 0.3),
-                                            ),
-                                          ),
-                                          child: Text(
-                                            'Your Team',
-                                            style: TextStyle(
-                                              color: DefensysTokens.maroonOf(context),
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 6),
-                                      ],
+                                      const SizedBox(width: 8),
                                       if (isConfirmed)
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
@@ -536,11 +515,25 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                                       Icon(
                                         isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
                                         size: 18,
-                                        color: isConfirmed ? const Color(0xFF15803D) : DefensysTokens.steelGrey,
+                                        color: DefensysTokens.steelGrey,
                                       ),
                                     ],
                                   ),
-                                  const SizedBox(height: 7),
+                                  // ── Tier 2: Sub-Metadata (Lead Name) ──
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2, bottom: 4),
+                                    child: Text(
+                                      'Lead: $leadName',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        color: DefensysTokens.steelGrey,
+                                        fontWeight: FontWeight.w400,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
                                   Text(
                                     moduleTitle.isNotEmpty
                                         ? moduleTitle
@@ -555,38 +548,17 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                                       height: 1.3,
                                     ),
                                   ),
-                                  if (scheduledDate.isNotEmpty || docStatus.isNotEmpty) ...[
+                                  if (scheduledDate.isNotEmpty) ...[
                                     const SizedBox(height: 7),
                                     Row(
                                       children: [
-                                        if (scheduledDate.isNotEmpty) ...[
-                                          Icon(Icons.event_outlined, size: 13, color: DefensysTokens.steelGrey),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            '$eventLabel ($scheduledDate)',
-                                            style: TextStyle(
-                                              fontSize: 11.5,
-                                              color: DefensysTokens.textSecondaryOf(context),
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                        ],
-                                        Icon(Icons.description_outlined, size: 13, color: DefensysTokens.steelGrey),
+                                        Icon(Icons.event_outlined, size: 13, color: DefensysTokens.steelGrey),
                                         const SizedBox(width: 4),
                                         Text(
-                                          docStatus == 'accepted'
-                                              ? 'Paper approved'
-                                              : docStatus == 'missing' || docStatus.isEmpty
-                                                  ? 'Paper missing'
-                                                  : 'Paper uploaded',
+                                          '$eventLabel ($scheduledDate)',
                                           style: TextStyle(
                                             fontSize: 11.5,
-                                            color: docStatus == 'accepted'
-                                                ? const Color(0xFF16A34A)
-                                                : docStatus == 'missing' || docStatus.isEmpty
-                                                    ? DefensysTokens.steelGrey
-                                                    : DefensysTokens.darkGold,
+                                            color: DefensysTokens.textSecondaryOf(context),
                                             fontWeight: FontWeight.w500,
                                           ),
                                         ),
@@ -628,9 +600,11 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                                                 ),
                                                 Text(
                                                   docStatus == 'accepted'
-                                                      ? 'Paper accepted and endorsed by faculty'
-                                                      : (docStatus == 'uploaded' || docStatus == 'ready'
-                                                          ? 'Paper submitted · Pending review'
+                                                      ? 'Paper accepted for hearing'
+                                                      : docStatus == 'corrections_requested'
+                                                          ? 'Corrections requested'
+                                                      : (docStatus == 'uploaded' || docStatus == 'ready' || docStatus == 'pending_review'
+                                                          ? 'Paper submitted · Awaiting review'
                                                           : 'No paper submitted yet for this module'),
                                                   style: TextStyle(fontSize: 10.5, color: DefensysTokens.textSecondaryOf(context)),
                                                 ),
@@ -642,7 +616,7 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                                             decoration: BoxDecoration(
                                               color: docStatus == 'accepted'
                                                   ? const Color(0xFFDCFCE7)
-                                                  : (docStatus == 'uploaded' || docStatus == 'ready'
+                                                  : (docStatus == 'uploaded' || docStatus == 'ready' || docStatus == 'pending_review' || docStatus == 'corrections_requested'
                                                       ? const Color(0xFFFEF3C7)
                                                       : DefensysTokens.panelOf(context)),
                                               borderRadius: BorderRadius.circular(4),
@@ -650,15 +624,16 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                                             child: Text(
                                               docStatus == 'accepted'
                                                   ? 'Accepted'
-                                                  : (docStatus == 'uploaded' || docStatus == 'ready'
-                                                      ? 'Submitted'
+                                                  : docStatus == 'corrections_requested' ? 'Corrections requested'
+                                                  : (docStatus == 'uploaded' || docStatus == 'ready' || docStatus == 'pending_review'
+                                                      ? 'Awaiting review'
                                                       : 'Missing'),
                                               style: TextStyle(
                                                 fontSize: 10,
                                                 fontWeight: FontWeight.bold,
                                                 color: docStatus == 'accepted'
                                                     ? const Color(0xFF15803D)
-                                                    : (docStatus == 'uploaded' || docStatus == 'ready'
+                                                    : (docStatus == 'uploaded' || docStatus == 'ready' || docStatus == 'pending_review' || docStatus == 'corrections_requested'
                                                         ? const Color(0xFFB45309)
                                                         : DefensysTokens.steelGrey),
                                               ),
@@ -864,14 +839,14 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(7),
                 decoration: BoxDecoration(
                   color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(Icons.hub_rounded, color: DefensysTokens.maroonOf(context), size: 22),
+                child: Icon(Icons.hub_rounded, color: DefensysTokens.maroonOf(context), size: 20),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -879,77 +854,27 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                     Text(
                       'Section $userSection Architecture',
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 15.5,
                         fontWeight: FontWeight.bold,
                         color: DefensysTokens.textPrimaryOf(context),
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Shared System Integration Hub',
+                      'PM: $pmName · Reviewer: $reviewerName',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11.5,
                         color: DefensysTokens.textSecondaryOf(context),
+                        fontWeight: FontWeight.w500,
                       ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
+              const SizedBox(width: 8),
               ShadBadge.secondary(
                 child: Text('Attempt $round'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                decoration: BoxDecoration(
-                  color: DefensysTokens.panelOf(context),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: DefensysTokens.borderOf(context)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.badge_outlined, size: 13, color: DefensysTokens.steelGrey),
-                    const SizedBox(width: 6),
-                    Text(
-                      'PM: $pmName',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: DefensysTokens.textPrimaryOf(context),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                decoration: BoxDecoration(
-                  color: DefensysTokens.panelOf(context),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: DefensysTokens.borderOf(context)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.school_outlined, size: 13, color: DefensysTokens.steelGrey),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Reviewer: $reviewerName',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: DefensysTokens.textPrimaryOf(context),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ],
           ),
@@ -1128,7 +1053,7 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
                   Icon(Icons.description_outlined, size: 14, color: DefensysTokens.steelGrey),
                   const SizedBox(width: 6),
                   Text(
-                    'System concept paper missing (PM upload pending)',
+                    'Concept paper missing · Awaiting PM upload',
                     style: TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
                   ),
                 ],

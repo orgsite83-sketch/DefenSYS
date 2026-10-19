@@ -559,6 +559,7 @@ List<GoRoute> _facultySectionRoutes() {
     GoRoute(path: 'adviser-grading', pageBuilder: _facultySectionPage),
     GoRoute(path: 'uploader', pageBuilder: _facultySectionPage),
     GoRoute(path: 'pit-events', pageBuilder: _facultySectionPage),
+    GoRoute(path: 'curriculum-analytics', pageBuilder: _facultySectionPage),
   ];
 }
 

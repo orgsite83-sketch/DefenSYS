@@ -1,4 +1,6 @@
 from django.test import SimpleTestCase
+from unittest.mock import patch
+from unittest.mock import patch
 from .project_classification import ProjectFocusClassifier, section_chunks
 from .classification_taxonomy import MODEL_VERSION
 
@@ -27,6 +29,38 @@ A web-based architecture may be used with a database and logging.
         self.assertEqual(result['status'], 'estimated')
         self.assertTrue(result['evidence'])
         self.assertFalse(any(t['name'] == 'Django' for t in result['technologies']))
+
+    def test_document_memo_reuses_unchanged_text_and_invalidates_for_text_or_model(self):
+        model = ProjectFocusClassifier()
+        model.train_from_examples()
+        text = 'Implementation\nThe web application uses Django and PostgreSQL for library loan records.'
+        with patch.object(model, 'predict', wraps=model.predict) as predict:
+            first = model.classify_document(text)
+            first['technologies'].clear()
+            second = model.classify_document(text)
+            self.assertTrue(second['technologies'])  # Callers cannot mutate the memo.
+            self.assertEqual(predict.call_count, 1)
+            model.classify_document(text + '\nThe application uses React.')
+            self.assertEqual(predict.call_count, 2)
+            model.model_version += '-updated'
+            model.classify_document(text)
+            self.assertEqual(predict.call_count, 3)
+
+    def test_document_memo_reuses_unchanged_text_and_invalidates_for_text_or_model(self):
+        model = ProjectFocusClassifier()
+        model.train_from_examples()
+        text = 'Implementation\nThe web application uses Django and PostgreSQL for library loan records.'
+        with patch.object(model, 'predict', wraps=model.predict) as predict:
+            first = model.classify_document(text)
+            first['technologies'].clear()
+            second = model.classify_document(text)
+            self.assertTrue(second['technologies'])  # Callers cannot mutate the memo.
+            self.assertEqual(predict.call_count, 1)
+            model.classify_document(text + '\nThe application uses React.')
+            self.assertEqual(predict.call_count, 2)
+            model.model_version += '-updated'
+            model.classify_document(text)
+            self.assertEqual(predict.call_count, 3)
 
     def test_literature_and_tentative_stacks_do_not_establish_focus(self):
         result = self.model.predict('''Abstract

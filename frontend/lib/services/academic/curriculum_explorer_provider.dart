@@ -12,10 +12,29 @@ class CurriculumExplorerQuery {
     this.semester = '',
     this.context = '',
     this.role = 'panel',
+    this.subject = '',
+    this.comparison = '',
     this.reference = 75,
+    this.initial = false,
+    this.view = 'overview',
+    this.yearFrom = '',
+    this.yearTo = '',
+    this.projectStatus = 'completed',
   });
-  final String scope, yearLevel, year, semester, context, role;
+  final String scope,
+      yearLevel,
+      year,
+      semester,
+      context,
+      role,
+      subject,
+      comparison,
+      view,
+      yearFrom,
+      yearTo,
+      projectStatus;
   final double reference;
+  final bool initial;
 
   CurriculumExplorerQuery copyWith({
     String? scope,
@@ -24,7 +43,14 @@ class CurriculumExplorerQuery {
     String? semester,
     String? context,
     String? role,
+    String? subject,
+    String? comparison,
     double? reference,
+    bool? initial,
+    String? view,
+    String? yearFrom,
+    String? yearTo,
+    String? projectStatus,
   }) => CurriculumExplorerQuery(
     scope: scope ?? this.scope,
     yearLevel: yearLevel ?? this.yearLevel,
@@ -32,7 +58,14 @@ class CurriculumExplorerQuery {
     semester: semester ?? this.semester,
     context: context ?? this.context,
     role: role ?? this.role,
+    subject: subject ?? this.subject,
+    comparison: comparison ?? this.comparison,
     reference: reference ?? this.reference,
+    initial: initial ?? this.initial,
+    view: view ?? this.view,
+    yearFrom: yearFrom ?? this.yearFrom,
+    yearTo: yearTo ?? this.yearTo,
+    projectStatus: projectStatus ?? this.projectStatus,
   );
 
   Map<String, String> toParams() => {
@@ -41,8 +74,15 @@ class CurriculumExplorerQuery {
     if (year.isNotEmpty) 'academic_year': year,
     if (semester.isNotEmpty) 'semester': semester,
     if (context.isNotEmpty) 'context': context,
+    if (subject.isNotEmpty) 'subject': subject,
+    if (comparison.isNotEmpty) 'comparison': comparison,
     'evaluation_type': role,
     'reference': reference.toString(),
+    if (initial) 'initial': 'true',
+    'view': view,
+    if (yearFrom.isNotEmpty) 'year_from': yearFrom,
+    if (yearTo.isNotEmpty) 'year_to': yearTo,
+    'project_status': projectStatus,
   };
 }
 
@@ -66,14 +106,40 @@ final curriculumExplorerProvider =
 
 class CurriculumExplorerNotifier extends Notifier<CurriculumExplorerState> {
   int _request = 0;
+  String? _pendingKey;
+  Future<void>? _pending;
   @override
-  CurriculumExplorerState build() => const CurriculumExplorerState();
+  CurriculumExplorerState build() {
+    ref.onDispose(() {
+      _request++;
+      _pending = null;
+      _pendingKey = null;
+    });
+    return const CurriculumExplorerState();
+  }
 
-  Future<void> fetch(CurriculumExplorerQuery query) async {
+  Future<void> fetch(CurriculumExplorerQuery query) {
+    final key = jsonEncode(query.toParams());
+    if (_pendingKey == key && _pending != null) return _pending!;
+    _pendingKey = key;
+    final pending = _fetch(query);
+    _pending = pending;
+    return pending.whenComplete(() {
+      if (identical(_pending, pending)) {
+        _pending = null;
+        _pendingKey = null;
+      }
+    });
+  }
+
+  Future<void> _fetch(CurriculumExplorerQuery query) async {
     final request = ++_request;
+    final sameScope =
+        state.query.scope == query.scope &&
+        state.query.yearLevel == query.yearLevel;
     state = CurriculumExplorerState(
       query: query,
-      data: state.data,
+      data: sameScope ? state.data : const {},
       isLoading: true,
     );
     try {
@@ -92,7 +158,17 @@ class CurriculumExplorerNotifier extends Notifier<CurriculumExplorerState> {
         jsonDecode(utf8.decode(response.bodyBytes)) as Map,
       );
       state = CurriculumExplorerState(
-        query: query.copyWith(context: data['context']?.toString() ?? ''),
+        query: query.copyWith(
+          year: data.containsKey('academic_year')
+              ? data['academic_year']?.toString() ?? ''
+              : query.year,
+          initial: false,
+          yearFrom: data['year_from']?.toString() ?? query.yearFrom,
+          yearTo: data['year_to']?.toString() ?? query.yearTo,
+          comparison: data['comparison']?.toString() ?? query.comparison,
+          context: data['context']?.toString() ?? '',
+          role: data['evaluation_type']?.toString() ?? query.role,
+        ),
         data: data,
       );
     } catch (error) {
@@ -109,9 +185,20 @@ class CurriculumExplorerNotifier extends Notifier<CurriculumExplorerState> {
     bool allAssessments = false,
   }) async {
     final query = allAssessments
-        ? state.query.copyWith(context: '')
+        ? state.query.copyWith(context: '', subject: '')
         : state.query;
-    final params = query.toParams();
+    final project = explorerRows(
+      state.data['projects'],
+    ).where((p) => p['id'] == projectId).firstOrNull;
+    final params = query
+        .copyWith(
+          view: 'detail',
+          initial: false,
+          year: allAssessments
+              ? (project?['academic_year']?.toString() ?? query.year)
+              : query.year,
+        )
+        .toParams();
     if (allAssessments) params['all_assessments'] = 'true';
     final response = await ref
         .read(authenticatedHttpClientProvider)

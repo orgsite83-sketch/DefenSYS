@@ -5,6 +5,7 @@ import '../academic/academic_period_provider.dart';
 import '../grading/adviser_grading_provider.dart';
 import '../defense/capstone_deliverables_provider.dart';
 import '../academic/curriculum_analytics_provider.dart';
+import '../academic/curriculum_explorer_provider.dart';
 import '../app/dashboard_provider.dart';
 import '../app/data_refresh_provider.dart';
 import '../defense/defense_board_provider.dart';
@@ -38,6 +39,7 @@ void invalidateSessionProviders(Ref ref) {
   ref.invalidate(teamDefenseProvider);
   ref.invalidate(projectArchiveProvider);
   ref.invalidate(curriculumAnalyticsProvider);
+  ref.invalidate(curriculumExplorerProvider);
   ref.invalidate(rubricsProvider);
   ref.invalidate(studentAcademicRecordsProvider);
   ref.invalidate(studentTeamsProvider);

@@ -1132,6 +1132,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                         child: Center(child: CircularProgressIndicator(color: DefensysUi.primaryMaroon)),
                       )
                     : GroupedSectionView(
+                        sharedProposalNamesOnly: _isPitLeadManager,
                         state: displayState,
                         isPit: _isPitContext(displayState),
                         searchQuery: _searchController.text,

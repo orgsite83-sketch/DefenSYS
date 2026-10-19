@@ -5,6 +5,7 @@ import 'package:syncfusion_flutter_charts/charts.dart';
 import '../../../../../services/academic/curriculum_explorer_provider.dart';
 import '../../../../../theme/defensys_tokens.dart';
 import 'curriculum_explorer_charts.dart';
+import 'curriculum_project_distribution.dart';
 
 const classificationReasonLabels = {
   'no_documents': 'No eligible project documents',
@@ -23,12 +24,20 @@ class CurriculumProjectAnalytics extends StatefulWidget {
     required this.onGroup,
     required this.onYear,
     required this.onCriterion,
+    required this.technology,
+    required this.ranking,
+    required this.onTechnology,
+    required this.onRanking,
   });
   final Map<String, dynamic> data;
   final CurriculumExplorerQuery query;
   final void Function(String field, String value) onGroup;
   final ValueChanged<String> onYear;
   final void Function(String criterion, String category) onCriterion;
+  final String? technology;
+  final String ranking;
+  final ValueChanged<String?> onTechnology;
+  final ValueChanged<String> onRanking;
 
   @override
   State<CurriculumProjectAnalytics> createState() =>
@@ -59,28 +68,9 @@ class _CurriculumProjectAnalyticsState
     child: Padding(padding: const EdgeInsets.only(top: 18), child: child),
   );
 
-  Widget _pair(Widget left, Widget right) => LayoutBuilder(
-    builder: (_, c) => c.maxWidth < 850
-        ? Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [left, const SizedBox(height: 18), right],
-          )
-        : Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: left),
-              const SizedBox(width: 20),
-              Expanded(child: right),
-            ],
-          ),
-  );
-
   @override
   Widget build(BuildContext context) {
     final analytics = _analytics;
-    final focus = explorerRows(analytics['categories']);
-    final domains = explorerRows(analytics['domains']);
-    final technologies = explorerRows(analytics['technologies']);
     final reasons = explorerRows(analytics['unresolved_reasons']);
     final observations = analytics['observations'] as List? ?? [];
     final projects = explorerNumber(widget.data['projects_count']) ?? 0;
@@ -123,48 +113,16 @@ class _CurriculumProjectAnalyticsState
           ),
           const SizedBox(height: 20),
         ],
-        _pair(
-          _panel(
-            'Primary computing focus',
-            'One primary estimate per project · share of the full cohort',
-            focus.isEmpty
-                ? Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: Text(
-                      'No supported computing estimates yet. Classification coverage below explains the unresolved results.',
-                      style: _muted,
-                    ),
-                  )
-                : _distribution(focus, 'category'),
-          ),
-          _panel(
-            'Application domains',
-            'The problems projects address · separate from technology',
-            domains.isEmpty
-                ? Text(
-                    'No application-domain evidence is available yet.',
-                    style: _muted,
-                  )
-                : _distribution(domains, 'domain'),
-          ),
+        CurriculumProjectDistribution(
+          projects: explorerRows(widget.data['projects']),
+          technology: widget.technology,
+          ranking: widget.ranking,
+          onTechnology: widget.onTechnology,
+          onRanking: widget.onRanking,
+          onGroup: widget.onGroup,
         ),
         const SizedBox(height: 20),
-        _pair(
-          _panel(
-            'Documented technologies',
-            'A project can mention several technologies; shares can overlap.',
-            technologies.isEmpty
-                ? Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: Text(
-                      'No specific technologies are established in the eligible document sections. Tentative technology choices are excluded.',
-                      style: _muted,
-                    ),
-                  )
-                : _distribution(technologies, 'technology'),
-          ),
-          _coverage(reasons),
-        ),
+        _coverage(reasons),
         const SizedBox(height: 20),
         _trends(),
         const SizedBox(height: 20),
@@ -183,87 +141,6 @@ class _CurriculumProjectAnalyticsState
       ],
     );
   }
-
-  Widget _distribution(List<Map<String, dynamic>> rows, String field) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      for (final row in rows)
-        ShadButton.ghost(
-          key: ValueKey('$field-${row['category']}'),
-          width: double.infinity,
-          height: 82,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          mainAxisAlignment: MainAxisAlignment.start,
-          onPressed: () => widget.onGroup(field, '${row['category']}'),
-          child: Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '${row['category']}',
-                        textAlign: TextAlign.left,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      '${row['count']} · ${(explorerNumber(row['percentage']) ?? 0).toStringAsFixed(1)}%',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontFeatures: [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  height: 9,
-                  child: LayoutBuilder(
-                    builder: (_, c) => Align(
-                      alignment: Alignment.centerLeft,
-                      child: Container(
-                        width:
-                            c.maxWidth *
-                            (explorerNumber(row['percentage']) ?? 0).clamp(
-                              0,
-                              100,
-                            ) /
-                            100,
-                        height: 9,
-                        decoration: BoxDecoration(
-                          color: field == 'category'
-                              ? curriculumCategoryColor(
-                                  context,
-                                  '${row['category']}',
-                                )
-                              : DefensysTokens.maroonOf(context),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      const CurriculumPercentAxis(),
-      const SizedBox(height: 12),
-      Text(
-        'Select a bar to inspect the projects and supporting passages.',
-        style: _muted,
-      ),
-    ],
-  );
 
   Widget _coverage(List<Map<String, dynamic>> reasons) {
     final coverage = _analytics['coverage'] as Map? ?? {};
@@ -334,7 +211,7 @@ class _CurriculumProjectAnalyticsState
             Align(
               alignment: Alignment.centerLeft,
               child: ShadButton.link(
-                key: const ValueKey('category-Unclassified'),
+                key: const ValueKey('inspect-unresolved-projects'),
                 size: ShadButtonSize.sm,
                 onPressed: () => widget.onGroup('category', 'Unclassified'),
                 child: const Text('Inspect unresolved projects'),

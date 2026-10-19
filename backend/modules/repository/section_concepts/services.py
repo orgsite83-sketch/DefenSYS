@@ -170,8 +170,49 @@ def snapshot(round):
             'concept__key').values('id', 'concept_id', 'revision', 'status'))}
 
 
-def shared_clearance(round):
-    return bool(round and round.endorsed_at and round.endorsement_snapshot == snapshot(round))
+def shared_clearance(round, *, state=None):
+    """Current title confirmation and paper acceptance clear the shared set.
+
+    Panel-requested revisions retain their explicit clearance, including the
+    version snapshot. Legacy endorsement records remain available for auditing.
+    """
+    if not round or round.verdict in ('for_redefense', 'failed', 'project_rejected'):
+        return False
+    state = state if state is not None else snapshot(round)
+    if round.verdict == 'approved_with_revisions':
+        return bool(round.revisions_cleared_at and round.endorsement_snapshot == state)
+    systems = state['systems']
+    papers = state['papers']
+    return bool(len(systems) == 3 and {s['key'] for s in systems} == set(KEYS)
+        and all(s['confirmed'] and s['title'].strip() for s in systems)
+        and len(papers) == 3 and {p['concept_id'] for p in papers} == {s['id'] for s in systems}
+        and all(p['status'] == 'accepted' for p in papers))
+
+
+def review_summary(round):
+    """Read-only section facts shared by team summaries and review surfaces."""
+    state = snapshot(round)
+    progress = {'required': 3,
+        'names_confirmed': sum(bool(s['confirmed'] and s['title'].strip()) for s in state['systems']),
+        'papers_uploaded': len(state['papers']),
+        'papers_accepted': sum(p['status'] == 'accepted' for p in state['papers'])}
+    cleared = shared_clearance(round, state=state)
+    statuses = [p['status'] for p in state['papers']]
+    code, label = (
+        ('failed', 'Shared system not approved') if round.verdict in ('failed', 'project_rejected') else
+        ('revisions_pending', 'Shared system revisions pending') if round.verdict == 'approved_with_revisions' and not round.revisions_cleared_at else
+        ('replacement_concepts_needed', 'Replacement shared papers needed') if round.verdict == 'for_redefense' else
+        ('selected', 'Shared system revisions cleared') if round.verdict == 'approved_with_revisions' and cleared else
+        ('selected', 'Shared system selected') if round.verdict == 'approved' and cleared else
+        ('cleared', 'Shared papers cleared for hearing') if cleared else
+        ('changes_requested', 'Shared paper corrections requested') if 'rejected' in statuses else
+        ('awaiting_files', 'Shared papers awaiting upload') if len(statuses) < 3 else
+        ('needs_review', 'Shared papers awaiting review') if 'pending' in statuses else
+        ('needs_review', 'Shared titles awaiting confirmation'))
+    return {'project_id': round.project_id, 'round_id': round.pk, 'round': round.number,
+        'section': round.project.section.section, 'stage_label': round.project.context.label,
+        'cleared': cleared, 'status': code, 'status_label': label,
+        'review_progress': progress, 'systems': state['systems']}
 
 
 def review_token(round):
@@ -289,7 +330,7 @@ def scheduling_blocker(team, context, current):
     if round.verdict == 'for_redefense':
         return 'The section needs replacement system concepts.'
     if not shared_clearance(round):
-        return 'The shared system papers need faculty review and section endorsement before scheduling.'
+        return 'Confirm the shared system titles and accept their current papers before scheduling.'
     if not all(c.get('faculty_confirmed') for c in current.concepts):
         return 'The instructor/adviser must confirm all three module names and system connections.'
     return ''
@@ -335,6 +376,15 @@ def save_system_titles(project, actor, titles):
         if concept.confirmed and not faculty and title.strip() != concept.title:
             raise PermissionError('A faculty-confirmed system name can only be changed by assigned faculty.')
         if (concept.title, concept.confirmed) != (title.strip(), faculty or concept.confirmed):
+            if concept.title != title.strip():
+                # Acceptance belongs to the reviewed title and file version.
+                for paper in concept.papers.filter(is_current=True, status='accepted'):
+                    audit(actor, 'paper_review_invalidated', paper, reason='System title changed',
+                        previous_title=concept.title, title=title.strip(),
+                        reviewed_by=paper.reviewed_by_id,
+                        reviewed_at=paper.reviewed_at.isoformat() if paper.reviewed_at else None)
+                    paper.status, paper.reviewed_by, paper.reviewed_at = 'pending', None, None
+                    paper.save(update_fields=['status', 'reviewed_by', 'reviewed_at'])
             concept.title, concept.confirmed = title.strip(), faculty or concept.confirmed
             concept.save(update_fields=['title', 'confirmed'])
             changed = True
@@ -459,6 +509,7 @@ def completion_blocker(context, semester):
 
 @transaction.atomic
 def endorse(project, actor):
+    # Compatibility for older clients; new clients use automatic clearance.
     require_active(project)
     round = locked_round(project)
     editable(round)
@@ -517,7 +568,7 @@ def schedule_hearing(project, actor, schedule_ids):
     for schedule in schedules:
         current = latest_round(schedule.team, project.context)
         if not current or current.schedule_id != schedule.pk or scheduling_blocker(schedule.team, project.context, current):
-            raise ValidationError('Each scheduled module set must match the current endorsed section proposals.')
+            raise ValidationError('Each scheduled module set must match the current cleared section proposals.')
     round.schedules.set(schedules)
     round.chair_id = chairs[0]
     round.save(update_fields=['chair'])
@@ -547,7 +598,7 @@ def decide(project, actor, decisions, verdict, remarks):
     if not schedules or len(schedules) != len(expected) or {s.team_id for s in schedules} != expected:
         raise ValidationError('Assemble a current hearing containing all participating section teams first.')
     if not shared_clearance(round):
-        raise ValidationError('The section endorsement is stale. Review the current papers first.')
+        raise ValidationError('The shared papers are not cleared. Review the current titles and papers first.')
     from defense.scheduler.panelist_evaluation import verdict_unavailable_reason
     from grading.grades.services import GradeContextService
     for schedule in schedules:
@@ -655,7 +706,7 @@ def task_payload(user):
                 'papers_missing' if len(statuses) < 3 else 'corrections_requested' if 'rejected' in statuses else
                 'awaiting_faculty_review' if 'pending' in statuses else
                 'awaiting_name_confirmation' if not all(c['confirmed'] for c in state['systems']) else
-                'awaiting_endorsement')
+                'cleared')
             tasks.append({'project_id': project.pk, 'section': project.section.section,
                 'stage_label': project.context.label, 'round': round.number,
                 'role': 'project_manager' if manager else 'reviewer',
@@ -742,6 +793,7 @@ def payload(project, actor):
                 year_level=project.section.year_level, is_active=True).values('faculty_id')))
         manager_options = [{'id': u.pk, 'name': u.get_full_name() or u.username} for u in managers.order_by('username')]
         reviewer_options = [{'id': u.pk, 'name': u.get_full_name() or u.username} for u in reviewers.order_by('username')]
+    shared_review = review_summary(round)
     return {'id': project.pk, 'section': project.section.section, 'year_level': project.section.year_level,
         'review_token': review_token(round), 'manager_options': manager_options, 'reviewer_options': reviewer_options,
         'can_reassign': can_write,
@@ -751,10 +803,10 @@ def payload(project, actor):
         'project_manager_id': project.project_manager_id, 'project_manager_name': project.project_manager.get_full_name() or project.project_manager.username,
         'reviewer_id': project.reviewer_id, 'reviewer_name': project.reviewer.get_full_name() or project.reviewer.username,
         'systems': systems, 'teams': teams, 'selected_key': round.selected_key, 'verdict': round.verdict,
-        'remarks': round.remarks, 'endorsed': shared_clearance(round), 'editable': editable_now,
+        'remarks': round.remarks, 'endorsed': shared_review['cleared'], 'cleared': shared_review['cleared'],
+        'shared_review': shared_review, 'editable': editable_now,
         'review_progress': progress,
-        'can_endorse': bool(editable_now and is_reviewer(actor, project) and not shared_clearance(round)
-            and progress['names_confirmed'] == 3 and progress['papers_accepted'] == 3),
+        'can_endorse': False,
         'shared_revisions_pending': round.verdict == 'approved_with_revisions' and not round.revisions_cleared_at,
         'can_clear_shared_revisions': round.verdict == 'approved_with_revisions' and not round.revisions_cleared_at and (
             is_reviewer(actor, project)) and can_write,

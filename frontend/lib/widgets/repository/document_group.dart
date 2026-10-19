@@ -4,9 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../services/auth_provider.dart';
 import '../../services/capstone_deliverables_provider.dart';
+import '../../models/team_workflow_status.dart';
 import '../../theme/defensys_tokens.dart';
 import '../../utils/universal_file_viewer.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
+import 'deliverable_file_widgets.dart';
+import 'workflow_status_style.dart';
 
 class DocumentGroup extends ConsumerStatefulWidget {
   const DocumentGroup({
@@ -14,10 +17,12 @@ class DocumentGroup extends ConsumerStatefulWidget {
     required this.teamId,
     required this.stageLabel,
     required this.item,
+    this.programScope,
   });
   final int teamId;
   final String stageLabel;
   final Map<String, dynamic> item;
+  final String? programScope;
   @override
   ConsumerState<DocumentGroup> createState() => _DocumentGroupState();
 }
@@ -53,9 +58,20 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
     bool multiple = false,
   }) async {
     try {
+      final slots = (widget.item['document_slots'] as List? ?? [])
+          .whereType<Map>();
+      final configured = slots
+          .where((entry) => entry['key'] == slot)
+          .firstOrNull;
+      final rawFormat =
+          configured?['file_format'] ?? widget.item['file_format'];
+      final format = DeliverableFormatInfo.fromFormat(rawFormat?.toString());
+      final unrestricted = rawFormat == null || rawFormat == 'any';
       final result = await FilePicker.platform.pickFiles(
         withData: true,
         allowMultiple: multiple,
+        type: unrestricted ? FileType.any : FileType.custom,
+        allowedExtensions: unrestricted ? null : format.extensions,
       );
       if (result == null || !mounted) return;
       final selected = result.files;
@@ -157,27 +173,91 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
     String slot,
     Map<String, dynamic>? file, {
     bool required = true,
+    String? fileFormat,
   }) {
     final item = widget.item;
     final user = ref.watch(authProvider).user ?? {};
     final faculty = user['role'] != 'student';
     final defenseTimed = item['requirement_timing'] == 'defense';
     final canReview = faculty && item['can_faculty_review'] == true;
-    final canUpload = item['can_upload'] == true;
+    final canUpload =
+        item['can_upload'] == true &&
+        (user['role'] == 'student' ||
+            user['role'] == 'admin' ||
+            user['is_superuser'] == true);
     final accepted = file?['status'] == 'accepted';
+    final rejected =
+        file?['status'] == 'rejected' || file?['status'] == 'Needs Revision';
     final status = file == null
         ? (required ? 'Missing' : 'Optional')
-        : defenseTimed && file['status'] != 'rejected'
-            ? 'Uploaded'
-            : switch (file['status']) {
-                'accepted' =>
-                  item['type'] == 'post' ? 'Accepted' : 'Accepted for presentation',
-                'rejected' => 'Corrections requested',
-                _ => 'Awaiting review',
-              };
-
-    final isUploaded = file != null;
-    final isRejected = file?['status'] == 'rejected';
+        : defenseTimed && !rejected
+        ? 'Uploaded'
+        : accepted
+        ? (item['type'] == 'post' ? 'Archived' : 'Accepted for presentation')
+        : rejected
+        ? 'Corrections requested'
+        : 'Awaiting review';
+    final tone = accepted || (defenseTimed && file != null && !rejected)
+        ? WorkflowStatusTone.success
+        : file == null
+        ? WorkflowStatusTone.neutral
+        : WorkflowStatusTone.attention;
+    final format = DeliverableFormatInfo.fromFormat(
+      fileFormat ?? item['file_format']?.toString(),
+    );
+    if (file == null && canUpload) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: DeliverableUploadTile(
+          title: label,
+          format: format,
+          status: status,
+          enabled: !busy,
+          onUpload: () => upload(slot, null),
+        ),
+      );
+    }
+    final submission = item['submission'] as Map? ?? const {};
+    final latestFile =
+        file != null &&
+        ((submission['files'] as List? ?? const []).length == 1 ||
+            (file['file_url'] != null &&
+                submission['file_url'] == file['file_url'] &&
+                submission['file_name'] == file['file_name']));
+    final uploader =
+        (file?['uploaded_by_name'] ??
+                (latestFile ? submission['uploaded_by_name'] : null))
+            ?.toString();
+    void showDetails() {
+      if (file == null) return;
+      showDeliverableFileDetails(
+        context: context,
+        label: label,
+        stageLabel: widget.stageLabel,
+        programScope:
+            widget.programScope ??
+            item['program_scope']?.toString() ??
+            ref.read(capstoneDeliverablesProvider).scope,
+        file: file,
+        status: status,
+        uploader: uploader,
+        onReplace: !busy && canUpload && (!accepted || defenseTimed)
+            ? () => upload(slot, file)
+            : null,
+        onRemove: !busy && canUpload && !accepted
+            ? () => perform(
+                () => ref
+                    .read(capstoneDeliverablesProvider.notifier)
+                    .removeDeliverable({
+                      'team_id': widget.teamId,
+                      'stage_label': widget.stageLabel,
+                      'deliverable_id': item['id'],
+                      'file_id': file['id'],
+                    }),
+              )
+            : null,
+      );
+    }
 
     return Container(
       margin: const EdgeInsets.only(top: 8),
@@ -187,10 +267,11 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: accepted
-              ? const Color(0xFF86EFAC)
-              : isRejected
-                  ? const Color(0xFFFECACA)
-                  : DefensysTokens.borderOf(context),
+              ? Color.alphaBlend(
+                  DefensysTokens.success.withValues(alpha: .3),
+                  DefensysTokens.borderOf(context),
+                )
+              : DefensysTokens.borderOf(context),
         ),
       ),
       child: Column(
@@ -198,167 +279,89 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
         children: [
           Row(
             children: [
-              // Squircle File Extension Badge (Image 3 style)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isUploaded
-                      ? const Color(0xFFDC2626).withValues(alpha: 0.1)
-                      : DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: isUploaded
-                        ? const Color(0xFFDC2626).withValues(alpha: 0.25)
-                        : DefensysTokens.maroonOf(context).withValues(alpha: 0.2),
-                  ),
-                ),
-                child: Text(
-                  isUploaded ? 'PDF' : 'DOC',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    color: isUploaded ? const Color(0xFFDC2626) : DefensysTokens.maroonOf(context),
-                    letterSpacing: 0.3,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      isUploaded ? '${file['file_name']}' : label,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                        color: DefensysTokens.textPrimaryOf(context),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      file == null
-                          ? status
-                          : '${label.split('·').first.trim()} · Rev ${file['revision'] ?? 1}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: accepted
-                            ? const Color(0xFF16A34A)
-                            : isRejected || (file == null && required)
-                                ? const Color(0xFFDC2626)
-                                : DefensysTokens.textSecondaryOf(context),
-                        fontWeight: (accepted || isRejected || (file == null && required))
-                            ? FontWeight.w500
-                            : FontWeight.normal,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (file != null) ...[
-                const SizedBox(width: 8),
-                Flexible(
-                  child: ShadBadge.outline(
-                    child: Text(status),
+                child: Text(
+                  file == null
+                      ? label
+                      : "${label.split('·').first.trim()} · Rev ${file['revision'] ?? 1}",
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: DefensysTokens.textPrimaryOf(context),
                   ),
                 ),
-              ],
-              if (file == null && canUpload) ...[
-                const SizedBox(width: 8),
-                ShadButton.outline(
-                  size: ShadButtonSize.sm,
-                  enabled: !busy,
-                  onPressed: () => upload(slot, file),
-                  child: const Text('Upload document'),
-                ),
-              ],
+              ),
+              const SizedBox(width: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 180),
+                child: DeliverableStatusBadge(label: status, tone: tone),
+              ),
             ],
           ),
           if (file != null) ...[
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                if (file['file_url'] != null)
-                  ShadButton.ghost(
-                    size: ShadButtonSize.sm,
-                    onPressed: () => viewFileInDialog(
-                      context: context,
-                      fileUrl: '${file['file_url']}',
-                      fileName: '${file['file_name']}',
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('Details', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                        SizedBox(width: 2),
-                        Icon(Icons.chevron_right_rounded, size: 14),
-                      ],
-                    ),
-                  ),
-                if (canUpload && (!accepted || defenseTimed))
-                  ShadButton.outline(
-                    size: ShadButtonSize.sm,
-                    enabled: !busy,
-                    onPressed: () => upload(slot, file),
-                    child: const Text('Upload revision'),
-                  ),
-                if (canUpload && !accepted)
-                  ShadButton.ghost(
-                    size: ShadButtonSize.sm,
-                    enabled: !busy,
-                    onPressed: () => perform(
-                      () => ref
-                          .read(capstoneDeliverablesProvider.notifier)
-                          .removeDeliverable({
-                            'team_id': widget.teamId,
-                            'stage_label': widget.stageLabel,
-                            'deliverable_id': widget.item['id'],
-                            'file_id': file['id'],
-                          }),
-                    ),
-                    child: const Text('Remove'),
-                  ),
-                if (canReview && !defenseTimed && !(item['type'] == 'post' && accepted)) ...[
-                  if (!accepted)
-                    ShadButton.outline(
+            DeliverableUploadedFileTile(
+              fileName: '${file['file_name']}',
+              onDetails: showDetails,
+              onRevision: rejected && canUpload
+                  ? () => upload(slot, file)
+                  : null,
+              revisionEnabled: !busy,
+            ),
+            const SizedBox(height: 8),
+            DeliverableUploadAttribution(
+              uploader: uploader,
+              uploadedAt: file['uploaded_at']?.toString(),
+            ),
+            if ('${file['feedback'] ?? ''}'.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Feedback: ${file['feedback']}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: WorkflowStatusStyle.of(
+                    context,
+                    WorkflowStatusTone.attention,
+                  ).foreground,
+                ),
+              ),
+            ],
+            if (canReview &&
+                (defenseTimed || !(item['type'] == 'post' && accepted))) ...[
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (!accepted && !defenseTimed)
+                      ShadButton.outline(
+                        size: ShadButtonSize.sm,
+                        enabled: !busy,
+                        onPressed: () => review(file, 'accepted'),
+                        child: const Text('Accept'),
+                      ),
+                    ShadButton.ghost(
                       size: ShadButtonSize.sm,
                       enabled: !busy,
-                      onPressed: () => review(file, 'accepted'),
-                      child: const Text('Accept'),
+                      onPressed: () => review(file, 'rejected'),
+                      child: const Text('Request corrections'),
                     ),
-                  ShadButton.ghost(
-                    size: ShadButtonSize.sm,
-                    enabled: !busy,
-                    onPressed: () => review(file, 'rejected'),
-                    child: const Text('Request corrections'),
-                  ),
-                ],
-                if (canReview && defenseTimed)
-                  ShadButton.ghost(
-                    size: ShadButtonSize.sm,
-                    enabled: !busy,
-                    onPressed: () => review(file, 'rejected'),
-                    child: const Text('Request corrections'),
-                  ),
-              ],
-            ),
-          ],
-          if ('${file?['feedback'] ?? ''}'.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFEF3C7),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFFFDE68A)),
+                  ],
+                ),
               ),
-              child: Text(
-                'Feedback: ${file!['feedback']}',
-                style: const TextStyle(fontSize: 11, color: Color(0xFF92400E)),
+            ],
+          ] else ...[
+            const SizedBox(height: 6),
+            Text(
+              'Awaiting team upload',
+              style: TextStyle(
+                fontSize: 11,
+                color: DefensysTokens.textSecondaryOf(context),
               ),
             ),
           ],
@@ -385,22 +388,74 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
         .whereType<Map>()
         .toList();
     final multiple = policy['mode'] == 'multiple';
+    final requiredSlots = slots.where((s) => s['required'] != false).toList();
     final minimum = multiple
-        ? (policy['min_files'] ?? 1)
-        : slots.where((s) => s['required'] != false).length;
+        ? (policy['min_files'] as num? ?? 1).toInt()
+        : requiredSlots.length;
     final user = ref.watch(authProvider).user ?? {};
+    final presentSlots = files.map((file) => file['slot_key']).toSet();
+    final uploadedCount = multiple
+        ? files.length
+        : requiredSlots
+              .where((slot) => presentSlots.contains(slot['key']))
+              .length;
+    final allUploaded = multiple
+        ? files.length >= minimum
+        : requiredSlots.every((slot) => presentSlots.contains(slot['key']));
 
-    final allAccepted = files.isNotEmpty && files.length >= minimum && files.every((f) => f['status'] == 'accepted');
-    final anyRejected = files.any((f) => f['status'] == 'rejected');
-    final allUploaded = files.length >= minimum;
+    final allAccepted =
+        files.isNotEmpty &&
+        allUploaded &&
+        files.every((f) => f['status'] == 'accepted');
+    final anyRejected = files.any(
+      (f) => f['status'] == 'rejected' || f['status'] == 'Needs Revision',
+    );
+    final missingCount = minimum > uploadedCount ? minimum - uploadedCount : 0;
+    final pendingReview = files.any(
+      (file) =>
+          file['status'] != 'accepted' &&
+          file['status'] != 'rejected' &&
+          file['status'] != 'Needs Revision',
+    );
+    final defenseUploaded =
+        item['requirement_timing'] == 'defense' &&
+        files.isNotEmpty &&
+        allUploaded &&
+        !anyRejected;
+    final groupStatus = allAccepted
+        ? (item['type'] == 'post' ? 'Archived' : 'Accepted')
+        : missingCount > 0
+        ? '$uploadedCount/$minimum Uploaded'
+        : anyRejected
+        ? 'Corrections requested'
+        : defenseUploaded
+        ? 'Uploaded'
+        : pendingReview
+        ? 'Under Review'
+        : 'Optional';
+    final groupTone = allAccepted || defenseUploaded
+        ? WorkflowStatusTone.success
+        : missingCount > 0
+        ? WorkflowStatusTone.neutral
+        : anyRejected
+        ? WorkflowStatusTone.attention
+        : pendingReview
+        ? WorkflowStatusTone.attention
+        : WorkflowStatusTone.neutral;
+    final progress = minimum == 0
+        ? '${files.length} optional files uploaded'
+        : multiple && uploadedCount > minimum
+        ? '$uploadedCount uploaded · $minimum required'
+        : missingCount > 0
+        ? '$minimum required files'
+        : '$uploadedCount/$minimum uploaded';
 
     final Color cardBorderColor = allAccepted
-        ? const Color(0xFF86EFAC)
-        : anyRejected
-            ? const Color(0xFFFECACA)
-            : allUploaded
-                ? const Color(0xFFFDE68A)
-                : const Color(0xFFE2E8F0);
+        ? Color.alphaBlend(
+            DefensysTokens.success.withValues(alpha: .3),
+            DefensysTokens.borderOf(context),
+          )
+        : DefensysTokens.borderOf(context);
 
     return DefensysShadcnScope(
       child: Container(
@@ -433,43 +488,31 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                     ),
                   ),
                 ),
-                if (allAccepted)
-                  const ShadBadge(
-                    backgroundColor: Color(0xFF16A34A),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.check, size: 12, color: Colors.white),
-                        SizedBox(width: 4),
-                        Text('Approved', style: TextStyle(color: Colors.white, fontSize: 10.5)),
-                      ],
-                    ),
-                  )
-                else if (anyRejected)
-                  const ShadBadge.destructive(
-                    child: Text('Corrections Requested', style: TextStyle(fontSize: 10.5)),
-                  )
-                else if (allUploaded)
-                  const ShadBadge.secondary(
-                    child: Text('Under Review', style: TextStyle(fontSize: 10.5)),
-                  )
-                else
-                  ShadBadge.outline(
-                    child: Text(
-                      '${files.length}/$minimum Uploaded',
-                      style: const TextStyle(fontSize: 10.5),
-                    ),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 180),
+                  child: DeliverableStatusBadge(
+                    label: groupStatus,
+                    tone: groupTone,
                   ),
+                ),
               ],
             ),
             const SizedBox(height: 4),
             Text(
-              '${files.length} uploaded · $minimum required${multiple ? ' · up to ${policy['max_files'] ?? 10}' : ''}',
+              progress,
               style: TextStyle(
                 fontSize: 11.5,
                 color: DefensysTokens.textSecondaryOf(context),
               ),
             ),
+            if (multiple)
+              Text(
+                'Up to ${policy['max_files'] ?? 10} attachments',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
             if (busy)
               const Padding(
                 padding: EdgeInsets.only(top: 8),
@@ -488,9 +531,9 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
               ),
             const SizedBox(height: 4),
             if (multiple) ...[
-              for (final file in files)
+              for (final (index, file) in files.indexed)
                 documentRow(
-                  '${file['file_name']}',
+                  'Attachment ${index + 1}',
                   '${file['slot_key']}',
                   file,
                 ),
@@ -500,10 +543,13 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                       user['is_superuser'] == true) &&
                   files.length < (policy['max_files'] as int? ?? 10)) ...[
                 const SizedBox(height: 8),
-                ShadButton.outline(
+                DeliverableUploadTile(
+                  title: 'Add attachments',
+                  format: DeliverableFormatInfo.fromFormat(
+                    item['file_format']?.toString(),
+                  ),
                   enabled: !busy,
-                  child: const Text('Add attachments'),
-                  onPressed: () => upload('', null, multiple: true),
+                  onUpload: () => upload('', null, multiple: true),
                 ),
               ],
             ] else
@@ -511,10 +557,9 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                 documentRow(
                   '${slot['label']}',
                   '${slot['key']}',
-                  files
-                      .where((f) => f['slot_key'] == slot['key'])
-                      .firstOrNull,
+                  files.where((f) => f['slot_key'] == slot['key']).firstOrNull,
                   required: slot['required'] != false,
+                  fileFormat: slot['file_format']?.toString(),
                 ),
               ],
             if (history.isNotEmpty)

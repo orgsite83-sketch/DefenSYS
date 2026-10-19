@@ -29,14 +29,14 @@ class ArchiveResubmissionDialog {
     final isPublishedPost = isPostDeliverable && status == 'Approved';
 
     final isNeedsRevision = status == 'Needs Revision' || status == 'Rejected' || status == 'Needs Re-upload';
-    final canKeepApproved = !isPostDeliverable && status == 'Approved' &&
+    final canKeepApproved = !isPostDeliverable && (status == 'Approved' || status == 'Uploaded') &&
         (entryId.startsWith('capstone-') && !entryId.startsWith('capstone-vault-') ||
             entryId.startsWith('pit-deliverable-'));
     final isReplacementUnlocked = canKeepApproved && entry['file_replacement_unlocked'] == true;
 
     final displayStatus = isNeedsRevision
         ? 'Needs Revision (Pending Student Re-upload)'
-        : (isReplacementUnlocked ? 'Approved (File Replacement Unlocked)' : status);
+        : (isReplacementUnlocked ? '$status (File Replacement Unlocked)' : status);
 
     PlatformFile? selectedFile;
     final feedbackController = TextEditingController();

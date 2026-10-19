@@ -27,7 +27,7 @@ Future<void> openCurriculumMeetingExport(
           constraints: const BoxConstraints(maxWidth: 480),
           title: const Text('Export meeting report'),
           description: Text(
-            '${query.scope == 'pit' ? 'PIT / Year ${query.yearLevel}' : 'Capstone'} / ${query.year.isEmpty ? 'All academic years' : query.year}',
+            '${query.scope == 'pit' ? 'PIT / Year ${query.yearLevel}' : 'Capstone'} / ${query.year.isEmpty ? '${query.yearFrom} to ${query.yearTo}' : query.year}',
           ),
           actions: [
             ShadButton.outline(
@@ -89,7 +89,7 @@ Future<void> openCurriculumMeetingExport(
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                  'Recorded results, assessment coverage, unique project counts and ML category estimates for this selection.',
+                  'Export this assessment or project collection for the selected period, including its interpretation and counting rules.',
                 ),
                 const SizedBox(height: 18),
                 ShadSelect<String>(

@@ -276,6 +276,12 @@ class _TeamTabState extends ConsumerState<TeamTab> {
               (m['isLeader'] == true || m['is_leader'] == true),
         );
 
+    final leaderMember = members.where((m) => m['isLeader'] == true || m['is_leader'] == true).firstOrNull;
+    final leaderName = team['leader_name']?.toString() ??
+        leaderMember?['name']?.toString() ??
+        leaderMember?['first_name']?.toString() ??
+        '';
+
     Map<String, dynamic>? conceptWorkflow;
     for (final s in stagesList) {
       final cw = s['concept_workflow'];
@@ -325,6 +331,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
           adviserName: adviserName,
           needsName: needsName,
           isLeader: isLeader,
+          leaderName: leaderName,
           teamId: team['id'] as int?,
           hasConceptWorkflow: hasConceptWorkflow,
           isPendingSelection: isPendingSelection,
@@ -416,6 +423,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     required String semester,
     required String schoolYear,
     required String adviserName,
+    String leaderName = '',
     bool needsName = false,
     bool isLeader = false,
     int? teamId,
@@ -424,9 +432,16 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     bool isSharedSystem = false,
   }) {
     final monogram = _extractTeamMonogram(teamName);
-    final termText = semester.isNotEmpty && schoolYear.isNotEmpty
-        ? '$semester, AY $schoolYear'
-        : (schoolYear.isNotEmpty ? 'AY $schoolYear' : '');
+    final compactSemester = semester
+        .replaceAll('1st Semester', '1st Sem')
+        .replaceAll('2nd Semester', '2nd Sem')
+        .replaceAll('Summer Semester', 'Summer');
+    final compactSchoolYear = schoolYear.contains('-') && schoolYear.length >= 9
+        ? schoolYear.split('-').map((y) => y.length == 4 ? y.substring(2) : y).join('-')
+        : schoolYear;
+    final termText = compactSemester.isNotEmpty && compactSchoolYear.isNotEmpty
+        ? '$compactSemester, AY $compactSchoolYear'
+        : (compactSchoolYear.isNotEmpty ? 'AY $compactSchoolYear' : '');
 
     final scopeLabel = isCapstone
         ? 'Capstone Project'
@@ -586,29 +601,53 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                   ],
                 ),
               ),
-              const SizedBox(width: 10),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.person_outline_rounded,
-                    size: 14,
-                    color: DefensysTokens.steelGrey,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    adviserName != 'N/A' && adviserName != 'Unassigned'
-                        ? 'Adviser: $adviserName'
-                        : (isCapstone ? 'Adviser: Unassigned' : 'PIT Faculty Lead'),
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                      color: DefensysTokens.textSecondaryOf(context),
+              if (isCapstone) ...[
+                const SizedBox(width: 10),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.person_outline_rounded,
+                      size: 14,
+                      color: DefensysTokens.steelGrey,
                     ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
+                    const SizedBox(width: 4),
+                    Text(
+                      adviserName != 'N/A' && adviserName != 'Unassigned'
+                          ? 'Adviser: $adviserName'
+                          : 'Adviser: Unassigned',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ] else if (leaderName.isNotEmpty) ...[
+                const SizedBox(width: 10),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.person_outline_rounded,
+                      size: 14,
+                      color: DefensysTokens.steelGrey,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Lead: $leaderName',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ],
@@ -624,7 +663,6 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     required bool isSharedSystem,
     required void Function(int index, {int? subTabIndex})? onSelectTab,
   }) {
-    final round = workflow['round'] ?? 1;
     final status = switch (workflow['status']) {
       'concepts_needed' => 'Concepts needed',
       'replacement_concepts_needed' => 'Replacement needed',
@@ -671,30 +709,16 @@ class _TeamTabState extends ConsumerState<TeamTab> {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Proposed Concepts',
-                      style: TextStyle(
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.bold,
-                        color: DefensysTokens.textPrimaryOf(context),
-                      ),
-                    ),
-                    const SizedBox(height: 1),
-                    Text(
-                      isSharedSystem
-                          ? 'Module proposals for section shared systems'
-                          : 'Standalone concept proposals',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: DefensysTokens.textSecondaryOf(context),
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  'Proposed Concepts',
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.bold,
+                    color: DefensysTokens.textPrimaryOf(context),
+                  ),
                 ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
@@ -703,7 +727,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                   border: Border.all(color: DefensysTokens.borderOf(context)),
                 ),
                 child: Text(
-                  'Attempt $round · $status',
+                  status,
                   style: TextStyle(
                     fontSize: 10.5,
                     fontWeight: FontWeight.w600,
@@ -742,8 +766,8 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                     color: DefensysTokens.panelOf(context),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                      color: confirmed ? const Color(0xFF16A34A) : DefensysTokens.borderOf(context),
-                      width: confirmed ? 1.4 : 1.0,
+                      color: confirmed ? const Color(0xFF86EFAC) : DefensysTokens.borderOf(context),
+                      width: 1.0,
                     ),
                   ),
                   child: Column(
@@ -756,10 +780,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                             decoration: BoxDecoration(
                               color: DefensysTokens.maroonOf(context).withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(5),
-                              border: Border.all(
-                                color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2),
-                              ),
+                              borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
                               isSharedSystem ? 'System $letter' : 'Concept ${i + 1}',
@@ -815,9 +836,8 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                               decoration: BoxDecoration(
-                                color: Colors.transparent,
-                                borderRadius: BorderRadius.circular(5),
-                                border: Border.all(color: DefensysTokens.borderOf(context)),
+                                color: DefensysTokens.surfaceOf(context),
+                                borderRadius: BorderRadius.circular(4),
                               ),
                               child: Text(
                                 docStatus.isNotEmpty ? docStatus.replaceAll('_', ' ') : 'Pending',
@@ -874,16 +894,26 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                 Expanded(
                   child: SizedBox(
                     height: 34,
-                    child: TextButton.icon(
+                    child: OutlinedButton.icon(
                       onPressed: () => onSelectTab?.call(3),
                       icon: Icon(Icons.hub_outlined, size: 14, color: DefensysTokens.maroonOf(context)),
                       label: Text(
-                        'Integration Hub →',
-                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: DefensysTokens.maroonOf(context)),
+                        'Integration →',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: DefensysTokens.maroonOf(context),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      style: TextButton.styleFrom(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: DefensysTokens.maroonOf(context),
+                        side: BorderSide(color: DefensysTokens.maroonOf(context).withValues(alpha: 0.3)),
+                        backgroundColor: DefensysTokens.maroonOf(context).withValues(alpha: 0.04),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
                       ),
                     ),
                   ),

@@ -9,9 +9,24 @@ import '../../utils/universal_file_viewer.dart';
 
 /// Available reading display themes for the document reader.
 enum DeliverableReaderTheme {
-  day(name: 'Day', bg: Color(0xFFF8FAFC), fg: Color(0xFF0F172A), appBarBg: DefensysTokens.maroon),
-  sepia(name: 'Sepia', bg: Color(0xFFFBF0D9), fg: Color(0xFF3E2723), appBarBg: Color(0xFF5D4037)),
-  night(name: 'Night', bg: Color(0xFF18181B), fg: Color(0xFFF4F4F5), appBarBg: Color(0xFF18181B));
+  day(
+    name: 'Day',
+    bg: Color(0xFFF8FAFC),
+    fg: Color(0xFF0F172A),
+    appBarBg: DefensysTokens.maroon,
+  ),
+  sepia(
+    name: 'Sepia',
+    bg: Color(0xFFFBF0D9),
+    fg: Color(0xFF3E2723),
+    appBarBg: Color(0xFF5D4037),
+  ),
+  night(
+    name: 'Night',
+    bg: Color(0xFF18181B),
+    fg: Color(0xFFF4F4F5),
+    appBarBg: Color(0xFF18181B),
+  );
 
   final String name;
   final Color bg;
@@ -123,9 +138,16 @@ class _DeliverableDocumentReaderScreenState
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         title: const Row(
           children: [
-            Icon(Icons.palette_outlined, size: 20, color: DefensysTokens.maroon),
+            Icon(
+              Icons.palette_outlined,
+              size: 20,
+              color: DefensysTokens.maroon,
+            ),
             SizedBox(width: 8),
-            Text('Reader Display Theme', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+            Text(
+              'Reader Display Theme',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            ),
           ],
         ),
         content: Column(
@@ -150,7 +172,11 @@ class _DeliverableDocumentReaderScreenState
                 ),
               ),
               trailing: isSelected
-                  ? const Icon(Icons.check_circle_rounded, color: DefensysTokens.maroon, size: 20)
+                  ? const Icon(
+                      Icons.check_circle_rounded,
+                      color: DefensysTokens.maroon,
+                      size: 20,
+                    )
                   : null,
               onTap: () {
                 setState(() => _currentTheme = t);
@@ -163,79 +189,11 @@ class _DeliverableDocumentReaderScreenState
     );
   }
 
-  void _showFilePropertiesModal() {
-    final info = widget.propertiesInfo;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(20),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.info_outline_rounded, color: DefensysTokens.maroon, size: 20),
-                const SizedBox(width: 8),
-                const Text(
-                  'File Properties & Info',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: DefensysTokens.textPrimary),
-                ),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded, size: 20),
-                  onPressed: () => Navigator.pop(ctx),
-                ),
-              ],
-            ),
-            const Divider(height: 20),
-            _propRow('File Name', widget.fileName),
-            _propRow('Type', info?.fileType ?? 'PDF Document'),
-            if (widget.stageLabel != null) _propRow('Stage', widget.stageLabel!),
-            if (info?.fileSize != null) _propRow('Size', info!.fileSize!),
-            if (info?.uploader != null) _propRow('Uploaded By', info!.uploader!),
-            if (info?.timestamp != null) _propRow('Submission Date', info!.timestamp!),
-            if (info?.status != null) _propRow('Status', info!.status!.toUpperCase()),
-            const SizedBox(height: 12),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _propRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontSize: 12, color: Color(0xFF1E293B), fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final subtitleText = [
-      if (widget.stageLabel != null && widget.stageLabel!.isNotEmpty) widget.stageLabel,
+      if (widget.stageLabel != null && widget.stageLabel!.isNotEmpty)
+        widget.stageLabel,
       'Page $_currentPage of $_pageCount',
     ].join(' · ');
 
@@ -275,24 +233,20 @@ class _DeliverableDocumentReaderScreenState
           IconButton(
             tooltip: 'Zoom In',
             icon: const Icon(Icons.zoom_in_rounded, size: 20),
-            onPressed: () => _pdfViewerController.zoomLevel = (_pdfViewerController.zoomLevel + 0.25).clamp(1.0, 3.0),
+            onPressed: () => _pdfViewerController.zoomLevel =
+                (_pdfViewerController.zoomLevel + 0.25).clamp(1.0, 3.0),
           ),
           IconButton(
             tooltip: 'Zoom Out',
             icon: const Icon(Icons.zoom_out_rounded, size: 20),
-            onPressed: () => _pdfViewerController.zoomLevel = (_pdfViewerController.zoomLevel - 0.25).clamp(1.0, 3.0),
+            onPressed: () => _pdfViewerController.zoomLevel =
+                (_pdfViewerController.zoomLevel - 0.25).clamp(1.0, 3.0),
           ),
           // Theme Picker
           IconButton(
             tooltip: 'Reading theme',
             icon: const Icon(Icons.palette_outlined, size: 20),
             onPressed: _showThemeDialog,
-          ),
-          // Properties Info
-          IconButton(
-            tooltip: 'File Properties',
-            icon: const Icon(Icons.info_outline_rounded, size: 20),
-            onPressed: _showFilePropertiesModal,
           ),
           // Download Student's Own File
           IconButton(
@@ -313,9 +267,7 @@ class _DeliverableDocumentReaderScreenState
         ],
       ),
       body: SfPdfViewerTheme(
-        data: SfPdfViewerThemeData(
-          backgroundColor: _currentTheme.bg,
-        ),
+        data: SfPdfViewerThemeData(backgroundColor: _currentTheme.bg),
         child: SfPdfViewer.memory(
           widget.fileBytes,
           controller: _pdfViewerController,

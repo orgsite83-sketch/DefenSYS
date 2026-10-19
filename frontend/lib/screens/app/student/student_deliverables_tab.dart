@@ -1,6 +1,7 @@
 import 'package:defensys/widgets/defense/system_defense_records.dart';
 import 'package:defensys/widgets/repository/concept_workspace.dart';
 import 'package:defensys/widgets/repository/document_group.dart';
+import 'package:defensys/widgets/repository/deliverable_file_widgets.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
@@ -331,7 +332,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'Stage/Event: ${state.selectedStage}',
+                  "${widget.isCapstone ? 'Stage' : 'Event'}: ${state.selectedStage}",
                   style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 14,
@@ -993,10 +994,15 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     bool endorsed, [
     Map<String, dynamic>? stageGrade,
   ]) {
-    if ((item['file_policy'] as Map? ?? {}).isNotEmpty) {
-      return DocumentGroup(teamId: team['id'] as int, stageLabel: stageLabel, item: item);
+    if (usesGroupedDocumentCard(item)) {
+      return DocumentGroup(
+        teamId: team['id'] as int,
+        stageLabel: stageLabel,
+        item: item,
+        programScope: widget.isCapstone ? 'capstone' : 'pit',
+      );
     }
-    final uploaded = item['uploaded'] == true;
+    final uploaded = hasSubmittedDeliverable(item);
     final isWaived = item['is_waived'] == true;
     final stageVerdict = stageGrade?['verdict']?.toString();
     final isForRedefense = stageVerdict == 'for_redefense';
@@ -1027,13 +1033,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final dueAfterScheduling = item['requirement_timing'] == 'defense' &&
         item['materials_status'] == 'awaiting_schedule';
 
-    final Color cardBorderColor = (isWaived || isAccepted || isDefenseUploaded)
-        ? const Color(0xFF86EFAC)
-        : (isRejected
-            ? const Color(0xFFFECACA)
-            : (uploaded
-                ? const Color(0xFFFDE68A)
-                : (isRequired && !dueAfterScheduling ? const Color(0xFFFECDD3) : const Color(0xFFE2E8F0))));
+    final cardBorderColor = (isWaived || isAccepted || isDefenseUploaded)
+        ? Color.alphaBlend(DefensysTokens.success.withValues(alpha: .3), DefensysTokens.borderOf(context))
+        : DefensysTokens.borderOf(context);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1154,125 +1156,24 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 ),
               ),
             ] else if (uploaded) ...[
-              Builder(builder: (context) {
-                final actualFormat = DeliverableFormatInfo.fromFileName(fileName);
-                return Material(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(8),
+              DeliverableUploadedFileTile(
+                fileName: fileName,
+                onDetails: () => _showDeliverableDetailsSheet(team, stageLabel, item, endorsed, stageGrade),
+                onRevision: isRejected && !fileLocked && !isWaived && !isDefenseMaterialAttempt2
+                    ? () => _promptUploadOrReplace(team, stageLabel, item) : null,
+                trailing: isDefenseMaterialAttempt2 ? Material(
+                  color: const Color(0xFFDC2626),
+                  borderRadius: BorderRadius.circular(6),
                   child: InkWell(
-                    onTap: () => _showDeliverableDetailsSheet(
-                      team,
-                      stageLabel,
-                      item,
-                      endorsed,
-                      stageGrade,
-                    ),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: DefensysTokens.borderOf(context)),
-                      ),
-                      child: Row(
-                        children: [
-                          // Squircle File Extension Badge (Image 2 style)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: actualFormat.color.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: actualFormat.color.withValues(alpha: 0.25)),
-                            ),
-                            child: Text(
-                              actualFormat.badgeCode,
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w900,
-                                color: actualFormat.color,
-                                letterSpacing: 0.3,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  fileName,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontFamily: 'monospace',
-                                    fontWeight: FontWeight.w700,
-                                    color: DefensysTokens.textPrimaryOf(context),
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  actualFormat.label,
-                                  style: TextStyle(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w500,
-                                    color: DefensysTokens.textSecondaryOf(context),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          // Details Action Pill
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: DefensysTokens.surfaceHigherOf(context),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: DefensysTokens.borderOf(context)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  'Details',
-                                  style: TextStyle(
-                                    color: DefensysTokens.textPrimaryOf(context),
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                SizedBox(width: 3),
-                                Icon(Icons.chevron_right_rounded, size: 14, color: DefensysTokens.textSecondaryOf(context)),
-                              ],
-                            ),
-                          ),
-                          if (isDefenseMaterialAttempt2) ...[
-                            const SizedBox(width: 6),
-                            Material(
-                              color: const Color(0xFFDC2626),
-                              borderRadius: BorderRadius.circular(6),
-                              child: InkWell(
-                                onTap: () => _promptUploadOrReplace(team, stageLabel, item),
-                                borderRadius: BorderRadius.circular(6),
-                                child: const Padding(
-                                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                                  child: Text(
-                                    'Attempt #2',
-                                    style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
+                    onTap: () => _promptUploadOrReplace(team, stageLabel, item),
+                    borderRadius: BorderRadius.circular(6),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      child: Text('Attempt #2', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
                     ),
                   ),
-                );
-              }),
+                ) : null,
+              ),
             ] else ...[
               // Empty State: Dashed Upload Dropzone Container (Images 1 & 2)
               if (fileLocked)
@@ -1299,97 +1200,10 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   ),
                 )
               else
-                Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFDF2F4),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: DefensysTokens.maroonOf(context).withValues(alpha: 0.25),
-                      width: 1.2,
-                    ),
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(10),
-                    child: InkWell(
-                      onTap: () => _promptUploadOrReplace(team, stageLabel, item),
-                      borderRadius: BorderRadius.circular(10),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        child: Row(
-                          children:
-                            [
-                              Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  color: DefensysTokens.maroonOf(context).withValues(alpha: 0.1),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.cloud_upload_rounded,
-                                  size: 20,
-                                  color: DefensysTokens.maroonTextOf(context),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      "Upload ${(item['label']?.toString().trim().isNotEmpty == true) ? item['label'] : 'Deliverable'}",
-                                      style: TextStyle(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w700,
-                                        color: DefensysTokens.maroonTextOf(context),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Accepted: ${formatInfo.label} • Max 50 MB',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: DefensysTokens.textSecondaryOf(context),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: DefensysTokens.maroonOf(context),
-                                  borderRadius: BorderRadius.circular(6),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: DefensysTokens.maroonOf(context).withValues(alpha: 0.2),
-                                      blurRadius: 4,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.add_rounded, size: 14, color: Colors.white),
-                                    SizedBox(width: 4),
-                                    Text(
-                                      'Upload',
-                                      style: TextStyle(
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                        ),
-                      ),
-                    ),
-                  ),
+                DeliverableUploadTile(
+                  title: "Upload ${item['label'] ?? 'Deliverable'}",
+                  format: formatInfo,
+                  onUpload: () => _promptUploadOrReplace(team, stageLabel, item),
                 ),
             ],
 
@@ -1600,7 +1414,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     Map<String, dynamic>? stageGrade,
   ) {
     final submission = Map<String, dynamic>.from(item['submission'] as Map? ?? const {});
-    final uploaded = item['uploaded'] == true;
+    final uploaded = hasSubmittedDeliverable(item);
     final fileName = (submission['file_name'] ?? item['label'] ?? 'Document').toString();
     final fileUrl = (submission['file_url'] ?? '').toString();
     final uploadedBy = (submission['uploaded_by_name'] ?? 'Team Member').toString();
@@ -1852,7 +1666,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     ),
                     const Divider(height: 14, color: Color(0xFFEEF2F6)),
                     _buildDetailsPropertyRow(
-                      label: 'Location / Stage',
+                      label: widget.isCapstone ? 'Stage' : 'Event',
                       value: stageLabel.isNotEmpty ? stageLabel : 'Current Defense Stage',
                       icon: Icons.folder_outlined,
                       iconColor: const Color(0xFF64748B),
@@ -1973,69 +1787,42 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               const SizedBox(height: 16),
             ],
 
-            // Action Buttons Row inside modal
-            Row(
-              children: [
-                if (uploaded && !isWPR) ...[
-                  Expanded(
-                    flex: 3,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.pop(modalCtx);
-                        _viewFile(
-                          fileUrl,
-                          fileName,
-                          item: item,
-                          team: team,
-                          stageLabel: stageLabel,
-                          endorsed: endorsed,
-                          stageGrade: stageGrade,
-                        );
-                      },
-                      icon: const Icon(Icons.visibility_outlined, size: 16),
-                      label: const Text('View Document', style: TextStyle(fontWeight: FontWeight.bold)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: DefensysTokens.maroonOf(context),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                if (uploaded && !isAccepted && !fileLocked && !isWPR) ...[
-                  IconButton(
-                    onPressed: () {
-                      Navigator.pop(modalCtx);
-                      _removeFile(team, stageLabel, item);
-                    },
-                    icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFEF4444)),
-                    tooltip: 'Remove Submission',
-                  ),
-                  const SizedBox(width: 4),
-                ],
-                if (!fileLocked && !isWaived && !isWPR) ...[
-                  Expanded(
-                    flex: 2,
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.pop(modalCtx);
-                        _promptUploadOrReplace(team, stageLabel, item);
-                      },
-                      icon: Icon(uploaded ? Icons.swap_horiz_rounded : Icons.upload_file_rounded, size: 16),
-                      label: Text(uploaded ? 'Replace File' : 'Upload File', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: DefensysTokens.maroonOf(context),
-                        side: BorderSide(color: DefensysTokens.maroonOf(context)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
+            if (uploaded && !isWPR)
+              DeliverableDetailsActions(
+                onView: () {
+                  Navigator.pop(modalCtx);
+                  _viewFile(
+                    fileUrl,
+                    fileName,
+                    item: item,
+                    team: team,
+                    stageLabel: stageLabel,
+                    endorsed: endorsed,
+                    stageGrade: stageGrade,
+                  );
+                },
+                replacementLabel: isRejected ? 'Upload revision' : 'Replace File',
+                onReplace: fileLocked || isWaived ? null : () {
+                  Navigator.pop(modalCtx);
+                  _promptUploadOrReplace(team, stageLabel, item);
+                },
+                onRemove: isAccepted || fileLocked ? null : () {
+                  Navigator.pop(modalCtx);
+                  _removeFile(team, stageLabel, item);
+                },
+              )
+            else if (!fileLocked && !isWaived && !isWPR)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(modalCtx);
+                    _promptUploadOrReplace(team, stageLabel, item);
+                  },
+                  icon: const Icon(Icons.upload_file_rounded, size: 16),
+                  label: const Text('Upload File'),
+                ),
+              ),
           ],
         )),
       ),

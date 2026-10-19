@@ -521,155 +521,16 @@ class _UniversalFileViewerDialogState
               // ----------------------------------------------------
               Expanded(
                 child: ClipRRect(
-                  borderRadius: widget.propertiesInfo != null
-                      ? BorderRadius.zero
-                      : const BorderRadius.only(
-                          bottomLeft: Radius.circular(10),
-                          bottomRight: Radius.circular(10),
-                        ),
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(10),
+                    bottomRight: Radius.circular(10),
+                  ),
                   child: _buildViewerContent(),
                 ),
               ),
-              if (widget.propertiesInfo != null)
-                _buildPropertiesSection(formattedSize, catLabel),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildPropertiesSection(String fallbackSize, String fallbackType) {
-    final info = widget.propertiesInfo!;
-    final size = (info.fileSize != null && info.fileSize!.isNotEmpty)
-        ? info.fileSize!
-        : fallbackSize;
-    final type = (info.fileType != null && info.fileType!.isNotEmpty)
-        ? info.fileType!
-        : fallbackType;
-    final uploader = (info.uploader != null && info.uploader!.isNotEmpty)
-        ? info.uploader!
-        : 'Team Member';
-    final timestamp = (info.timestamp != null && info.timestamp!.isNotEmpty)
-        ? info.timestamp!
-        : 'Recently';
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-      decoration: BoxDecoration(
-        color: DefensysTokens.surfaceOf(context),
-        borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(10),
-          bottomRight: Radius.circular(10),
-        ),
-        border: Border(
-          top: BorderSide(color: DefensysTokens.borderOf(context)),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'FILE PROPERTIES & INFO',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.8,
-              color: DefensysTokens.textSecondaryOf(context),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(child: _buildPropertyTile('Size', size)),
-              const SizedBox(width: 8),
-              Expanded(child: _buildPropertyTile('Type', type)),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(child: _buildPropertyTile('Uploader', uploader)),
-              const SizedBox(width: 8),
-              Expanded(child: _buildPropertyTile('Timestamp', timestamp)),
-            ],
-          ),
-          if (info.feedback != null &&
-              info.feedback!.isNotEmpty &&
-              info.isRejected) ...[
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF7F1D1D).withValues(alpha: 0.35),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                  color: const Color(0xFFEF4444).withValues(alpha: 0.5),
-                ),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.warning_amber_rounded,
-                    size: 14,
-                    color: Color(0xFFF87171),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Remarks: ${info.feedback}',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: Color(0xFFFECACA),
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPropertyTile(String label, String value) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: DefensysTokens.surfaceHigherOf(context),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: DefensysTokens.borderOf(context)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 9.5,
-              fontWeight: FontWeight.w600,
-              color: DefensysTokens.textSecondaryOf(context),
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.bold,
-              color: DefensysTokens.textPrimaryOf(context),
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
       ),
     );
   }

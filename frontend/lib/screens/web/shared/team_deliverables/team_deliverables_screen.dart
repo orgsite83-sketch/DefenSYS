@@ -16,6 +16,7 @@ import 'components/deliverables_table.dart';
 import 'components/faculty_teams_overview_export.dart';
 import 'components/cohort_submissions_matrix.dart';
 import 'deliverables_view_types.dart';
+import 'package:defensys/widgets/repository/section_concept_workspace.dart';
 import '../../admin/student_teams/team_creation_page.dart';
 export 'deliverables_view_types.dart';
 
@@ -102,6 +103,22 @@ class _TeamDeliverablesScreenState
   late DeliverablesViewMode _viewMode;
   TeamTriageFilter _triageFilter = TeamTriageFilter.all;
   int? _activeTeamId;
+  final _sharedReviewKeys = <int, GlobalKey<SectionConceptOverviewState>>{};
+
+  GlobalKey<SectionConceptOverviewState> _sharedReviewKey(int projectId) =>
+      _sharedReviewKeys.putIfAbsent(projectId, () => GlobalKey<SectionConceptOverviewState>());
+
+  void _openSharedReview(int projectId) async {
+    final review = _sharedReviewKey(projectId).currentState;
+    if (review != null) {
+      review.openReview();
+      return;
+    }
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => SectionConceptWorkspace(projectId: projectId),
+    ));
+    if (mounted) await ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
+  }
 
   @override
   void initState() {
@@ -334,6 +351,20 @@ class _TeamDeliverablesScreenState
             ),
             const SizedBox(height: 12),
           ],
+          if (!state.isLoading && _viewMode == DeliverablesViewMode.dossier)
+            for (final review in sharedReviewsForTeams(state.teams, stageLabel: state.selectedStage))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: SectionConceptOverview(
+                  key: _sharedReviewKey(review['project_id'] as int),
+                  projectId: review['project_id'] as int,
+                  section: '${review['section']}',
+                  stageLabel: '${review['stage_label']}',
+                  systems: (review['systems'] as List? ?? []).whereType<Map>().map((s) => Map<String, dynamic>.from(s)).toList(),
+                  summary: review,
+                  onChanged: () => ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(),
+                ),
+              ),
           state.isLoading
               ? const Center(
                   child: Padding(
@@ -357,6 +388,8 @@ class _TeamDeliverablesScreenState
                           teams: filteredTeams,
                           state: state,
                           isAdviser: isEvaluator,
+                          sharedReviewKey: _sharedReviewKey,
+                          onOpenSharedReview: _openSharedReview,
                           initialExpandedTeamId: _activeTeamId ?? widget.initialTeamId,
                           onSelectTeam: (teamId) {
                             setState(() {
@@ -377,6 +410,7 @@ class _TeamDeliverablesScreenState
                       initialTeamId: _activeTeamId ?? widget.initialTeamId,
                       initialTab: widget.initialTab,
                       activeTriageFilter: _triageFilter,
+                      onOpenSharedReview: _openSharedReview,
                     )),
         ],
       ),

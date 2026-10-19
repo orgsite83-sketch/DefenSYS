@@ -1,4 +1,5 @@
 import 'package:defensys/widgets/repository/document_group.dart';
+import 'package:defensys/widgets/repository/section_concept_workspace.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -30,6 +31,8 @@ class CohortSubmissionsMatrix extends ConsumerStatefulWidget {
   final bool isAdviser;
   final ValueChanged<int>? onSelectTeam;
   final int? initialExpandedTeamId;
+  final GlobalKey<SectionConceptOverviewState> Function(int)? sharedReviewKey;
+  final ValueChanged<int>? onOpenSharedReview;
 
   const CohortSubmissionsMatrix({
     super.key,
@@ -38,6 +41,8 @@ class CohortSubmissionsMatrix extends ConsumerStatefulWidget {
     required this.isAdviser,
     this.onSelectTeam,
     this.initialExpandedTeamId,
+    this.sharedReviewKey,
+    this.onOpenSharedReview,
   });
 
   @override
@@ -321,6 +326,20 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
     }
 
     final lackingTeams = widget.teams.where(_teamLacksDeliverables).toList();
+    final groups = <String, List<Map<String, dynamic>>>{};
+    for (final team in widget.teams) {
+      final shared = sharedReviewForTeam(team, stageLabel: widget.state.selectedStage);
+      final group = shared == null
+          ? '${team['semester_id']}:${team['year_level']}:${team['section']}'
+          : 'shared:${shared['project_id']}';
+      groups.putIfAbsent(group, () => []).add(team);
+    }
+    final rows = <Map<String, dynamic>>[];
+    for (final teams in groups.values) {
+      final shared = sharedReviewForTeam(teams.first, stageLabel: widget.state.selectedStage);
+      if (shared != null) rows.add({'review': shared});
+      rows.addAll(teams.map((team) => {'team': team}));
+    }
 
     return DefensysShadcnScope(
       child: LayoutBuilder(
@@ -436,10 +455,33 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
               ListView.separated(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                itemCount: widget.teams.length,
-                separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                itemCount: rows.length,
+                separatorBuilder: (_, __) => Divider(height: 1, color: DefensysTokens.borderOf(context)),
                 itemBuilder: (context, index) {
-                  final team = widget.teams[index];
+                  if (rows[index]['review'] is Map) {
+                    final review = Map<String, dynamic>.from(rows[index]['review']);
+                    final projectId = review['project_id'] as int;
+                    return Align(
+                      alignment: Alignment.centerLeft,
+                      child: SizedBox(
+                        width: screenWidth,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: SectionConceptOverview(
+                            key: widget.sharedReviewKey?.call(projectId) ?? ValueKey('matrix-shared-$projectId'),
+                            projectId: projectId,
+                            section: '${review['section']}',
+                            stageLabel: '${review['stage_label']}',
+                            systems: (review['systems'] as List? ?? []).whereType<Map>().map((s) => Map<String, dynamic>.from(s)).toList(),
+                            summary: review,
+                            collapsible: true,
+                            onChanged: () => ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                  final team = Map<String, dynamic>.from(rows[index]['team']);
                   final teamId = _asInt(team['id']);
                   final name = team['name']?.toString() ?? 'Team';
                   final projectTitle = team['project_title']?.toString() ?? 'No Project Title';
@@ -500,13 +542,13 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Material(
-                        color: isExpanded ? const Color(0xFFF8FAFC) : Colors.white,
+                        color: isExpanded ? DefensysTokens.surfaceHigherOf(context) : DefensysTokens.surfaceOf(context),
                         child: InkWell(
                           onTap: () {
                             _toggleExpanded(teamId);
                             widget.onSelectTeam?.call(teamId);
                           },
-                          hoverColor: const Color(0xFFF8FAFC),
+                          hoverColor: DefensysTokens.surfaceHigherOf(context),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
                             child: Row(
@@ -558,8 +600,8 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                                   child: Align(
                                     alignment: Alignment.centerLeft,
                                     child: ShadBadge.secondary(
-                                      backgroundColor: const Color(0xFFF1F5F9),
-                                      foregroundColor: const Color(0xFF334155),
+                                      backgroundColor: DefensysTokens.surfaceHigherOf(context),
+                                      foregroundColor: DefensysTokens.textSecondaryOf(context),
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(6),
                                         side: BorderSide(color: DefensysTokens.borderOf(context)),
@@ -631,7 +673,7 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                                           child: LinearProgressIndicator(
                                             value: progressValue,
                                             minHeight: 4.5,
-                                            backgroundColor: const Color(0xFFF1F5F9),
+                                            backgroundColor: DefensysTokens.surfaceHigherOf(context),
                                             valueColor: AlwaysStoppedAnimation<Color>(progressBarColor),
                                           ),
                                         ),
@@ -984,6 +1026,18 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // Defense Materials Readiness Notice (if present)
+                if ((activeStage['concept_workflow'] as Map?)?['section_project_id'] != null)
+                  SharedSectionStatus(
+                    summary: Map<String, dynamic>.from((activeStage['concept_workflow'] as Map)['shared_review'] as Map? ?? {}),
+                    onOpen: () {
+                      final id = _asInt((activeStage['concept_workflow'] as Map)['section_project_id']);
+                      if (widget.onOpenSharedReview != null) {
+                        widget.onOpenSharedReview!(id);
+                      } else {
+                        Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => SectionConceptWorkspace(projectId: id)));
+                      }
+                    },
+                  ),
                 if (materialsReadiness is Map && materialsReadiness.isNotEmpty) ...[
                   DefenseMaterialReadiness(
                     readiness: Map<String, dynamic>.from(materialsReadiness),
@@ -1248,8 +1302,8 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                                 )
                               else
                                 ShadBadge.secondary(
-                                  backgroundColor: const Color(0xFFF1F5F9),
-                                  foregroundColor: const Color(0xFF64748B),
+                                  backgroundColor: DefensysTokens.surfaceHigherOf(context),
+                                  foregroundColor: DefensysTokens.textSecondaryOf(context),
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                                   child: const Text(
@@ -1290,8 +1344,8 @@ class _CohortSubmissionsMatrixState extends ConsumerState<CohortSubmissionsMatri
                                 ),
                               if (isWaived)
                                 ShadBadge.secondary(
-                                  backgroundColor: const Color(0xFFF1F5F9),
-                                  foregroundColor: const Color(0xFF64748B),
+                                  backgroundColor: DefensysTokens.surfaceHigherOf(context),
+                                  foregroundColor: DefensysTokens.textSecondaryOf(context),
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                                   child: const Text(

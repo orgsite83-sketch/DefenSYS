@@ -26,6 +26,7 @@ from .services import (
     team_payload,
     team_queryset_for_user,
     upsert_submission,
+    can_submit_files,
 )
 
 
@@ -225,7 +226,7 @@ class CapstoneDeliverableUploadView(APIView):
         attrs = serializer.validated_data
         team = get_allowed_team(request, attrs['team_id'])
         
-        if not check_deliverable_write_permission(request.user, team):
+        if not can_submit_files(request.user, team):
             return Response({'detail': 'You do not have permission to manage deliverables for this team.'}, status=status.HTTP_403_FORBIDDEN)
         
         # Get uploaded file from request
@@ -265,7 +266,7 @@ class CapstoneDeliverableRemoveView(APIView):
             return Response({'deliverable_id': 'This field is required.'}, status=status.HTTP_400_BAD_REQUEST)
         team = get_allowed_team(request, attrs['team_id'])
         
-        if not check_deliverable_write_permission(request.user, team):
+        if not can_submit_files(request.user, team):
             return Response({'detail': 'You do not have permission to manage deliverables for this team.'}, status=status.HTTP_403_FORBIDDEN)
             
         try:

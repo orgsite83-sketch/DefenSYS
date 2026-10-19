@@ -6,8 +6,8 @@ import '../../services/auth_provider.dart';
 import '../../services/capstone_deliverables_provider.dart';
 import '../../utils/universal_file_viewer.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
-import '../../theme/defensys_tokens.dart';
 import 'document_policy_editor.dart';
+import '../../theme/defensys_tokens.dart';
 
 String? conceptDecisionError(
   List<Map<String, dynamic>> concepts,
@@ -54,10 +54,12 @@ class ConceptWorkspace extends ConsumerStatefulWidget {
     required this.teamId,
     required this.stageLabel,
     required this.stage,
+    this.onOpenSharedReview,
   });
   final int teamId;
   final String stageLabel;
   final Map<String, dynamic> stage;
+  final ValueChanged<int>? onOpenSharedReview;
   @override
   ConsumerState<ConceptWorkspace> createState() => _ConceptWorkspaceState();
 }
@@ -65,7 +67,6 @@ class ConceptWorkspace extends ConsumerStatefulWidget {
 class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
   final controllers = <String, TextEditingController>{};
   bool busy = false;
-  bool reviewSharedSystem = false;
   String? error;
   Map<String, dynamic> get workflow =>
       Map<String, dynamic>.from(widget.stage['concept_workflow'] as Map? ?? {});
@@ -102,7 +103,6 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
             identity ||
         (workflow['assigned'] == true &&
             '${oldWorkflow['concepts']}' != '${workflow['concepts']}')) {
-      reviewSharedSystem = false;
       resetControllers();
     }
   }
@@ -206,6 +206,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
             ? 'Module review pending'
             : 'Concept review pending',
       'concept_endorsement_pending' => 'Awaiting endorsement',
+      'shared_clearance_pending' => 'Awaiting shared paper clearance',
       'ready_to_schedule_redefense' => 'Ready to schedule re-defense',
       'ready_to_schedule' => 'Ready to schedule',
       'scheduled' => 'Hearing scheduled',
@@ -236,7 +237,16 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
               ),
             ],
           ),
-          description: Text('$status\n${workflow['next_step'] ?? ''}'),
+          description: Text(
+            status,
+            style: TextStyle(
+              fontSize: 12.5,
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Colors.white70
+                  : const Color(0xFF64748B),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -270,12 +280,12 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                         border: Border.all(
                           color: isConfirmed
                               ? (Theme.of(context).brightness == Brightness.dark
-                                    ? const Color(0xFF4ADE80)
-                                    : const Color(0xFF16A34A))
+                                    ? const Color(0xFF4ADE80).withValues(alpha: 0.6)
+                                    : const Color(0xFF86EFAC))
                               : (Theme.of(context).brightness == Brightness.dark
                                     ? Colors.white12
                                     : const Color(0xFFE5E7EB)),
-                          width: isConfirmed ? 1.4 : 1.0,
+                          width: 1.0,
                         ),
                       ),
                       child: Column(
@@ -391,13 +401,31 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                           ShadInput(
                             controller: controllers['${c['key']}'],
                             enabled: titlesEditable && !busy,
-                            leading: Text('${c['key']}'.toUpperCase()),
+                            minLines: 1,
+                            maxLines: 2,
+                            style: const TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                              height: 1.3,
+                            ),
+                            leading: Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: Text(
+                                '${c['key']}'.toUpperCase(),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  color: DefensysTokens.maroonOf(context),
+                                ),
+                              ),
+                            ),
                             placeholder: Text(
                               assigned
                                   ? 'Awaiting administrator assignment'
                                   : isShared
                                   ? 'Enter proposed module title'
                                   : 'Enter proposed concept title',
+                              style: const TextStyle(fontSize: 13),
                             ),
                           ),
                           if (c['remarks'] != null &&
@@ -486,7 +514,10 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                     if (faculty && !cleared)
                       ShadButton(
                         enabled:
-                            !busy && widget.stage['required_complete'] == true,
+                            !busy &&
+                            widget.stage['required_complete'] == true &&
+                            (workflow['shared_review'] is! Map ||
+                                workflow['shared_review']['cleared'] == true),
                         child: const Text('Endorse concept set'),
                         onPressed: () => perform(
                           () => ref
@@ -520,56 +551,28 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final shared in [false, true])
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: reviewSharedSystem == shared
-                        ? DefensysTokens.maroonTextOf(context)
-                        : DefensysTokens.textSecondaryOf(context),
-                    backgroundColor: reviewSharedSystem == shared
-                        ? DefensysTokens.surfaceHigherOf(context)
-                        : null,
-                    side: BorderSide(
-                      color: reviewSharedSystem == shared
-                          ? DefensysTokens.maroonTextOf(context)
-                          : DefensysTokens.borderOf(context),
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(7),
-                    ),
-                  ),
-                  onPressed: () => setState(() => reviewSharedSystem = shared),
-                  icon: Icon(
-                    shared
-                        ? Icons.account_tree_outlined
-                        : Icons.groups_outlined,
-                    size: 16,
-                  ),
-                  label: Text(shared ? 'Shared system' : 'Team modules'),
-                ),
-            ],
+        SharedSectionStatus(
+          summary: Map<String, dynamic>.from(
+            workflow['shared_review'] as Map? ?? {},
           ),
-        ),
-        if (reviewSharedSystem)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: SectionConceptWorkspace(
-              key: ValueKey('shared-review-$projectId'),
-              projectId: projectId,
-              embedded: true,
-              onChanged: () => ref
+          onOpen: () async {
+            if (widget.onOpenSharedReview != null) {
+              widget.onOpenSharedReview!(projectId);
+              return;
+            }
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => SectionConceptWorkspace(projectId: projectId),
+              ),
+            );
+            if (mounted) {
+              await ref
                   .read(capstoneDeliverablesProvider.notifier)
-                  .fetchDeliverables(),
-            ),
-          )
-        else
-          content,
+                  .fetchDeliverables();
+            }
+          },
+        ),
+        content,
       ],
     );
   }

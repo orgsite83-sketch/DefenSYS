@@ -923,7 +923,7 @@ def counts_payload(entries, filtered_entries):
         'approved': sum(
             1
             for entry in actual_entries
-            if entry['status'] in [ArchiveEntry.STATUS_APPROVED, 'Post-Defense']
+            if entry['status'] in [ArchiveEntry.STATUS_APPROVED, 'Post-Defense', 'Uploaded']
         ),
         'needs_revision': sum(
             1 for entry in actual_entries if entry['status'] == ArchiveEntry.STATUS_NEEDS_REVISION
