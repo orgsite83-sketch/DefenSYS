@@ -445,10 +445,13 @@ class TeamRosterReportView(ReportAPIView):
             queryset = queryset.filter(Q(name__icontains=search) | Q(project_title__icontains=search)
                 | Q(leader__first_name__icontains=search) | Q(leader__last_name__icontains=search) | Q(leader__username__icontains=search)
                 | Q(adviser__first_name__icontains=search) | Q(adviser__last_name__icontains=search) | Q(adviser__username__icontains=search))
-        event = request.query_params.get('pit_event')
+        event = request.query_params.get('event_name') or request.query_params.get('pit_event')
         if event:
-            queryset = queryset.filter(Q(current_defense_stage=event) | Q(defense_schedules__event_name=event)
-                                      | Q(grade_records__stage_label=event) | Q(deliverable_submissions__stage_label=event)).distinct()
+            from student_teams.pit_rosters import filter_teams
+            queryset = filter_teams(queryset, event)
+        elif request.query_params.get('roster_view') == 'current':
+            from student_teams.pit_rosters import filter_teams
+            queryset = filter_teams(queryset, current=True)
             
         teams = list(
             queryset.select_related('leader', 'adviser')

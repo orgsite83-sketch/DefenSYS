@@ -1,3 +1,7 @@
+import 'package:defensys/widgets/shadcn/workflow_step_progress.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
+import 'package:defensys/utils/import/team_creation_draft.dart';
+import 'components/team_project_setup.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -64,10 +68,16 @@ class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
   String? level, event, error, selectedSection;
   String? get currentSection => selectedSection;
   List<String> get assignedSections {
-    final sections = _maps(config?['assignments'])
-        .where((a) => a['year_level'] == level?.split(' ').take(2).join(' '))
-        .map((a) => a['section']?.toString().trim() ?? '')
-        .where((section) => section.isNotEmpty).toSet().toList()..sort();
+    final sections =
+        _maps(config?['assignments'])
+            .where(
+              (a) => a['year_level'] == level?.split(' ').take(2).join(' '),
+            )
+            .map((a) => a['section']?.toString().trim() ?? '')
+            .where((section) => section.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
     return sections;
   }
 
@@ -107,6 +117,7 @@ class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
       final levels = List<String>.from(result['levels'] as List);
       setState(() {
         config = result;
+        if (result['can_generate'] == false) tab = 0;
         error = null;
         final preferred = widget.initialLevel == 'Capstone'
             ? (result['semester']?['label']?.toString().contains('1st') == true
@@ -117,9 +128,12 @@ class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
         selectedSection = assignedSections.contains(widget.initialSection)
             ? widget.initialSection
             : assignedSections.firstOrNull ?? widget.initialSection;
-        event = events.any((e) => e['event_name'] == widget.initialEvent)
+        event =
+            tab == 0 &&
+                result['can_manage_policy'] == true &&
+                events.any((e) => e['event_name'] == widget.initialEvent)
             ? widget.initialEvent
-            : events.firstOrNull?['event_name']?.toString();
+            : null;
       });
     } catch (e) {
       if (mounted) {
@@ -198,13 +212,17 @@ class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
       }
       event = events.any((e) => e['event_name'] == nextEvent)
           ? nextEvent
-          : events.firstOrNull?['event_name']?.toString();
+          : null;
     });
     guard.setDirty(false);
   }
 
   Future<void> changeSection(String nextSection) async {
-    if (!assignedSections.contains(nextSection) || !await canLeave() || !mounted) return;
+    if (!assignedSections.contains(nextSection) ||
+        !await canLeave() ||
+        !mounted) {
+      return;
+    }
     setState(() {
       dirtyTabs.clear();
       busyTabs.clear();
@@ -240,7 +258,7 @@ class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Team Creation',
+                        tab == 0 ? 'Import teams' : 'Generate teams',
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
                     ),
@@ -255,8 +273,8 @@ class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
                       config?['semester']?['display_name']?.toString() ??
                           'Active semester',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                     if (config != null && levels.isNotEmpty) ...[
                       if (level != null)
@@ -264,16 +282,30 @@ class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
                           PopupMenuButton<String>(
                             tooltip: 'Switch year level',
                             initialValue: level,
-                            onSelected: busy ? null : (v) => changeContext(v, null),
+                            onSelected: busy
+                                ? null
+                                : (v) => changeContext(v, null),
                             itemBuilder: (context) => levels
-                                .map((v) => PopupMenuItem(value: v, child: Text(v)))
+                                .map(
+                                  (v) =>
+                                      PopupMenuItem(value: v, child: Text(v)),
+                                )
                                 .toList(),
                             child: Chip(
-                              avatar: const Icon(Icons.school_outlined, size: 16),
+                              avatar: const Icon(
+                                Icons.school_outlined,
+                                size: 16,
+                              ),
                               label: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Text(level!),
+                                  Text(
+                                    level!,
+                                    style: const TextStyle(
+                                      fontFamily:
+                                          DefensysTokens.fontFamilyInter,
+                                    ),
+                                  ),
                                   const SizedBox(width: 4),
                                   const Icon(Icons.arrow_drop_down, size: 16),
                                 ],
@@ -283,7 +315,12 @@ class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
                         else
                           Chip(
                             avatar: const Icon(Icons.school_outlined, size: 16),
-                            label: Text(level!),
+                            label: Text(
+                              level!,
+                              style: const TextStyle(
+                                fontFamily: DefensysTokens.fontFamilyInter,
+                              ),
+                            ),
                           ),
                       if (currentSection?.isNotEmpty == true)
                         if (assignedSections.length > 1)
@@ -292,26 +329,52 @@ class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
                             tooltip: 'Switch assigned section',
                             initialValue: currentSection,
                             onSelected: busy ? null : changeSection,
-                            itemBuilder: (context) => assignedSections.map((section) =>
-                              PopupMenuItem(value: section, child: Text(section))).toList(),
+                            itemBuilder: (context) => assignedSections
+                                .map(
+                                  (section) => PopupMenuItem(
+                                    value: section,
+                                    child: Text(section),
+                                  ),
+                                )
+                                .toList(),
                             child: Chip(
-                              avatar: const Icon(Icons.groups_outlined, size: 16),
-                              label: Row(mainAxisSize: MainAxisSize.min, children: [
-                                Text('Section $currentSection'),
-                                const Icon(Icons.arrow_drop_down, size: 16),
-                              ]),
+                              avatar: const Icon(
+                                Icons.groups_outlined,
+                                size: 16,
+                              ),
+                              label: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'Section $currentSection',
+                                    style: const TextStyle(
+                                      fontFamily:
+                                          DefensysTokens.fontFamilyInter,
+                                    ),
+                                  ),
+                                  const Icon(Icons.arrow_drop_down, size: 16),
+                                ],
+                              ),
                             ),
                           )
-                        else Chip(
-                          avatar: const Icon(Icons.groups_outlined, size: 16),
-                          label: Text('Section $currentSection'),
-                        ),
+                        else
+                          Chip(
+                            avatar: const Icon(Icons.groups_outlined, size: 16),
+                            label: Text(
+                              'Section $currentSection',
+                              style: const TextStyle(
+                                fontFamily: DefensysTokens.fontFamilyInter,
+                              ),
+                            ),
+                          ),
                       if (event?.isNotEmpty == true)
                         if (events.length > 1)
                           PopupMenuButton<String>(
                             tooltip: 'Switch PIT event',
                             initialValue: event,
-                            onSelected: busy ? null : (v) => changeContext(level, v),
+                            onSelected: busy
+                                ? null
+                                : (v) => changeContext(level, v),
                             itemBuilder: (context) => events
                                 .map(
                                   (e) => PopupMenuItem(
@@ -321,11 +384,20 @@ class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
                                 )
                                 .toList(),
                             child: Chip(
-                              avatar: const Icon(Icons.event_outlined, size: 16),
+                              avatar: const Icon(
+                                Icons.event_outlined,
+                                size: 16,
+                              ),
                               label: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Text(event!),
+                                  Text(
+                                    event!,
+                                    style: const TextStyle(
+                                      fontFamily:
+                                          DefensysTokens.fontFamilyInter,
+                                    ),
+                                  ),
                                   const SizedBox(width: 4),
                                   const Icon(Icons.arrow_drop_down, size: 16),
                                 ],
@@ -335,7 +407,12 @@ class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
                         else
                           Chip(
                             avatar: const Icon(Icons.event_outlined, size: 16),
-                            label: Text(event!),
+                            label: Text(
+                              event!,
+                              style: const TextStyle(
+                                fontFamily: DefensysTokens.fontFamilyInter,
+                              ),
+                            ),
                           ),
                     ],
                   ],
@@ -367,65 +444,36 @@ class _TeamCreationPageState extends ConsumerState<TeamCreationPage> {
               ),
             ),
           if (config != null && level != null) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Row(
-                children: [
-                  for (final entry in [
-                    'Import',
-                    'Generate Teams',
-                  ].asMap().entries)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: TextButton(
-                        key: ValueKey('creation-tab-${entry.key}'),
-                        style: TextButton.styleFrom(
-                          backgroundColor: tab == entry.key
-                              ? Theme.of(context).colorScheme.primaryContainer
-                              : null,
-                        ),
-                        onPressed: busy
-                            ? null
-                            : () => setState(() => tab = entry.key),
-                        child: Text(entry.value),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
             Expanded(
-              child: IndexedStack(
-                index: tab,
-                children: [
-                  _PreparedTeamsPane(
-                    key: ValueKey('import-$scopeKey'),
-                    level: level!,
-                    event: event,
-                    section: currentSection,
-                    semester: Map<String, dynamic>.from(
-                      config!['semester'] as Map,
+              child: tab == 0
+                  ? _PreparedTeamsPane(
+                      key: ValueKey('import-$scopeKey'),
+                      level: level!,
+                      event: event,
+                      section: currentSection,
+                      semester: Map<String, dynamic>.from(
+                        config!['semester'] as Map,
+                      ),
+                      canResolveConflicts: config!['can_manage_policy'] == true,
+                      onBusy: (v) => track(0, saving: v),
+                      onDirty: (v) => track(0, edited: v),
+                      onSaved: () => back(saved: true),
+                    )
+                  : GenerateTeamsDialog(
+                      key: ValueKey('generate-$scopeKey'),
+                      embedded: true,
+                      levels: [level!],
+                      initialLevel: level!,
+                      semester: Map<String, dynamic>.from(
+                        config!['semester'] as Map,
+                      ),
+                      initialSection: currentSection,
+                      initialEvent: event,
+                      events: events,
+                      onBusyChanged: (v) => track(1, saving: v),
+                      onDraftChanged: (v) => track(1, edited: v),
+                      onCreated: () => back(saved: true),
                     ),
-                    canResolveConflicts: config!['can_manage_policy'] == true,
-                    onBusy: (v) => track(0, saving: v),
-                    onDirty: (v) => track(0, edited: v),
-                    onSaved: () => back(saved: true),
-                  ),
-                  GenerateTeamsDialog(
-                    key: ValueKey('generate-$scopeKey'),
-                    embedded: true,
-                    levels: [level!],
-                    initialLevel: level!,
-                    semester: Map<String, dynamic>.from(config!['semester'] as Map),
-                    initialSection: currentSection,
-                    initialEvent: event,
-                    events: events,
-                    onBusyChanged: (v) => track(1, saving: v),
-                    onDraftChanged: (v) => track(1, edited: v),
-                    onCreated: () => back(saved: true),
-                  ),
-                ],
-              ),
             ),
           ],
         ],
@@ -461,7 +509,65 @@ class _PreparedTeamsPaneState extends ConsumerState<_PreparedTeamsPane> {
   Map<String, dynamic>? preview;
   String? error;
   bool busy = false, resolveConflicts = false;
-  int revision = 0;
+  int revision = 0, step = 1;
+  Map<String, dynamic>? options, savedDraft;
+  final projectSetups = <String, Map<String, dynamic>>{};
+  TeamCreationDraftStore get draftStore => TeamCreationDraftStore(
+    '${ref.read(authProvider).user?['id']}',
+    'import:${widget.semester['id']}:${widget.level}:${widget.section ?? ''}:${widget.event ?? 'current'}',
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() async {
+      try {
+        final result = await ref
+            .read(teamFormationServiceProvider)
+            .rosterOptions(widget.level, widget.event);
+        final draft = await draftStore.load();
+        if (mounted) {
+          setState(() {
+            options = result;
+            savedDraft = draft;
+          });
+        }
+      } catch (e) {
+        if (mounted) setState(() => error = e.toString());
+      }
+    });
+  }
+
+  Future<void> saveDraft() async {
+    await draftStore.save({
+      'rows': rows,
+      'project_setups': projectSetups,
+      'resolve_conflicts': resolveConflicts,
+    });
+    if (mounted) {
+      showSuccessToast(
+        context,
+        'Import draft saved. Review it again before importing.',
+      );
+    }
+  }
+
+  void resumeDraft() {
+    setState(() {
+      rows = _maps(savedDraft!['rows']);
+      projectSetups.addAll(
+        Map<String, dynamic>.from(
+          savedDraft!['project_setups'] ?? {},
+        ).map((k, v) => MapEntry(k, Map<String, dynamic>.from(v))),
+      );
+      resolveConflicts = savedDraft!['resolve_conflicts'] == true;
+      preview = null;
+      step = 2;
+      savedDraft = null;
+    });
+    widget.onDirty(true);
+  }
+
   Timer? debounce;
   bool get pit => widget.level.contains('PIT');
   @override
@@ -497,7 +603,7 @@ class _PreparedTeamsPaneState extends ConsumerState<_PreparedTeamsPane> {
         error = null;
       });
       widget.onDirty(true);
-      await review();
+      // Continue opens the editable review; uploading never commits teams.
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
     }
@@ -518,7 +624,11 @@ class _PreparedTeamsPaneState extends ConsumerState<_PreparedTeamsPane> {
           .read(teamFormationServiceProvider)
           .importPreview({
             'level': widget.level,
-            if (pit) 'event_name': widget.event,
+            if (pit && widget.event != null) 'event_name': widget.event,
+            if (pit && widget.event != null)
+              'roster_override': widget.canResolveConflicts,
+            'project_setups': projectSetups,
+            'partial': widget.canResolveConflicts && widget.event == null,
             'section': widget.section ?? '',
             'teams': rows,
             'resolve_conflicts': resolveConflicts,
@@ -567,6 +677,8 @@ class _PreparedTeamsPaneState extends ConsumerState<_PreparedTeamsPane> {
           .read(studentTeamsProvider.notifier)
           .refreshAfterGeneration(result['created_count'] as int);
       if (!mounted) return;
+      await draftStore.clear();
+      if (!mounted) return;
       widget.onDirty(false);
       widget.onBusy(false);
       showSuccessToast(
@@ -588,8 +700,12 @@ class _PreparedTeamsPaneState extends ConsumerState<_PreparedTeamsPane> {
 
   Future<void> template() async {
     await downloadBinaryFile(
-      filename: importTemplateFilename(kind: '${pit ? 'pit' : 'capstone'}-teams',
-        section: widget.section, level: widget.level.split(' ').take(2).join(' '), extension: 'xlsx'),
+      filename: importTemplateFilename(
+        kind: '${pit ? 'pit' : 'capstone'}-teams',
+        section: widget.section,
+        level: widget.level.split(' ').take(2).join(' '),
+        extension: 'xlsx',
+      ),
       bytes: generateOfficialTeamRosterExcelBytes(
         isCapstone: !pit,
         assignedSection: widget.section,
@@ -598,110 +714,270 @@ class _PreparedTeamsPaneState extends ConsumerState<_PreparedTeamsPane> {
     );
   }
 
+  Widget projectSection(String section) {
+    final instructors = _maps(
+      (options?['section_instructors'] as Map? ?? {})[section],
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            section.isEmpty ? 'Section required' : section,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 12),
+          TeamProjectSetup(
+            allowTitleReplacement: true,
+            value:
+                projectSetups[section] ?? const {'architecture': 'independent'},
+            students: _maps(
+              options?['students'],
+            ).where((s) => s['section'] == section).toList(),
+            contexts: _maps(options?['concept_contexts']),
+            reviewers: _maps(options?['system_reviewers']),
+            instructor: instructors.length == 1 ? instructors.single : null,
+            isPit: pit,
+            enabled: !busy,
+            onChanged: (v) {
+              setState(() => projectSetups[section] = v);
+              changed();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    padding: const EdgeInsets.all(24),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Import prepared teams',
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Upload team names, members, leaders, and sections. Existing student accounts are linked, and section assignments are prepared together with the teams. Project details are optional.',
-        ),
-        const SizedBox(height: 16),
-        Wrap(
-          spacing: 12,
-          runSpacing: 10,
-          children: [
-            OutlinedButton.icon(
-              onPressed: busy ? null : template,
-              icon: const Icon(Icons.download_outlined),
-              label: const Text('Download template'),
-            ),
-            OutlinedButton.icon(
-              onPressed: busy ? null : pick,
-              icon: const Icon(Icons.upload_file_outlined),
-              label: const Text('Upload CSV / Excel'),
-            ),
-            if (rows.isNotEmpty)
-              OutlinedButton(
-                onPressed: busy ? null : review,
-                child: const Text('Review import'),
-              ),
-            FilledButton.icon(
-              onPressed: busy || preview?['ready'] != true ? null : save,
-              icon: const Icon(Icons.check),
-              label: Text('Confirm ${rows.length} teams'),
-            ),
-          ],
-        ),
-        if (widget.canResolveConflicts)
-          CheckboxListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Review changes to existing section assignments'),
-            subtitle: const Text(
-              'The preview lists section changes before you confirm. Historical records are preserved.',
-            ),
-            value: resolveConflicts,
-            onChanged: busy
-                ? null
-                : (v) {
-                    setState(() => resolveConflicts = v!);
-                    changed();
+  Widget build(BuildContext context) {
+    final previewRows = _maps(preview?['rows']);
+    final ready = previewRows.where((r) => r['ready'] == true).toList();
+    final sections =
+        rows
+            .map((r) => '${r['section'] ?? widget.section ?? ''}')
+            .toSet()
+            .toList()
+          ..sort();
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          WorkflowStepProgress(
+            currentStep: step,
+            labels: const [
+              'Upload roster',
+              'Resolve & configure',
+              'Review & import',
+            ],
+            compactLabels: const ['Upload', 'Configure', 'Review'],
+          ),
+          const SizedBox(height: 24),
+          if (savedDraft != null)
+            Wrap(
+              spacing: 12,
+              children: [
+                const Text('A saved import draft is available.'),
+                TextButton(
+                  onPressed: resumeDraft,
+                  child: const Text('Resume draft'),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    await draftStore.clear();
+                    if (mounted) setState(() => savedDraft = null);
                   },
-          ),
-        if (busy)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 12),
-            child: LinearProgressIndicator(),
-          ),
-        if (error != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  child: const Text('Discard'),
+                ),
+              ],
+            ),
+          if (busy) const LinearProgressIndicator(minHeight: 2),
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.surfaceOf(context),
+                  border: Border.all(color: DefensysTokens.borderOf(context)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      widget.event == null
+                          ? (pit ? 'Current roster' : 'Capstone roster')
+                          : '${widget.event} roster',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      !pit
+                          ? 'Import the finalized Capstone teams for this semester. Project titles and advisers are preserved; each defense stage keeps its own records.'
+                          : widget.event == null
+                          ? 'Matching PIT events use this roster automatically. Event submissions, schedules and grades are kept separately.'
+                          : 'This import replaces the roster only for the sections in this file and this event. Other events keep their roster.',
+                    ),
+                    const SizedBox(height: 24),
+                    if (step == 1) ...[
+                      const Text(
+                        'Upload team names, members, leaders and sections. Project titles are optional. Existing student accounts are linked.',
+                      ),
+                      const SizedBox(height: 20),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: busy ? null : template,
+                            icon: const Icon(Icons.download_outlined),
+                            label: const Text('Download template'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: busy ? null : pick,
+                            icon: const Icon(Icons.upload_file_outlined),
+                            label: const Text('Upload CSV / Excel'),
+                          ),
+                        ],
+                      ),
+                      if (rows.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 20),
+                          child: Text(
+                            '${rows.length} teams loaded. Continue to review the rows.',
+                          ),
+                        ),
+                    ],
+                    if (step == 2) ...[
+                      if (widget.canResolveConflicts)
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text(
+                            'Review changes to existing section assignments',
+                          ),
+                          subtitle: const Text(
+                            'Section changes appear in the preview before you import.',
+                          ),
+                          value: resolveConflicts,
+                          onChanged: busy
+                              ? null
+                              : (v) {
+                                  setState(() => resolveConflicts = v!);
+                                  changed();
+                                },
+                        ),
+                      for (final section in sections) projectSection(section),
+                      IgnorePointer(
+                        ignoring: busy,
+                        child: TeamBulkImportReviewTable(
+                          rows: rows,
+                          previewRows: previewRows,
+                          isCapstoneAdmin: !pit,
+                          pitLeadYear: pit
+                              ? widget.level.replaceFirst(' PIT', '')
+                              : null,
+                          showIssuesOnly: false,
+                          sectionOptions: [
+                            if (widget.section != null) widget.section!,
+                          ],
+                          onRowChanged: (_) => changed(),
+                          onDeleteRow: (index) {
+                            rows.removeAt(index);
+                            changed();
+                          },
+                          onAddRow: () {
+                            rows.add({
+                              'team_name': '',
+                              'member_ids': <String>[],
+                              'leader_id': '',
+                              'section': widget.section ?? '',
+                            });
+                            changed();
+                          },
+                        ),
+                      ),
+                    ],
+                    if (step == 3) ...[
+                      Text(
+                        '${ready.where((r) => r['action'] == 'create').length} create · ${ready.where((r) => r['action'] == 'update').length} update · ${previewRows.length - ready.length} blocked / skipped',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 16),
+                      for (final row in previewRows)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Icon(
+                            row['ready'] == true
+                                ? Icons.check_circle_outline
+                                : Icons.error_outline,
+                          ),
+                          title: Text('${row['team_name']}'),
+                          subtitle: Text(
+                            '${row['section']} · ${row['member_count']} members · ${row['action']}\n${[...row['issues'] ?? [], ...row['warnings'] ?? []].join(' ')}',
+                          ),
+                        ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Shared sections are imported with their complete project setup. Blocked rows must be resolved before replacing an event roster.',
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
-        const SizedBox(height: 16),
-        if (rows.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 40),
-            child: Text(
-              'Already have teams arranged? Upload their spreadsheet here. A separate section import is unnecessary.',
-            ),
+          const Divider(height: 32),
+          Row(
+            children: [
+              if (step > 1)
+                OutlinedButton(
+                  onPressed: busy ? null : () => setState(() => step--),
+                  child: const Text('Back'),
+                ),
+              const Spacer(),
+              TextButton(
+                onPressed: busy || rows.isEmpty ? null : saveDraft,
+                child: const Text('Save draft'),
+              ),
+              const SizedBox(width: 12),
+              FilledButton.icon(
+                onPressed: busy || rows.isEmpty
+                    ? null
+                    : () async {
+                        if (step == 1) {
+                          setState(() => step = 2);
+                        } else if (step == 2) {
+                          await review();
+                          if (mounted && preview?['ready'] == true) {
+                            setState(() => step = 3);
+                          }
+                        } else {
+                          await save();
+                        }
+                      },
+                icon: Icon(step == 3 ? Icons.check : Icons.arrow_forward),
+                label: Text(
+                  step == 3
+                      ? 'Import ${ready.length} teams'
+                      : step == 2
+                      ? 'Review import'
+                      : 'Continue',
+                ),
+              ),
+            ],
           ),
-        if (rows.isNotEmpty)
-          IgnorePointer(
-            ignoring: busy,
-            child: TeamBulkImportReviewTable(
-              rows: rows,
-              previewRows: _maps(preview?['rows']),
-              isCapstoneAdmin: !pit,
-              pitLeadYear: pit ? widget.level.replaceFirst(' PIT', '') : null,
-              showIssuesOnly: false,
-              sectionOptions: [if (widget.section != null) widget.section!],
-              onRowChanged: (_) => changed(),
-              onDeleteRow: (index) {
-                rows.removeAt(index);
-                changed();
-              },
-              onAddRow: () {
-                rows.add({
-                  'team_name': '',
-                  'member_ids': <String>[],
-                  'leader_id': '',
-                  'section': widget.section ?? '',
-                });
-                changed();
-              },
-            ),
-          ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 }

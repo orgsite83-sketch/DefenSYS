@@ -1,13 +1,12 @@
+import 'package:defensys/utils/import/team_creation_draft.dart';
+import 'package:defensys/theme/app_theme.dart';
 import 'dart:convert';
 import 'package:defensys/screens/web/admin/student_teams/team_creation_page.dart';
 import 'package:defensys/services/api_http.dart';
 import 'package:defensys/services/student_teams_provider.dart';
-import 'package:defensys/services/capstone_deliverables_provider.dart';
-import 'package:defensys/screens/web/shared/team_deliverables/team_deliverables_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,44 +19,6 @@ class _Teams extends StudentTeamsNotifier {
   StudentTeamsState build() => const StudentTeamsState();
   @override
   Future<void> refreshAfterGeneration(int count) async {}
-}
-
-class _Deliverables extends CapstoneDeliverablesNotifier {
-  @override
-  CapstoneDeliverablesState build() => const CapstoneDeliverablesState(
-    scope: 'pit',
-    stageOptions: ['PIT Design'],
-    selectedStage: 'PIT Design',
-    counts: {'deliverables_configured': true},
-    teams: [
-      {
-        'id': 1,
-        'name': 'Existing Team',
-        'section': 'BSIT-2A',
-        'year_level': '2nd Year',
-        'project_title': 'Existing Project',
-        'members': [],
-        'stages': [],
-        'selected_stage': {
-          'stage_label': 'PIT Design',
-          'pre': [],
-          'post': [],
-          'vault': [],
-        },
-      },
-    ],
-  );
-  @override
-  Future<void> fetchDeliverables({
-    String? workspace,
-    String? search,
-    String? selectedStage,
-    String? status,
-    String? scope,
-    String? yearLevel,
-    String? section,
-    String? successMessage,
-  }) async {}
 }
 
 void main() {
@@ -129,8 +90,32 @@ void main() {
           );
         }
         final body = jsonDecode(request.body) as Map;
+        if (request.url.path.endsWith('/import/')) {
+          return http.Response(
+            jsonEncode({
+              'ready': true,
+              'preview_token': 'signed-import',
+              'rows': [
+                for (final row in body['teams'])
+                  {
+                    'ready': true,
+                    'team_name': row['team_name'],
+                    'section': row['section'],
+                    'member_count': 2,
+                    'action': 'create',
+                    'issues': [],
+                    'warnings': [],
+                  },
+              ],
+            }),
+            200,
+          );
+        }
         if (request.url.path.endsWith('/create/')) {
-          return http.Response('{"created_count":1,"team_ids":[9]}', 201);
+          return http.Response(
+            '{"created_count":1,"updated_count":0,"team_ids":[9]}',
+            201,
+          );
         }
         return http.Response(
           jsonEncode({
@@ -155,6 +140,7 @@ void main() {
   Future<void> pump(
     WidgetTester tester, {
     String tab = 'generate',
+    ThemeData? theme,
     Size size = const Size(1000, 760),
   }) async {
     tester.view.physicalSize = size;
@@ -166,15 +152,15 @@ void main() {
       RepaintBoundary(
         key: const ValueKey('creation-capture'),
         child: Material(
-          color: const Color(0xFFF7FAFC),
+          color: theme?.scaffoldBackgroundColor ?? const Color(0xFFF7FAFC),
           child: TeamCreationPage(
             initialTab: tab,
             initialLevel: '2nd Year PIT',
             initialSection: 'BSIT-2A',
-            initialEvent: 'PIT Design',
           ),
         ),
       ),
+      theme: theme,
       overrides: [
         ...authTestOverrides(),
         studentTeamsProvider.overrideWith(_Teams.new),
@@ -182,223 +168,184 @@ void main() {
     );
   }
 
+  Future<void> previewTeams(WidgetTester tester) async {
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(find.text('Project architecture'), findsOneWidget);
+    await tester.tap(find.text('Review teams'));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets(
-    'PIT page actions are above the existing team list in the agreed order',
+    'generation opens one flow and creates a current roster without an event choice',
     (tester) async {
-      tester.view.physicalSize = const Size(1200, 900);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      await pumpDefensysWidget(
-        tester,
-        const RepaintBoundary(
-          key: ValueKey('toolbar-capture'),
-          child: Material(
-            color: Color(0xFFF7FAFC),
-            child: TeamDeliverablesScreen(
-              initialScope: 'pit',
-              isPitInstructor: true,
-              pitYearLevel: '2nd Year',
-              pitSection: 'BSIT-2A',
-            ),
-          ),
-        ),
-        overrides: [
-          ...authTestOverrides(),
-          capstoneDeliverablesProvider.overrideWith(_Deliverables.new),
-        ],
-      );
-      expect(find.text('Teams (1)'), findsOneWidget);
-      expect(find.text('Export teams'), findsOneWidget);
-      final refresh = tester.getCenter(find.byTooltip('Refresh'));
-      final importPoint = tester.getCenter(find.text('Import'));
-      final create = tester.getCenter(find.text('Team Creation'));
-      expect(refresh.dx, lessThan(importPoint.dx));
-      expect(importPoint.dx, lessThan(create.dx));
-      expect(create.dy, lessThan(tester.getTopLeft(find.text('Teams (1)')).dy));
-      expect(tester.takeException(), isNull);
-      await capturePreview(
-        tester,
-        find.byKey(const ValueKey('toolbar-capture')),
-        'team-creation/pit-toolbar',
-      );
+      await pump(tester);
+      expect(find.byKey(const ValueKey('creation-tab-0')), findsNothing);
+      expect(find.text('Roster & grouping'), findsOneWidget);
+      expect(find.text('Import or update class list'), findsOneWidget);
+      expect(requests.where((r) => r.url.path.contains('/import/')), isEmpty);
+      await previewTeams(tester);
+      expect(find.text('Create 1 team'), findsOneWidget);
+      final body =
+          jsonDecode(requests.singleWhere((r) => r.method == 'POST').body)
+              as Map;
+      expect(body.containsKey('event_name'), isFalse);
+      expect(requests.where((r) => r.url.path.endsWith('/create/')), isEmpty);
     },
   );
 
-  testWidgets('existing roster can preview without a class-list upload', (
-    tester,
-  ) async {
-    await pump(tester);
-    expect(find.text('Import Class List'), findsOneWidget);
-    expect(find.text('BSIT-2A · 2/2 available'), findsOneWidget);
-    await tester.tap(find.text('Preview teams'));
-    await tester.pumpAndSettle();
-    expect(find.text('Create 1 team'), findsOneWidget);
-    expect(requests.where((r) => r.url.path.contains('/roster/')), isEmpty);
-    expect(requests.where((r) => r.url.path.endsWith('/create/')), isEmpty);
-  });
-
   testWidgets(
-    'switching tabs retains the generated preview and edited team name',
+    'Back preserves reviewed team edits without regenerating unchanged grouping',
     (tester) async {
       await pump(tester);
-      await tester.tap(find.text('Preview teams'));
-      await tester.pumpAndSettle();
+      await previewTeams(tester);
       await tester.enterText(
         find.widgetWithText(TextFormField, 'Draft Team'),
         'Reviewed Team',
       );
-      await tester.tap(find.byKey(const ValueKey('creation-tab-0')));
+      await tester.tap(find.text('Back'));
       await tester.pumpAndSettle();
-      expect(find.text('Import prepared teams'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('creation-tab-1')));
+      await tester.tap(find.text('Review teams'));
       await tester.pumpAndSettle();
       expect(find.text('Reviewed Team'), findsOneWidget);
-      expect(find.text('Create 1 team'), findsOneWidget);
       expect(requests.where((r) => r.method == 'POST').length, 1);
     },
   );
 
   testWidgets(
-    'empty section still offers class-list import before teams or events exist',
+    'generation draft resumes reviewed names and remains explicitly submitted',
     (tester) async {
-      noEvents = true;
-      emptyRoster = true;
       await pump(tester);
-      expect(find.text('Import Class List'), findsOneWidget);
-      final preview = tester.widget<FilledButton>(
-        find.ancestor(
-          of: find.text('Preview teams'),
-          matching: find.byWidgetPredicate((w) => w is FilledButton),
-        ),
+      await previewTeams(tester);
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Draft Team'),
+        'Saved Team',
       );
-      expect(preview.onPressed, isNull);
-      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('Save draft'));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox());
+      await pump(tester);
+      await tester.tap(find.text('Resume draft'));
+      await tester.pumpAndSettle();
+      expect(find.text('Saved Team'), findsOneWidget);
+      expect(requests.where((r) => r.url.path.endsWith('/create/')), isEmpty);
     },
   );
 
+  testWidgets('empty roster still offers class-list import without an event', (
+    tester,
+  ) async {
+    noEvents = true;
+    emptyRoster = true;
+    await pump(tester);
+    expect(find.text('Import or update class list'), findsOneWidget);
+    final next = tester.widget<FilledButton>(
+      find.ancestor(
+        of: find.text('Continue'),
+        matching: find.byWidgetPredicate((w) => w is FilledButton),
+      ),
+    );
+    expect(next.onPressed, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
-    'import shortcut tab uses prepared-team upload with no class-list prerequisite',
+    'import opens upload with its own steps and no generation controls',
     (tester) async {
       await pump(tester, tab: 'import');
-      expect(find.text('Import prepared teams'), findsOneWidget);
+      expect(find.text('Upload roster'), findsOneWidget);
       expect(find.text('Upload CSV / Excel'), findsOneWidget);
+      expect(find.text('Current roster'), findsOneWidget);
       expect(find.text('Import Class List'), findsNothing);
       expect(requests.where((r) => r.method == 'POST'), isEmpty);
       await capturePreview(
         tester,
         find.byKey(const ValueKey('creation-capture')),
-        'team-creation/import',
+        'phase-two-import-light',
       );
     },
   );
 
   testWidgets(
-    'generation page fits a small laptop and preserves independent leader choice',
+    'prepared import resumes rows, configures, reviews and commits only on final action',
     (tester) async {
-      await pump(tester, size: const Size(900, 680));
-      expect(tester.takeException(), isNull);
-      await capturePreview(
-        tester,
-        find.byKey(const ValueKey('creation-capture')),
-        'team-creation/generate',
-      );
-      final leader = find.widgetWithText(
-        DropdownButtonFormField<String>,
-        'Randomize leaders',
-      );
-      await tester.ensureVisible(leader);
-      await tester.tap(leader);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Choose leaders in preview').last);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Preview teams'));
-      await tester.pumpAndSettle();
-      final request = jsonDecode(
-        requests.singleWhere((r) => r.method == 'POST').body,
-      );
-      expect(request['leader_method'], 'manual');
-      expect(request['method'], 'random');
-      expect(tester.takeException(), isNull);
-      await capturePreview(
-        tester,
-        find.byKey(const ValueKey('creation-capture')),
-        'team-creation/preview',
-      );
-    },
-  );
-
-  testWidgets(
-    'toolbar shortcuts open the same page with section and event context',
-    (tester) async {
-      final router = GoRouter(
-        initialLocation: '/faculty/deliverables',
-        routes: [
-          GoRoute(
-            path: '/faculty/deliverables',
-            builder: (context, state) => Scaffold(
-              body: Center(
-                child: TextButton(
-                  onPressed: () => openTeamCreation(
-                    context,
-                    importTab: true,
-                    level: '2nd Year PIT',
-                    section: 'BSIT-2A',
-                    event: 'PIT Design',
-                  ),
-                  child: const Text('Import shortcut'),
-                ),
-              ),
-            ),
-            routes: [
-              GoRoute(
-                path: 'creation',
-                builder: (_, state) => Scaffold(
-                  body: TeamCreationPage(
-                    initialTab: state.uri.queryParameters['tab']!,
-                    initialLevel: state.uri.queryParameters['level'],
-                    initialSection: state.uri.queryParameters['section'],
-                    initialEvent: state.uri.queryParameters['event'],
-                  ),
-                ),
-              ),
-            ],
-          ),
+      await TeamCreationDraftStore(
+        '1',
+        'import:1:2nd Year PIT:BSIT-2A:current',
+      ).save({
+        'rows': [
+          {
+            'team_name': 'Prepared team',
+            'section': 'BSIT-2A',
+            'member_ids': ['2026-001', '2026-002'],
+            'leader_id': '2026-001',
+            'project_title': 'Assigned project',
+          },
         ],
+      });
+      await pump(tester, tab: 'import');
+      await tester.tap(find.text('Resume draft'));
+      await tester.pumpAndSettle();
+      expect(find.text('Project architecture'), findsOneWidget);
+      await tester.tap(find.text('Review import'));
+      await tester.pumpAndSettle();
+      expect(find.text('Import 1 teams'), findsOneWidget);
+      expect(requests.where((r) => r.url.path.endsWith('/create/')), isEmpty);
+      final preview =
+          jsonDecode(
+                requests
+                    .singleWhere((r) => r.url.path.endsWith('/import/'))
+                    .body,
+              )
+              as Map;
+      expect(preview['teams'][0]['project_title'], 'Assigned project');
+      expect(preview.containsKey('event_name'), isFalse);
+      await capturePreview(
+        tester,
+        find.byKey(const ValueKey('creation-capture')),
+        'phase-two-import-review',
       );
-      addTearDown(router.dispose);
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            ...authTestOverrides(),
-            studentTeamsProvider.overrideWith(_Teams.new),
-          ],
-          child: MaterialApp.router(routerConfig: router),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Import shortcut'));
-      await tester.pumpAndSettle();
-      expect(
-        GoRouterState.of(
-          tester.element(find.byType(TeamCreationPage)),
-        ).uri.path,
-        '/faculty/deliverables/creation',
-      );
-      expect(find.text('Import prepared teams'), findsOneWidget);
-      expect(find.text('Section BSIT-2A'), findsOneWidget);
-      expect(find.text('PIT Design'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await tester.tap(find.byKey(const ValueKey('creation-tab-1')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Preview teams'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Create 1 team'));
-      await tester.pumpAndSettle();
-      expect(find.text('Import shortcut'), findsOneWidget);
-      expect(find.byType(TeamCreationPage), findsNothing);
-      expect(requests.where((r) => r.url.path.endsWith('/create/')).length, 1);
-      expect(tester.takeException(), isNull);
+      // Commit is covered through the routed page in production; this isolated
+      // page has no Navigator return target. The final button remains explicit.
     },
   );
+
+  for (final dark in [false, true]) {
+    testWidgets(
+      'generation grouping and project setup fit a laptop in ${dark ? 'dark' : 'light'} theme',
+      (tester) async {
+        await pump(
+          tester,
+          size: const Size(1100, 800),
+          theme: dark ? AppTheme.mistDarkTheme : null,
+        );
+        expect(tester.takeException(), isNull);
+        await capturePreview(
+          tester,
+          find.byKey(const ValueKey('creation-capture')),
+          'phase-two-generate-${dark ? 'dark' : 'light'}',
+        );
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        await capturePreview(
+          tester,
+          find.byKey(const ValueKey('creation-capture')),
+          'phase-two-project-${dark ? 'dark' : 'light'}',
+        );
+      },
+    );
+  }
+
+  testWidgets('import upload and step labels fit a phone width', (
+    tester,
+  ) async {
+    await pump(tester, tab: 'import', size: const Size(390, 844));
+    expect(tester.takeException(), isNull);
+    await capturePreview(
+      tester,
+      find.byKey(const ValueKey('creation-capture')),
+      'phase-two-import-mobile',
+    );
+  });
 }

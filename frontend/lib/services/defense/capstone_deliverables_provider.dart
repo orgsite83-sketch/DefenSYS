@@ -384,12 +384,14 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     String action, {
     List<Map<String, dynamic>>? concepts,
     String? reason,
+    String? reviewToken,
   }) => _postAction('concepts', {
     'team_id': teamId,
     'stage_label': stageLabel,
     'action': action,
     if (concepts != null) 'concepts': concepts,
     if (reason != null) 'reason': reason,
+    if (reviewToken != null) 'review_token': reviewToken,
   }, successMessage: 'Concept workflow updated.');
 
   Future<bool> uploadDocument({

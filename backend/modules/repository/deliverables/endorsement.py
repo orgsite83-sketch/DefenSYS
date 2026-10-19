@@ -40,8 +40,8 @@ def endorsement_blocker(team, stage_label):
               if team.is_capstone else PitEventGradingConfig.objects.filter(event_name__iexact=stage_label, semester=team.semester, year_level=team.year_level))
     if not preparing_next and config.filter(is_officially_complete=True).exists():
         return 'This stage is officially complete.'
-    from repository.section_concepts.services import scheduling_blocker
-    shared_blocker = scheduling_blocker(team, stage, current)
+    from repository.section_concepts.services import module_blocker
+    shared_blocker = module_blocker(team, stage, current)
     if shared_blocker:
         return shared_blocker
     return ''
@@ -91,9 +91,7 @@ def endorsement_review(team, stage_label, *, definitions=None, submitted=None):
     concept_round = latest_round(team, stage_for(team, stage_label))
     if concept_round:
         review_snapshot['concepts'] = {'round': concept_round.number, 'titles': concept_round.concepts}
-        if concept_round.section_round_id:
-            from repository.section_concepts.services import snapshot as shared_snapshot
-            review_snapshot['shared_papers'] = shared_snapshot(concept_round.section_round)
+        # Shared papers do not change the content of this team's endorsement.
     return {
         'can_review_and_endorse': not reason,
         'reason': reason,

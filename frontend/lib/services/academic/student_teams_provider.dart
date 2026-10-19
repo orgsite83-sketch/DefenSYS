@@ -35,6 +35,7 @@ class StudentTeamsState {
   final String? section;
   final String? eventName;
   final List<Map<String, dynamic>> pitEvents;
+  final List<Map<String, dynamic>> rosterContext;
   final String? error;
   final String? message;
 
@@ -61,6 +62,7 @@ class StudentTeamsState {
     this.section,
     this.eventName,
     this.pitEvents = const [],
+    this.rosterContext = const [],
     this.error,
     this.message,
   });
@@ -88,6 +90,7 @@ class StudentTeamsState {
     String? section,
     String? eventName,
     List<Map<String, dynamic>>? pitEvents,
+    List<Map<String, dynamic>>? rosterContext,
     String? error,
     String? message,
     bool clearError = false,
@@ -122,6 +125,7 @@ class StudentTeamsState {
       section: section ?? this.section,
       eventName: clearEventName ? null : eventName ?? this.eventName,
       pitEvents: pitEvents ?? this.pitEvents,
+      rosterContext: rosterContext ?? this.rosterContext,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
     );
@@ -199,6 +203,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
           if (nextYearLevel != null && nextYearLevel.isNotEmpty) 'year_level': nextYearLevel,
           if (nextSection != null && nextSection.isNotEmpty) 'section': nextSection,
           if (nextEventName != null && nextEventName.isNotEmpty) 'event_name': nextEventName,
+          if (nextEventName == null || nextEventName.isEmpty) 'roster_view': 'current',
         },
       );
       final response = await _client.get(uri);
@@ -563,6 +568,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
       operatingMode: payload['operating_mode']?.toString() ?? 'active',
       operatingMessage: payload['operating_message']?.toString(),
       pitEvents: _readMapList(payload['pit_events']),
+      rosterContext: _readMapList(payload['roster_context']),
       message: successMessage,
       clearError: true,
     );

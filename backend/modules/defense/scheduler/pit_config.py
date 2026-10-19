@@ -408,9 +408,13 @@ def pit_event_config_payload(config):
         }
         for d in config.deliverables.all().order_by('display_order', 'deliverable_id')
     ]
+    from student_teams.pit_rosters import resolve
+    rosters = list(resolve(config.semester_id, config.year_level, config.pk).values())
     return {
         'id': config.id,
         'event_name': config.event_name,
+        'roster_context': rosters,
+        'roster_summary': 'Uses current roster automatically' if not any(r['source'] == 'custom' or r['in_use'] for r in rosters) else 'Includes saved or custom section rosters',
         'year_level': config.year_level,
         'event_code': config.event_code,
         'panel_rubric_id': config.panel_rubric_id,

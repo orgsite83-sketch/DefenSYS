@@ -23,8 +23,14 @@ class _DocumentsNotifier extends CapstoneDeliverablesNotifier {
     String action, {
     List<Map<String, dynamic>>? concepts,
     String? reason,
+    String? reviewToken,
   }) async {
-    this.action = {'action': action, 'concepts': concepts, 'reason': reason};
+    this.action = {
+      'action': action,
+      'concepts': concepts,
+      'reason': reason,
+      'review_token': reviewToken,
+    };
     return true;
   }
 
@@ -91,6 +97,155 @@ Map<String, dynamic> _item() => {
 
 void main() {
   testWidgets(
+    'assigned project hides the duplicate review card and endorsement action',
+    (tester) async {
+      await pumpDefensysWidget(
+        tester,
+        ConceptWorkspace(
+          teamId: 8,
+          stageLabel: 'Concept Proposal',
+          stage: {
+            'concept_workflow': {
+              ..._workflow(),
+              'assigned': true,
+              'config': {
+                'mode': 'assigned',
+                'assigned_title': 'School assigned project',
+              },
+              'concepts': [
+                {'key': 'c1', 'title': 'School assigned project'},
+              ],
+            },
+          },
+        ),
+        overrides: authTestOverrides(),
+      );
+      expect(find.text('Assigned concept review'), findsNothing);
+      expect(find.text('Endorse concept set'), findsNothing);
+      expect(find.text('School assigned project'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'module task exposes editable confirmation independently of file acceptance',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final notifier = _DocumentsNotifier();
+      await pumpDefensysWidget(
+        tester,
+        SingleChildScrollView(
+          child: ConceptWorkspace(
+            teamId: 8,
+            stageLabel: 'Concept Proposal',
+            stage: {
+              'required_complete': false,
+              'concept_workflow': {
+                ..._workflow(),
+                'section_project_id': 7,
+                'module_review_token': 'current-module-version',
+                'concepts': [
+                  for (var i = 1; i <= 3; i++)
+                    {
+                      'key': 'c$i',
+                      'title': 'Module $i',
+                      'system_title': 'Shared system $i',
+                      'faculty_confirmed': false,
+                    },
+                ],
+              },
+            },
+          ),
+        ),
+        overrides: [
+          ...authTestOverrides(),
+          capstoneDeliverablesProvider.overrideWith(() => notifier),
+        ],
+      );
+      expect(
+        find.text('Module confirmation required · 0/3 confirmed'),
+        findsOneWidget,
+      );
+      expect(find.text('Needs confirmation'), findsNWidgets(3));
+      expect(find.text('Endorse concept set'), findsNothing);
+      await tester.tap(find.text('Review & confirm modules'));
+      await tester.pumpAndSettle();
+      expect(find.text('System A · Shared system 1'), findsOneWidget);
+      await tester.enterText(
+        find.byType(TextFormField).first,
+        'Revised module name',
+      );
+      await tester.tap(find.text('Confirm module names & connections'));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(notifier.action?['action'], 'save_titles');
+      expect(
+        (notifier.action?['concepts'] as List).first['title'],
+        'Revised module name',
+      );
+      expect(notifier.action?['review_token'], 'current-module-version');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final dark in [false, true]) {
+    testWidgets(
+      'confirmed module task has an edit action in ${dark ? 'dark' : 'light'} mode',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1000, 850));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await loadPreviewFonts();
+        await pumpDefensysWidget(
+          tester,
+          RepaintBoundary(
+            key: const ValueKey('phase-one-modules'),
+            child: SingleChildScrollView(
+              child: ConceptWorkspace(
+                teamId: 8,
+                stageLabel: 'Concept Proposal',
+                stage: {
+                  'concept_workflow': {
+                    ..._workflow(),
+                    'section_project_id': 7,
+                    'concepts': [
+                      for (var i = 1; i <= 3; i++)
+                        {
+                          'key': 'c$i',
+                          'title': 'Confirmed module $i',
+                          'system_title': 'Shared system $i',
+                          'faculty_confirmed': true,
+                        },
+                    ],
+                  },
+                },
+              ),
+            ),
+          ),
+          theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
+          overrides: authTestOverrides(),
+        );
+        expect(
+          find.text('Module names confirmed · 3/3 confirmed'),
+          findsOneWidget,
+        );
+        expect(find.text('Edit module names'), findsOneWidget);
+        expect(
+          tester.getTopRight(find.text('Clearance exception')).dx,
+          greaterThan(900),
+        );
+        expect(find.text('Endorse concept set'), findsNothing);
+        expect(tester.takeException(), isNull);
+        await capturePreview(
+          tester,
+          find.byKey(const ValueKey('phase-one-modules')),
+          'phase-one-modules-${dark ? 'dark' : 'light'}',
+        );
+      },
+    );
+  }
+
+  testWidgets(
     'concept settings use shadcn controls and preserve configuration',
     (tester) async {
       var config = <String, dynamic>{};
@@ -105,7 +260,7 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.byType(ShadCheckbox));
+      await tester.tap(find.text('Concept selection'));
       await tester.pumpAndSettle();
       expect(config['enabled'], isTrue);
       expect(find.text('Adviser clearance before re-defense'), findsOneWidget);

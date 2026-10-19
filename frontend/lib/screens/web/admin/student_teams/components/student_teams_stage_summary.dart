@@ -23,6 +23,9 @@ String _stageStatusLabel(String? status) => switch (status) {
   'concepts_needed' => 'Concepts needed',
   'concept_review_pending' => 'Adviser review pending',
   'concept_endorsement_pending' => 'Awaiting endorsement',
+  'module_confirmation_pending' => 'Confirm module names',
+  'shared_clearance_pending' => 'Team endorsed · Shared papers pending',
+  'shared_acknowledgment_pending' => 'Team endorsed · Review shared systems',
   'ready_to_schedule_redefense' => 'Ready for re-defense scheduling',
   'ready_to_schedule' => 'Ready to schedule',
   'approved' => 'Concept approved',
@@ -47,6 +50,8 @@ Color _stageStatusColor(String? status, bool isDark) => switch (status) {
   'concepts_needed' ||
   'concept_review_pending' ||
   'concept_endorsement_pending' ||
+  'module_confirmation_pending' ||
+  'shared_acknowledgment_pending' ||
   'approved_with_revisions' ||
   'grading' => isDark ? const Color(0xFFFCD34D) : const Color(0xFF92400E),
   _ => isDark ? DefensysTokens.textSecondaryDark : DefensysUi.steelGrey,

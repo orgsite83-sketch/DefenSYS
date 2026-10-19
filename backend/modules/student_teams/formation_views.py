@@ -25,7 +25,7 @@ class TeamRosterOptionsView(APIView):
 
 class SharedSystemGenerationSerializer(serializers.Serializer):
     project_manager_id = serializers.IntegerField(min_value=1)
-    reviewer_id = serializers.IntegerField(min_value=1)
+    reviewer_id = serializers.IntegerField(min_value=1, required=False)
     title_mode = serializers.ChoiceField(choices=['student_proposed', 'faculty_provided'], default='student_proposed')
     stage_label = serializers.CharField(max_length=120, required=False)
 

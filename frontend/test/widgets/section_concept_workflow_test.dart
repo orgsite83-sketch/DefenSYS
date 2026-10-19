@@ -341,6 +341,61 @@ void main() {
     expect(find.text('Shared papers cleared for hearing'), findsOneWidget);
   });
 
+  testWidgets(
+    'shared acknowledgment records the displayed version without accepting papers',
+    (tester) async {
+      final project = reviewFixture();
+      project['scope'] = 'capstone';
+      project['can_review'] = false;
+      project['shared_review'] = {
+        'can_review_shared_context': true,
+        'papers_available': true,
+        'can_acknowledge': true,
+        'acknowledged': false,
+      };
+      final actions = <Map<String, dynamic>>[];
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          if (request.method == 'POST') {
+            actions.add(jsonDecode(request.body) as Map<String, dynamic>);
+            project['shared_review'] = {
+              'can_review_shared_context': true,
+              'papers_available': true,
+              'can_acknowledge': false,
+              'acknowledged': true,
+            };
+          }
+          return http.Response(jsonEncode(project), 200);
+        }),
+      );
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await pumpDefensysWidget(
+        tester,
+        const SingleChildScrollView(
+          child: SectionConceptWorkspace(projectId: 7, embedded: true),
+        ),
+        overrides: authTestOverrides(),
+      );
+      expect(find.text('Accept paper'), findsNothing);
+      await tester.tap(find.text('Acknowledge shared system alignment'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirm acknowledgment'));
+      await tester.pumpAndSettle();
+      expect(actions.single['action'], 'acknowledge');
+      expect(actions.single['round_id'], 12);
+      expect(actions.single['review_token'], 'reviewed-current-content');
+      expect(
+        find.text('Your review of the current shared proposals is recorded.'),
+        findsOneWidget,
+      );
+      expect(
+        (project['systems'] as List).first['papers'][0]['status'],
+        'pending',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('embedded review fits desktop and phone in both themes', (
     tester,
@@ -686,6 +741,15 @@ void main() {
         'concept_contexts': [
           {'label': 'PIT Design'},
         ],
+        'section_instructors': {
+          'BSIT-2A': [
+            {
+              'faculty_id': 9,
+              'faculty__first_name': 'Prof.',
+              'faculty__last_name': 'Reyes',
+            },
+          ],
+        },
         'system_reviewers': [
           {'id': 9, 'name': 'Prof. Reyes'},
         ],
@@ -726,29 +790,19 @@ void main() {
         ),
         overrides: authTestOverrides(),
       );
-      await tester.scrollUntilVisible(
-        find.text('One shared system for this section'),
-        250,
-        scrollable: find.byType(Scrollable).first,
-      );
-      await tester.tap(find.text('One shared system for this section'));
+      await tester.tap(find.text('Continue'));
       await tester.pumpAndSettle();
-      final manager = find.byKey(const ValueKey('shared-manager-BSIT-2A'));
-      await tester.ensureVisible(manager);
-      await tester.tap(manager);
+      await tester.tap(find.text('Independent projects'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Shared section system').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Choose an option').first);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Ana Cruz').last);
       await tester.pumpAndSettle();
-      final reviewer = find.widgetWithText(
-        DropdownButtonFormField<int>,
-        'System faculty reviewer',
-      );
-      await tester.ensureVisible(reviewer);
-      await tester.tap(reviewer);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Prof. Reyes').last);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Preview teams'));
+      expect(find.text('Prof. Reyes'), findsOneWidget);
+      expect(find.text('System faculty reviewer'), findsNothing);
+      await tester.tap(find.text('Review teams'));
       await tester.pumpAndSettle();
       expect(preview?['shared_system'], {
         'project_manager_id': 1,

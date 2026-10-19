@@ -164,10 +164,9 @@ class _TeamDeliverablesScreenState
   }
 
   Future<void> _openCreation({bool importTab = false}) async {
-    final state = ref.read(capstoneDeliverablesProvider);
     final saved = await openTeamCreation(context, importTab: importTab,
       level: widget.pitYearLevel == null ? null : '${widget.pitYearLevel} PIT',
-      section: widget.pitSection, event: state.selectedStage);
+      section: widget.pitSection);
     if (saved == true && mounted) {
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
       ref.read(pitInstructorDefenseProvider.notifier).fetch();
@@ -257,7 +256,7 @@ class _TeamDeliverablesScreenState
                     onPressed: state.isSaving ? null : () => _openCreation(),
                     style: DefensysButtonStyles.primary(context),
                     icon: const Icon(Icons.add),
-                    label: const Text('Team Creation'),
+                    label: const Text('Generate teams'),
                   ),
                 ],
               ],

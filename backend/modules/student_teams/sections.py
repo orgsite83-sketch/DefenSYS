@@ -76,6 +76,10 @@ def section_payload(team, teams, students, assignment, *, actor=None):
             SectionInstructorAssignment.objects.filter(faculty=actor, semester=team.semester,
                 year_level=team.year_level, section=team.section, is_active=True).exists()))))
     reviewers = get_user_model().objects.filter(role='faculty', is_active=True)
+    if team.is_pit:
+        reviewers = reviewers.filter(pk__in=SectionInstructorAssignment.objects.filter(
+            semester=team.semester, year_level=team.year_level, section=team.section,
+            is_active=True).values('faculty_id'))
     if actor and not (actor.is_superuser or actor.role == 'admin' or
             (team.is_pit and getattr(actor, 'is_pit_lead', False) and actor.pit_lead_year == team.year_level)):
         reviewers = reviewers.filter(pk__in=SectionInstructorAssignment.objects.filter(

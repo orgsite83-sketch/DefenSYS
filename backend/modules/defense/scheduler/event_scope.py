@@ -20,7 +20,12 @@ def pit_events_for_team(team):
     from .models import PitEventGradingConfig
     if not team or not team.is_pit or not pit_year(team.year_level):
         return PitEventGradingConfig.objects.none()
-    return PitEventGradingConfig.objects.filter(semester=team.semester, year_level=team.year_level)
+    from student_teams.pit_rosters import effective_ids
+    events = PitEventGradingConfig.objects.filter(semester=team.semester, year_level=team.year_level)
+    if not team.pk:
+        return events
+    return events.filter(pk__in=[event.pk for event in events
+        if team.pk in effective_ids(team.semester_id, team.year_level, event)])
 
 
 def pit_events_for_user(user, *, semester=None, workspace=None):

@@ -1060,6 +1060,11 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                         config['event_name']?.toString() ?? '',
                         style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: _ink, fontFamily: DefensysTokens.fontFamilyInter),
                       ),
+                      InkWell(
+                        onTap: () => context.go(Uri(path: '/faculty/student-teams', queryParameters: {'event': '${config['event_name']}'}).toString()),
+                        child: Text('${config['roster_summary'] ?? 'Uses current roster automatically'} · View roster',
+                          style: TextStyle(fontSize: 11, color: _muted)),
+                      ),
                       if (config['event_code']?.toString().isNotEmpty == true)
                         Text(
                           config['event_code']?.toString() ?? '',

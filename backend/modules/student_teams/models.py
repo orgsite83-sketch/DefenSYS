@@ -7,6 +7,42 @@ from student_teams.weekly_progress.models import WeeklyProgressReport  # noqa: F
 from .project_versions import CurrentProjectManager
 
 
+class PITSectionRoster(models.Model):
+    semester = models.ForeignKey('academic_period_management.Semester', on_delete=models.PROTECT)
+    year_level = models.CharField(max_length=20)
+    section = models.CharField(max_length=80)
+    teams = models.ManyToManyField('StudentTeam', related_name='current_pit_rosters')
+    revision = models.PositiveIntegerField(default=1)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['semester', 'year_level', 'section'], name='pit_current_section_roster_unique')]
+
+
+class PITEventRoster(models.Model):
+    event = models.ForeignKey('defense.PitEventGradingConfig', on_delete=models.PROTECT, related_name='section_rosters')
+    section = models.CharField(max_length=80)
+    source = models.CharField(max_length=12, choices=[('current', 'Current roster'), ('custom', 'Custom roster')])
+    teams = models.ManyToManyField('StudentTeam', related_name='pit_event_rosters')
+    started_at = models.DateTimeField(null=True, blank=True)
+    current_revision = models.PositiveIntegerField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['event', 'section'], name='pit_event_section_roster_unique')]
+
+
+class PITTeamEventEndorsement(models.Model):
+    team = models.ForeignKey('StudentTeam', on_delete=models.CASCADE, related_name='pit_endorsements')
+    event = models.ForeignKey('defense.PitEventGradingConfig', on_delete=models.PROTECT)
+    project_version = models.PositiveIntegerField(default=1)
+    endorsed_at = models.DateTimeField(null=True, blank=True)
+    endorsed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['team', 'event', 'project_version'], name='pit_team_event_endorsement_unique')]
+
+
 class StudentTeam(models.Model):
     LEVEL_1_PIT = '1st Year PIT'
     LEVEL_2_PIT = '2nd Year PIT'

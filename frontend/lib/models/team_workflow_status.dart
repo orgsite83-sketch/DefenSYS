@@ -13,11 +13,13 @@ class TeamWorkflowStatus {
     'awaiting_files' =>
       'The team needs to upload the required before-endorsement files.',
     'needs_review' =>
-      'Review the submitted pre- and post-defense files, then accept or request corrections for each submission.',
+      'Review the required pre-defense files due before endorsement. Accept each submission or request corrections.',
     'changes_requested' =>
       'The team needs to submit the requested file corrections.',
     'awaiting_endorsement' =>
-      'All required before-endorsement files are accepted. Endorse the team for scheduling.',
+      'All team requirements for endorsement are complete. Endorse the team; shared scheduling checks are tracked separately when applicable.',
+    'module_confirmation_pending' =>
+      'Review and confirm the module names and their shared system connections before endorsing this team.',
     'ready_to_schedule' => 'The team is cleared for scheduling.',
     'scheduled' =>
       'A defense slot is assigned. Defense files remain due before the scheduled deadline.',
@@ -34,6 +36,8 @@ class TeamWorkflowStatus {
       'Grading is ready. Waiting for authorized finalization.',
     'pending_post_defense' =>
       'The team needs to submit or correct the required post-defense files and complete any remaining documentation.',
+    'archive_review_pending' =>
+      'Review the submitted post-defense files for archiving. Accept each archive submission or request corrections.',
     'revisions_pending' =>
       'Complete and clear the revisions required by the defense decision.',
     'redefense_required' =>
@@ -45,7 +49,9 @@ class TeamWorkflowStatus {
     'concept_review_pending' =>
       'Review the current concept papers and resolve any requested corrections.',
     'shared_clearance_pending' =>
-      'The designated system reviewer must confirm the shared titles and accept their current papers.',
+      'Team endorsed. Waiting for the required shared papers to be accepted.',
+    'shared_acknowledgment_pending' =>
+      'Team endorsed. The assigned adviser/instructor needs to review and acknowledge the current shared proposals.',
     'ready_to_schedule_redefense' =>
       'The administrator can schedule the next defense attempt.',
     'failed' || 'project_rejected' =>
@@ -202,9 +208,17 @@ class TeamWorkflowStatus {
 
   static bool isPendingReview(Map item) => pendingFileReviewCount(item) > 0;
 
-  static int pendingReviewCount(Map stage) => items(
-    stage,
-  ).fold(0, (total, item) => total + pendingFileReviewCount(item));
+  static int pendingReviewCount(Map stage) => items(stage)
+      .where(
+        (item) => item['type'] != 'post' && item['deliverable_type'] != 'post',
+      )
+      .fold(0, (total, item) => total + pendingFileReviewCount(item));
+
+  static int archivePendingReviewCount(Map stage) => items(stage)
+      .where(
+        (item) => item['type'] == 'post' || item['deliverable_type'] == 'post',
+      )
+      .fold(0, (total, item) => total + pendingFileReviewCount(item));
 
   static int pendingFileReviewCount(Map item) {
     final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
@@ -262,6 +276,31 @@ class TeamWorkflowStatus {
         concept['enabled'] == true &&
         concept['can_edit'] == true) {
       final status = concept['status']?.toString();
+      if (status == 'module_confirmation_pending') {
+        if (items(stage).any(
+          (item) =>
+              item['required'] == true &&
+              item['type'] != 'post' &&
+              item['deliverable_type'] != 'post' &&
+              item['requirement_timing'] != 'defense' &&
+              item['is_waived'] != true &&
+              item['uploaded'] == false,
+        )) {
+          return describe('awaiting_files');
+        }
+        return const TeamWorkflowStatus(
+          'module_confirmation_pending',
+          'Confirm module names',
+          WorkflowStatusTone.active,
+        );
+      }
+      if (status == 'shared_acknowledgment_pending') {
+        return const TeamWorkflowStatus(
+          'shared_acknowledgment_pending',
+          'Team endorsed · Review shared systems',
+          WorkflowStatusTone.attention,
+        );
+      }
       if (status == 'replacement_concepts_needed') {
         return const TeamWorkflowStatus(
           'replacement_concepts_needed',
@@ -293,7 +332,7 @@ class TeamWorkflowStatus {
       if (status == 'shared_clearance_pending') {
         return const TeamWorkflowStatus(
           'shared_clearance_pending',
-          'Awaiting shared paper clearance',
+          'Team endorsed · Shared papers pending',
           WorkflowStatusTone.neutral,
         );
       }
@@ -324,6 +363,24 @@ class TeamWorkflowStatus {
           'passed',
           'pending_post_defense',
         }.contains(recordedStatus);
+    final archiveReviews = archivePendingReviewCount(stage);
+    if (defenseDone &&
+        archiveReviews > 0 &&
+        !const {
+          'failed',
+          'project_rejected',
+          'for_redefense',
+          'redefense_required',
+          'revisions_pending',
+          'cancelled',
+          'archived',
+        }.contains(recordedStatus)) {
+      return TeamWorkflowStatus(
+        'archive_review_pending',
+        '$archiveReviews archive ${archiveReviews == 1 ? 'file needs' : 'files need'} review',
+        WorkflowStatusTone.active,
+      );
+    }
     final missingPostFiles =
         stage['archive_complete'] == false ||
         items(stage).any(

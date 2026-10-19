@@ -3,6 +3,62 @@ import 'package:defensys/screens/web/shared/team_deliverables/deliverables_view_
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('pending archive files never become an endorsement blocker', () {
+    for (final scope in ['pit', 'capstone']) {
+      final value = {
+        'deliverables_configured': true,
+        'required_complete': true,
+        'endorsed': true,
+        'pre': [
+          {
+            'type': 'pre',
+            'required': true,
+            'submission': {'status': 'accepted'},
+          },
+        ],
+        'post': [
+          {
+            'type': 'post',
+            'required': true,
+            'submission': {'status': 'pending'},
+          },
+        ],
+      };
+      expect(
+        TeamWorkflowStatus.fromStage(value, scope: scope).code,
+        'ready_to_schedule',
+      );
+      expect(TeamWorkflowStatus.pendingReviewCount(value), 0);
+      expect(TeamWorkflowStatus.archivePendingReviewCount(value), 1);
+    }
+  });
+
+  test('module confirmation and shared awareness are distinct team tasks', () {
+    final value = <String, dynamic>{
+      'endorsed': false,
+      'concept_workflow': {
+        'enabled': true,
+        'can_edit': true,
+        'status': 'module_confirmation_pending',
+      },
+    };
+    expect(
+      TeamWorkflowStatus.fromStage(value).nextStep,
+      contains('module names'),
+    );
+    value['endorsed'] = true;
+    (value['concept_workflow'] as Map)['status'] =
+        'shared_acknowledgment_pending';
+    expect(
+      TeamWorkflowStatus.fromStage(value).label,
+      'Team endorsed · Review shared systems',
+    );
+    expect(
+      TeamWorkflowStatus.fromStage(value).nextStep,
+      contains('acknowledge'),
+    );
+  });
+
   test(
     'incomplete module papers show awaiting files after current uploads are accepted',
     () {
@@ -72,7 +128,7 @@ void main() {
         post['submission'] = {'status': 'pending'};
         expect(
           TeamWorkflowStatus.fromStage(value, scope: scope).label,
-          '1 needs review',
+          '1 archive file needs review',
         );
         post['submission'] = {'status': 'accepted'};
         expect(
@@ -104,7 +160,7 @@ void main() {
   );
 
   test(
-    'pre and post reviews take priority, then restore completion status',
+    'endorsement review and archive review have separate counts and guidance',
     () {
       for (final scope in ['pit', 'capstone']) {
         for (final combined in [false, true]) {
@@ -132,10 +188,13 @@ void main() {
           };
           final team = <String, dynamic>{'selected_stage': value};
           final status = TeamWorkflowStatus.fromStage(value, scope: scope);
-          expect(status.label, '2 needs review');
+          expect(status.label, '1 needs review');
           expect(status.code, 'needs_review');
-          expect(status.nextStep, contains('pre- and post-defense'));
-          expect(DeliverablesTriageHelper.pendingReviewCount(team), 2);
+          expect(
+            status.nextStep,
+            contains('pre-defense files due before endorsement'),
+          );
+          expect(DeliverablesTriageHelper.pendingReviewCount(team), 1);
           expect(
             DeliverablesTriageHelper.matchesFilter(
               team,
@@ -146,7 +205,7 @@ void main() {
           (pre['submission'] as Map)['status'] = 'accepted';
           expect(
             TeamWorkflowStatus.fromStage(value, scope: scope).label,
-            '1 needs review',
+            '1 archive file needs review',
           );
           (post['submission'] as Map)['status'] = 'accepted';
           expect(
@@ -192,8 +251,12 @@ void main() {
         {'type': 'post', 'source': 'defense_minutes', 'uploaded': true},
       ],
     };
-    expect(TeamWorkflowStatus.fromStage(value).label, '2 needs review');
-    expect(TeamWorkflowStatus.pendingReviewCount(value), 2);
+    expect(
+      TeamWorkflowStatus.fromStage(value).label,
+      '2 archive files need review',
+    );
+    expect(TeamWorkflowStatus.pendingReviewCount(value), 0);
+    expect(TeamWorkflowStatus.archivePendingReviewCount(value), 2);
   });
 
   Map<String, dynamic> stage({String? fileStatus, bool endorsed = false}) => {

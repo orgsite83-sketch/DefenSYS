@@ -1,3 +1,4 @@
+from student_teams.pit_rosters import endorsed as pit_endorsed, set_endorsed as set_pit_endorsed
 from defensys_backend.file_cleanup import delete_repository_file_on_commit, replacement_file_name
 from defensys_backend.read_projection import read_memoize
 from django.core.exceptions import ValidationError
@@ -361,6 +362,10 @@ def team_queryset_for_user(user, *, include_pit_lead=True):
 
 
 def filter_teams(request, queryset):
+    event_name = request.query_params.get('stage_label') or request.query_params.get('event_name')
+    if event_name:
+        from student_teams.pit_rosters import filter_teams as roster_teams
+        queryset = queryset.exclude(level__icontains='PIT') | roster_teams(queryset.filter(level__icontains='PIT'), event_name)
     search = request.query_params.get('search', '').strip()
     status_filter = request.query_params.get('status', '').strip()
     year_level = request.query_params.get('year_level', '').strip()
@@ -387,7 +392,11 @@ def filter_teams(request, queryset):
             | Q(adviser__username__icontains=search)
         ).distinct()
 
-    if status_filter in ('ready', 'endorsed'):
+    if event_name and status_filter in ('ready', 'endorsed', 'awaiting_endorsement', 'pending_endorsement'):
+        want_ready = status_filter in ('ready', 'endorsed')
+        queryset = queryset.filter(pk__in=[t.pk for t in queryset if (
+            pit_endorsed(t, event_name) if t.is_pit else bool(t.ready_for_stage)) == want_ready])
+    elif status_filter in ('ready', 'endorsed'):
         queryset = queryset.exclude(ready_for_stage__isnull=True).exclude(ready_for_stage='')
     elif status_filter in ('awaiting_endorsement', 'pending_endorsement'):
         queryset = queryset.filter(Q(ready_for_stage__isnull=True) | Q(ready_for_stage=''))
@@ -430,7 +439,7 @@ def archive_unlocked(team, stage_label, deliverable_type='post'):
         if is_stage_unlocked_by_admin(team, stage_label, deliverable_type='pre'):
             return True
         stage_obj = defense_stage_for_label(stage_label) if team.is_capstone else None
-        endorsed = was_stage_endorsed(team, stage_obj) if stage_obj else team.ready_for_stage == stage_label
+        endorsed = was_stage_endorsed(team, stage_obj) if stage_obj else pit_endorsed(team, stage_label)
         return not (endorsed or is_stage_defense_done(team, stage_label))
 
     if is_stage_unlocked_by_admin(team, stage_label, deliverable_type='post') or is_stage_unlocked_by_admin(team, stage_label, deliverable_type='all') or is_stage_unlocked_by_admin(team, stage_label):
@@ -569,7 +578,7 @@ def team_stage_status(team, stage_label):
     configured = stage_deliverables_configured(team, stage_label)
     if not configured:
         return 'not_configured'
-    is_endorsed = was_stage_endorsed(team, defense_stage_for_label(stage_label)) if team.is_capstone else (team.ready_for_stage == stage_label)
+    is_endorsed = was_stage_endorsed(team, defense_stage_for_label(stage_label)) if team.is_capstone else pit_endorsed(team, stage_label)
     if is_endorsed:
         return 'endorsed'
     if required_complete(team, stage_label):
@@ -610,7 +619,7 @@ def compute_stage_status_detail(team, stage_label, configured, archive_required_
     is_capstone = getattr(team, 'is_capstone', False)
     stage_obj = defense_stage_for_label(stage_label) if is_capstone else None
     progress = get_stage_progress(team, stage_obj) if stage_obj else None
-    progress_status = progress.status if progress else ('ready' if team.ready_for_stage == stage_label else 'locked')
+    progress_status = progress.status if progress else ('ready' if (pit_endorsed(team, stage_label) if team.is_pit else team.ready_for_stage == stage_label) else 'locked')
 
     today = timezone.localdate()
     active_schedules = DefenseSchedule.objects.filter(
@@ -675,7 +684,7 @@ def compute_stage_status_detail(team, stage_label, configured, archive_required_
             return 'defense_ongoing'
         else:
             return 'defense_scheduled'
-    elif progress_status == TeamStageProgress.STATUS_READY or (not is_capstone and team.ready_for_stage == stage_label):
+    elif progress_status == TeamStageProgress.STATUS_READY or (not is_capstone and pit_endorsed(team, stage_label)):
         return 'endorsed'
     else:
         return 'awaiting_endorsement'
@@ -802,7 +811,7 @@ def ensure_submission_editable(team, stage_label, deliverable_type, submission=N
         grouped_corrections = bool(definition and definition.get('file_policy') and any(f.status == 'rejected' for f in current_files(submission)))
         grouped_draft = bool(definition and (definition.get('file_policy') or {}).get('mode') in ('named', 'multiple', 'concepts')
             and not is_stage_defense_done(team, stage_label)
-            and not (was_stage_endorsed(team, defense_stage_for_label(stage_label)) if team.is_capstone else team.ready_for_stage == stage_label))
+            and not (was_stage_endorsed(team, defense_stage_for_label(stage_label)) if team.is_capstone else pit_endorsed(team, stage_label)))
         if not grouped_corrections and not grouped_draft and not (is_redefense and deliverable_type == DeliverableSubmission.TYPE_PRE):
             raise PermissionError(
                 'Accepted deliverables are locked. Reopen the submission for revision before changing its file.'
@@ -817,7 +826,7 @@ def ensure_submission_editable(team, stage_label, deliverable_type, submission=N
         return
 
     stage = defense_stage_for_label(stage_label) if team.is_capstone else None
-    endorsed = was_stage_endorsed(team, stage) if stage else team.ready_for_stage == stage_label
+    endorsed = was_stage_endorsed(team, stage) if stage else pit_endorsed(team, stage_label)
     if not is_redefense and (endorsed or is_stage_defense_done(team, stage_label)) and not is_stage_unlocked_by_admin(
         team, stage_label, deliverable_type='pre'
     ):
@@ -871,8 +880,8 @@ def stage_payload(team, stage_label, evaluator=None):
     is_capstone = getattr(team, 'is_capstone', False)
     stage_obj = defense_stage_for_label(stage_label) if is_capstone else None
     progress = get_stage_progress(team, stage_obj) if stage_obj else None
-    progress_status = progress.status if progress else ('ready' if team.ready_for_stage == stage_label else 'locked')
-    is_endorsed = was_stage_endorsed(team, stage_obj) if is_capstone else (team.ready_for_stage == stage_label)
+    progress_status = progress.status if progress else ('ready' if (pit_endorsed(team, stage_label) if team.is_pit else team.ready_for_stage == stage_label) else 'locked')
+    is_endorsed = was_stage_endorsed(team, stage_obj) if is_capstone else pit_endorsed(team, stage_label)
 
     today = timezone.localdate()
     active_schedules = DefenseSchedule.objects.filter(
@@ -1361,7 +1370,7 @@ def team_counts_payload(team, stage):
     ready = status in ('endorsed', 'complete')
     missing = status in ('missing', 'needs_revision')
     pending = status == 'pending_review'
-    if not (ready or missing or pending) and team.ready_for_stage:
+    if not (ready or missing or pending) and team.ready_for_stage and not team.is_pit:
         ready = True
     submissions = list(team.deliverable_submissions.all())
     return {
@@ -1408,7 +1417,7 @@ def counts_payload(teams, selected_stage=None, *, serialized_teams=None):
             missing_count += 1
         elif status == 'pending_review':
             pending_count += 1
-        elif team.ready_for_stage:
+        elif team.ready_for_stage and not team.is_pit:
             ready_count += 1
 
     archive_total = DeliverableSubmission.objects.filter(
@@ -1619,17 +1628,21 @@ def remove_submission(team, stage_label, deliverable_id, file_id=None):
 
     if hasattr(team, '_prefetched_objects_cache'):
         team._prefetched_objects_cache.pop('deliverable_submissions', None)
-    if team.ready_for_stage == stage_label and not required_complete(team, stage_label):
+    if (pit_endorsed(team, stage_label) if team.is_pit else team.ready_for_stage == stage_label) and not required_complete(team, stage_label):
         if team.is_capstone:
             stage = defense_stage_for_label(stage_label)
             if stage is not None:
                 mark_stage_locked(team, stage)
             else:
+                set_pit_endorsed(team, stage_label, False)
+                if team.ready_for_stage == stage_label:
+                    team.ready_for_stage = None
+                    team.save(update_fields=['ready_for_stage', 'updated_at'])
+        else:
+            set_pit_endorsed(team, stage_label, False)
+            if team.ready_for_stage == stage_label:
                 team.ready_for_stage = None
                 team.save(update_fields=['ready_for_stage', 'updated_at'])
-        else:
-            team.ready_for_stage = None
-            team.save(update_fields=['ready_for_stage', 'updated_at'])
     return deleted
 
 
@@ -1654,6 +1667,7 @@ def endorse_team(team, stage_label, user=None):
     else:
         from .concepts import endorse as endorse_concepts
         endorse_concepts(team, document_context(team, stage_label), user)
+        set_pit_endorsed(team, stage_label, True, user)
         team.ready_for_stage = stage_label
         team.save(update_fields=['ready_for_stage', 'updated_at'])
     return team
@@ -1689,6 +1703,7 @@ def unendorse_team(team, stage_label):
         if has_schedule:
             raise ValueError('Cannot cancel endorsement: defense is already scheduled or completed.')
 
+        set_pit_endorsed(team, stage_label, False)
         if team.ready_for_stage == stage_label:
             team.ready_for_stage = None
             team.save(update_fields=['ready_for_stage', 'updated_at'])
@@ -1737,7 +1752,7 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
 
     if not is_post:
         stage = document_context(team, stage_label)
-        endorsed = was_stage_endorsed(team, stage) if stage else team.ready_for_stage == stage_label
+        endorsed = was_stage_endorsed(team, stage) if stage else pit_endorsed(team, stage_label)
         if concept_round and not concept_round.schedule_id:
             endorsed = False
         if endorsed and not (admin_unlocked or submission.revision_review_unlocked or (definition and due_before_defense(definition))):
@@ -1791,7 +1806,7 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
 
     # Re-evaluate team readiness if we are rejecting a required pre-defense deliverable
     if status_val == DeliverableSubmission.STATUS_REJECTED and not is_defense_done:
-        if team.ready_for_stage == stage_label and not required_complete(team, stage_label):
+        if (pit_endorsed(team, stage_label) if team.is_pit else team.ready_for_stage == stage_label) and not required_complete(team, stage_label):
             if team.is_capstone:
                 stage = defense_stage_for_label(stage_label)
                 if stage is not None:
@@ -1800,7 +1815,9 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
                     team.ready_for_stage = None
                     team.save(update_fields=['ready_for_stage', 'updated_at'])
             else:
-                team.ready_for_stage = None
-                team.save(update_fields=['ready_for_stage', 'updated_at'])
+                set_pit_endorsed(team, stage_label, False)
+                if team.ready_for_stage == stage_label:
+                    team.ready_for_stage = None
+                    team.save(update_fields=['ready_for_stage', 'updated_at'])
 
     return submission

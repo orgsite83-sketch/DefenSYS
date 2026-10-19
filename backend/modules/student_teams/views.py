@@ -5,7 +5,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
+from defensys_backend.read_projection import ReadAPIView as APIView
 
 from academic_period_management.capstone_mode import (
     assert_capstone_team_creation_allowed,
@@ -296,19 +296,21 @@ class StudentTeamListCreateView(APIView):
             if event_config is None:
                 queryset = queryset.none()
 
-            event_filter = (
-                Q(current_defense_stage=event_name)
-                | Q(defense_schedules__event_name=event_name)
-                | Q(grade_records__stage_label=event_name)
-                | Q(deliverable_submissions__stage_label=event_name)
-            )
-            if event_year:
-                event_filter |= Q(
-                    Q(current_defense_stage__isnull=True) | Q(current_defense_stage=''),
-                    year_level=event_year,
-                    level__icontains='PIT',
-                )
-            queryset = queryset.filter(event_filter).distinct()
+            from .pit_rosters import filter_teams
+            queryset = filter_teams(queryset, event_name)
+        elif request.query_params.get('roster_view') == 'current':
+            from .pit_rosters import filter_teams
+            queryset = filter_teams(queryset, current=True)
+
+        from .pit_rosters import resolve
+        roster_context = []
+        for term_id, year in apply_team_scope(visible, scope=request.query_params.get('scope', 'active'), user=request.user).filter(level__icontains='PIT').values_list('semester_id', 'year_level').distinct():
+            from defense.scheduler.models import PitEventGradingConfig
+            selected = PitEventGradingConfig.objects.filter(semester_id=term_id, year_level=year,
+                event_name__iexact=event_name).first() if event_name else None
+            visible_sections = set(visible.filter(semester_id=term_id, year_level=year).values_list('section', flat=True))
+            roster_context.extend({**row, 'year_level': year} for row in resolve(term_id, year,
+                selected.pk if selected else None).values() if row['section'] in visible_sections)
 
         # Get team_level from query params for filtering students
         team_level_filter = request.query_params.get('team_level', '').strip()
@@ -319,10 +321,14 @@ class StudentTeamListCreateView(APIView):
             stats_base = stats_base.filter(level__icontains='Capstone')
         elif level == 'PIT':
             stats_base = stats_base.filter(level__icontains='PIT')
+        if event_name or request.query_params.get('roster_view') == 'current':
+            from .pit_rosters import filter_teams
+            stats_base = filter_teams(stats_base, event_name or None, current=not bool(event_name))
 
         return Response({
             'teams': self._serialize_teams(queryset, request.user),
             'counts': counts_payload(queryset, stats_base=stats_base),
+            'roster_context': roster_context,
             **options_payload(
                 team_level=team_level_filter if team_level_filter else None,
                 user=request.user,
@@ -338,7 +344,14 @@ class StudentTeamListCreateView(APIView):
             context={'assigned_by': request.user, 'user': request.user},
         )
         serializer.is_valid(raise_exception=True)
+        if 'PIT' in serializer.validated_data['level'] and not serializer.validated_data.get('current_defense_stage'):
+            from .pit_rosters import ensure_current
+            ensure_current(serializer.validated_data['semester'].pk, serializer.validated_data['year_level'],
+                {serializer.validated_data.get('section', '')})
         team = serializer.save()
+        if team.is_pit and not team.current_defense_stage:
+            from .pit_rosters import register
+            register([team], request.user)
         team = teams_queryset_for_user(request.user).get(pk=team.pk)
 
         return Response({
@@ -413,6 +426,10 @@ class StudentTeamDetailView(APIView):
         from grading.grades.models import TeamGrade
 
         assert_team_writable(request.user, team)
+
+        if team.is_pit and (team.pit_event_rosters.filter(started_at__isnull=False).exists()
+                or team.concept_rounds.exists() or team.deliverable_submissions.exists()):
+            return Response({'detail': 'This roster is used by an event. Preserve its teams and import a different roster for future events.'}, status=409)
 
         has_schedules = DefenseSchedule.objects.filter(team=team).exists()
         has_grades = TeamGrade.objects.filter(team=team).exists()
@@ -718,7 +735,13 @@ class BulkImportTeamsView(APIView):
                         user=request.user, csv_columns=csv_columns, section_import=bool(effective_section), import_section=effective_section)
                     if not result['ready']:
                         raise ValidationError(result['issues'] or 'The import context changed. Refresh the preview.')
+                    from .pit_rosters import ensure_current, register
+                    if 'PIT' in serializer.validated_data['level'] and not serializer.validated_data.get('current_defense_stage'):
+                        ensure_current(selected_semester.pk, serializer.validated_data['year_level'],
+                            {serializer.validated_data.get('section', '')})
                     team = serializer.save(concept_assignment=result['concept_assignment'])
+                    if team.is_pit and not team.current_defense_stage:
+                        register([team], request.user)
                     meta = section_meta.get(team.section)
                     if meta:
                         pm_user = None

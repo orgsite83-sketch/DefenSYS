@@ -2,6 +2,7 @@ from repository.deliverables.models import DeliverableSubmission
 from repository.deliverables.services import display_name, archive_unlocked
 from repository.entry_payloads import empty_ml_fields, ml_fields_from
 from repository.archive.models import ArchiveEntry
+from defensys_backend.read_projection import read_memoize
 
 from .trail import audit_trail
 
@@ -12,6 +13,61 @@ def _submission_kind_for_deliverable(submission):
     return 'pre'
 
 
+@read_memoize
+def _archive_pit_event(semester_id, year_level, stage_label):
+    from defense.scheduler.models import PitEventGradingConfig
+    config = PitEventGradingConfig.objects.filter(
+        semester_id=semester_id, event_name__iexact=stage_label.strip(),
+    )
+    if year_level:
+        config = config.filter(year_level=year_level)
+    return config.first()
+
+
+@read_memoize(copy=True)
+def _archive_definition(scope, semester_id, year_level, stage_label, deliverable_id, is_pre):
+    """Archive display needs configuration, without resolving live concept rosters.
+
+    Key by the captured term/track/year so historical files never borrow the
+    current team's configuration. Reuse only within the current GET request.
+    """
+    from repository.deliverables.services import get_deliverable_definitions_for_scope
+    for definition in get_deliverable_definitions_for_scope(
+        scope, semester_id, stage_label, year_level=year_level,
+    ):
+        if definition['id'] == (deliverable_id or '').strip():
+            return definition
+    if is_pre:
+        # Keep legacy pre-defense records readable after definitions are removed.
+        from defense.stages.models import StageDeliverable
+        from defense.scheduler.models import PitEventDeliverable
+        definition = StageDeliverable.objects.filter(
+            defense_stage__label=stage_label, deliverable_id=deliverable_id,
+        ).first()
+        if not definition:
+            definition = PitEventDeliverable.objects.filter(
+                pit_event_config__event_name__iexact=stage_label,
+                deliverable_id=deliverable_id,
+            ).first()
+        if definition:
+            return {'type': definition.deliverable_type, 'requirement_timing': definition.requirement_timing}
+    return None
+
+
+@read_memoize
+def _restricted_archive(scope, semester_id, stage_label, deliverable_id):
+    from defense.stages.models import StageDeliverable
+    from defense.scheduler.models import PitEventDeliverable
+    if scope == 'pit':
+        return PitEventDeliverable.objects.filter(
+            deliverable_id=deliverable_id, pit_event_config__semester_id=semester_id,
+            pit_event_config__event_name__iexact=stage_label.strip(), is_restricted=True,
+        ).exists()
+    return StageDeliverable.objects.filter(
+        deliverable_id=deliverable_id, defense_stage__label=stage_label, is_restricted=True,
+    ).exists()
+
+
 def _submission_archive_context(submission):
     team = submission.team
     semester = submission.archive_semester or (team.semester if team else None)
@@ -19,15 +75,8 @@ def _submission_archive_context(submission):
     level = submission.archive_team_level or (team.level if team else '')
     is_pit = 'PIT' in level or (team and getattr(team, 'is_pit', False))
     if not pit_event_config_id and is_pit and semester:
-        from defense.scheduler.models import PitEventGradingConfig
         year_level = submission.archive_year_level or (team.year_level if team else '')
-        config = PitEventGradingConfig.objects.filter(
-            semester=semester,
-            event_name__iexact=submission.stage_label.strip(),
-        )
-        if year_level:
-            config = config.filter(year_level=year_level)
-        matched = config.first()
+        matched = _archive_pit_event(semester.pk, year_level, submission.stage_label)
         if matched:
             pit_event_config_id = matched.id
 
@@ -197,41 +246,17 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
     entry_type = ArchiveEntry.TYPE_PIT if is_pit else ArchiveEntry.TYPE_CAPSTONE
 
     is_restricted_archive = False
+    scope = 'pit' if is_pit else 'capstone'
+    semester_id = submission.archive_semester_id or (team.semester_id if team else None)
     if is_post and team:
-        if is_pit:
-            from defense.scheduler.models import PitEventDeliverable
-            is_restricted_archive = PitEventDeliverable.objects.filter(
-                deliverable_id=submission.deliverable_id,
-                pit_event_config__semester=submission.archive_semester or team.semester,
-                pit_event_config__event_name__iexact=submission.stage_label.strip(),
-                is_restricted=True
-            ).exists()
-        else:
-            from defense.stages.models import StageDeliverable
-            is_restricted_archive = StageDeliverable.objects.filter(
-                deliverable_id=submission.deliverable_id,
-                defense_stage__label=submission.stage_label,
-                is_restricted=True
-            ).exists()
+        is_restricted_archive = _restricted_archive(
+            scope, semester_id, submission.stage_label, submission.deliverable_id,
+        )
 
-    from repository.deliverables.services import definition_for
-    definition = definition_for(team, submission.stage_label, submission.deliverable_id) if team else None
-    if definition is None and submission.deliverable_type == DeliverableSubmission.TYPE_PRE:
-        from defense.stages.models import StageDeliverable
-        from defense.scheduler.models import PitEventDeliverable
-        sd = StageDeliverable.objects.filter(
-            defense_stage__label=submission.stage_label,
-            deliverable_id=submission.deliverable_id,
-        ).first()
-        if sd:
-            definition = {'type': sd.deliverable_type, 'requirement_timing': sd.requirement_timing}
-        else:
-            pd = PitEventDeliverable.objects.filter(
-                pit_event_config__event_name__iexact=submission.stage_label,
-                deliverable_id=submission.deliverable_id,
-            ).first()
-            if pd:
-                definition = {'type': pd.deliverable_type, 'requirement_timing': pd.requirement_timing}
+    definition = _archive_definition(
+        scope, semester_id, archive_context['year_level'], submission.stage_label,
+        submission.deliverable_id, submission.deliverable_type == DeliverableSubmission.TYPE_PRE,
+    )
 
     from repository.deliverables.documents import current_files
     files = current_files(submission)

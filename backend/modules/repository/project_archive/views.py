@@ -6,6 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from defensys_backend.read_projection import ReadAPIView
 from repository.archive.models import ArchiveEntry
 from .folders import entries_in_folder
 from .services import (
@@ -32,7 +33,7 @@ def _raise_drf_validation_error(exc: DjangoValidationError) -> None:
     raise ValidationError(detail=str(exc)) from exc
 
 
-class ProjectArchiveListView(APIView):
+class ProjectArchiveListView(ReadAPIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -172,7 +173,7 @@ class ProjectArchiveTrailView(APIView):
         return Response({'audit_trail': audit_trail_for_request(request)})
 
 
-class ProjectArchiveExportView(APIView):
+class ProjectArchiveExportView(ReadAPIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):

@@ -35,6 +35,8 @@ def main():
     parser.add_argument('--profile', action='store_true', help='Save function timings under .tmp/.')
     parser.add_argument('--initial', action='store_true', help='Use the single-request curriculum startup.')
     parser.add_argument('--workspace', action='store_true', help='Measure progressive overview and project views.')
+    parser.add_argument('--archive', action='store_true', help='Measure each level of the project archive browser.')
+    parser.add_argument('--admin', action='store_true', help='Profile an existing administrator instead of PIT Leads.')
     args = parser.parse_args()
     sys.path.insert(0, str(ROOT / 'backend'))
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'defensys_backend.settings')
@@ -50,15 +52,16 @@ def main():
     if connection.vendor != 'postgresql':
         raise SystemExit('This profiler requires PostgreSQL READ ONLY transactions.')
     factory = APIRequestFactory()
-    years = [args.year] if args.year else ['1st Year', '2nd Year', '3rd Year']
+    years = ['admin'] if args.admin else ([args.year] if args.year else ['1st Year', '2nd Year', '3rd Year'])
     found = False
     for year in years:
         with transaction.atomic():
             with connection.cursor() as cursor:
                 cursor.execute('SET TRANSACTION READ ONLY')
-            user = get_user_model().objects.filter(
-                is_active=True, role='faculty', is_pit_lead=True, pit_lead_year=year,
-            ).order_by('pk').first()
+            user_filter = {'role': 'admin'} if args.admin else {
+                'role': 'faculty', 'is_pit_lead': True, 'pit_lead_year': year,
+            }
+            user = get_user_model().objects.filter(is_active=True, **user_filter).order_by('pk').first()
             active_year = Semester.objects.filter(is_active=True).values_list('school_year__label', flat=True).first()
         if user is None:
             continue
@@ -71,6 +74,8 @@ def main():
                 reads.append(base + '?' + urlencode({'academic_year': active_year}))
             if args.workspace:
                 reads = [base + '?view=overview', base + '?view=projects', base + '?view=project_output']
+        if args.archive:
+            reads = ['/api/repository/audit/?open_current_semester=1']
         for index, path in enumerate(reads):
             try:
                 with transaction.atomic():
@@ -92,6 +97,10 @@ def main():
                     result = dict(year=year, path=path, status=response.status_code,
                                   queries=len(queries), milliseconds=round(elapsed * 1000, 1),
                                   response_bytes=len(response.content))
+                    if args.archive and response.status_code == 200:
+                        folders = response.data.get('folder_browser', {}).get('folders', [])
+                        if folders and index < 5:
+                            reads.append('/api/repository/audit/?' + urlencode({'folder_key': folders[0]['key']}))
                     if profiler:
                         output = ROOT / '.tmp' / f'faculty-read-{year[0]}-{index}.prof'
                         output.parent.mkdir(parents=True, exist_ok=True)
@@ -101,7 +110,8 @@ def main():
                 result = dict(year=year, path=path, error=type(error).__name__)
             print(json.dumps(result), flush=True)
     if not found:
-        raise SystemExit('No matching active PIT Lead was found; no accounts were changed.')
+        role_label = 'administrator' if args.admin else 'PIT Lead'
+        raise SystemExit(f'No matching active {role_label} was found; no accounts were changed.')
 
 
 if __name__ == '__main__':

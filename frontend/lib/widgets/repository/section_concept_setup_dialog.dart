@@ -149,7 +149,9 @@ class _SectionConceptSetupDialogState
               onChanged: busy ? null : (v) => setState(() => manager = v),
             ),
             const SizedBox(height: 12),
-            if (reviewers.isNotEmpty)
+            if (widget.scope == 'pit' && reviewers.length == 1)
+              Text('Section instructor: ${reviewers.single['name']}')
+            else if (reviewers.isNotEmpty)
               DropdownButtonFormField<int>(
                 key: ValueKey('reviewer-$reviewer'),
                 initialValue: reviewer,

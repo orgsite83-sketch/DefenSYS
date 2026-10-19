@@ -1232,9 +1232,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
 
   bool _canEndorseTeam(Map<String, dynamic> stage) {
     final review = stage['endorsement_review'];
-    final shared = (stage['concept_workflow'] as Map?)?['shared_review'];
     return stage['required_complete'] == true &&
-        (shared is! Map || shared['cleared'] == true) &&
         review is Map &&
         review['can_review_and_endorse'] == true;
   }
@@ -1260,7 +1258,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               ? 'Endorse ${team['name']} for $selectedStage? '
                 'This confirms the team is verbally prepared and ready for presentation / demo scheduling.'
               : 'All required before-endorsement files have been accepted. '
-                'Endorse ${team['name']} for $selectedStage scheduling?'),
+                'Endorse ${team['name']} for $selectedStage? This records approval of the team’s work. Any required shared-paper acceptance and adviser acknowledgment remain separate scheduling checks.'),
               const SizedBox(height: 16),
               const Text('Before-defense materials remain due by their scheduled deadline.', style: TextStyle(fontSize: 12)),
             ],
@@ -2310,6 +2308,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final yearLevel = team['year_level']?.toString().trim() ?? '';
     final section = team['section']?.toString().trim() ?? '';
     final isPresentationOnly = stagePayload['is_presentation_only'] == true;
+    final conceptConfig = (stagePayload['concept_workflow'] as Map?)?['config'] as Map?;
+    final projectTitle = '${team['project_title'] ?? ''}'.trim().isNotEmpty
+        ? '${team['project_title']}' : '${conceptConfig?['assigned_title'] ?? ''}';
     final materialReadiness = stagePayload['materials_readiness'];
     final materialsPending = materialReadiness is Map &&
         parseAsInt(materialReadiness['required_total']) >
@@ -2461,8 +2462,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             ),
             const SizedBox(height: 3),
             Text(
-              '${team['project_title'] ?? ''}'.trim().isEmpty
-                  ? 'Awaiting concept selection' : '${team['project_title']}',
+              projectTitle.trim().isEmpty ? 'Awaiting concept selection' : projectTitle,
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -2700,8 +2700,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               ),
             ],
           ],
-          if (isFacultyHeader && stages.isNotEmpty &&
-              (widget.isPitInstructor || stagePayload['endorsed'] != true)) ...[
+          if (isFacultyHeader && stages.isNotEmpty) ...[
               const SizedBox(height: 14),
               const Divider(height: 1, color: Color(0xFFE2E8F0)),
               const SizedBox(height: 12),
@@ -2728,12 +2727,11 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       ),
                     ],
                   );
-                  final showEndorseButton = widget.isAdviser ||
-                      (widget.isPitInstructor &&
+                  final showEndorseButton = (widget.isAdviser || widget.isPitInstructor) &&
                           stagePayload['endorsement_required'] != false &&
                           stagePayload['endorsed'] != true &&
                           stagePayload['has_active_schedule'] != true &&
-                          stagePayload['has_done_schedule'] != true);
+                          stagePayload['has_done_schedule'] != true;
                   if (!showEndorseButton) return hint;
                   final button = _buildEndorseButton(
                     team,

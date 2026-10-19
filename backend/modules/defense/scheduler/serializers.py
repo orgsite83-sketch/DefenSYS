@@ -1,3 +1,4 @@
+from student_teams.pit_rosters import endorsed as pit_event_endorsed
 import uuid
 from datetime import datetime, timedelta
 
@@ -293,6 +294,10 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
                 result[r] = 'redefense_required'
         if obj.ready_for_stage and obj.ready_for_stage not in result:
             result[obj.ready_for_stage] = 'ready'
+        if obj.is_pit:
+            for endorsement in obj.pit_endorsements.filter(project_version=obj.project_version,
+                    endorsed_at__isnull=False).select_related('event'):
+                result.setdefault(endorsement.event.event_name, 'ready')
         return result
 
     def get_eligible_stages(self, obj):
@@ -1105,7 +1110,7 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
                 if not pit_ready(team, config):
                     raise serializers.ValidationError({'team_id': 'Complete the current concept set and required instructor clearance before scheduling.'})
             elif pit_endorsement_required(config):
-                if (team.ready_for_stage or '').strip().lower() != attrs['event_name'].strip().lower():
+                if not pit_event_endorsed(team, attrs['event_name']):
                     raise serializers.ValidationError({'team_id': f'Team {team.name} is not endorsed for {attrs["event_name"]}.'})
         return team
 
@@ -1348,11 +1353,14 @@ class GenerateSchedulePlanSerializer(SchedulePlanSerializer):
             if pit_year is not None:
                 queryset = queryset.filter(year_level=pit_year)
             queryset = queryset.filter(year_level=attrs['pit_event_config'].year_level)
+            from student_teams.pit_rosters import filter_teams as roster_teams
+            queryset = roster_teams(queryset, attrs['event_name'])
             queryset = queryset.exclude(year_level='3rd Year', semester__label=Semester.SECOND)
 
             config = get_pit_event_config(attrs['semester'], attrs['event_name'])
             if pit_endorsement_required(config) and not concept_event:
-                queryset = queryset.filter(ready_for_stage__iexact=attrs['event_name'])
+                from student_teams.pit_rosters import endorsed
+                queryset = queryset.filter(pk__in=[t.pk for t in queryset if endorsed(t, attrs['event_name'])])
 
         teams = list(queryset.exclude(pk__in=scheduled_team_ids).order_by('name'))
         return [team for team in teams if pit_ready(team, attrs['pit_event_config'])] if concept_event else teams
@@ -1405,7 +1413,7 @@ class ConfirmSchedulePlanSerializer(SchedulePlanSerializer):
                     if not pit_ready(team, config):
                         raise serializers.ValidationError({'slots': f'{team.name} needs current concept papers and instructor clearance.'})
                 elif pit_endorsement_required(config):
-                    if (team.ready_for_stage or '').strip().lower() != attrs['event_name'].strip().lower():
+                    if not pit_event_endorsed(team, attrs['event_name']):
                         raise serializers.ValidationError({'slots': f'{team.name} is not endorsed for {attrs["event_name"]}.'})
 
             active_existing = DefenseSchedule.objects.filter(

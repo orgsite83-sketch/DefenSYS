@@ -107,6 +107,7 @@ class StudentTeamsHeaderActions extends StatelessWidget {
     this.onBulkImport,
     required this.onCreateTeam,
     this.onRefresh,
+    this.importLabel = 'Import teams',
   });
 
   final bool isPitInstructor;
@@ -115,6 +116,7 @@ class StudentTeamsHeaderActions extends StatelessWidget {
   final VoidCallback? onBulkImport;
   final VoidCallback? onCreateTeam;
   final VoidCallback? onRefresh;
+  final String importLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -148,7 +150,7 @@ class StudentTeamsHeaderActions extends StatelessWidget {
             onPressed: canTapActions ? onBulkImport : null,
             style: DefensysButtonStyles.primary(context),
             icon: const Icon(Icons.upload_file_outlined),
-            label: const Text('Bulk Import'),
+            label: Text(importLabel),
           ),
       ],
     );
@@ -459,7 +461,7 @@ class PitEventDropdownFilter extends StatelessWidget {
     final menuItems = <DropdownMenuItem<String?>>[
       const DropdownMenuItem<String?>(
         value: null,
-        child: Text('All PIT Events'),
+        child: Text('Current roster'),
       ),
       ...filtered.map((e) {
         final name = e['event_name']?.toString() ?? '';

@@ -8,6 +8,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q
+from defensys_backend.read_projection import read_memoize
 from django.utils import timezone
 
 from authentication_access_control.audit import log_high_impact_action
@@ -27,7 +28,21 @@ def is_pm(user, project):
 
 
 def is_reviewer(user, project):
-    return admin(user) or (getattr(user, 'role', '') == 'faculty' and user.pk == project.reviewer_id)
+    from .acknowledgments import pit_reviewer_id
+    reviewer_id = pit_reviewer_id(project) if project.pit_event_config_id else project.reviewer_id
+    return admin(user) or (getattr(user, 'role', '') == 'faculty' and user.pk == reviewer_id)
+
+
+@read_memoize
+def effective_reviewer(project):
+    if not project.pit_event_config_id:
+        return project.reviewer
+    from .acknowledgments import pit_reviewer_id
+    reviewer_id = pit_reviewer_id(project)
+    if reviewer_id == project.reviewer_id:
+        return project.reviewer
+    from django.contrib.auth import get_user_model
+    return get_user_model().objects.filter(pk=reviewer_id).first()
 
 
 def context_fields(context):
@@ -155,14 +170,16 @@ def correcting(round, key):
                 round.selected_key == key)
 
 
-def invalidate(round):
+def invalidate(round, *, modules=False):
     round.endorsed_at, round.endorsed_by, round.endorsement_snapshot = None, None, {}
     round.save(update_fields=['endorsed_at', 'endorsed_by', 'endorsement_snapshot'])
-    from repository.deliverables.concepts import invalidate_clearance
-    for module_round in round.module_rounds.filter(schedule__isnull=True).select_related('team'):
-        invalidate_clearance(module_round.team, round.project.context.label)
+    if modules:
+        from repository.deliverables.concepts import invalidate_clearance
+        for module_round in round.module_rounds.filter(schedule__isnull=True).select_related('team'):
+            invalidate_clearance(module_round.team, round.project.context.label)
 
 
+@read_memoize(copy=True)
 def snapshot(round):
     return {'teams': list(active_links(round.project).order_by('team_id').values('team_id', 'project_version')),
         'systems': list(round.systems.order_by('key').values('id', 'key', 'title', 'confirmed')),
@@ -189,7 +206,8 @@ def shared_clearance(round, *, state=None):
         and all(p['status'] == 'accepted' for p in papers))
 
 
-def review_summary(round):
+@read_memoize(copy=True)
+def review_summary(round, *, team=None, actor=None):
     """Read-only section facts shared by team summaries and review surfaces."""
     state = snapshot(round)
     progress = {'required': 3,
@@ -209,10 +227,15 @@ def review_summary(round):
         ('awaiting_files', 'Shared papers awaiting upload') if len(statuses) < 3 else
         ('needs_review', 'Shared papers awaiting review') if 'pending' in statuses else
         ('needs_review', 'Shared titles awaiting confirmation'))
+    from .acknowledgments import summary as acknowledgment_summary
+    reviewer = effective_reviewer(round.project)
     return {'project_id': round.project_id, 'round_id': round.pk, 'round': round.number,
         'section': round.project.section.section, 'stage_label': round.project.context.label,
         'cleared': cleared, 'status': code, 'status_label': label,
-        'review_progress': progress, 'systems': state['systems']}
+        'review_progress': progress, 'systems': state['systems'],
+        'project_manager_name': round.project.project_manager.get_full_name() or round.project.project_manager.username,
+        'reviewer_name': (reviewer.get_full_name() or reviewer.username) if reviewer else 'Section instructor assignment needed',
+        **acknowledgment_summary(round, team=team, actor=actor)}
 
 
 def review_token(round):
@@ -249,6 +272,13 @@ def configure(actor, teams, context, data):
             section=anchor.section, memberships__student=manager).exists())
     if not enrolled:
         raise ValidationError('Choose an active student project manager enrolled in this section.')
+    if anchor.is_pit:
+        assigned = list(SectionInstructorAssignment.objects.filter(semester=anchor.semester,
+            year_level=anchor.year_level, section=anchor.section, is_active=True,
+            faculty__is_active=True).values_list('faculty_id', flat=True).distinct())
+        reviewer_id = assigned[0] if len(assigned) == 1 else reviewer_id
+        if reviewer_id not in assigned:
+            raise ValidationError('Assign an active section instructor before configuring shared proposals.')
     reviewer = get_user_model().objects.filter(pk=reviewer_id, role='faculty', is_active=True).first()
     if not reviewer:
         raise ValidationError('Choose an active faculty reviewer for the shared system.')
@@ -291,6 +321,9 @@ def configure(actor, teams, context, data):
         invalidate(round)
     audit(actor, 'configured', project, team_ids=[t.pk for t in teams], context=context.pk,
           project_manager_id=manager.pk, reviewer_id=reviewer.pk, title_mode=mode)
+    if anchor.is_pit:
+        from student_teams.pit_rosters import pin
+        pin(anchor, context)
     return project
 
 
@@ -320,7 +353,7 @@ def team_display(team, label=None):
     return {}
 
 
-def scheduling_blocker(team, context, current):
+def module_blocker(team, context, current):
     project = project_for(team, context)
     if not project:
         return ''
@@ -329,10 +362,30 @@ def scheduling_blocker(team, context, current):
         return 'Submit this team’s modules for the current section system proposals.'
     if round.verdict == 'for_redefense':
         return 'The section needs replacement system concepts.'
-    if not shared_clearance(round):
-        return 'Confirm the shared system titles and accept their current papers before scheduling.'
     if not all(c.get('faculty_confirmed') for c in current.concepts):
         return 'The instructor/adviser must confirm all three module names and system connections.'
+    return ''
+
+
+def scheduling_blocker(team, context, current):
+    project = project_for(team, context)
+    if project and current and current.section_round_id == latest(project).pk and not shared_clearance(latest(project)):
+        return 'Confirm the shared system titles and accept their current papers before scheduling.'
+    blocker = module_blocker(team, context, current)
+    if blocker:
+        return blocker
+    project = project_for(team, context)
+    if not project:
+        return ''
+    round = latest(project)
+    if not shared_clearance(round):
+        return 'Confirm the shared system titles and accept their current papers before scheduling.'
+    # Retain already scheduled/historical approvals; acknowledgment gates new slots.
+    if current and current.schedule_id and current.schedule.status != 'cancelled':
+        return ''
+    from .acknowledgments import acknowledged, required_faculty_id
+    if not acknowledged(round, required_faculty_id(team, project)):
+        return 'The team’s assigned adviser/instructor must review and acknowledge the current shared system proposals before scheduling.'
     return ''
 
 
@@ -369,6 +422,7 @@ def save_system_titles(project, actor, titles):
         raise ValidationError('Enter one unique title for each of System A, B and C.')
     keyed = {c['key']: c for c in titles}
     changed = False
+    changed_keys = set()
     for concept in round.systems.all():
         title = keyed[concept.key].get('title', '')
         if not isinstance(title, str) or not title.strip() or len(title.strip()) > 255:
@@ -377,6 +431,8 @@ def save_system_titles(project, actor, titles):
             raise PermissionError('A faculty-confirmed system name can only be changed by assigned faculty.')
         if (concept.title, concept.confirmed) != (title.strip(), faculty or concept.confirmed):
             if concept.title != title.strip():
+                if concept.title.strip():
+                    changed_keys.add(concept.key)
                 # Acceptance belongs to the reviewed title and file version.
                 for paper in concept.papers.filter(is_current=True, status='accepted'):
                     audit(actor, 'paper_review_invalidated', paper, reason='System title changed',
@@ -389,7 +445,15 @@ def save_system_titles(project, actor, titles):
             concept.save(update_fields=['title', 'confirmed'])
             changed = True
     if changed:
-        invalidate(round)
+        invalidate(round, modules=bool(changed_keys))
+        if changed_keys:
+            for module_round in round.module_rounds.filter(schedule__isnull=True):
+                for module in module_round.concepts:
+                    if module['key'] in changed_keys:
+                        module['faculty_confirmed'] = False
+                        module.pop('faculty_confirmed_by', None)
+                        module.pop('faculty_confirmed_at', None)
+                module_round.save(update_fields=['concepts'])
     audit(actor, 'system_names_saved', round, systems=list(round.systems.values('key', 'title', 'confirmed')))
 
 
@@ -666,6 +730,12 @@ def reassign(project, actor, manager_id, reviewer_id):
     from user_management.models import SectionInstructorAssignment
     SectionConceptProject.objects.select_for_update().get(pk=project.pk)
     manager = get_user_model().objects.filter(pk=manager_id, role='student', is_active=True).first()
+    if project.pit_event_config_id:
+        from .acknowledgments import pit_instructors
+        assigned = list(pit_instructors(project))
+        reviewer_id = assigned[0] if len(assigned) == 1 else reviewer_id
+        if reviewer_id not in assigned:
+            raise ValidationError('Assign an active instructor for this section before reassigning its shared review.')
     reviewer = get_user_model().objects.filter(pk=reviewer_id, role='faculty', is_active=True).first()
     if not manager or not StudentAcademicRecord.objects.filter(student=manager,
         semester_id=project.section.semester_id, section=project.section.section,
@@ -686,33 +756,46 @@ def task_payload(user):
     if getattr(user, 'is_guest_panelist', False):
         return []
     tasks = []
-    projects = SectionConceptProject.objects.filter(Q(project_manager=user) | Q(reviewer=user),
-        section__semester__is_active=True).select_related('section__semester', 'pit_event_config', 'defense_stage')
+    from django.db.models import Exists, OuterRef
+    from user_management.models import SectionInstructorAssignment
+    assigned = SectionInstructorAssignment.objects.filter(faculty=user, is_active=True,
+        semester_id=OuterRef('section__semester_id'), section=OuterRef('section__section'),
+        year_level=OuterRef('section__year_level'))
+    projects = SectionConceptProject.objects.filter(section__semester__is_active=True).annotate(
+        _assigned_instructor=Exists(assigned)).filter(
+            Q(project_manager=user) | Q(reviewer=user) | Q(team_links__team__adviser=user) |
+            Q(pit_event_config__isnull=False, _assigned_instructor=True)).select_related(
+                'section__semester', 'project_manager', 'reviewer', 'pit_event_config', 'defense_stage').distinct()
     for project in projects:
-        if not writable(project) or not active_links(project).exists():
+        if not can_read(user, project) or not writable(project) or not active_links(project).exists():
             continue
         round = latest(project)
-        if not round.verdict and shared_clearance(round):
+        from .acknowledgments import can_acknowledge, acknowledged
+        faculty_member = can_acknowledge(user, project)
+        acknowledgment_pending = faculty_member and not acknowledged(round, user.pk)
+        if not round.verdict and shared_clearance(round) and not acknowledgment_pending:
             continue
         if round.verdict in ('approved', 'approved_with_revisions'):
             if round.verdict == 'approved' or round.revisions_cleared_at:
                 continue
         manager = project.project_manager_id == user.pk
-        reviewer = project.reviewer_id == user.pk
-        if manager or reviewer:
+        reviewer = getattr(user, 'role', '') == 'faculty' and is_reviewer(user, project)
+        if manager or reviewer or acknowledgment_pending:
             state = snapshot(round)
             statuses = [paper['status'] for paper in state['papers']]
-            status = ('shared_revisions_pending' if round.verdict == 'approved_with_revisions' else
+            status = ('awaiting_shared_acknowledgment' if shared_clearance(round) and acknowledgment_pending else
+                'shared_revisions_pending' if round.verdict == 'approved_with_revisions' else
                 'papers_missing' if len(statuses) < 3 else 'corrections_requested' if 'rejected' in statuses else
                 'awaiting_faculty_review' if 'pending' in statuses else
                 'awaiting_name_confirmation' if not all(c['confirmed'] for c in state['systems']) else
                 'cleared')
             tasks.append({'project_id': project.pk, 'section': project.section.section,
                 'stage_label': project.context.label, 'round': round.number,
-                'role': 'project_manager' if manager else 'reviewer',
+                'role': 'project_manager' if manager else 'reviewer' if reviewer else 'adviser',
                 'title': (('Submit revised shared system paper' if manager else 'Review and clear shared system revisions')
                     if round.verdict == 'approved_with_revisions' else
                     'Submit three shared system concept papers' if manager else
+                    'Review and acknowledge shared system alignment' if acknowledgment_pending and not reviewer else
                     'Confirm system names and review shared concept papers'),
                 'status': status, 'status_label': status.replace('_', ' ')})
     return tasks
@@ -787,13 +870,15 @@ def payload(project, actor):
                 section=project.section.section, year_level=project.section.year_level).values('student_id')) |
             Q(pk=project.project_manager_id))
         reviewers = get_user_model().objects.filter(role='faculty', is_active=True)
-        if not is_manager(actor):
+        if project.pit_event_config_id or not is_manager(actor):
             reviewers = reviewers.filter(Q(pk=project.reviewer_id) | Q(pk__in=SectionInstructorAssignment.objects.filter(
                 semester_id=project.section.semester_id, section=project.section.section,
                 year_level=project.section.year_level, is_active=True).values('faculty_id')))
         manager_options = [{'id': u.pk, 'name': u.get_full_name() or u.username} for u in managers.order_by('username')]
         reviewer_options = [{'id': u.pk, 'name': u.get_full_name() or u.username} for u in reviewers.order_by('username')]
-    shared_review = review_summary(round)
+    shared_review = review_summary(round, actor=actor)
+    reviewer = effective_reviewer(project)
+    from .acknowledgments import pit_instructors
     return {'id': project.pk, 'section': project.section.section, 'year_level': project.section.year_level,
         'review_token': review_token(round), 'manager_options': manager_options, 'reviewer_options': reviewer_options,
         'can_reassign': can_write,
@@ -801,7 +886,8 @@ def payload(project, actor):
         'scope': 'pit' if project.pit_event_config_id else 'capstone', 'round': round.number,
         'round_id': round.pk, 'title_mode': project.title_mode,
         'project_manager_id': project.project_manager_id, 'project_manager_name': project.project_manager.get_full_name() or project.project_manager.username,
-        'reviewer_id': project.reviewer_id, 'reviewer_name': project.reviewer.get_full_name() or project.reviewer.username,
+        'reviewer_id': reviewer.pk if reviewer else None, 'reviewer_name': shared_review['reviewer_name'],
+        'reviewer_automatic': bool(project.pit_event_config_id and len(list(pit_instructors(project))) == 1),
         'systems': systems, 'teams': teams, 'selected_key': round.selected_key, 'verdict': round.verdict,
         'remarks': round.remarks, 'endorsed': shared_review['cleared'], 'cleared': shared_review['cleared'],
         'shared_review': shared_review, 'editable': editable_now,

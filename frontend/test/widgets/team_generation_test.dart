@@ -38,11 +38,11 @@ void main() {
           onBulkImport: () => imports++,
         ),
       );
-      expect(find.text('Bulk Import'), findsOneWidget);
+      expect(find.text('Import teams'), findsOneWidget);
       expect(find.text('Download template'), findsOneWidget);
       expect(find.text('Team Creation'), findsNothing);
       expect(find.text('Generate Teams'), findsNothing);
-      await tester.tap(find.text('Bulk Import'));
+      await tester.tap(find.text('Import teams'));
       expect(imports, 1);
     },
   );
@@ -139,6 +139,41 @@ void main() {
     );
   }
 
+  testWidgets('sole PIT instructor is displayed without a reviewer selection', (
+    tester,
+  ) async {
+    options['concept_contexts'] = [
+      {'label': 'PIT Design'},
+    ];
+    options['system_reviewers'] = [
+      {'id': 1, 'name': 'Ana Instructor'},
+    ];
+    options['section_instructors'] = {
+      'BSIT-2A': [
+        {
+          'faculty_id': 1,
+          'faculty__first_name': 'Ana',
+          'faculty__last_name': 'Instructor',
+        },
+      ],
+    };
+    addTearDown(() {
+      options.remove('concept_contexts');
+      options.remove('system_reviewers');
+      options.remove('section_instructors');
+    });
+    await pump(tester, viewport: const Size(1200, 1100));
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Independent projects'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Shared section system').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Ana Instructor'), findsOneWidget);
+    expect(find.text('System faculty reviewer'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'preview remains read-only and reviewed leader is sent on creation',
     (tester) async {
@@ -148,7 +183,9 @@ void main() {
         isFalse,
       );
       expect(find.text('BSIT-2A · 2/2 available'), findsOneWidget);
-      await tester.tap(find.text('Preview teams'));
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Review teams'));
       await tester.pumpAndSettle();
       expect(find.text('Review generated teams'), findsOneWidget);
       expect(requests.where((r) => r.url.path.endsWith('/create/')), isEmpty);
@@ -167,24 +204,18 @@ void main() {
     },
   );
 
-  testWidgets('PIT lead can change the event membership policy', (
-    tester,
-  ) async {
-    options['team_membership_policy'] = 'single';
-    await pump(tester);
-    expect(find.text('One team in this event'), findsNothing);
-    await tester.tap(find.text('Unassigned roster'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('PIT Design').last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('One team in this event'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Multiple teams in this event').last);
-    await tester.pumpAndSettle();
-    final request = requests.singleWhere((r) => r.method == 'PATCH');
-    expect(jsonDecode(request.body), {'team_membership_policy': 'multiple'});
-    expect(find.text('Multiple teams in this event'), findsOneWidget);
-  });
+  testWidgets(
+    'ordinary generation uses the current roster without selecting an event',
+    (tester) async {
+      await pump(tester);
+      expect(find.text('PIT event (optional)'), findsNothing);
+      expect(find.text('One team in this event'), findsNothing);
+      expect(
+        requests.last.url.queryParameters.containsKey('event_name'),
+        isFalse,
+      );
+    },
+  );
 
   testWidgets('generation settings and preview fit a small laptop viewport', (
     tester,
@@ -196,7 +227,9 @@ void main() {
       find.byKey(const ValueKey('formation-preview')),
       'team-formation/settings',
     );
-    await tester.tap(find.text('Preview teams'));
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Review teams'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text('Create 1 team'), findsOneWidget);

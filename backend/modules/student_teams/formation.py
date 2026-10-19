@@ -41,7 +41,7 @@ def formation_scope(user, data, *, lock=False, roster_only=False, generation=Tru
         raise PermissionDenied('This roster is outside your assigned PIT year level.')
     event = None
     if 'PIT' in level:
-        if (roster_only or generation) and not data.get('event_name'):
+        if not data.get('event_name'):
             return semester, level, year, None
         events = pit_events_for_user(user, semester=semester).filter(year_level=year)
         if lock:
@@ -75,7 +75,7 @@ def roster(semester, level, year, event, user=None, *, generation=True):
     elif 'PIT' not in level:
         excluded = set(assigned.filter(team__level__icontains='Capstone').values_list('student_id', flat=True))
     else:
-        assigned = assigned.filter(team__level__icontains='PIT')
+        assigned = pit_event_memberships(assigned.filter(team__level__icontains='PIT'), None)
         excluded = set(assigned.values_list('student_id', flat=True))
     assigned_ids = set(assigned.values_list('student_id', flat=True)) if event else excluded
     return [{
@@ -109,9 +109,15 @@ def options(user, data, *, generation=True):
     reviewers = get_user_model().objects.filter(role='faculty', is_active=True)
     if not is_manager(user):
         reviewers = reviewers.filter(pk__in=assignments.values('faculty_id'))
+    section_instructors = {}
+    for assignment in SectionInstructorAssignment.objects.filter(semester=semester,
+            year_level=year, section__in=sections, is_active=True, faculty__is_active=True).values(
+                'section', 'faculty_id', 'faculty__first_name', 'faculty__last_name').distinct():
+        section_instructors.setdefault(assignment.pop('section'), []).append(assignment)
     return {
         'concept_contexts': [{'label': c.label} for c in contexts],
         'system_reviewers': [{'id': r.pk, 'name': r.get_full_name() or r.username} for r in reviewers.order_by('last_name', 'pk')],
+        'section_instructors': section_instructors,
         'students': students,
         'sections': [{'name': section,
                       'eligible_count': sum(s['eligible'] for s in students if s['section'] == section),
@@ -260,6 +266,9 @@ def create_from_preview(request, data):
     names = [t['name'].strip() for t in drafts]
     if len(names) != len(set(names)):
         raise ValidationError('Each generated team needs a different name.')
+    from .pit_rosters import ensure_current
+    if 'PIT' in level and not event:
+        ensure_current(semester.pk, year, {d['section'] for d in drafts})
     teams = []
     for draft in drafts:
         if len(draft['member_ids']) != len(set(draft['member_ids'])):
@@ -275,6 +284,11 @@ def create_from_preview(request, data):
                     'formation': True})
         serializer.is_valid(raise_exception=True)
         teams.append(serializer.save(setup_pending=True))
+    from .pit_rosters import register
+    # Ordinary generation creates the reusable current roster. Legacy clients
+    # can still generate for an explicitly selected event they own.
+    if not event:
+        register(teams, request.user)
     if data.get('shared_system'):
         from repository.section_concepts.services import configure
         configure(request.user, teams, generation_concept_context(event, data['shared_system'],

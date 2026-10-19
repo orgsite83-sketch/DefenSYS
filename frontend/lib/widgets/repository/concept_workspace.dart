@@ -101,7 +101,8 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
     final oldWorkflow = oldWidget.stage['concept_workflow'] as Map? ?? {};
     if ('${oldWidget.teamId}:${oldWidget.stageLabel}:${oldWorkflow['round']}' !=
             identity ||
-        (workflow['assigned'] == true &&
+        ((workflow['assigned'] == true ||
+                workflow['section_project_id'] != null) &&
             '${oldWorkflow['concepts']}' != '${workflow['concepts']}')) {
       resetControllers();
     }
@@ -183,6 +184,99 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
     }
   }
 
+  Future<void> reviewModules() async {
+    final reviewToken = workflow['module_review_token']?.toString();
+    final editors = {
+      for (final c in concepts)
+        '${c['key']}': TextEditingController(text: '${c['title'] ?? ''}'),
+    };
+    final form = GlobalKey<FormState>();
+    final result = await showDialog<List<Map<String, dynamic>>>(
+      context: context,
+      builder: (dialogContext) => DefensysShadcnScope(
+        child: AlertDialog(
+          title: const Text('Review & confirm modules'),
+          content: SizedBox(
+            width: 560,
+            child: SingleChildScrollView(
+              child: Form(
+                key: form,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Check each module name and its connection to the matching shared system. You can correct the names before confirming.',
+                    ),
+                    for (final c in concepts) ...[
+                      const SizedBox(height: 18),
+                      Text(
+                        'System ${c['key'] == 'c1'
+                            ? 'A'
+                            : c['key'] == 'c2'
+                            ? 'B'
+                            : 'C'} · ${'${c['system_title'] ?? ''}'.trim().isEmpty ? 'Shared name pending' : c['system_title']}',
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: editors['${c['key']}'],
+                        maxLength: 255,
+                        minLines: 1,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Module name',
+                        ),
+                        validator: (value) =>
+                            value == null || value.trim().isEmpty
+                            ? 'Enter a module name.'
+                            : null,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (form.currentState!.validate()) {
+                  Navigator.pop(dialogContext, [
+                    for (final c in concepts)
+                      {...c, 'title': editors['${c['key']}']!.text.trim()},
+                  ]);
+                }
+              },
+              child: const Text('Confirm module names & connections'),
+            ),
+          ],
+        ),
+      ),
+    );
+    // Dialog fields finish their exit animation before their controllers retire.
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    for (final editor in editors.values) {
+      editor.dispose();
+    }
+    if (result != null && mounted) {
+      await perform(
+        () => ref
+            .read(capstoneDeliverablesProvider.notifier)
+            .conceptAction(
+              widget.teamId,
+              widget.stageLabel,
+              'save_titles',
+              concepts: result,
+              reviewToken: reviewToken,
+            ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (workflow['enabled'] != true) return const SizedBox.shrink();
@@ -197,25 +291,47 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
             (workflow['faculty_names_required'] != true &&
                 workflow['module_names_confirmed'] != true));
     final assigned = workflow['assigned'] == true;
+    final shared = workflow['section_project_id'] != null;
+    final confirmedCount = concepts
+        .where((c) => c['faculty_confirmed'] == true)
+        .length;
+    final namesMissing = concepts.any(
+      (c) => '${c['title'] ?? ''}'.trim().isEmpty,
+    );
+    if (assigned &&
+        !shared &&
+        '${(workflow['config'] as Map?)?['assigned_title'] ?? ''}'
+            .trim()
+            .isNotEmpty) {
+      return ConceptHistory(workflow: workflow);
+    }
     final cleared = workflow['clearance_valid'] == true;
-    final status = switch (workflow['status']) {
-      'concepts_needed' => 'Concepts needed',
-      'replacement_concepts_needed' => 'Replacement concepts needed',
-      'concept_review_pending' =>
-        workflow['section_project_id'] != null
-            ? 'Module review pending'
-            : 'Concept review pending',
-      'concept_endorsement_pending' => 'Awaiting endorsement',
-      'shared_clearance_pending' => 'Awaiting shared paper clearance',
-      'ready_to_schedule_redefense' => 'Ready to schedule re-defense',
-      'ready_to_schedule' => 'Ready to schedule',
-      'scheduled' => 'Hearing scheduled',
-      'approved' => 'Concept approved',
-      'approved_with_revisions' => 'Approved with revisions',
-      'failed' => 'Failed',
-      'project_rejected' => 'Project rejected',
-      _ => 'Concept selection',
-    };
+    final status = shared && editable
+        ? '${confirmedCount == concepts.length
+              ? 'Module names confirmed'
+              : namesMissing
+              ? 'Module names needed'
+              : 'Module confirmation required'} · $confirmedCount/${concepts.length} confirmed'
+        : switch (workflow['status']) {
+            'concepts_needed' => 'Concepts needed',
+            'replacement_concepts_needed' => 'Replacement concepts needed',
+            'concept_review_pending' =>
+              workflow['section_project_id'] != null
+                  ? 'Module review pending'
+                  : 'Concept review pending',
+            'concept_endorsement_pending' => 'Awaiting endorsement',
+            'shared_clearance_pending' => 'Awaiting shared paper clearance',
+            'module_confirmation_pending' => 'Module confirmation required',
+            'shared_acknowledgment_pending' => 'Review shared systems',
+            'ready_to_schedule_redefense' => 'Ready to schedule re-defense',
+            'ready_to_schedule' => 'Ready to schedule',
+            'scheduled' => 'Hearing scheduled',
+            'approved' => 'Concept approved',
+            'approved_with_revisions' => 'Approved with revisions',
+            'failed' => 'Failed',
+            'project_rejected' => 'Project rejected',
+            _ => 'Concept selection',
+          };
     final content = DefensysShadcnScope(
       child: Padding(
         padding: const EdgeInsets.only(bottom: 16),
@@ -280,7 +396,9 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                         border: Border.all(
                           color: isConfirmed
                               ? (Theme.of(context).brightness == Brightness.dark
-                                    ? const Color(0xFF4ADE80).withValues(alpha: 0.6)
+                                    ? const Color(
+                                        0xFF4ADE80,
+                                      ).withValues(alpha: 0.6)
                                     : const Color(0xFF86EFAC))
                               : (Theme.of(context).brightness == Brightness.dark
                                     ? Colors.white12
@@ -312,10 +430,10 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                                 ),
                                 child: Text(
                                   slotBadge,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
-                                    color: Color(0xFF720000),
+                                    color: DefensysTokens.maroonTextOf(context),
                                   ),
                                 ),
                               ),
@@ -389,45 +507,78 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                                   ),
                                 )
                               else
-                                const ShadBadge.secondary(
+                                ShadBadge.secondary(
                                   child: Text(
-                                    'Draft',
-                                    style: TextStyle(fontSize: 10),
+                                    shared
+                                        ? ('${c['title'] ?? ''}'.trim().isEmpty
+                                              ? 'Name needed'
+                                              : 'Needs confirmation')
+                                        : 'Draft',
+                                    style: const TextStyle(fontSize: 10),
                                   ),
                                 ),
                             ],
                           ),
                           const SizedBox(height: 8),
-                          ShadInput(
-                            controller: controllers['${c['key']}'],
-                            enabled: titlesEditable && !busy,
-                            minLines: 1,
-                            maxLines: 2,
-                            style: const TextStyle(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w600,
-                              height: 1.3,
-                            ),
-                            leading: Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: Text(
-                                '${c['key']}'.toUpperCase(),
+                          if (shared && faculty) ...[
+                            if ('${c['system_title'] ?? ''}'
+                                .trim()
+                                .isNotEmpty) ...[
+                              Text(
+                                '${c['system_title']}',
                                 style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                  color: DefensysTokens.maroonOf(context),
+                                  fontSize: 11.5,
+                                  color: DefensysTokens.textSecondaryOf(
+                                    context,
+                                  ),
                                 ),
                               ),
+                              const SizedBox(height: 5),
+                            ],
+                            Text(
+                              '${c['title'] ?? ''}'.trim().isEmpty
+                                  ? 'Module name needed'
+                                  : '${c['title']}',
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                                color: DefensysTokens.textPrimaryOf(context),
+                              ),
                             ),
-                            placeholder: Text(
-                              assigned
-                                  ? 'Awaiting administrator assignment'
-                                  : isShared
-                                  ? 'Enter proposed module title'
-                                  : 'Enter proposed concept title',
-                              style: const TextStyle(fontSize: 13),
+                          ] else
+                            ShadInput(
+                              controller: controllers['${c['key']}'],
+                              enabled:
+                                  titlesEditable &&
+                                  !busy &&
+                                  !(shared && faculty),
+                              minLines: 1,
+                              maxLines: 2,
+                              style: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                                height: 1.3,
+                              ),
+                              leading: Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: Text(
+                                  '${c['key']}'.toUpperCase(),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: DefensysTokens.maroonOf(context),
+                                  ),
+                                ),
+                              ),
+                              placeholder: Text(
+                                assigned
+                                    ? 'Awaiting administrator assignment'
+                                    : isShared
+                                    ? 'Enter proposed module title'
+                                    : 'Enter proposed concept title',
+                                style: const TextStyle(fontSize: 13),
+                              ),
                             ),
-                          ),
                           if (c['remarks'] != null &&
                               '${c['remarks']}'.trim().isNotEmpty) ...[
                             const SizedBox(height: 8),
@@ -480,10 +631,23 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                 ),
               if (editable)
                 Wrap(
+                  alignment: WrapAlignment.end,
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    if (titlesEditable)
+                    if (titlesEditable && shared && faculty)
+                      ShadButton.outline(
+                        enabled: !busy,
+                        onPressed: reviewModules,
+                        child: Text(
+                          confirmedCount == concepts.length
+                              ? 'Edit module names'
+                              : namesMissing
+                              ? 'Set module names'
+                              : 'Review & confirm modules',
+                        ),
+                      ),
+                    if (titlesEditable && !(shared && faculty))
                       ShadButton.outline(
                         enabled: !busy,
                         child: Text(
@@ -509,20 +673,6 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                                     },
                                 ],
                               ),
-                        ),
-                      ),
-                    if (faculty && !cleared)
-                      ShadButton(
-                        enabled:
-                            !busy &&
-                            widget.stage['required_complete'] == true &&
-                            (workflow['shared_review'] is! Map ||
-                                workflow['shared_review']['cleared'] == true),
-                        child: const Text('Endorse concept set'),
-                        onPressed: () => perform(
-                          () => ref
-                              .read(capstoneDeliverablesProvider.notifier)
-                              .endorseTeam(widget.teamId, widget.stageLabel),
                         ),
                       ),
                     if (admin && !cleared)

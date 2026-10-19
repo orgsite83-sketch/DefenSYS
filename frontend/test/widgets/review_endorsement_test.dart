@@ -229,7 +229,7 @@ void main() {
                       },
                     ],
                   },
-                  '2 needs review',
+                  '2 archive files need review',
                   WorkflowStatusTone.active,
                 ),
                 (
@@ -337,9 +337,8 @@ void main() {
           pit: pit,
         );
         expect(find.text('Accept'), findsOneWidget);
-        expect(find.text('Reject'), findsOneWidget);
+        expect(find.text('Request corrections'), findsNWidgets(2));
         expect(find.text('Uploaded'), findsOneWidget);
-        expect(find.text('Request corrections'), findsOneWidget);
         expect(find.text('Review & endorse'), findsNothing);
         expect(
           tester.widget<ElevatedButton>(_endorseButton()).onPressed,
@@ -387,7 +386,7 @@ void main() {
         expect(notifier.endorsed, [7, 'Concept Proposal']);
         expect(notifier.combinedReview, isNull);
 
-        await tester.tap(find.text('Request corrections'));
+        await tester.tap(find.text('Request corrections').last);
         await tester.pumpAndSettle();
         final dialog = find.byType(AlertDialog);
         final send = find.descendant(
@@ -429,7 +428,7 @@ void main() {
           notifier: notifier,
           pit: pit,
         );
-        await tester.tap(find.text('Reject'));
+        await tester.tap(find.text('Request corrections').first);
         await tester.pumpAndSettle();
         expect(find.text('Reject: Concept paper'), findsOneWidget);
         final dialog = find.byType(AlertDialog);

@@ -565,7 +565,6 @@ List<GoRoute> _facultySectionRoutes() {
 
 GoRoute _teamCreationRoute({bool instructor = false}) => GoRoute(
   path: 'creation',
-  redirect: instructor ? null : (_, state) => state.uri.path.replaceFirst('/creation', ''),
   builder: (_, state) => TeamCreationPage(
     key: ValueKey(state.uri.toString()),
     initialTab: state.uri.queryParameters['tab'] ?? 'generate',

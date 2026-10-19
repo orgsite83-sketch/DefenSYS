@@ -15,6 +15,26 @@ class TeamFormationService {
   final AuthenticatedHttpClient client;
   String get _base => ApiConfig.teamsUrl;
 
+  Future<Map<String, dynamic>> currentRoster(
+    String year,
+    String section,
+  ) async => _decode(
+    await client.get(
+      Uri.parse(
+        '$_base/current-roster/',
+      ).replace(queryParameters: {'year_level': year, 'section': section}),
+    ),
+  );
+
+  Future<Map<String, dynamic>> selectCurrentRoster(
+    Map<String, dynamic> data,
+  ) async => _decode(
+    await client.post(
+      Uri.parse('$_base/current-roster/'),
+      body: jsonEncode(data),
+    ),
+  );
+
   Future<Map<String, dynamic>> context() async =>
       _decode(await client.get(Uri.parse('$_base/generation/context/')));
 

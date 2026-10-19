@@ -52,19 +52,16 @@ class RosterImportGuardTests(APITestCase):
         self.assertFalse(self.preview(self.body(event=self.event.event_name))['rows'][0]['ready'])
         self.assertEqual(self.commit(self.body(event=self.event.event_name)).data['created_count'], 0)
 
-    def test_distinct_event_allows_a_different_roster_and_uses_its_concept_policy(self):
+    def test_distinct_event_inherits_until_lead_explicitly_replaces_its_roster(self):
         self.existing(event=self.event.event_name)
         later = PitEventGradingConfig.objects.create(semester=self.term, year_level='2nd Year',
             event_name='Later event', concept_config={'enabled': True, 'required_count': 2})
         body = self.body(event=later.event_name, title='')
         preview = self.preview(body)
-        self.assertTrue(preview['rows'][0]['ready'], preview)
+        self.assertFalse(preview['rows'][0]['ready'], preview)
         self.assertEqual(preview['rows'][0]['concept_requirement']['required_count'], 2)
         result = self.commit(body)
-        self.assertEqual(result.data['created_count'], 1, result.data)
-        created = StudentTeam.objects.get(name='Team Imported')
-        self.assertEqual(created.current_defense_stage, later.event_name)
-        self.assertEqual(created.concept_assignment['context_key'], f'pit:{later.pk}')
+        self.assertEqual(result.data['created_count'], 0, result.data)
 
     def test_multiple_team_event_requires_visible_overlap_warning(self):
         self.existing(event=self.event.event_name)
@@ -86,8 +83,8 @@ class RosterImportGuardTests(APITestCase):
             event_name='Another event', concept_config={'enabled': True, 'required_count': 3})
         self.assertFalse(self.preview(self.body(event=self.event.event_name))['rows'][0]['ready'])
         body = self.body(event=later.event_name)
-        self.assertTrue(self.preview(body)['rows'][0]['ready'])
-        self.assertEqual(self.commit(body).data['created_count'], 1)
+        self.assertFalse(self.preview(body)['rows'][0]['ready'])
+        self.assertEqual(self.commit(body).data['created_count'], 0)
 
     def test_unassigned_import_cannot_borrow_an_events_multiple_team_policy(self):
         self.existing(event=self.event.event_name)

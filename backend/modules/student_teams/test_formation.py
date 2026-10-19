@@ -125,7 +125,7 @@ class TeamFormationTests(APITestCase):
         for actor in (self.admin, self.lead):
             self.client.force_authenticate(actor)
             self.assertEqual(self.preview().status_code, 403)
-            self.assertEqual(self.client.get('/api/teams/generation/context/').status_code, 403)
+            self.assertEqual(self.client.get('/api/teams/generation/context/').status_code, 200)
             self.assertEqual(self.client.get('/api/teams/roster-options/', self.payload).status_code, 200)
 
     def test_invalid_later_group_rolls_back_every_team(self):
@@ -135,13 +135,12 @@ class TeamFormationTests(APITestCase):
         self.assertFalse(StudentTeam.objects.exists())
         self.assertFalse(TeamMembership.objects.exists())
 
-    def test_reuse_keeps_members_and_leaders_without_changing_source(self):
+    def test_inherited_roster_does_not_need_duplicate_generation(self):
         source = self.existing()
         response = self.preview(method='reuse', source_team_ids=[source.pk])
-        self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(response.data['teams'][0]['member_ids'], [s.pk for s in self.students[:3]])
-        result = self.commit(response, method='reuse', source_team_ids=[source.pk])
-        self.assertEqual(result.status_code, 201, result.data)
+        self.assertEqual(response.status_code, 400, response.data)
+        from .pit_rosters import effective_ids
+        self.assertIn(source.pk, effective_ids(self.term.pk, '2nd Year', self.event))
         source.refresh_from_db()
         self.assertEqual(source.current_defense_stage, 'Previous event')
         self.assertEqual(source.project_title, 'Existing project')

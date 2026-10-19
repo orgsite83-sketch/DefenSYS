@@ -148,7 +148,8 @@ def was_stage_endorsed(team, stage):
     if enabled(stage):
         return clearance_valid(team, stage)
     if team.is_pit:
-        return bool(stage and team.ready_for_stage == stage.label)
+        from .pit_rosters import endorsed
+        return bool(stage and endorsed(team, stage.label))
     progress = get_stage_progress(team, stage)
     return bool(progress and (progress.status in _ENDORSED_STATUSES or (
         progress.status == TeamStageProgress.STATUS_FAILED and progress.ready_at)))

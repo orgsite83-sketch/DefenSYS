@@ -315,6 +315,7 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
             DefensysShadcnScope(child: WorkflowChoice(value: _conceptFilter, options: {
               'all': 'All defense workflows', 'replacement_concepts_needed': 'Replacement concepts needed',
               'concept_review_pending': widget.scope == 'pit' ? 'Instructor review pending' : 'Adviser review pending', 'concept_endorsement_pending': 'Concept endorsement pending',
+              'module_confirmation_pending': 'Confirm module names', 'shared_clearance_pending': 'Shared papers pending', 'shared_acknowledgment_pending': 'Adviser shared review pending',
               'ready_to_schedule_redefense': 'Ready to schedule re-defense', 'scheduled': 'Concept hearing scheduled', 'failed': 'Failed / rejected',
             }, onChanged: (value) => setState(() => _conceptFilter = value))),
           ],

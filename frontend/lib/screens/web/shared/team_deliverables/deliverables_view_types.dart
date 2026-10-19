@@ -121,7 +121,7 @@ class DeliverablesTriageHelper {
       case TeamTriageFilter.replacementConcepts:
         return (resolveActiveStage(team)?['concept_workflow'] as Map? ?? {})['status'] == 'replacement_concepts_needed';
       case TeamTriageFilter.adviserReview:
-        return ['concept_review_pending', 'concept_endorsement_pending'].contains((resolveActiveStage(team)?['concept_workflow'] as Map? ?? {})['status']);
+        return ['concept_review_pending', 'concept_endorsement_pending', 'module_confirmation_pending', 'shared_acknowledgment_pending'].contains((resolveActiveStage(team)?['concept_workflow'] as Map? ?? {})['status']);
       case TeamTriageFilter.readyRedefense:
         return (resolveActiveStage(team)?['concept_workflow'] as Map? ?? {})['status'] == 'ready_to_schedule_redefense';
       case TeamTriageFilter.redefenseScheduled:

@@ -96,6 +96,17 @@ class SharedSectionStatus extends StatelessWidget {
               tone,
             ),
           ),
+          if (summary['acknowledgment_required'] == true &&
+              summary['acknowledged'] == false)
+            Text(
+              summary['papers_available'] == true
+                  ? 'Assigned adviser/instructor acknowledgment pending'
+                  : 'Shared papers must be uploaded before adviser review',
+              style: TextStyle(
+                fontSize: 12,
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+            ),
           TextButton.icon(
             style: DefensysButtonStyles.tertiary(context),
             onPressed: onOpen,
@@ -655,6 +666,64 @@ class _SectionConceptWorkspaceState
     }
   }
 
+  Widget _sharedAcknowledgment(Map<String, dynamic> p) {
+    final shared = p['shared_review'] as Map? ?? {};
+    if (shared['can_review_shared_context'] != true) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            shared['acknowledged'] == true
+                ? 'Your review of the current shared proposals is recorded.'
+                : shared['papers_available'] == true
+                ? 'Review all current shared proposals and check how your teams’ modules connect to each system. One acknowledgment covers your linked teams for this version.'
+                : 'The project manager must upload all shared proposal papers before you can acknowledge their connection to your teams’ modules.',
+          ),
+          if (shared['can_acknowledge'] == true) ...[
+            const SizedBox(height: 8),
+            FilledButton(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (dialogContext) => AlertDialog(
+                          title: const Text(
+                            'Acknowledge shared system alignment',
+                          ),
+                          content: const Text(
+                            'I have reviewed the current shared system proposals and confirm that my teams’ modules align with them. This records my review of these versions; formal shared-paper acceptance is tracked separately.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () =>
+                                  Navigator.pop(dialogContext, false),
+                              child: const Text('Cancel'),
+                            ),
+                            FilledButton(
+                              onPressed: () =>
+                                  Navigator.pop(dialogContext, true),
+                              child: const Text('Confirm acknowledgment'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed == true && mounted) {
+                        await perform(() => service.action(p, 'acknowledge'));
+                      }
+                    },
+              child: const Text('Acknowledge shared system alignment'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = project;
@@ -740,7 +809,7 @@ class _SectionConceptWorkspaceState
                           ],
                         ),
                         description: Text(
-                          'Project manager: ${p['project_manager_name']}\nSystem reviewer: ${p['reviewer_name']}',
+                          'Project manager: ${p['project_manager_name']}\n${p['scope'] == 'pit' ? 'Section instructor' : 'System reviewer'}: ${p['reviewer_name']}',
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -755,6 +824,7 @@ class _SectionConceptWorkspaceState
                               style: const TextStyle(fontSize: 13, height: 1.4),
                             ),
                             const SizedBox(height: 12),
+                            _sharedAcknowledgment(p),
                             Wrap(
                               spacing: 8,
                               runSpacing: 8,
@@ -1022,11 +1092,12 @@ class _SectionConceptWorkspaceState
                   style: TextStyle(fontSize: 12, color: secondary),
                 ),
                 Text(
-                  'System reviewer: ${p['reviewer_name']}',
+                  '${p['scope'] == 'pit' ? 'Section instructor' : 'System reviewer'}: ${p['reviewer_name']}',
                   style: TextStyle(fontSize: 12, color: secondary),
                 ),
               ],
             ),
+            _sharedAcknowledgment(p),
             const SizedBox(height: 16),
             Wrap(
               spacing: 8,
@@ -2112,21 +2183,24 @@ class _ResponsibilityDialogState extends State<_ResponsibilityDialog> {
             ],
             onChanged: (v) => setState(() => manager = v),
           ),
-          DropdownButtonFormField<int>(
-            initialValue: reviewer,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'System faculty reviewer',
+          if (widget.project['reviewer_automatic'] == true)
+            Text('Section instructor: ${widget.project['reviewer_name']}')
+          else
+            DropdownButtonFormField<int>(
+              initialValue: reviewer,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'System faculty reviewer',
+              ),
+              items: [
+                for (final p in _rows(widget.project['reviewer_options']))
+                  DropdownMenuItem(
+                    value: p['id'] as int,
+                    child: Text('${p['name']}'),
+                  ),
+              ],
+              onChanged: (v) => setState(() => reviewer = v),
             ),
-            items: [
-              for (final p in _rows(widget.project['reviewer_options']))
-                DropdownMenuItem(
-                  value: p['id'] as int,
-                  child: Text('${p['name']}'),
-                ),
-            ],
-            onChanged: (v) => setState(() => reviewer = v),
-          ),
         ],
       ),
     ),

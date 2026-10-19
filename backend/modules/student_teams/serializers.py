@@ -346,6 +346,10 @@ class StudentTeamWriteSerializer(serializers.Serializer):
     def validate(self, attrs):
         member_ids = list(dict.fromkeys(attrs['member_ids']))
         attrs['member_ids'] = member_ids
+        if self.instance:
+            from .pit_rosters import protect_membership
+            protect_membership(self.instance, member_ids, attrs['leader_id'],
+                name=attrs.get('name'), section=attrs.get('section'))
 
         if attrs['leader_id'] not in member_ids:
             raise serializers.ValidationError({'leader_id': 'Leader must be included in team members.'})
@@ -542,6 +546,9 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         self._lock_members(member_ids)
         reason = validated_data.pop('adviser_change_reason', '')
         previous_adviser_id = instance.adviser_id
+        from .pit_rosters import protect_membership
+        protect_membership(instance, member_ids, validated_data['leader'].pk,
+            name=validated_data['name'], section=validated_data.get('section', ''))
         instance.name = validated_data['name']
         instance.project_title = validated_data.get('project_title') or ('' if instance.project_pending else validated_data['name'])
         if validated_data.get('project_title'):

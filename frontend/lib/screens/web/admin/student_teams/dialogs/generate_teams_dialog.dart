@@ -1,3 +1,8 @@
+import 'dart:convert';
+import 'package:defensys/widgets/shadcn/workflow_step_progress.dart';
+import 'package:defensys/services/auth_provider.dart';
+import 'package:defensys/utils/import/team_creation_draft.dart';
+import '../components/team_project_setup.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -53,6 +58,8 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
   String titleMode = 'student_proposed';
   String? conceptStage;
   int size = 4;
+  int step = 1;
+  Map<String, dynamic>? savedDraft;
   bool busy = false;
   bool rosterBusy = false, rosterDirty = false;
   String? error;
@@ -61,9 +68,18 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
   final sources = <int>{};
   List<Map<String, dynamic>> teams = [];
   List<Map<String, dynamic>> students = [];
-  String? token;
+  String? token, previewSignature;
 
   bool get isPit => level.contains('PIT');
+  Map<String, dynamic>? get assignedInstructor {
+    if (!isPit || sections.length != 1) return null;
+    final assigned = options?['section_instructors'] as Map? ?? {};
+    final instructors = _maps(assigned[sections.single]);
+    return instructors.length == 1 ? instructors.single : null;
+  }
+
+  int? get resolvedReviewerId =>
+      assignedInstructor?['faculty_id'] as int? ?? systemReviewerId;
   String get year => level.substring(0, level.lastIndexOf(' '));
   List<Map<String, dynamic>> get events =>
       widget.events.where((e) => e['year_level'] == year).toList();
@@ -74,7 +90,11 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
     super.initState();
     level = widget.initialLevel;
     event = null;
-    Future.microtask(loadOptions);
+    Future.microtask(() async {
+      await loadOptions();
+      final draft = await draftStore.load();
+      if (mounted) setState(() => savedDraft = draft);
+    });
   }
 
   Future<void> loadOptions() async {
@@ -142,18 +162,44 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
     if (sharedSystem)
       'shared_system': {
         'project_manager_id': projectManagerId,
-        'reviewer_id': systemReviewerId,
+        if (resolvedReviewerId != null) 'reviewer_id': resolvedReviewerId,
         'title_mode': titleMode,
         'stage_label': conceptStage,
       },
   };
 
   Future<void> preview() async {
+    if (token != null && previewSignature == jsonEncode(request)) {
+      setState(() => step = 3);
+      return;
+    }
+    if (token != null && teams.isNotEmpty) {
+      final replace = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Regenerate team preview?'),
+          content: const Text(
+            'Your grouping or project settings changed. Generating a new preview replaces edits to the previous teams.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Keep editing'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Regenerate preview'),
+            ),
+          ],
+        ),
+      );
+      if (replace != true || !mounted) return;
+    }
     if (sharedSystem &&
         (rosterMode != 'sections' ||
             sections.length != 1 ||
             projectManagerId == null ||
-            systemReviewerId == null ||
+            resolvedReviewerId == null ||
             conceptStage == null ||
             !_maps(options?['students']).any(
               (s) =>
@@ -177,6 +223,8 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
         teams = _maps(result['teams']);
         students = _maps(result['students']);
         token = result['preview_token'].toString();
+        previewSignature = jsonEncode(request);
+        step = 3;
       });
     } catch (e) {
       if (mounted) setState(() => error = _error(e));
@@ -205,6 +253,7 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
         'preview_token': token,
         'teams': teams,
       });
+      await draftStore.clear();
       await ref
           .read(studentTeamsProvider.notifier)
           .refreshAfterGeneration(result['created_count'] as int);
@@ -261,10 +310,10 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         widget.onBusyChanged?.call(busy || rosterBusy);
-        widget.onDraftChanged?.call(token != null || rosterDirty);
+        widget.onDraftChanged?.call(step > 1 || token != null || rosterDirty);
       }
     });
-    final reviewing = token != null;
+    final reviewing = step == 3;
     final color = Theme.of(context).colorScheme.primary;
     final dialog = PopScope(
       canPop: !busy,
@@ -297,6 +346,8 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
               Text(
                 reviewing
                     ? '${teams.length} ${teams.length == 1 ? 'team' : 'teams'} · ${students.length} students. Review names, members, and leaders before creating.'
+                    : step == 2
+                    ? 'Choose how these teams will organize their project work.'
                     : 'Form teams from enrolled students. Each section is grouped separately.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
@@ -315,7 +366,11 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.only(top: 8),
-                  child: reviewing ? review() : settings(),
+                  child: reviewing
+                      ? review()
+                      : step == 2
+                      ? projectSetup()
+                      : settings(),
                 ),
               ),
             ],
@@ -326,17 +381,16 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
             onPressed: busy
                 ? null
                 : () {
-                    if (reviewing) {
+                    if (step > 1) {
                       setState(() {
-                        token = null;
-                        teams = [];
+                        step--;
                         error = null;
                       });
                     } else {
                       Navigator.pop(context);
                     }
                   },
-            child: Text(reviewing ? 'Back to settings' : 'Cancel'),
+            child: Text(step > 1 ? 'Back' : 'Cancel'),
           ),
           if (reviewing)
             OutlinedButton.icon(
@@ -347,7 +401,7 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
           FilledButton.icon(
             onPressed:
                 busy ||
-                    rosterBusy ||
+                    rosterBusy || rosterDirty ||
                     (!reviewing &&
                         (options == null ||
                             !_maps(options?['students']).any(
@@ -363,12 +417,18 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
                                 : sections.isEmpty) ||
                             (method == 'reuse' && sources.isEmpty)))
                 ? null
-                : (reviewing ? save : preview),
+                : (reviewing
+                      ? save
+                      : step == 2
+                      ? preview
+                      : () => setState(() => step = 2)),
             icon: Icon(reviewing ? Icons.check : Icons.arrow_forward),
             label: Text(
               reviewing
                   ? 'Create ${teams.length} ${teams.length == 1 ? 'team' : 'teams'}'
-                  : 'Preview teams',
+                  : step == 2
+                  ? 'Review teams'
+                  : 'Continue',
             ),
           ),
         ],
@@ -381,18 +441,144 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(child: alert.content!),
+          WorkflowStepProgress(
+            currentStep: step,
+            labels: const [
+              'Roster & grouping',
+              'Project setup',
+              'Review & create',
+            ],
+            compactLabels: const ['Roster', 'Project', 'Review'],
+          ),
+          const SizedBox(height: 24),
+          if (savedDraft != null)
+            Wrap(
+              spacing: 12,
+              children: [
+                const Text('A saved draft is available for this roster.'),
+                TextButton(
+                  onPressed: resumeDraft,
+                  child: const Text('Resume draft'),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    await draftStore.clear();
+                    if (mounted) setState(() => savedDraft = null);
+                  },
+                  child: const Text('Discard'),
+                ),
+              ],
+            ),
+          Expanded(
+            child: Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: DefensysTokens.surfaceOf(context),
+                border: Border.all(color: DefensysTokens.borderOf(context)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: alert.content!,
+            ),
+          ),
           const Divider(height: 24),
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 12,
-            runSpacing: 8,
-            children: alert.actions!.skip(reviewing ? 0 : 1).toList(),
+          Row(
+            children: [
+              if (step > 1) alert.actions!.first,
+              const Spacer(),
+              TextButton(
+                onPressed: busy ? null : saveDraft,
+                child: const Text('Save draft'),
+              ),
+              const SizedBox(width: 12),
+              alert.actions!.last,
+            ],
           ),
         ],
       ),
     );
   }
+
+  TeamCreationDraftStore get draftStore => TeamCreationDraftStore(
+    '${ref.read(authProvider).user?['id']}',
+    'generate:${widget.semester?['id']}:$level:${widget.initialSection ?? ''}',
+  );
+
+  Future<void> saveDraft() async {
+    await draftStore.save({
+      ...request,
+      'teams': teams,
+      'students': students,
+      'token': token,
+      'signature': previewSignature,
+      'step': step,
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Draft saved. It will be checked again before teams are created.',
+          ),
+        ),
+      );
+    }
+  }
+
+  void resumeDraft() {
+    final draft = savedDraft!;
+    setState(() {
+      method = draft['method'] ?? 'random';
+      leaderMethod = draft['leader_method'] ?? 'random';
+      size = draft['group_size'] ?? 4;
+      rosterMode = draft['roster_mode'] ?? 'sections';
+      includeAssigned = draft['include_assigned'] == true;
+      sections
+        ..clear()
+        ..addAll(List<String>.from(draft['sections'] ?? []));
+      sources
+        ..clear()
+        ..addAll(List<int>.from(draft['source_team_ids'] ?? []));
+      selectedStudents
+        ..clear()
+        ..addAll(List<int>.from(draft['student_ids'] ?? []));
+      final setup = Map<String, dynamic>.from(draft['shared_system'] ?? {});
+      sharedSystem = setup.isNotEmpty;
+      projectManagerId = setup['project_manager_id'];
+      systemReviewerId = setup['reviewer_id'];
+      conceptStage = setup['stage_label'];
+      titleMode = setup['title_mode'] ?? 'student_proposed';
+      teams = _maps(draft['teams']);
+      students = _maps(draft['students']);
+      token = draft['token'];
+      previewSignature = draft['signature'];
+      step = token == null ? 1 : 3;
+      savedDraft = null;
+    });
+  }
+
+  Widget projectSetup() => TeamProjectSetup(
+    value: {
+      'architecture': sharedSystem ? 'shared' : 'independent',
+      'project_manager_id': projectManagerId,
+      'reviewer_id': resolvedReviewerId,
+      'stage_label': conceptStage,
+      'title_mode': titleMode,
+    },
+    students: _maps(
+      options?['students'],
+    ).where((s) => sections.contains(s['section'])).toList(),
+    contexts: _maps(options?['concept_contexts']),
+    reviewers: _maps(options?['system_reviewers']),
+    instructor: assignedInstructor,
+    isPit: isPit,
+    enabled: !busy,
+    onChanged: (v) => setState(() {
+      sharedSystem = v['architecture'] == 'shared';
+      projectManagerId = v['project_manager_id'];
+      systemReviewerId = v['reviewer_id'];
+      conceptStage = v['stage_label'];
+      titleMode = v['title_mode'] ?? 'student_proposed';
+    }),
+  );
 
   Widget settings() {
     final isInstructorSectionMode =
@@ -459,56 +645,32 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
                         },
                 ),
               ),
-              if (isPit)
-                SizedBox(
-                  width: 330,
-                  child: DropdownButtonFormField<String>(
-                    key: ValueKey('event-$level-$event'),
-                    initialValue: event ?? '',
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'PIT event (optional)',
-                    ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: '',
-                        child: Text('Unassigned roster'),
-                      ),
-                      ...events.map(
-                        (e) => DropdownMenuItem(
-                          value: e['event_name'].toString(),
-                          child: Text(
-                            e['event_name'].toString(),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                    ],
-                    onChanged: busy
-                        ? null
-                        : (value) {
-                            setState(() {
-                              event = value == '' ? null : value;
-                              method = 'random';
-                              leaderMethod = 'random';
-                            });
-                            loadOptions();
-                          },
-                  ),
-                ),
             ],
           ),
-        if (widget.embedded) ...[
-          TeamRosterImportPanel(
-            level: level,
-            semester: widget.semester,
-            section: widget.initialSection,
-            sections: _maps(options?['sections']),
-            students: _maps(options?['students']),
-            canResolveConflicts: options?['can_manage_policy'] == true,
-            onBusyChanged: (v) => setState(() => rosterBusy = v),
-            onDirtyChanged: (v) => setState(() => rosterDirty = v),
-            onImported: loadOptions,
+        if (widget.embedded && options != null) ...[
+          ExpansionTile(
+            key: ValueKey('class-list-${_maps(options?['students']).length}'),
+            tilePadding: EdgeInsets.zero,
+            title: const Text('Import or update class list'),
+            subtitle: Text(
+              '${_maps(options?['students']).where((s) => sections.contains(s['section'])).length} enrolled students available. Continue with these students or upload an updated list.',
+            ),
+            initiallyExpanded: _maps(
+              options?['students'],
+            ).where((s) => sections.contains(s['section'])).isEmpty,
+            children: [
+              TeamRosterImportPanel(
+                level: level,
+                semester: widget.semester,
+                section: widget.initialSection,
+                sections: _maps(options?['sections']),
+                students: _maps(options?['students']),
+                canResolveConflicts: options?['can_manage_policy'] == true,
+                onBusyChanged: (v) => setState(() => rosterBusy = v),
+                onDirtyChanged: (v) => setState(() => rosterDirty = v),
+                onImported: loadOptions,
+              ),
+            ],
           ),
           const SizedBox(height: 20),
         ],
@@ -516,7 +678,7 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
           const Padding(
             padding: EdgeInsets.only(top: 16),
             child: Text(
-              'Prepare an unassigned roster first, or choose an event to form different teams or retain rosters from another event. Scheduling happens later.',
+              'Create the current section roster. Matching PIT events use these teams automatically; scheduling happens later.',
             ),
           ),
         if (options != null) ...[
@@ -864,342 +1026,6 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
               ),
             ),
           ],
-          const SizedBox(height: 22),
-          const SizedBox(height: 22),
-          Text(
-            'Project Architecture',
-            style: Theme.of(
-              context,
-            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 10),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final isWide = constraints.maxWidth >= 640;
-              final cardWidth = isWide
-                  ? (constraints.maxWidth - 16) / 2
-                  : constraints.maxWidth;
-              return Wrap(
-                spacing: 16,
-                runSpacing: 12,
-                children: [
-                  // Option 1: Independent Projects (Default)
-                  SizedBox(
-                    width: cardWidth,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: busy
-                          ? null
-                          : () => setState(() => sharedSystem = false),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: !sharedSystem
-                              ? Theme.of(
-                                  context,
-                                ).colorScheme.primary.withValues(alpha: 0.04)
-                              : Theme.of(context).colorScheme.surface,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: !sharedSystem
-                                ? Theme.of(context).colorScheme.primary
-                                : Theme.of(
-                                    context,
-                                  ).dividerColor.withValues(alpha: 0.7),
-                            width: !sharedSystem ? 2 : 1,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  !sharedSystem
-                                      ? Icons.radio_button_checked
-                                      : Icons.radio_button_unchecked,
-                                  size: 18,
-                                  color: !sharedSystem
-                                      ? Theme.of(context).colorScheme.primary
-                                      : Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    'Independent Projects (Default)',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 13.5,
-                                      color: !sharedSystem
-                                          ? Theme.of(
-                                              context,
-                                            ).colorScheme.primary
-                                          : null,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Each team proposes and builds their own standalone concept.',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                                height: 1.35,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Option 2: Shared Section System
-                  SizedBox(
-                    width: cardWidth,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: busy || _maps(options?['concept_contexts']).isEmpty
-                          ? null
-                          : () => setState(() => sharedSystem = true),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: sharedSystem
-                              ? Theme.of(
-                                  context,
-                                ).colorScheme.primary.withValues(alpha: 0.04)
-                              : Theme.of(context).colorScheme.surface,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: sharedSystem
-                                ? Theme.of(context).colorScheme.primary
-                                : Theme.of(
-                                    context,
-                                  ).dividerColor.withValues(alpha: 0.7),
-                            width: sharedSystem ? 2 : 1,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  sharedSystem
-                                      ? Icons.radio_button_checked
-                                      : Icons.radio_button_unchecked,
-                                  size: 18,
-                                  color: sharedSystem
-                                      ? Theme.of(context).colorScheme.primary
-                                      : Theme.of(
-                                          context,
-                                        ).colorScheme.onSurfaceVariant,
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    'Shared Section System',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 13.5,
-                                      color: sharedSystem
-                                          ? Theme.of(
-                                              context,
-                                            ).colorScheme.primary
-                                          : null,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'One section-wide system with 1 PM; teams build module papers.',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                                height: 1.35,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'One shared system for this section',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: sharedSystem
-                                    ? Theme.of(context).colorScheme.primary
-                                    : Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant
-                                          .withValues(alpha: 0.7),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-          if (sharedSystem) ...[
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Theme.of(
-                  context,
-                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.25),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.primary.withValues(alpha: 0.35),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.hub_rounded,
-                        size: 18,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Configure Shared Section System',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  if (rosterMode != 'sections' || sections.length != 1)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 12),
-                      child: Text(
-                        'Select one enrolled section for the shared system.',
-                        style: TextStyle(fontSize: 12, color: Colors.amber),
-                      ),
-                    ),
-                  DropdownButtonFormField<int>(
-                    key: ValueKey('shared-manager-${sections.join(',')}'),
-                    initialValue:
-                        _maps(options?['students']).any(
-                          (s) =>
-                              s['id'] == projectManagerId &&
-                              sections.contains(s['section']),
-                        )
-                        ? projectManagerId
-                        : null,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Section project manager',
-                      helperText:
-                          'Student leader coordinating all section module teams',
-                    ),
-                    items: [
-                      for (final s in _maps(
-                        options?['students'],
-                      ).where((s) => sections.contains(s['section'])))
-                        DropdownMenuItem(
-                          value: s['id'] as int,
-                          child: Text('${s['name']}'),
-                        ),
-                    ],
-                    onChanged: busy
-                        ? null
-                        : (v) => setState(() => projectManagerId = v),
-                  ),
-                  const SizedBox(height: 14),
-                  DropdownButtonFormField<int>(
-                    initialValue: systemReviewerId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'System faculty reviewer',
-                    ),
-                    items: [
-                      for (final r in _maps(options?['system_reviewers']))
-                        DropdownMenuItem(
-                          value: r['id'] as int,
-                          child: Text('${r['name']}'),
-                        ),
-                    ],
-                    onChanged: busy
-                        ? null
-                        : (v) => setState(() => systemReviewerId = v),
-                  ),
-                  const SizedBox(height: 14),
-                  DropdownButtonFormField<String>(
-                    initialValue: conceptStage,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Concept stage / event',
-                    ),
-                    items: [
-                      for (final c in _maps(options?['concept_contexts']))
-                        DropdownMenuItem(
-                          value: '${c['label']}',
-                          child: Text('${c['label']}'),
-                        ),
-                    ],
-                    onChanged: busy
-                        ? null
-                        : (v) => setState(() => conceptStage = v),
-                  ),
-                  const SizedBox(height: 14),
-                  DropdownButtonFormField<String>(
-                    initialValue: titleMode,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Proposal names',
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'student_proposed',
-                        child: Text('Students propose; faculty confirms'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'faculty_provided',
-                        child: Text('Faculty provides names'),
-                      ),
-                    ],
-                    onChanged: busy
-                        ? null
-                        : (v) => setState(() => titleMode = v!),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          if (_maps(options?['concept_contexts']).isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                'Enable concept selection in stage/event setup to use shared system proposals.',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  color: Theme.of(context).colorScheme.outline,
-                ),
-              ),
-            ),
           const SizedBox(height: 20),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1262,7 +1088,10 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
                 runSpacing: 12,
                 children: [
                   SizedBox(
-                    width: 390,
+                    width: (MediaQuery.sizeOf(context).width - 128).clamp(
+                      180.0,
+                      390.0,
+                    ),
                     child: TextFormField(
                       key: ValueKey('name-$index-${token.hashCode}'),
                       initialValue: team['name'].toString(),
@@ -1276,7 +1105,10 @@ class _GenerateTeamsDialogState extends ConsumerState<GenerateTeamsDialog> {
                     ),
                   ),
                   SizedBox(
-                    width: 310,
+                    width: (MediaQuery.sizeOf(context).width - 128).clamp(
+                      180.0,
+                      310.0,
+                    ),
                     child: DropdownButtonFormField<int>(
                       key: ValueKey('leader-$index-${team['leader_id']}'),
                       initialValue: team['leader_id'] as int?,

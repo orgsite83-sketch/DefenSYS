@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from rest_framework.authentication import SessionAuthentication
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from authentication_access_control.guest_authentication import GuestJWTAuthentication
+from defensys_backend.read_projection import ReadAPIView
 
 from .models import SectionConceptProject, SectionConceptPaper
 from . import services
@@ -18,13 +19,13 @@ class SetupSerializer(serializers.Serializer):
     team_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), min_length=1, max_length=100)
     stage_label = serializers.CharField(max_length=120)
     project_manager_id = serializers.IntegerField(min_value=1)
-    reviewer_id = serializers.IntegerField(min_value=1)
+    reviewer_id = serializers.IntegerField(min_value=1, required=False)
     title_mode = serializers.ChoiceField(choices=['student_proposed', 'faculty_provided'], default='student_proposed')
 
 
 class ActionSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=['save_titles', 'review', 'endorse', 'confirm_modules',
-        'schedule_hearing', 'decide', 'module_verdict', 'reassign', 'clear_revisions'])
+        'schedule_hearing', 'decide', 'module_verdict', 'reassign', 'clear_revisions', 'acknowledge'])
     round_id = serializers.IntegerField(min_value=1)
     review_token = serializers.CharField(required=False, max_length=64)
     concepts = serializers.ListField(child=serializers.DictField(), required=False, max_length=3)
@@ -40,7 +41,7 @@ class ActionSerializer(serializers.Serializer):
     revision_deadline = serializers.DateField(required=False, allow_null=True)
 
 
-class SectionAPIView(APIView):
+class SectionAPIView(ReadAPIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [GuestJWTAuthentication, JWTAuthentication, SessionAuthentication]
 
@@ -107,7 +108,7 @@ class SectionProjectDetailView(SectionAPIView):
         round = services.latest(project)
         if d['round_id'] != round.pk:
             return Response({'detail': 'The section proposal round changed. Refresh before submitting.'}, status=409)
-        if d['action'] in ('review', 'endorse', 'decide', 'save_titles', 'clear_revisions') and d.get('review_token') != services.review_token(round):
+        if d['action'] in ('review', 'endorse', 'decide', 'save_titles', 'clear_revisions', 'acknowledge') and d.get('review_token') != services.review_token(round):
             return Response({'detail': 'The section names or papers changed. Refresh and review the current versions.'}, status=409)
         action, actor = d['action'], request.user
         if action == 'save_titles':
@@ -116,6 +117,9 @@ class SectionProjectDetailView(SectionAPIView):
             services.review(project, actor, d.get('paper_id'), d.get('status'), d['remarks'])
         elif action == 'endorse':
             services.endorse(project, actor)
+        elif action == 'acknowledge':
+            from .acknowledgments import acknowledge
+            acknowledge(project, actor)
         elif action == 'confirm_modules':
             services.confirm_modules(project, actor, d.get('team_id'), d.get('concepts'))
         elif action == 'schedule_hearing':

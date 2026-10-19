@@ -1,5 +1,6 @@
 from grading.constants import PASS_GRADE_THRESHOLD
 from defensys_backend.file_cleanup import delete_repository_file_on_commit, replacement_file_name
+from defensys_backend.read_projection import read_memoize
 import csv
 import io
 import re
@@ -42,6 +43,7 @@ from .grouping import (
 )
 from .folders import academic_term_folder_key, archive_folder_payload
 from .payloads import (
+    _archive_pit_event,
     capstone_entry_payload,
     capstone_archive_entry_payload,
     pit_entry_payload,
@@ -124,6 +126,7 @@ def completed_pit_events(semester=None, year_level=None):
     return queryset
 
 
+@read_memoize(copy=True)
 def all_completed_pit_event_ids(semester=None, year_level=None):
     semester = semester or get_active_semester()
     if not semester:
@@ -137,6 +140,7 @@ def all_completed_pit_event_ids(semester=None, year_level=None):
     )
 
 
+@read_memoize(copy=True)
 def all_completed_pit_event_names(semester=None, year_level=None):
     semester = semester or get_active_semester()
     if not semester:
@@ -216,13 +220,9 @@ def suggested_pit_file_name(team, year_level, semester_label='1st Semester', eve
     template = ''
     if event_name:
         from academic_period_management.models import Semester
-        from defense.scheduler.models import PitEventGradingConfig
         semester_obj = team.semester if team else Semester.objects.filter(is_active=True).first()
         if semester_obj:
-            config = PitEventGradingConfig.objects.filter(
-                semester=semester_obj, year_level=year_level,
-                event_name__iexact=event_name.strip(),
-            ).first()
+            config = _archive_pit_event(semester_obj.pk, year_level, event_name)
             if config:
                 template = config.archive_file_template.strip()
 
@@ -241,6 +241,7 @@ def suggested_pit_file_name(team, year_level, semester_label='1st Semester', eve
     return f'{project}.pdf'
 
 
+@read_memoize(copy=True)
 def pit_archive_upload_queue(year_level, semester=None):
     if not year_level:
         return []
@@ -377,6 +378,7 @@ def upload_window_payload(year_level, semester=None):
     }
 
 
+@read_memoize(copy=True)
 def all_completed_capstone_stage_labels(semester=None):
     semester = semester or get_active_semester()
     if not semester:
@@ -389,6 +391,7 @@ def all_completed_capstone_stage_labels(semester=None):
     )
 
 
+@read_memoize(copy=True)
 def all_completed_capstone_stage_ids(semester=None):
     semester = semester or get_active_semester()
     if not semester:
@@ -516,6 +519,7 @@ def resolve_archive_file_template(
     return _archive_file_name_with_extension(resolved, file_format, file_extension)
 
 
+@read_memoize(copy=True)
 def capstone_archive_upload_queue(semester=None):
     semester = semester or get_active_semester()
     stage_labels = all_completed_capstone_stage_labels(semester=semester)

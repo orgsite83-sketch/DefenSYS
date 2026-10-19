@@ -160,6 +160,9 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
         if requested_stage in stage_options
         else (stage_options[0] if stage_options else '')
     )
+    if scope == 'pit' and stage:
+        from student_teams.pit_rosters import filter_teams as roster_teams
+        current = roster_teams(current, stage)
     teams = [team_payload(team, selected_stage=stage, evaluator=request.user) for team in current]
     return {
         'teams': teams,

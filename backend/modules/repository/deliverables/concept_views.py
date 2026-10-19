@@ -13,6 +13,7 @@ class ConceptActionSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=['save_titles', 'override_clearance'])
     concepts = serializers.ListField(child=serializers.DictField(), required=False)
     reason = serializers.CharField(required=False, max_length=5000, allow_blank=True)
+    review_token = serializers.CharField(required=False, max_length=64)
 
 
 class ConceptActionView(APIView):
@@ -33,6 +34,10 @@ class ConceptActionView(APIView):
             return Response({'detail': 'Historical concept rounds are read-only.'}, status=403)
         try:
             if attrs['action'] == 'save_titles':
+                from student_teams.models import StudentTeam
+                team = StudentTeam.objects.select_for_update().get(pk=team.pk)
+                if attrs.get('review_token') and attrs['review_token'] != concepts.module_review_token(team, stage):
+                    return Response({'detail': 'The module names or system connections changed. Refresh and review the current names.'}, status=409)
                 concepts.save_titles(team, stage, attrs.get('concepts'), actor=request.user)
             else:
                 concepts.override_clearance(team, stage, request.user, attrs.get('reason', ''))

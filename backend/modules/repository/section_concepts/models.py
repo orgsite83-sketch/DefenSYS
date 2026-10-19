@@ -82,6 +82,21 @@ class SectionSystemConcept(models.Model):
         constraints = [models.UniqueConstraint(fields=['round', 'key'], name='section_system_key_unique')]
 
 
+class SectionConceptAcknowledgment(models.Model):
+    """An assigned faculty member's acknowledgment of one immutable shared version."""
+    round = models.ForeignKey(SectionConceptRound, on_delete=models.PROTECT, related_name='acknowledgments')
+    faculty = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+                                related_name='shared_concept_acknowledgments')
+    fingerprint = models.CharField(max_length=64)
+    snapshot = models.JSONField(default=dict)
+    acknowledged_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = 'repository'
+        constraints = [models.UniqueConstraint(fields=['round', 'faculty', 'fingerprint'],
+            name='shared_acknowledgment_version_unique')]
+
+
 class SectionConceptPaper(models.Model):
     concept = models.ForeignKey(SectionSystemConcept, on_delete=models.PROTECT, related_name='papers')
     file = models.FileField(upload_to='section_concepts/%Y/%m/')
