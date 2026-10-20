@@ -16,6 +16,7 @@ import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/widgets/table/defensys_segmented_control.dart';
 import 'package:defensys/widgets/feedback/action_banner.dart';
 import 'package:defensys/utils/csv_file_io.dart';
+import 'package:defensys/utils/import/student_rollover_action.dart';
 import 'package:flutter/services.dart';
 
 import 'package:defensys/screens/web/admin/widgets/template_blueprint_models.dart';
@@ -3844,18 +3845,7 @@ class _StudentBatchEnrollmentHubViewState
           ? rec['id'].toString()
           : rec['student_username']?.toString() ?? '';
       final act = _rolloverActions[key] ?? row['action_default'] ?? 'promote';
-      final pr = row['promote_result'] as Map? ?? {};
-
-      confirmActions.add({
-        'record_id': rec['id'],
-        'username': rec['student_username'],
-        'first_name': rec['first_name'],
-        'last_name': rec['last_name'],
-        'email': rec['student_email'],
-        'action': act,
-        'year_level': pr['year_level'],
-        'section': pr['section'],
-      });
+      confirmActions.add(buildStudentRolloverAction(row, act));
     }
 
     final ok = await ref

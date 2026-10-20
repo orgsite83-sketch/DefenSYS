@@ -644,6 +644,10 @@ def decision_allowed(round, actor):
         return False
     if admin(actor):
         return True
+    if round.project.pit_event_config_id:
+        from repository.deliverables.pit_decisions import can_manage
+        link = active_links(round.project).first()
+        return bool(link and can_manage(actor, link.team))
     schedules = list(round.schedules.all())
     return bool(schedules and round.chair_id == actor.pk and all(
         s.status != 'cancelled' and s.panel_assignments.filter(panelist=actor, is_chair=True).exists() for s in schedules))
@@ -654,7 +658,7 @@ def decide(project, actor, decisions, verdict, remarks):
     require_active(project)
     round = locked_round(project)
     if not decision_allowed(round, actor):
-        raise PermissionError('Only the common section panel chair or an administrator can select the system.')
+        raise PermissionError('Only the assigned PIT Lead can select a PIT system; Capstone uses the common panel chair. Administrators may manage either scope.')
     if round.verdict:
         raise ValidationError('The section system decision has already been recorded.')
     expected = set(active_links(project).values_list('team_id', flat=True))
@@ -663,11 +667,12 @@ def decide(project, actor, decisions, verdict, remarks):
         raise ValidationError('Assemble a current hearing containing all participating section teams first.')
     if not shared_clearance(round):
         raise ValidationError('The shared papers are not cleared. Review the current titles and papers first.')
-    from defense.scheduler.panelist_evaluation import verdict_unavailable_reason
+    from defense.scheduler.panelist_evaluation import verdict_unavailable_reason, assessment_unavailable_reason
     from grading.grades.services import GradeContextService
     for schedule in schedules:
         grade, _, _ = GradeContextService.get_or_create_for_schedule(schedule)
-        reason = verdict_unavailable_reason(schedule, grade)
+        reason = (assessment_unavailable_reason(schedule, grade, action='selecting the section system')
+                  if project.pit_event_config_id else verdict_unavailable_reason(schedule, grade))
         if reason:
             raise ValidationError(f'{schedule.team.name}: {reason}')
     if verdict not in ('approved', 'approved_with_revisions', 'for_redefense'):
@@ -694,9 +699,15 @@ def decide(project, actor, decisions, verdict, remarks):
         from grading.grades.defense_workflow import record_verdict
         for schedule in schedules:
             grade = schedule.grade_records.first()
-            record_verdict(grade, actor=actor, verdict='for_redefense', remarks=remarks,
-                concept_decisions=[{'key': key, 'decision': 'rejected', 'remarks': remarks} for key in KEYS],
-                replacement_concepts_required=True)
+            decisions = [{'key': key, 'decision': 'rejected', 'remarks': remarks} for key in KEYS]
+            if project.pit_event_config_id:
+                from repository.deliverables.pit_decisions import record_decision, review_token
+                current = schedule.concept_round
+                record_decision(schedule.team, project.context, actor, decisions,
+                                token=review_token(current), reason=remarks, module_review=True)
+            else:
+                record_verdict(grade, actor=actor, verdict='for_redefense', remarks=remarks,
+                    concept_decisions=decisions, replacement_concepts_required=True)
         next_round = SectionConceptRound.objects.create(project=project, number=round.number + 1)
         SectionSystemConcept.objects.bulk_create([SectionSystemConcept(round=next_round, key=key) for key in KEYS])
         for module_round in round.module_rounds.filter(schedule__isnull=True):
@@ -707,11 +718,11 @@ def decide(project, actor, decisions, verdict, remarks):
     audit(actor, 'system_decided', round, verdict=verdict, selected_key=round.selected_key, remarks=remarks)
 
 
-def validate_module_decision(grade, current, concepts):
+def validate_module_decision(grade, current, concepts, *, outcome=None):
     if not current.section_round_id:
         return
     round = current.section_round
-    if grade.verdict == 'for_redefense' and round.verdict == 'for_redefense':
+    if (outcome if outcome is not None else grade.verdict) == 'for_redefense' and round.verdict == 'for_redefense':
         return
     if not round.selected_key:
         raise ValidationError('The section panel chair must select the shared system before module decisions.')
@@ -803,6 +814,7 @@ def task_payload(user):
 
 def payload(project, actor):
     from repository.deliverables.concepts import latest_round
+    from repository.deliverables.pit_decisions import decision_payload as pit_decision_payload
     round = latest(project)
     context = project.context
     can_write = writable(project)
@@ -827,7 +839,7 @@ def payload(project, actor):
         concepts = deepcopy(current.concepts) if current else [{'key': k, 'title': ''} for k in KEYS]
         from repository.deliverables.services import get_deliverable_definitions_for_team
         from repository.deliverables.models import DeliverableSubmission
-        from repository.deliverables.documents import slots_for
+        from repository.deliverables.documents import slots_for, file_payload
         definitions = [d for d in get_deliverable_definitions_for_team(link.team, context.label)
             if d['required'] and d['type'] == 'pre' and d.get('requirement_timing') != 'defense' and
             (d.get('file_policy') or {}).get('mode') == 'concepts']
@@ -843,6 +855,16 @@ def payload(project, actor):
             c['documents_status'] = ('missing' if not statuses or 'missing' in statuses else
                 'corrections_requested' if 'rejected' in statuses else
                 'accepted' if all(s == 'accepted' for s in statuses) else 'pending_review')
+            c['documents'] = [file_payload(files[key]) for key in required if key in files]
+        selected_module = next((c for c in concepts if c['key'] == round.selected_key), None)
+        pit_flags = pit_decision_payload(link.team, context, current, actor) if project.pit_event_config_id else {}
+        module_status = ('awaiting_system_selection' if not round.selected_key else
+            'another_review_required' if current and current.number > 1 and not current.schedule_id else
+            'not_scheduled' if not current or not current.schedule_id else
+            'revisions_cleared' if current.verdict == 'approved_with_revisions' and current.revisions_cleared_at else
+            'revisions_pending' if current.verdict == 'approved_with_revisions' else
+            'approved' if current.verdict == 'approved' else
+            'another_review_required' if current.verdict == 'for_redefense' else 'awaiting_review')
         leader_name = (link.team.leader.get_full_name() or link.team.leader.username) if link.team.leader else ''
         members = [{'id': m.student_id, 'name': m.student.get_full_name() or m.student.username, 'is_leader': m.student_id == link.team.leader_id}
             for m in link.team.memberships.select_related('student').all()]
@@ -850,9 +872,12 @@ def payload(project, actor):
             'leader_name': leader_name, 'members': members,
             'endorsed': bool(current and current.endorsed_at),
             'concepts': concepts, 'schedule_id': current.schedule_id if current else None,
+            'selection_mode': 'shared_module', 'selected_module': selected_module,
+            'module_review_status': module_status,
             'verdict': current.verdict if current else '',
-            'can_issue_verdict': bool(can_write and round.selected_key and current and current.schedule_id and not current.verdict and (
+            'can_issue_verdict': bool(not project.pit_event_config_id and can_write and round.selected_key and current and current.schedule_id and not current.verdict and (
                 admin(actor) or (getattr(actor, 'role', '') == 'faculty' and current.schedule.panel_assignments.filter(panelist=actor, is_chair=True).exists()))),
+            **pit_flags,
             'can_confirm_names': can_write and (can_manage(actor, project) or (
                 getattr(actor, 'role', '') == 'faculty' and link.team.adviser_id == actor.pk))})
     current_papers = [p for system in systems for p in system['papers'] if p['is_current']]

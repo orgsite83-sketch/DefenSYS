@@ -54,6 +54,9 @@ class SharedSystemConceptTests(APITestCase):
         actor = actor or self.first
         self.client.force_authenticate(actor)
         state = services.payload(self.project, actor)
+        if action in ('module_decision', 'clear_module_revisions'):
+            data.setdefault('module_review_token', next(t['decision_review_token'] for t in state['teams']
+                                                       if t['id'] == data.get('team_id')))
         return self.client.post(f'{URL}{self.project.pk}/', {'action': action,
             'round_id': state['round_id'], 'review_token': state['review_token'], **data}, format='json')
 
@@ -94,7 +97,7 @@ class SharedSystemConceptTests(APITestCase):
         return schedules
 
     def select(self, *, actor=None, rejected=False):
-        return self.action('decide', actor or self.panelist, verdict='for_redefense' if rejected else 'approved',
+        return self.action('decide', actor or self.first, verdict='for_redefense' if rejected else 'approved',
             remarks='Prepare replacement system proposals.' if rejected else '', concepts=[
                 {'key': key, 'decision': 'rejected' if rejected else 'approved' if key == 'c2' else 'not_selected',
                  'remarks': 'Replace this system.' if rejected else ''} for key in services.KEYS])
@@ -329,7 +332,7 @@ class SharedSystemConceptTests(APITestCase):
         self.assertEqual(self.select().status_code, 400)
         self.assertFalse(services.latest(self.project).selected_key)
 
-    def test_chair_selects_one_system_without_approving_any_team(self):
+    def test_pit_lead_selects_one_system_without_approving_any_team(self):
         self.hearing()
         response = self.select()
         self.assertEqual(response.status_code, 200, response.data)
@@ -337,6 +340,8 @@ class SharedSystemConceptTests(APITestCase):
         for team in (self.team, self.module_team):
             self.assertEqual(concepts.latest_round(team, self.event).verdict, '')
         self.assertEqual(self.action('decide', self.pm, concepts=[], verdict='approved').status_code, 403)
+        self.assertEqual(self.select(actor=self.panelist).status_code, 403)
+        self.assertEqual(self.select(actor=self.second).status_code, 404)
 
     def test_module_approval_must_match_selected_system(self):
         schedules = self.hearing()
@@ -346,7 +351,7 @@ class SharedSystemConceptTests(APITestCase):
             'verdict': 'approved', 'concept_decisions': [
                 {'key': key, 'decision': 'approved' if key == 'c1' else 'not_selected'} for key in services.KEYS]}, format='json')
         self.assertEqual(wrong.status_code, 400, wrong.data)
-        response = self.action('module_verdict', self.panelist, team_id=self.team.pk, verdict='approved')
+        response = self.action('module_decision', self.first, team_id=self.team.pk, verdict='approved')
         self.assertEqual(response.status_code, 200, response.data)
         self.team.refresh_from_db()
         self.assertEqual(self.team.project_title, 'Module c2')
@@ -371,12 +376,104 @@ class SharedSystemConceptTests(APITestCase):
     def test_module_only_redefense_preserves_shared_selection_and_other_team(self):
         self.hearing()
         self.assertEqual(self.select().status_code, 200)
-        response = self.action('module_verdict', self.panelist, team_id=self.team.pk,
+        response = self.action('module_decision', self.first, team_id=self.team.pk,
             verdict='for_redefense', remarks='Revise the appointment workflow.')
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(services.latest(self.project).selected_key, 'c2')
         self.assertEqual(concepts.latest_round(self.team, self.event).number, 2)
         self.assertEqual(concepts.latest_round(self.module_team, self.event).number, 1)
+
+    def test_selected_system_exposes_one_linked_module_without_approving_teams(self):
+        self.hearing()
+        response = self.select()
+        self.assertEqual(response.status_code, 200, response.data)
+        for row in response.data['teams']:
+            self.assertEqual(row['selection_mode'], 'shared_module')
+            self.assertEqual(row['selected_module']['key'], 'c2')
+            self.assertEqual(row['selected_module']['title'], 'Module c2')
+            self.assertEqual(row['selected_module']['documents_status'], 'accepted')
+            self.assertTrue(row['selected_module']['documents'])
+            self.assertEqual(row['verdict'], '')
+        workflow = concepts.payload(self.team, self.event, actor=self.first)
+        self.assertEqual(workflow['selection_mode'], 'shared_module')
+        self.assertEqual(workflow['shared_selection']['system_title'], 'System c2')
+        self.assertEqual(workflow['shared_selection']['module']['title'], 'Module c2')
+
+    def test_shared_team_cannot_use_the_individual_concept_endpoint(self):
+        self.hearing()
+        self.select()
+        from repository.deliverables.pit_decisions import review_token
+        self.client.force_authenticate(self.first)
+        current = concepts.latest_round(self.team, self.event)
+        response = self.client.post('/api/repository/deliverables/concepts/', {
+            'team_id': self.team.pk, 'stage_label': self.event.label, 'action': 'pit_decision',
+            'review_token': review_token(current), 'concepts': [
+                {'key': key, 'decision': 'approved' if key == 'c2' else 'not_selected'} for key in services.KEYS],
+        }, format='json')
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('shared section workspace', str(response.data))
+        current.refresh_from_db()
+        self.assertEqual(current.verdict, '')
+
+    def test_module_review_requires_a_selected_system_and_matching_module_key(self):
+        self.hearing()
+        self.assertEqual(self.action('module_decision', team_id=self.team.pk, verdict='approved').status_code, 400)
+        self.select()
+        response = self.action('module_decision', team_id=self.team.pk, module_key='c1', verdict='approved')
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertEqual(concepts.latest_round(self.team, self.event).verdict, '')
+
+    def test_module_review_rejects_stale_papers_and_unassigned_chairs(self):
+        self.hearing()
+        self.select()
+        self.assertEqual(self.action('module_decision', team_id=self.team.pk, verdict='approved',
+                                    module_review_token='stale-papers').status_code, 400)
+        from repository.deliverables.pit_decisions import review_token
+        token = review_token(concepts.latest_round(self.team, self.event))
+        response = self.action('module_decision', self.panelist, team_id=self.team.pk, verdict='approved',
+                               module_review_token=token)
+        self.assertEqual(response.status_code, 403, response.data)
+        self.assertEqual(concepts.latest_round(self.team, self.event).verdict, '')
+
+    def test_module_retry_allows_only_the_linked_module_name_to_change(self):
+        self.hearing()
+        self.select()
+        response = self.action('module_decision', team_id=self.team.pk, verdict='for_redefense',
+                               remarks='Revise the module boundaries.')
+        self.assertEqual(response.status_code, 200, response.data)
+        current = concepts.latest_round(self.team, self.event)
+        titles = [{'key': c['key'], 'title': 'Unrelated change' if c['key'] == 'c1' else c['title']}
+                  for c in current.concepts]
+        with self.assertRaises(ValidationError):
+            concepts.save_titles(self.team, self.event, titles, actor=self.first)
+        titles = [{'key': c['key'], 'title': 'Revised linked module' if c['key'] == 'c2' else c['title']}
+                  for c in current.concepts]
+        concepts.save_titles(self.team, self.event, titles, actor=self.first)
+        current.refresh_from_db()
+        self.assertEqual(current.concepts[0]['title'], 'Module c1')
+        self.assertEqual(current.concepts[1]['title'], 'Revised linked module')
+        self.assertEqual(services.latest(self.project).selected_key, 'c2')
+        self.assertEqual(concepts.latest_round(self.module_team, self.event).number, 1)
+
+    def test_module_revision_clearance_keeps_section_and_other_team_unchanged(self):
+        self.hearing()
+        self.select()
+        response = self.action('module_decision', team_id=self.team.pk, verdict='approved_with_revisions',
+                               remarks='Clarify the selected module paper.')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(self.action('clear_module_revisions', team_id=self.team.pk,
+                                    remarks='No new paper yet.').status_code, 400)
+        submission = upsert_submission(self.team, self.event.label, 'CONCEPTS', 'revised.pdf', '10 B',
+            self.team.leader, file=SimpleUploadedFile('revised.pdf', b'%PDF-1.4 revised module'), slot_key='c2:paper')
+        paper = submission.files.get(slot_key='c2:paper', is_current=True)
+        review_submission(self.team, self.event.label, 'CONCEPTS', 'accepted', '', self.first, file_id=paper.pk)
+        response = self.action('clear_module_revisions', team_id=self.team.pk, module_key='c2',
+                               remarks='Reviewed the accepted revised module paper.')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(concepts.latest_round(self.team, self.event).revisions_cleared_by, self.first)
+        self.assertEqual(services.latest(self.project).selected_key, 'c2')
+        self.assertEqual(concepts.latest_round(self.module_team, self.event).verdict, '')
+        self.assertEqual(concepts.latest_round(self.team, self.event).schedule.grade_records.get().verdict, '')
 
     def test_scheduled_names_and_papers_are_locked(self):
         self.hearing()
@@ -406,12 +503,12 @@ class SharedSystemConceptTests(APITestCase):
 
     def test_shared_revisions_gate_team_progress_until_a_revised_paper_is_cleared(self):
         self.hearing()
-        response = self.action('decide', self.panelist, verdict='approved_with_revisions',
+        response = self.action('decide', self.first, verdict='approved_with_revisions',
             remarks='Clarify the shared integration design.', concepts=[
                 {'key': key, 'decision': 'approved_with_revisions' if key == 'c2' else 'not_selected',
                  'remarks': 'Clarify integration.' if key == 'c2' else ''} for key in services.KEYS])
         self.assertEqual(response.status_code, 200, response.data)
-        response = self.action('module_verdict', self.panelist, team_id=self.team.pk, verdict='approved')
+        response = self.action('module_decision', self.first, team_id=self.team.pk, verdict='approved')
         self.assertEqual(response.status_code, 200, response.data)
         grade = concepts.latest_round(self.team, self.event).schedule.grade_records.first()
         from grading.grades.defense_workflow import passed_and_cleared
@@ -421,7 +518,8 @@ class SharedSystemConceptTests(APITestCase):
         services.review(self.project, self.first, row.pk, 'accepted')
         response = self.action('clear_revisions', remarks='Reviewed the revised integration design.')
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertTrue(passed_and_cleared(grade))
+        from repository.deliverables.pit_decisions import completion_blocker
+        self.assertFalse(completion_blocker(grade))
 
     def test_idempotent_setup_does_not_revoke_clearance(self):
         self.prepare_shared()

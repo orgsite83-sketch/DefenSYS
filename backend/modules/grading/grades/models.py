@@ -224,13 +224,10 @@ class TeamGrade(models.Model):
 
     @property
     def uses_defense_verdict(self):
-        return self.is_capstone or bool(self.pit_event_config_id and
-            (self.pit_event_config.concept_config or {}).get('enabled'))
+        return self.is_capstone
 
     @property
     def result(self):
-        if self.scope == self.SCOPE_PIT and self.uses_defense_verdict and not self.verdict:
-            return 'pending'
         if self.uses_defense_verdict and self.verdict:
             if self.verdict in (self.VERDICT_FAILED, self.VERDICT_PROJECT_REJECTED):
                 return 'failed'
@@ -293,6 +290,10 @@ class TeamGrade(models.Model):
             self.status = self.STATUS_PENDING
 
     def publish(self, user=None):
+        from repository.deliverables.pit_decisions import completion_blocker
+        concept_blocker = completion_blocker(self)
+        if concept_blocker:
+            raise ValidationError(concept_blocker)
         self.recalculate()
         if not self.is_complete:
             raise ValidationError({'status': 'Only complete grades can be published.'})

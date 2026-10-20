@@ -19,7 +19,8 @@ def is_chair(grade, user):
 
 def passed_and_cleared(grade):
     if not grade.uses_defense_verdict:
-        return grade.result == 'passed'
+        from repository.deliverables.pit_decisions import completion_blocker
+        return grade.result == 'passed' and not completion_blocker(grade)
     if grade.verdict in (TeamGrade.VERDICT_APPROVED, TeamGrade.VERDICT_APPROVED_WITH_REVISIONS):
         from repository.section_concepts.services import module_pass_allowed
         if not module_pass_allowed(grade):

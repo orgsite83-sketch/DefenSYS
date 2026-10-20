@@ -794,6 +794,10 @@ def ensure_submission_editable(team, stage_label, deliverable_type, submission=N
     from grading.grades.models import TeamGrade
     stage_grade = latest_stage_grade(team, stage_label)
     is_redefense = bool(stage_grade and getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE)
+    if team.is_pit:
+        from .concepts import latest_round, stage_for
+        current = latest_round(team, stage_for(team, stage_label))
+        is_redefense = bool(current and current.number > 1 and not current.schedule_id)
 
     if submission and deliverable_type == DeliverableSubmission.TYPE_PRE:
         if allow_replacement and submission.file_replacement_unlocked and submission.status == DeliverableSubmission.STATUS_ACCEPTED:
@@ -1143,7 +1147,7 @@ def stage_payload(team, stage_label, evaluator=None):
     stage_peer_reason = peer_grading_unavailable_reason(stage_grade)
 
     from .concepts import payload as concept_payload
-    concept_workflow = concept_payload(team, concept_context)
+    concept_workflow = concept_payload(team, concept_context, actor=evaluator)
     from .endorsement import endorsement_review
     review = endorsement_review(team, stage_label, definitions=definitions, submitted=submitted)
     return {

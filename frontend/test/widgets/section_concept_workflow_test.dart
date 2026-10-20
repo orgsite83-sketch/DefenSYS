@@ -626,6 +626,8 @@ void main() {
         250,
         scrollable: find.byType(Scrollable).first,
       );
+      await tester.ensureVisible(find.text('Confirm module names'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Confirm module names'));
       await tester.pumpAndSettle();
       expect(find.byType(TextFormField), findsNWidgets(3));
@@ -661,17 +663,18 @@ void main() {
         overrides: authTestOverrides(),
       );
       await tester.scrollUntilVisible(
-        find.text('Record section system decision'),
+        find.text('Select section system'),
         300,
         scrollable: find.byType(Scrollable).first,
       );
-      await tester.tap(find.text('Record section system decision'));
+      await tester.ensureVisible(find.text('Select section system'));
+      await tester.tap(find.text('Select section system'));
       await tester.pumpAndSettle();
       await tester.tap(find.byType(DropdownButtonFormField<String>).first);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Clinic Management').last);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Record decision'));
+      await tester.tap(find.text('Save section decision'));
       await tester.pumpAndSettle();
       expect(actions, hasLength(1));
       expect(actions.single['action'], 'decide');
@@ -723,6 +726,40 @@ void main() {
       );
     },
   );
+
+  testWidgets('PIT Lead records module selection through the concept decision action', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1100, 1200));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final project = projectFixture()
+      ..['scope'] = 'pit'
+      ..['selected_key'] = 'c2'
+      ..['verdict'] = 'approved';
+    final team = (project['teams'] as List).first as Map;
+    team['can_record_decision'] = true;
+    team['decision_review_token'] = 'current-module-papers';
+    final actions = <Map<String, dynamic>>[];
+    setApiHttpClientForTesting(MockClient((request) async {
+      if (request.method == 'POST') actions.add(jsonDecode(request.body) as Map<String, dynamic>);
+      return http.Response(jsonEncode(project), 200);
+    }));
+    await pumpDefensysWidget(tester, const SectionConceptWorkspace(projectId: 7), overrides: authTestOverrides());
+    await tester.scrollUntilVisible(find.text('Review module'), 300, scrollable: find.byType(Scrollable).first);
+    await tester.ensureVisible(find.text('Review module'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Review module'));
+    await tester.pumpAndSettle();
+    final dialog = find.byType(AlertDialog);
+    expect(find.descendant(of: dialog, matching: find.text('Review module')), findsOneWidget);
+    expect(find.descendant(of: dialog, matching: find.text('Module 2')), findsOneWidget);
+    expect(find.descendant(of: dialog, matching: find.text('Module 1')), findsNothing);
+    expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
+    await tester.tap(find.text('Save module review'));
+    await tester.pumpAndSettle();
+    expect(actions.single['action'], 'module_decision');
+    expect(actions.single['module_review_token'], 'current-module-papers');
+    expect(actions.single['team_id'], team['id']);
+    expect(actions.single['module_key'], 'c2');
+  });
 
   testWidgets(
     'generation preview includes the PM, faculty reviewer and shared workflow',

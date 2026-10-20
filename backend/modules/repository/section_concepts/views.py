@@ -25,9 +25,12 @@ class SetupSerializer(serializers.Serializer):
 
 class ActionSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=['save_titles', 'review', 'endorse', 'confirm_modules',
-        'schedule_hearing', 'decide', 'module_verdict', 'reassign', 'clear_revisions', 'acknowledge'])
+        'schedule_hearing', 'decide', 'module_verdict', 'module_decision', 'clear_module_revisions',
+        'reassign', 'clear_revisions', 'acknowledge'])
     round_id = serializers.IntegerField(min_value=1)
     review_token = serializers.CharField(required=False, max_length=64)
+    module_review_token = serializers.CharField(required=False, max_length=64)
+    module_key = serializers.ChoiceField(choices=services.KEYS, required=False)
     concepts = serializers.ListField(child=serializers.DictField(), required=False, max_length=3)
     paper_id = serializers.IntegerField(min_value=1, required=False)
     team_id = serializers.IntegerField(min_value=1, required=False)
@@ -130,10 +133,14 @@ class SectionProjectDetailView(SectionAPIView):
             services.reassign(project, actor, d.get('project_manager_id'), d.get('reviewer_id'))
         elif action == 'clear_revisions':
             services.clear_revisions(project, actor, d['remarks'])
-        elif action == 'module_verdict':
+        elif action in ('module_verdict', 'module_decision', 'clear_module_revisions'):
             services.require_active(project)
+            if bool(project.pit_event_config_id) != (action in ('module_decision', 'clear_module_revisions')):
+                raise serializers.ValidationError('PIT uses a concept decision; formal module verdicts apply to Capstone.')
             if not round.selected_key:
                 raise serializers.ValidationError('Select the shared system before recording module outcomes.')
+            if d.get('module_key') and d['module_key'] != round.selected_key:
+                return Response({'detail': 'The linked module changed. Refresh the selected section system.'}, status=409)
             link = services.active_links(project).filter(team_id=d.get('team_id')).first()
             if not link:
                 raise serializers.ValidationError('Choose a participating team from this section.')
@@ -148,10 +155,19 @@ class SectionProjectDetailView(SectionAPIView):
             if not grade:
                 from grading.grades.services import GradeContextService
                 grade, _, _ = GradeContextService.get_or_create_for_schedule(current.schedule)
-            record_verdict(grade, actor=actor, verdict=verdict, remarks=d['remarks'],
-                deadline=d.get('revision_deadline'), verification_required=verdict == 'for_redefense',
-                concept_decisions=[{'key': k, 'decision': decision if k == round.selected_key else 'not_selected',
-                                   'remarks': d['remarks'] if k == round.selected_key else ''} for k in services.KEYS])
+            decisions = [{'key': k, 'decision': decision if k == round.selected_key else 'not_selected',
+                          'remarks': d['remarks'] if k == round.selected_key else ''} for k in services.KEYS]
+            if action in ('module_decision', 'clear_module_revisions'):
+                if action == 'module_decision' and verdict not in ('approved', 'approved_with_revisions', 'for_redefense'):
+                    raise serializers.ValidationError('Select the module or request another concept review.')
+                from repository.deliverables.pit_decisions import record_decision
+                record_decision(link.team, project.context, actor, decisions,
+                    token=d.get('module_review_token'), reason=d['remarks'], module_review=True,
+                    clear_revisions=action == 'clear_module_revisions')
+            else:
+                record_verdict(grade, actor=actor, verdict=verdict, remarks=d['remarks'],
+                    deadline=d.get('revision_deadline'), verification_required=verdict == 'for_redefense',
+                    concept_decisions=decisions)
         return Response(services.payload(project, actor))
 
 

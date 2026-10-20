@@ -1650,6 +1650,8 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.data['migration']['phase'], 15)
 
     def test_rollover_advances_capstone_team_after_phase_six(self):
+        next_year = SchoolYear.objects.create(label='2027-2028')
+        next_first = Semester.objects.create(school_year=next_year, label=Semester.FIRST, is_active=True)
         record = StudentAcademicRecord.objects.create(
             student=self.student_1,
             semester=self.second_semester,
@@ -1676,6 +1678,7 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.data['team_updates'], 1)
         self.assertEqual(team.level, StudentTeam.LEVEL_4_CAPSTONE)
         self.assertEqual(team.capstone_phase, StudentTeam.PHASE_ACTIVE)
+        self.assertEqual(team.semester_id, next_first.pk)
 
     def test_weekly_progress_list_filters_by_team_id(self):
         from datetime import date

@@ -88,10 +88,13 @@ class PitConceptTests(APITestCase):
         if not schedule.panelist_grade_submissions.filter(panelist=self.panelist).exists():
             submit_panelist_grade(schedule, grade, [{'criterion_id': self.panel.criteria.first().pk, 'score': 8}],
                                   panelist=self.panelist)
-        self.client.force_authenticate(actor or self.panelist)
-        return self.client.patch(f'/api/defense/schedules/{schedule.pk}/verdict/', {
-            'verdict': 'approved' if approved else 'for_redefense', 'verdict_remarks': 'Panel hearing outcome.',
-            'concept_decisions': [{'key': f'c{i}', 'decision': 'approved' if approved and i == 2 else 'rejected',
+        self.client.force_authenticate(actor or self.first)
+        from .pit_decisions import review_token
+        return self.client.post('/api/repository/deliverables/concepts/', {
+            'team_id': self.team.pk, 'stage_label': self.event.event_name, 'action': 'pit_decision',
+            'review_token': review_token(ConceptRound.objects.get(schedule=schedule)),
+            'reason': 'Panel hearing feedback recorded by the PIT Lead.',
+            'concepts': [{'key': f'c{i}', 'decision': 'approved' if approved and i == 2 else 'rejected',
                                   'remarks': 'Recorded panel feedback.'} for i in range(1, 4)],
         }, format='json')
 
@@ -194,11 +197,12 @@ class PitConceptTests(APITestCase):
         self.assertFalse(concepts.pit_ready(self.team, self.event))
         self.assertEqual(self.titles().status_code, 400)
 
-    def test_pit_lead_cannot_override_clearance_or_issue_the_panel_verdict(self):
+    def test_pit_lead_can_select_concepts_but_cannot_override_clearance(self):
         self.prepare()
         schedule = self.schedule()
-        response = self.verdict(schedule, actor=self.first)
+        response = self.verdict(schedule, actor=self.panelist)
         self.assertEqual(response.status_code, 403, response.data)
+        self.assertEqual(self.verdict(schedule, actor=self.first).status_code, 200)
         self.client.force_authenticate(self.first)
         response = self.client.post('/api/repository/deliverables/concepts/', {
             'team_id': self.team.pk, 'stage_label': self.event.event_name,
@@ -227,7 +231,7 @@ class PitConceptTests(APITestCase):
             review_and_endorse(self.team, self.event.event_name, actor=self.first, review_token=token)
         self.assertFalse(concepts.clearance_valid(self.team, self.event))
 
-    def test_grade_cannot_publish_before_concept_verdict_or_with_redefense(self):
+    def test_numeric_result_stays_independent_but_completion_requires_concept_selection(self):
         self.prepare()
         schedule = self.schedule()
         grade = TeamGrade.objects.get(team=self.team)
@@ -236,7 +240,7 @@ class PitConceptTests(APITestCase):
         grade.refresh_from_db()
         grade.peer_score = Decimal('86')
         grade.save()
-        self.assertEqual(grade.result, 'pending')
+        self.assertEqual(grade.result, 'passed')
         with self.assertRaises(ValidationError):
             GradeContextService.publish(grade, user=self.first)
         with self.assertRaises(ValidationError):

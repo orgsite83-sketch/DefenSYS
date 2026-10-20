@@ -20,11 +20,14 @@ def schedule_progress(schedule, *, reconcile_status=True):
         grade = TeamGrade.all_objects.filter(schedule=schedule).select_related('team', 'semester', 'schedule').first()
     history = None if grade else GradeAttemptHistory.objects.filter(schedule=schedule).order_by('-id').first()
     verdict = ''
-    from repository.deliverables.concepts import enabled, stage_for
-    uses_verdict = schedule.scope == 'capstone' or enabled(stage_for(schedule.team, schedule.stage_label))
+    uses_verdict = schedule.scope == 'capstone'
     if uses_verdict:
         verdict = grade.verdict if grade else history.verdict if history else ''
     evidence = grade or history
+    concept_retry = False
+    if schedule.scope == 'pit':
+        from repository.deliverables.models import ConceptRound
+        concept_retry = ConceptRound.objects.filter(schedule=schedule, verdict='for_redefense').exists()
     result = {'verdict': verdict, 'attempt_count': grade.attempt_count if grade else history.attempt_number if history else 1,
               'panel_evaluators_submitted': 0, 'panel_evaluators_required': 0,
               'revisions_cleared_at': str(evidence.revisions_cleared_at) if verdict and evidence.revisions_cleared_at else None,
@@ -53,7 +56,7 @@ def schedule_progress(schedule, *, reconcile_status=True):
             display = 'completed'
         elif grade.status == 'published' and grade.result == 'failed':
             display = 'failed'
-        elif verdict == 'for_redefense':
+        elif verdict == 'for_redefense' or concept_retry:
             display = 'redefense_required'
         elif verdict in ('failed', 'project_rejected'):
             display = verdict

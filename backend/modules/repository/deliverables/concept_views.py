@@ -10,7 +10,7 @@ from . import concepts
 class ConceptActionSerializer(serializers.Serializer):
     team_id = serializers.IntegerField(min_value=1)
     stage_label = serializers.CharField(max_length=120)
-    action = serializers.ChoiceField(choices=['save_titles', 'override_clearance'])
+    action = serializers.ChoiceField(choices=['save_titles', 'override_clearance', 'pit_decision', 'clear_pit_revisions'])
     concepts = serializers.ListField(child=serializers.DictField(), required=False)
     reason = serializers.CharField(required=False, max_length=5000, allow_blank=True)
     review_token = serializers.CharField(required=False, max_length=64)
@@ -39,8 +39,18 @@ class ConceptActionView(APIView):
                 if attrs.get('review_token') and attrs['review_token'] != concepts.module_review_token(team, stage):
                     return Response({'detail': 'The module names or system connections changed. Refresh and review the current names.'}, status=409)
                 concepts.save_titles(team, stage, attrs.get('concepts'), actor=request.user)
+            elif attrs['action'] in ('pit_decision', 'clear_pit_revisions'):
+                from .pit_decisions import record_decision
+                record_decision(team, stage, request.user, attrs.get('concepts'),
+                    token=attrs.get('review_token'), reason=attrs.get('reason', ''),
+                    clear_revisions=attrs['action'] == 'clear_pit_revisions')
+                team.refresh_from_db()
             else:
                 concepts.override_clearance(team, stage, request.user, attrs.get('reason', ''))
-        except (ValueError, PermissionError, concepts.ValidationError) as exc:
+        except PermissionError as exc:
+            if attrs['action'] in ('pit_decision', 'clear_pit_revisions'):
+                return Response({'detail': str(exc)}, status=403)
+            return deliverable_error_response(exc)
+        except (ValueError, concepts.ValidationError) as exc:
             return deliverable_error_response(exc)
         return Response(deliverables_action_payload(request, team, stage.label))

@@ -352,6 +352,12 @@ class ConceptRound(models.Model):
     documents_snapshot = models.JSONField(default=list, blank=True)
     verdict = models.CharField(max_length=30, blank=True, default='')
     remarks = models.TextField(blank=True, default='')
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='decided_concept_rounds')
+    revisions_cleared_at = models.DateTimeField(null=True, blank=True)
+    revisions_cleared_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name='cleared_concept_rounds')
     replacement_required = models.BooleanField(default=False)
     review_required = models.BooleanField(default=True)
     endorsed_at = models.DateTimeField(null=True, blank=True)

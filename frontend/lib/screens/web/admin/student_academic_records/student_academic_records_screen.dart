@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../services/academic_period_provider.dart';
 import '../../../../services/student_academic_records_provider.dart';
 import '../../../../utils/csv_file_io.dart';
+import '../../../../utils/import/student_rollover_action.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
@@ -1010,31 +1011,7 @@ class _StudentAcademicRecordsScreenState
       final recordKeyId = recordId != null ? recordId.toString() : username;
 
       final action = dialogActions[recordKeyId] ?? row['action_default'] ?? 'promote';
-      final isNew = row['is_new_student'] == true;
-
-      final pr = row['promote_result'] ?? {};
-      final targetYear = pr['year_level']?.toString() ?? '';
-      final targetSection = pr['section']?.toString() ?? '';
-
-      if (isNew) {
-        confirmActions.add({
-          'username': username,
-          'first_name': rec['first_name']?.toString() ?? '',
-          'last_name': rec['last_name']?.toString() ?? '',
-          'email': rec['student_email']?.toString() ?? '',
-          'action': action,
-          'year_level': targetYear,
-          'section': targetSection,
-        });
-      } else {
-        confirmActions.add({
-          'record_id': recordId,
-          'username': username,
-          'action': action,
-          'year_level': targetYear,
-          'section': targetSection,
-        });
-      }
+      confirmActions.add(buildStudentRolloverAction(row, action));
     }
 
     await ref

@@ -15,6 +15,7 @@ import 'package:defensys/toasts/feedback_toast.dart';
 
 import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/utils/import/student_bulk_import_csv.dart';
+import 'package:defensys/utils/import/student_rollover_action.dart';
 import 'package:defensys/utils/import/user_bulk_import_draft.dart';
 import 'access_control/access_control_view.dart';
 import 'access_control/panelist_eligibility_view.dart';
@@ -431,17 +432,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                     : rec['student_username']?.toString() ?? '';
                 final act = actions[key] ?? row['action_default'] ?? 'promote';
 
-                final pr = row['promote_result'] as Map? ?? {};
-                confirmActions.add({
-                  'record_id': rec['id'],
-                  'username': rec['student_username'],
-                  'first_name': rec['first_name'],
-                  'last_name': rec['last_name'],
-                  'email': rec['student_email'],
-                  'action': act,
-                  'year_level': pr['year_level'],
-                  'section': pr['section'],
-                });
+                confirmActions.add(buildStudentRolloverAction(row, act));
               }
 
               final ok = await ref

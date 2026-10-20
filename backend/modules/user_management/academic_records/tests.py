@@ -233,6 +233,8 @@ class StudentAcademicRecordApiTests(APITestCase):
             semester=self.second_semester,
             year_level=StudentAcademicRecord.SECOND_YEAR,
         )
+        next_year = SchoolYear.objects.create(label='2027-2028')
+        Semester.objects.create(school_year=next_year, label=Semester.FIRST, is_active=True)
 
         response = self.client.post(
             '/api/users/academic-records/rollover/',

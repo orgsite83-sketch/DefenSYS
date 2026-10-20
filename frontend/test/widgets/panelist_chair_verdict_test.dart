@@ -82,21 +82,21 @@ void main() {
     });
 
     testWidgets(
-      'PIT concept chair receives concept decisions and waits for server permission',
+      'PIT concept chair grades without a formal verdict or concept selection controls',
       (tester) async {
         tester.view.physicalSize = const Size(800, 1400);
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
         final waiting = _chairAssignment(pitConcepts: true, posted: true);
-        expect(waiting.panelWorkFinished, isFalse);
+        expect(waiting.panelWorkFinished, isTrue);
         expect(waiting.canIssueVerdict, isFalse);
         final team = _chairAssignment(
           pitConcepts: true,
           posted: true,
           ready: true,
         );
-        expect(team.canIssueVerdict, isTrue);
+        expect(team.canIssueVerdict, isFalse);
         await pumpDefensysWidget(
           tester,
           GradeSheetTab(
@@ -105,10 +105,10 @@ void main() {
             onTeamChanged: (_) {},
           ),
         );
-        expect(find.text('Panel Chair Official Verdict'), findsOneWidget);
-        expect(find.text('PIT idea 1'), findsOneWidget);
-        expect(find.text('PIT idea 2'), findsOneWidget);
-        expect(find.text('PIT idea 3'), findsOneWidget);
+        expect(find.text('Panel Chair Official Verdict'), findsNothing);
+        expect(find.text('PIT idea 1'), findsNothing);
+        expect(find.text('PIT idea 2'), findsNothing);
+        expect(find.text('PIT idea 3'), findsNothing);
         expect(tester.takeException(), isNull);
       },
     );

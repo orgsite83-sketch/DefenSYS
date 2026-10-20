@@ -215,8 +215,7 @@ class DefenseWorkflowPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final rawWorkflow = grade['workflow'] as Map? ?? {};
-    if (grade['scope'] != 'capstone' && rawWorkflow['concept_workflow'] == null) return const SizedBox.shrink();
+    if (grade['scope'] != 'capstone') return const SizedBox.shrink();
     final user = ref.watch(authProvider).user ?? <String, dynamic>{};
     final workflow = Map<String, dynamic>.from(grade['workflow'] as Map? ?? {});
     final admin = user['role'] == 'admin' || user['is_superuser'] == true;

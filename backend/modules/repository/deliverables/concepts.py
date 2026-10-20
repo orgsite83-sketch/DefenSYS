@@ -148,12 +148,6 @@ def pit_ready(team, config):
     current = latest_round(team, config)
     if current and current.schedule_id and current.schedule.status != 'cancelled':
         return False
-    from grading.grades.models import TeamGrade
-    grade = TeamGrade.objects.filter(team=team, semester=team.semester, pit_event_config=config).first()
-    if grade and grade.verdict and grade.verdict != 'for_redefense':
-        return False
-    if grade and grade.redefense_verification_required and not grade.redefense_verified_at:
-        return False
     return not clearance_blocker(team, config)
 
 
@@ -224,6 +218,8 @@ def bind_schedule(schedule):
 def validate_decisions(current, decisions, verdict, replacement_required):
     if not isinstance(decisions, list) or len(decisions) != len(current.concepts):
         raise ValidationError('Record a decision for every concept in this hearing.')
+    if any(not isinstance(d, dict) or not isinstance(d.get('key'), str) for d in decisions):
+        raise ValidationError('Each concept needs one valid decision key.')
     keyed = {d.get('key'): d for d in decisions if isinstance(d, dict)}
     if len(keyed) != len(current.concepts):
         raise ValidationError('Each concept needs one unique decision.')
@@ -253,7 +249,14 @@ def validate_decisions(current, decisions, verdict, replacement_required):
     return concepts, replacement_required, selected
 
 
-def record_outcome(grade, decisions, *, replacement_required=False):
+def record_outcome(grade, decisions, *, replacement_required=False, outcome=None, remarks=None, actor=None,
+                   verification_required=None):
+    # PIT records a concept decision on the round, independently of academic grades.
+    outcome = outcome if outcome is not None else grade.verdict
+    remarks = remarks if remarks is not None else grade.verdict_remarks
+    actor = actor or grade.verdict_by
+    verification_required = (grade.redefense_verification_required if verification_required is None
+                             else verification_required)
     stage = context_for_grade(grade)
     if not enabled(stage):
         return
@@ -263,23 +266,25 @@ def record_outcome(grade, decisions, *, replacement_required=False):
         raise ValidationError('This defense needs a scheduled concept set before a verdict can be recorded.')
     if latest_round(grade.team, stage).pk != current.pk:
         raise ValidationError('An earlier concept hearing is read-only after the next round has started.')
-    concepts, replacement_required, selected = validate_decisions(current, decisions, grade.verdict, replacement_required)
+    concepts, replacement_required, selected = validate_decisions(current, decisions, outcome, replacement_required)
     from repository.section_concepts.services import validate_module_decision
-    validate_module_decision(grade, current, concepts)
-    current.concepts, current.verdict, current.remarks = concepts, grade.verdict, grade.verdict_remarks
+    validate_module_decision(grade, current, concepts, outcome=outcome)
+    current.concepts, current.verdict, current.remarks = concepts, outcome, remarks
+    current.decided_by, current.decided_at = actor, timezone.now()
     current.replacement_required = replacement_required
     current.documents_snapshot = documents_snapshot(grade.team, stage)
-    current.save(update_fields=['concepts', 'verdict', 'remarks', 'replacement_required', 'documents_snapshot'])
+    current.save(update_fields=['concepts', 'verdict', 'remarks', 'replacement_required', 'documents_snapshot',
+                               'decided_by', 'decided_at'])
     if selected:
         grade.team.project_title = selected[0]['title']
         grade.team.project_pending = False
         grade.team.save(update_fields=['project_title', 'project_pending', 'updated_at'])
         grade.project_title_snapshot = selected[0]['title']
-    if grade.verdict != 'for_redefense':
+    if outcome != 'for_redefense':
         return
     snapshot = resolve_policy(grade.team, stage, current=current)
     policy = stage.concept_config.get('review_policy', 'replacement')
-    review = policy == 'always' or (policy == 'replacement' and replacement_required) or grade.redefense_verification_required
+    review = policy == 'always' or (policy == 'replacement' and replacement_required) or verification_required
     replacement_key = current.section_round.selected_key if current.section_round_id else ''
     next_concepts = [{**c, 'title': '' if replacement_required and (not replacement_key or c['key'] == replacement_key) else c['title'],
         **({'faculty_confirmed': False} if current.section_round_id and replacement_required and (
@@ -304,7 +309,7 @@ def record_outcome(grade, decisions, *, replacement_required=False):
         grade.team.ready_for_stage = None
         grade.team.save(update_fields=['ready_for_stage', 'updated_at'])
     if not review:
-        next_round.endorsed_at, next_round.endorsed_by = timezone.now(), grade.verdict_by
+        next_round.endorsed_at, next_round.endorsed_by = timezone.now(), actor
         next_round.endorsement_snapshot = documents_snapshot(grade.team, stage, clearance_only=True)
         next_round.save()
 
@@ -330,10 +335,15 @@ def save_titles(team, stage, concepts, *, actor=None):
     if len(keyed) != len(current.concepts) or set(keyed) != {c['key'] for c in current.concepts}:
         raise ValueError('Enter each configured concept exactly once.')
     updated = deepcopy(current.concepts)
+    selected_key = current.section_round.selected_key if current.section_round_id else ''
     for c in updated:
         title = keyed.get(c['key'], {}).get('title', '')
         if not isinstance(title, str) or not title.strip() or len(title.strip()) > 255:
             raise ValueError('Every concept needs a title of up to 255 characters.')
+        if selected_key and c['key'] != selected_key:
+            if title.strip() != c['title']:
+                raise ValidationError('Only the module linked to the selected section system can be changed.')
+            continue
         metadata = module_title_metadata(actor, team, stage)
         if metadata.get('faculty_confirmed') and (not c.get('faculty_confirmed') or c['title'] != title.strip()):
             c.update(faculty_confirmed_by=actor.pk, faculty_confirmed_at=timezone.now().isoformat())
@@ -386,7 +396,7 @@ def override_clearance(team, stage, actor, reason):
         reason=reason.strip(), new_values={'team_id': team.pk, 'round': current.number}, strict=True)
 
 
-def payload(team, stage, *, history=True):
+def payload(team, stage, *, history=True, actor=None):
     if not enabled(stage):
         return None
     require_context(team, stage)
@@ -425,7 +435,17 @@ def payload(team, stage, *, history=True):
         status = 'concept_endorsement_pending'
     else:
         status = 'concept_review_pending'
+    from .pit_decisions import decision_payload
     return {'enabled': True, 'config': policy, 'round': current.number if current else 1,
+        'selection_mode': 'shared_module' if shared_policy else 'team_concept',
+        'shared_selection': ({'selected_key': shared_round.selected_key,
+            'system_title': next((c.get('system_title', '') for c in concepts
+                                 if c['key'] == shared_round.selected_key), ''),
+            'module': next((c for c in concepts if c['key'] == shared_round.selected_key), None),
+            'decision': shared_round.verdict,
+            'revisions_pending': shared_round.verdict == 'approved_with_revisions' and not shared_round.revisions_cleared_at}
+            if shared_round else None),
+        **(decision_payload(team, stage, current, actor) if team.is_pit else {}),
         'module_review_token': module_review_token(team, stage),
         'section_project_id': policy.get('section_project_id'),
         'shared_review': shared_review,
@@ -452,6 +472,8 @@ def payload(team, stage, *, history=True):
             'ready_to_schedule_redefense': f'The {"PIT Lead" if team.is_pit else "administrator"} can schedule the next defense attempt.',
             'scheduled': 'Prepare for the scheduled concept hearing.'}.get(status, 'Review the recorded outcome and stage requirements.')),
         'history': [{'round': r.number, 'schedule_id': r.schedule_id, 'verdict': r.verdict, 'policy': r.policy_snapshot,
+            'decided_at': r.decided_at.isoformat() if r.decided_at else None,
+            'decided_by_name': (r.decided_by.get_full_name() or r.decided_by.username) if r.decided_by else '',
             'remarks': r.remarks, 'concepts': r.concepts, 'documents': r.documents_snapshot,
             'override_reason': r.override_reason} for r in rounds if r.schedule_id or r.verdict] if history else []}
 

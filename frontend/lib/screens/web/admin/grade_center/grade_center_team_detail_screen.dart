@@ -141,10 +141,7 @@ class _GradeCenterTeamDetailScreenState
     final user = ref.watch(authProvider).user;
     final canCorrect = gradeIdValue != null && (user?['role'] == 'admin' || user?['is_superuser'] == true);
     final canEdit = !widget.isLocked && gradeIdValue != null;
-    final workflow = grade['workflow'] as Map? ?? {};
-    final usesVerdict = !isPit || workflow['concept_workflow'] != null;
-    final canIssuePitVerdict = user?['role'] == 'admin' || user?['is_superuser'] == true ||
-        asInt(user?['id']) == asInt(workflow['chair_id']) && asInt(user?['id']) != null;
+    final usesVerdict = !isPit;
 
     final panelWeight = asDouble(weightText(grade, 'panel')) ?? (isPit ? 70.0 : 50.0);
     final adviserWeight = asDouble(weightText(grade, 'adviser')) ?? (isPit ? 0.0 : 30.0);
@@ -350,7 +347,7 @@ class _GradeCenterTeamDetailScreenState
                   child: const Text('Correct a score'),
                 )),
               ],
-              if (usesVerdict && canEdit && (!isPit || canIssuePitVerdict)) ...[
+              if (usesVerdict && canEdit) ...[
                 const SizedBox(width: 8),
                 ElevatedButton.icon(
                   onPressed: () => GradeCenterActions.showVerdictDialog(

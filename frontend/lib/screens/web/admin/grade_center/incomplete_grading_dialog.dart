@@ -37,6 +37,7 @@ class _IncompleteGradingTeamsDialogState
     'clearance': 'Revision clearance',
     'redefense': 'Re-defense required',
     'post_defense': 'Post-defense deliverables',
+    'concept_selection': 'PIT concept selection or revision clearance',
   };
 
   @override
@@ -44,7 +45,7 @@ class _IncompleteGradingTeamsDialogState
     super.initState();
     final hasEvalMissing = widget.teams.any((team) {
       final m = _missing(team);
-      return m.any((k) => ['panel', 'adviser', 'peer', 'verdict'].contains(k));
+      return m.any((k) => ['panel', 'adviser', 'peer', 'verdict', 'concept_selection'].contains(k));
     });
     final hasDeliverablesMissing = widget.teams.any((team) {
       final m = _missing(team);
@@ -57,7 +58,7 @@ class _IncompleteGradingTeamsDialogState
 
   int get _evaluatorBlockersCount => widget.teams.where((team) {
         final m = _missing(team);
-        return m.any((k) => ['panel', 'adviser', 'peer', 'verdict'].contains(k));
+        return m.any((k) => ['panel', 'adviser', 'peer', 'verdict', 'concept_selection'].contains(k));
       }).length;
 
   int get _clearanceBlockersCount => widget.teams.where((team) {

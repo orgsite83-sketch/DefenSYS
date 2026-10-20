@@ -133,8 +133,7 @@ class TeamData {
   }
 
   bool get isToday => scheduledDate == manilaToday;
-  bool get usesDefenseVerdict => isCapstone ||
-      (workflowGrade?['workflow'] as Map? ?? {})['concept_workflow'] != null;
+  bool get usesDefenseVerdict => isCapstone;
   bool get panelWorkFinished =>
       isCompleted || (isPosted && (!usesDefenseVerdict || !isChair || hasVerdict));
   bool get gradingAvailable =>

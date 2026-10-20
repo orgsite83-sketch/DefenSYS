@@ -1444,6 +1444,10 @@ class GradeContextService:
             raise ValidationError({'status': 'Only complete grades can be finalized for archive.'})
         if not team_grading_readiness(grade, grade.semester, grade.scope)['ready']:
             raise ValidationError('Complete every required evaluator before finalizing this defense.')
+        from repository.deliverables.pit_decisions import completion_blocker
+        concept_blocker = completion_blocker(grade)
+        if concept_blocker:
+            raise ValidationError(concept_blocker)
         verdict = grade.verdict if grade.uses_defense_verdict else ''
         from .defense_workflow import passed_and_cleared
         if grade.uses_defense_verdict and not passed_and_cleared(grade):
@@ -1493,6 +1497,10 @@ class GradeContextService:
     def publish(grade, user=None):
         from .defense_workflow import require_current, passed_and_cleared
         require_current(grade)
+        from repository.deliverables.pit_decisions import completion_blocker
+        concept_blocker = completion_blocker(grade)
+        if concept_blocker:
+            raise ValidationError(concept_blocker)
         if grade.uses_defense_verdict and not (
             passed_and_cleared(grade) or grade.verdict in (TeamGrade.VERDICT_FAILED, TeamGrade.VERDICT_PROJECT_REJECTED)
         ):
@@ -2135,6 +2143,10 @@ def cohort_grading_teams_for_group(
     for grade in grades:
         readiness = team_grading_readiness(grade, semester, scope, config)
         missing = list(readiness['missing_components'])
+        from repository.deliverables.pit_decisions import completion_blocker
+        concept_blocker = completion_blocker(grade)
+        if concept_blocker:
+            missing.append('concept_selection')
         is_post_complete = True
         if grade.uses_defense_verdict:
             if not grade.verdict:
@@ -2341,6 +2353,10 @@ def _auto_finalize_passed_grades_in_queryset(grades, user=None):
 
     for grade in grades:
         grade.recalculate()
+        from repository.deliverables.pit_decisions import completion_blocker
+        if completion_blocker(grade):
+            skipped_incomplete += 1
+            continue
         if peer_submission_count(grade) > 0 and not is_team_peer_eval_complete(grade):
             skipped_incomplete += 1
             continue
@@ -2418,6 +2434,9 @@ def maybe_auto_finalize_passed_grade(grade, user=None):
         return grade
     grade.recalculate()
     if grade.status in TeamGrade.LOCKED_STATUSES:
+        return grade
+    from repository.deliverables.pit_decisions import completion_blocker
+    if completion_blocker(grade):
         return grade
     verdict = grade.verdict if grade.uses_defense_verdict else ''
     from .defense_workflow import passed_and_cleared

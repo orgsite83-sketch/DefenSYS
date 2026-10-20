@@ -10,6 +10,7 @@ import '../../theme/defensys_tokens.dart';
 import '../../theme/defensys_button_styles.dart';
 import '../../models/team_workflow_status.dart';
 import 'workflow_status_style.dart';
+import 'shared_concept_review.dart';
 import '../export/defensys_pdf_viewer.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
 
@@ -516,7 +517,13 @@ class _SectionConceptWorkspaceState
     try {
       final result = await action();
       if (mounted && version == requestVersion) {
-        setState(() => project = result);
+        setState(() {
+          if (result['selected_key'] != project?['selected_key'] &&
+              '${result['selected_key'] ?? ''}'.isNotEmpty) {
+            selectedSystem = '${result['selected_key']}';
+          }
+          project = result;
+        });
         if (notifyChange) widget.onSnapshot?.call(result);
         if (notifyChange) await widget.onChanged?.call();
       }
@@ -528,9 +535,14 @@ class _SectionConceptWorkspaceState
   }
 
   Future<void> editNames({Map<String, dynamic>? team}) async {
-    final rows = team == null
+    final snapshot = Map<String, dynamic>.from(project!);
+    final allRows = team == null
         ? _rows(project!['systems'])
         : _rows(team['concepts']);
+    final selectedKey = '${snapshot['selected_key'] ?? ''}';
+    final rows = team != null && selectedKey.isNotEmpty
+        ? allRows.where((r) => r['key'] == selectedKey).toList()
+        : allRows;
     final titles = await showDialog<List<Map<String, dynamic>>>(
       context: context,
       builder: (_) => _ProposalNamesDialog(
@@ -543,9 +555,16 @@ class _SectionConceptWorkspaceState
     if (titles == null || !mounted) return;
     await perform(
       () => service.action(
-        project!,
+        snapshot,
         team == null ? 'save_titles' : 'confirm_modules',
-        {'concepts': titles, if (team != null) 'team_id': team['id']},
+        {
+          'concepts': [
+            for (final original in allRows)
+              titles.where((r) => r['key'] == original['key']).firstOrNull ??
+                  original,
+          ],
+          if (team != null) 'team_id': team['id'],
+        },
       ),
     );
   }
@@ -638,23 +657,67 @@ class _SectionConceptWorkspaceState
   }
 
   Future<void> decide({Map<String, dynamic>? team}) async {
+    final snapshot = Map<String, dynamic>.from(project!);
+    final module = team == null
+        ? null
+        : (team['selected_module'] is Map
+              ? Map<String, dynamic>.from(team['selected_module'] as Map)
+              : _rows(team['concepts'])
+                    .where((m) => m['key'] == snapshot['selected_key'])
+                    .firstOrNull);
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (_) => _SectionDecisionDialog(
-        systems: _rows(project!['systems']),
+        systems: _rows(snapshot['systems']),
         teamName: team?['name']?.toString(),
-        selectedKey: '${project!['selected_key']}',
+        selectedKey: '${snapshot['selected_key']}',
+        pit: snapshot['scope'] == 'pit',
+        module: module,
+        onViewPaper: viewPaper,
       ),
     );
     if (result == null || !mounted) return;
     await perform(
       () => service.action(
-        project!,
-        team == null ? 'decide' : 'module_verdict',
-        {...result, if (team != null) 'team_id': team['id']},
+        snapshot,
+        team == null
+            ? 'decide'
+            : snapshot['scope'] == 'pit'
+            ? 'module_decision'
+            : 'module_verdict',
+        {
+          ...result,
+          if (team != null) 'team_id': team['id'],
+          if (team != null) 'module_key': snapshot['selected_key'],
+          if (team != null && snapshot['scope'] == 'pit')
+            'module_review_token': team['decision_review_token'],
+        },
       ),
     );
   }
+
+  Future<void> clearModuleRevisions(Map<String, dynamic> team) async {
+    final snapshot = Map<String, dynamic>.from(project!);
+    final token = team['decision_review_token'];
+    final remarks = await _remarks(context, 'Clear module revisions');
+    if (remarks == null || !mounted) return;
+    await perform(
+      () => service.action(snapshot, 'clear_module_revisions', {
+        'team_id': team['id'],
+        'module_key': snapshot['selected_key'],
+        'module_review_token': token,
+        'remarks': remarks,
+      }),
+    );
+  }
+
+  Widget moduleReviews(Map<String, dynamic> p) => SharedModuleReviewTable(
+    project: p,
+    busy: busy,
+    onReview: (team) => decide(team: team),
+    onConfirmNames: (team) => editNames(team: team),
+    onClearRevisions: clearModuleRevisions,
+  );
 
   Future<void> reassign() async {
     final result = await showDialog<Map<String, dynamic>>(
@@ -880,7 +943,8 @@ class _SectionConceptWorkspaceState
                           ),
                         ),
                       const SizedBox(height: 20),
-                      const SizedBox(height: 24),
+                      SharedSystemSelectionBanner(project: p),
+                      const SizedBox(height: 20),
                       if (p['shared_revisions_pending'] == true)
                         const Text(
                           'Shared system revisions are outstanding. Module approvals cannot complete progression until the revised system paper is accepted and cleared.',
@@ -909,17 +973,45 @@ class _SectionConceptWorkspaceState
                             child: const Text('Clear shared system revisions'),
                           ),
                         ),
-                      for (final system in _rows(p['systems'])) _system(system),
+                      if ('${p['selected_key'] ?? ''}'.isEmpty)
+                        for (final system in _rows(p['systems']))
+                          _system(system),
+                      if (p['can_decide'] == true)
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: ShadButton(
+                            enabled: !busy,
+                            onPressed: () => decide(),
+                            child: const Text('Select section system'),
+                          ),
+                        ),
                       const SizedBox(height: 20),
-                      Text(
-                        'Corresponding team modules',
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Each team proposes one module for each system. The selected system determines which module may proceed.',
-                      ),
-                      for (final team in _rows(p['teams'])) _team(team),
+                      if (p['shared_revisions_pending'] == true)
+                        for (final system in _rows(
+                          p['systems'],
+                        ).where((s) => s['key'] == p['selected_key']))
+                          _system(system),
+                      moduleReviews(p),
+                      if ('${p['selected_key'] ?? ''}'.isNotEmpty)
+                        ExpansionTile(
+                          tilePadding: EdgeInsets.zero,
+                          initiallyExpanded: false,
+                          title: const Text(
+                            'Section system papers',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          children: [
+                            for (final system in _rows(p['systems']).where(
+                              (s) =>
+                                  p['shared_revisions_pending'] != true ||
+                                  s['key'] != p['selected_key'],
+                            ))
+                              _system(system),
+                          ],
+                        ),
                       const SizedBox(height: 24),
                       Text(
                         'Section hearing',
@@ -953,14 +1045,6 @@ class _SectionConceptWorkspaceState
                                 'Assemble current team schedules',
                               ),
                             ),
-                          ),
-                        ),
-                      if (p['can_decide'] == true)
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: FilledButton(
-                            onPressed: busy ? null : () => decide(),
-                            child: const Text('Record section system decision'),
                           ),
                         ),
                       if (_rows(p['history']).isNotEmpty) ...[
@@ -1099,6 +1183,8 @@ class _SectionConceptWorkspaceState
             ),
             _sharedAcknowledgment(p),
             const SizedBox(height: 16),
+            SharedSystemSelectionBanner(project: p),
+            const SizedBox(height: 16),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -1194,7 +1280,7 @@ class _SectionConceptWorkspaceState
                   FilledButton(
                     style: DefensysButtonStyles.primary(context),
                     onPressed: busy ? null : () => decide(),
-                    child: const Text('Record section system decision'),
+                    child: const Text('Select section system'),
                   ),
                 TextButton.icon(
                   style: DefensysButtonStyles.tertiary(context),
@@ -1206,9 +1292,13 @@ class _SectionConceptWorkspaceState
             ),
             const SizedBox(height: 6),
             Text(
-              'Title confirmation and paper acceptance clear the shared set for hearing. The panel chair records the final system selection.',
+              p['scope'] == 'pit'
+                  ? 'Title confirmation and paper acceptance clear the shared set for hearing. The assigned PIT Lead records the final system selection.'
+                  : 'Title confirmation and paper acceptance clear the shared set for hearing. The panel chair records the final system selection.',
               style: TextStyle(fontSize: 11, height: 1.5, color: secondary),
             ),
+            const SizedBox(height: 24),
+            moduleReviews(p),
             if (busy)
               const Padding(
                 padding: EdgeInsets.only(top: 12),
@@ -1694,187 +1784,6 @@ class _SectionConceptWorkspaceState
       ),
     );
   }
-
-  Widget _team(Map<String, dynamic> team) {
-    final modules = _rows(team['concepts']);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: ShadCard(
-        width: double.infinity,
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 13,
-              backgroundColor: const Color(0xFF720000).withValues(alpha: 0.1),
-              child: Text(
-                '${team['name']}'.isNotEmpty
-                    ? '${team['name']}'[0].toUpperCase()
-                    : 'T',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF720000),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                '${team['name']}',
-                style: const TextStyle(
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            if (team['verdict'] != null && '${team['verdict']}'.isNotEmpty)
-              ShadBadge(
-                backgroundColor: '${team['verdict']}' == 'approved'
-                    ? const Color(0xFF16A34A)
-                    : null,
-                child: Text(
-                  'Outcome: ${team['verdict']}',
-                  style: const TextStyle(fontSize: 9.5),
-                ),
-              ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: 10),
-            for (final module in modules) ...[
-              Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(9),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? Colors.white.withValues(alpha: 0.03)
-                      : const Color(0xFFF9FAFB),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: Theme.of(context).brightness == Brightness.dark
-                        ? Colors.white12
-                        : const Color(0xFFE5E7EB),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 5,
-                            vertical: 1.5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(
-                              0xFF2563EB,
-                            ).withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            module['system_title'] == ''
-                                ? '${module['key']}'.toUpperCase()
-                                : '${module['system_title']}',
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF2563EB),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        const Text(
-                          '→',
-                          style: TextStyle(
-                            color: Colors.grey,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            module['title'] == ''
-                                ? 'Module name needed'
-                                : '${module['title']}',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 12.5,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        if (module['faculty_confirmed'] == true)
-                          const ShadBadge(
-                            child: Text(
-                              'Confirmed',
-                              style: TextStyle(fontSize: 9),
-                            ),
-                          )
-                        else
-                          const ShadBadge.secondary(
-                            child: Text(
-                              'Pending',
-                              style: TextStyle(fontSize: 9),
-                            ),
-                          ),
-                      ],
-                    ),
-                    if (module['decision'] != null &&
-                        '${module['decision']}'.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        'Decision: ${module['decision']}',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                    if (module['documents_status'] != null &&
-                        '${module['documents_status']}'.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        'Papers: ${'${module['documents_status']}'.replaceAll('_', ' ')}',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (team['can_confirm_names'] == true &&
-                    team['schedule_id'] == null)
-                  ShadButton.outline(
-                    size: ShadButtonSize.sm,
-                    onPressed: busy ? null : () => editNames(team: team),
-                    child: const Text('Confirm module names'),
-                  ),
-                if (team['can_issue_verdict'] == true)
-                  ShadButton(
-                    size: ShadButtonSize.sm,
-                    onPressed: busy ? null : () => decide(team: team),
-                    child: const Text('Record module outcome'),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class _ProposalNamesDialog extends StatefulWidget {
@@ -2016,10 +1925,16 @@ class _SectionDecisionDialog extends StatefulWidget {
     required this.systems,
     required this.selectedKey,
     this.teamName,
+    this.pit = false,
+    this.module,
+    this.onViewPaper,
   });
   final List<Map<String, dynamic>> systems;
   final String selectedKey;
   final String? teamName;
+  final bool pit;
+  final Map<String, dynamic>? module;
+  final Future<void> Function(Map<String, dynamic>)? onViewPaper;
   @override
   State<_SectionDecisionDialog> createState() => _SectionDecisionDialogState();
 }
@@ -2029,6 +1944,7 @@ class _SectionDecisionDialogState extends State<_SectionDecisionDialog> {
   String verdict = 'approved';
   final notes = TextEditingController();
   final form = GlobalKey<FormState>();
+  bool openingPaper = false;
   @override
   void initState() {
     super.initState();
@@ -2044,9 +1960,7 @@ class _SectionDecisionDialogState extends State<_SectionDecisionDialog> {
   @override
   Widget build(BuildContext context) => AlertDialog(
     title: Text(
-      widget.teamName == null
-          ? 'Select the section system'
-          : '${widget.teamName} · Module outcome',
+      widget.teamName == null ? 'Select section system' : 'Review module',
     ),
     content: SizedBox(
       width: 560,
@@ -2055,7 +1969,61 @@ class _SectionDecisionDialogState extends State<_SectionDecisionDialog> {
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (widget.module != null) ...[
+                Text(
+                  '${widget.teamName}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Selected section system',
+                  style: TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${widget.module!['system_title']}',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('Linked module', style: TextStyle(fontSize: 12)),
+                const SizedBox(height: 4),
+                Text(
+                  '${widget.module!['title']}',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    height: 1.4,
+                  ),
+                ),
+                for (final paper in _rows(widget.module!['documents']))
+                  TextButton.icon(
+                    onPressed: openingPaper || widget.onViewPaper == null
+                        ? null
+                        : () async {
+                            setState(() => openingPaper = true);
+                            try {
+                              await widget.onViewPaper!(paper);
+                            } finally {
+                              if (mounted) setState(() => openingPaper = false);
+                            }
+                          },
+                    icon: const Icon(Icons.description_outlined, size: 16),
+                    label: Text(
+                      '${paper['file_name']} · Revision ${paper['revision']}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                const SizedBox(height: 20),
+              ],
               if (widget.teamName == null && verdict != 'for_redefense')
                 DropdownButtonFormField<String>(
                   initialValue: selected,
@@ -2078,19 +2046,46 @@ class _SectionDecisionDialogState extends State<_SectionDecisionDialog> {
                 ),
               DropdownButtonFormField<String>(
                 initialValue: verdict,
-                decoration: const InputDecoration(labelText: 'Outcome'),
-                items: const [
-                  DropdownMenuItem(value: 'approved', child: Text('Approved')),
+                decoration: InputDecoration(
+                  labelText: widget.module == null
+                      ? 'System decision'
+                      : 'Module review',
+                ),
+                items: [
+                  DropdownMenuItem(
+                    value: 'approved',
+                    child: Text(
+                      !widget.pit
+                          ? 'Approved'
+                          : widget.module == null
+                          ? 'Select system'
+                          : 'Accept module',
+                    ),
+                  ),
                   DropdownMenuItem(
                     value: 'approved_with_revisions',
-                    child: Text('Approved with revisions'),
+                    child: Text(
+                      !widget.pit
+                          ? 'Approved with revisions'
+                          : widget.module == null
+                          ? 'Select with revisions'
+                          : 'Request module revisions',
+                    ),
                   ),
                   DropdownMenuItem(
                     value: 'for_redefense',
-                    child: Text('For re-defense'),
+                    child: Text(
+                      !widget.pit
+                          ? 'For re-defense'
+                          : widget.module == null
+                          ? 'Request replacement proposals'
+                          : 'Request another module review',
+                    ),
                   ),
                 ],
-                onChanged: (v) => setState(() => verdict = v!),
+                onChanged: openingPaper
+                    ? null
+                    : (v) => setState(() => verdict = v!),
               ),
               const SizedBox(height: 16),
               TextFormField(
@@ -2098,16 +2093,21 @@ class _SectionDecisionDialogState extends State<_SectionDecisionDialog> {
                 minLines: 3,
                 maxLines: 6,
                 maxLength: 5000,
-                decoration: const InputDecoration(
-                  labelText: 'Panel feedback / required revisions',
+                enabled: !openingPaper,
+                decoration: InputDecoration(
+                  labelText: widget.module == null
+                      ? 'Selection notes / required revisions'
+                      : 'Module feedback / required changes',
                 ),
                 validator: (v) =>
                     verdict != 'approved' && (v == null || v.trim().isEmpty)
                     ? 'Explain the required action.'
                     : null,
               ),
-              const Text(
-                'System selection and team module approval are separate decisions. Each team retains its own assessment and outcome.',
+              Text(
+                widget.module == null
+                    ? 'This selection applies to the whole section. Each team’s linked module receives a separate review.'
+                    : 'This review applies to the linked module for this team. Its grades and revision clearance remain separate.',
               ),
             ],
           ),
@@ -2116,35 +2116,41 @@ class _SectionDecisionDialogState extends State<_SectionDecisionDialog> {
     ),
     actions: [
       TextButton(
-        onPressed: () => Navigator.pop(context),
+        onPressed: openingPaper ? null : () => Navigator.pop(context),
         child: const Text('Cancel'),
       ),
       FilledButton(
-        onPressed: () {
-          if (!form.currentState!.validate()) return;
-          final remarks = notes.text.trim();
-          Navigator.pop(context, {
-            'verdict': verdict,
-            'remarks': remarks,
-            if (widget.teamName == null)
-              'concepts': [
-                for (final s in widget.systems)
-                  {
-                    'key': s['key'],
-                    'decision': verdict == 'for_redefense'
-                        ? 'rejected'
-                        : s['key'] == selected
-                        ? verdict
-                        : 'not_selected',
-                    'remarks':
-                        verdict == 'for_redefense' || s['key'] == selected
-                        ? remarks
-                        : '',
-                  },
-              ],
-          });
-        },
-        child: const Text('Record decision'),
+        onPressed: openingPaper
+            ? null
+            : () {
+                if (!form.currentState!.validate()) return;
+                final remarks = notes.text.trim();
+                Navigator.pop(context, {
+                  'verdict': verdict,
+                  'remarks': remarks,
+                  if (widget.teamName == null)
+                    'concepts': [
+                      for (final s in widget.systems)
+                        {
+                          'key': s['key'],
+                          'decision': verdict == 'for_redefense'
+                              ? 'rejected'
+                              : s['key'] == selected
+                              ? verdict
+                              : 'not_selected',
+                          'remarks':
+                              verdict == 'for_redefense' || s['key'] == selected
+                              ? remarks
+                              : '',
+                        },
+                    ],
+                });
+              },
+        child: Text(
+          widget.module == null
+              ? 'Save section decision'
+              : 'Save module review',
+        ),
       ),
     ],
   );

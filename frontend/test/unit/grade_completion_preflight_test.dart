@@ -68,6 +68,7 @@ void main() {
         stageLabel: 'Concept Proposal',
       );
       expect(client.requests.single.queryParameters, {
+        'workspace': 'operations',
         'scope': 'capstone',
         'stage_label': 'Concept Proposal',
       });

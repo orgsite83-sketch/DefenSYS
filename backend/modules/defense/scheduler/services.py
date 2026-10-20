@@ -77,7 +77,10 @@ def transition_schedule_status(schedule, new_status, *, actor=None, reason='', r
             if not ready['panel_complete'] or not grade.verdict:
                 raise ValidationError('Complete every required panel evaluation and record the chair verdict before closing this attempt.')
         elif not ready['ready']:
-            raise ValidationError('Complete all required evaluators and grading components before closing this defense.')
+            from repository.deliverables.models import ConceptRound
+            concept_retry = ConceptRound.objects.filter(schedule=schedule, verdict='for_redefense').exists()
+            if not (concept_retry and ready['panel_complete']):
+                raise ValidationError('Complete all required evaluators and grading components before closing this defense.')
     schedule.status = new_status
     schedule.revision += 1
     schedule.save(update_fields=['status', 'revision', 'updated_at'])

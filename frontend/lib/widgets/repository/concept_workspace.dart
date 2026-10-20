@@ -6,47 +6,12 @@ import '../../services/auth_provider.dart';
 import '../../services/capstone_deliverables_provider.dart';
 import '../../utils/universal_file_viewer.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
-import 'document_policy_editor.dart';
 import '../../theme/defensys_tokens.dart';
 
-String? conceptDecisionError(
-  List<Map<String, dynamic>> concepts,
-  String verdict,
-) {
-  if (concepts.isEmpty) return null;
-  final selected = <Map<String, dynamic>>[];
-  for (final concept in concepts) {
-    final decision = concept['decision'];
-    if (!const [
-      'approved',
-      'approved_with_revisions',
-      'rejected',
-      'not_selected',
-      'revise',
-    ].contains(decision)) {
-      return 'Choose a decision for every concept.';
-    }
-    if (const [
-          'rejected',
-          'revise',
-          'approved_with_revisions',
-        ].contains(decision) &&
-        '${concept['remarks'] ?? ''}'.trim().isEmpty) {
-      return 'Explain each rejected concept or required revision.';
-    }
-    if (decision == 'approved' || decision == 'approved_with_revisions') {
-      selected.add(concept);
-    }
-  }
-  if (verdict == 'approved' || verdict == 'approved_with_revisions') {
-    if (selected.length != 1 || selected.single['decision'] != verdict) {
-      return 'Select exactly one concept matching the hearing approval verdict.';
-    }
-  } else if (selected.isNotEmpty) {
-    return 'An approved concept requires an approval verdict for this hearing.';
-  }
-  return null;
-}
+import 'pit_concept_decision_panel.dart';
+import 'shared_concept_review.dart';
+export 'concept_decision_fields.dart';
+export 'pit_concept_decision_panel.dart';
 
 class ConceptWorkspace extends ConsumerStatefulWidget {
   const ConceptWorkspace({
@@ -75,6 +40,30 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
           .whereType<Map>()
           .map((c) => Map<String, dynamic>.from(c))
           .toList();
+  List<Map<String, dynamic>> get visibleConcepts {
+    final key = '${workflow['section_selected_key'] ?? ''}';
+    return isSharedConceptWorkflow(workflow) && key.isNotEmpty
+        ? concepts.where((c) => c['key'] == key).toList()
+        : concepts;
+  }
+
+  Future<void> openSharedWorkspace() async {
+    final id = int.tryParse('${workflow['section_project_id'] ?? ''}');
+    if (id == null) return;
+    if (widget.onOpenSharedReview != null) {
+      widget.onOpenSharedReview!(id);
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SectionConceptWorkspace(projectId: id),
+      ),
+    );
+    if (mounted) {
+      await ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
+    }
+  }
+
   String get identity =>
       '${widget.teamId}:${widget.stageLabel}:${workflow['round']}';
   @override
@@ -208,7 +197,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                     const Text(
                       'Check each module name and its connection to the matching shared system. You can correct the names before confirming.',
                     ),
-                    for (final c in concepts) ...[
+                    for (final c in visibleConcepts) ...[
                       const SizedBox(height: 18),
                       Text(
                         'System ${c['key'] == 'c1'
@@ -303,7 +292,18 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
         '${(workflow['config'] as Map?)?['assigned_title'] ?? ''}'
             .trim()
             .isNotEmpty) {
-      return ConceptHistory(workflow: workflow);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ConceptHistory(workflow: workflow),
+          if (workflow['decision_scope'] == 'pit')
+            PitConceptDecisionPanel(
+              teamId: widget.teamId,
+              stageLabel: widget.stageLabel,
+              workflow: workflow,
+            ),
+        ],
+      );
     }
     final cleared = workflow['clearance_valid'] == true;
     final status = shared && editable
@@ -332,7 +332,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
             'project_rejected' => 'Project rejected',
             _ => 'Concept selection',
           };
-    final content = DefensysShadcnScope(
+    final conceptContent = DefensysShadcnScope(
       child: Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: ShadCard(
@@ -341,7 +341,10 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
             children: [
               Expanded(
                 child: Text(
-                  assigned
+                  shared &&
+                          '${workflow['section_selected_key'] ?? ''}'.isNotEmpty
+                      ? 'Linked module proposal'
+                      : assigned
                       ? 'Assigned concept review'
                       : workflow['section_project_id'] != null
                       ? 'Team module concepts'
@@ -367,7 +370,7 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 12),
-              for (final c in concepts)
+              for (final c in visibleConcepts)
                 Builder(
                   builder: (context) {
                     final keyStr = '${c['key']}';
@@ -696,33 +699,27 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
         ),
       ),
     );
-    final projectId = int.tryParse('${workflow['section_project_id'] ?? ''}');
-    if (!faculty || projectId == null) return content;
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        conceptContent,
+        if (!shared && workflow['decision_scope'] == 'pit')
+          PitConceptDecisionPanel(
+            teamId: widget.teamId,
+            stageLabel: widget.stageLabel,
+            workflow: workflow,
+          ),
+      ],
+    );
+    if (!shared) return content;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SharedSectionStatus(
-          summary: Map<String, dynamic>.from(
-            workflow['shared_review'] as Map? ?? {},
-          ),
-          onOpen: () async {
-            if (widget.onOpenSharedReview != null) {
-              widget.onOpenSharedReview!(projectId);
-              return;
-            }
-            await Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => SectionConceptWorkspace(projectId: projectId),
-              ),
-            );
-            if (mounted) {
-              await ref
-                  .read(capstoneDeliverablesProvider.notifier)
-                  .fetchDeliverables();
-            }
-          },
+        SharedTeamModuleSummary(
+          workflow: workflow,
+          onOpen: openSharedWorkspace,
         ),
-        content,
+        if (editable) conceptContent else ConceptHistory(workflow: workflow),
       ],
     );
   }
@@ -788,86 +785,4 @@ class ConceptHistory extends StatelessWidget {
       ],
     );
   }
-}
-
-class ConceptVerdictFields extends StatelessWidget {
-  const ConceptVerdictFields({
-    super.key,
-    required this.concepts,
-    required this.onChanged,
-    this.enabled = true,
-  });
-  final List<Map<String, dynamic>> concepts;
-  final ValueChanged<List<Map<String, dynamic>>> onChanged;
-  final bool enabled;
-  @override
-  Widget build(BuildContext context) => DefensysShadcnScope(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text(
-          'Decisions for this concept set',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'Select one approved concept for an approval verdict. If all are rejected, choose For re-defense to request replacement concepts.',
-        ),
-        for (var i = 0; i < concepts.length; i++)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  '${concepts[i]['system_title'] == null ? '' : '${concepts[i]['system_title']} → '}${concepts[i]['title']}',
-                  style: const TextStyle(fontWeight: FontWeight.w500),
-                ),
-                const SizedBox(height: 6),
-                WorkflowChoice(
-                  value: '${concepts[i]['decision'] ?? ''}',
-                  enabled:
-                      enabled &&
-                      (!concepts[i].containsKey('system_title') ||
-                          concepts.any((c) => c['section_selected'] == true)),
-                  options: {
-                    '': 'Choose concept decision',
-                    if (!concepts[i].containsKey('system_title') ||
-                        concepts[i]['section_selected'] == true)
-                      'approved': 'Approved concept',
-                    if (!concepts[i].containsKey('system_title') ||
-                        concepts[i]['section_selected'] == true)
-                      'approved_with_revisions': 'Approved with revisions',
-                    'rejected': 'Rejected',
-                    'not_selected': 'Not selected',
-                    'revise': 'Revise and present again',
-                  },
-                  onChanged: (v) {
-                    final updated = [
-                      for (final c in concepts) Map<String, dynamic>.from(c),
-                    ];
-                    updated[i]['decision'] = v;
-                    onChanged(updated);
-                  },
-                ),
-                const SizedBox(height: 6),
-                ShadInput(
-                  key: ValueKey('${concepts[i]['key']}-remarks'),
-                  enabled: enabled,
-                  initialValue: '${concepts[i]['remarks'] ?? ''}',
-                  placeholder: const Text('Reason or required corrections'),
-                  onChanged: (v) {
-                    final updated = [
-                      for (final c in concepts) Map<String, dynamic>.from(c),
-                    ];
-                    updated[i]['remarks'] = v;
-                    onChanged(updated);
-                  },
-                ),
-              ],
-            ),
-          ),
-      ],
-    ),
-  );
 }

@@ -46,12 +46,15 @@ def grading_unavailable_reason(schedule, grade=None):
 def verdict_unavailable_reason(schedule, grade=None):
     """Shared verdict readiness for assignment display and the submit endpoint."""
     if schedule.scope == DefenseSchedule.SCOPE_PIT:
-        from repository.deliverables.concepts import stage_for, enabled
-        if not enabled(stage_for(schedule.team, schedule.stage_label)):
-            return 'PIT events do not use official defense verdicts.'
+        return 'PIT events do not use official defense verdicts.'
+    return assessment_unavailable_reason(schedule, grade)
+
+
+def assessment_unavailable_reason(schedule, grade=None, *, action='issuing a verdict'):
+    """Panel readiness shared by Capstone verdicts and PIT concept decisions."""
     conflict = roster_unavailable_reason(schedule)
     if conflict:
-        return f'{conflict} Ask an administrator to correct the panel before issuing a verdict.'
+        return f'{conflict} Ask an administrator to correct the panel before {action}.'
     if grade and grade.schedule_id != schedule.pk:
         return 'This is a previous defense attempt and is read-only.'
     reason = grading_unavailable_reason(schedule)
@@ -60,10 +63,10 @@ def verdict_unavailable_reason(schedule, grade=None):
     if reason:
         return reason
     if grade is None or grade.panel_score is None:
-        return 'Panel grading must be submitted before issuing a verdict.'
+        return f'Panel grading must be submitted before {action}.'
     from grading.grades.services import team_grading_readiness
     if not team_grading_readiness(grade, grade.semester, grade.scope)['panel_complete']:
-        return 'Every required faculty and external panel evaluation must be submitted before issuing a verdict.'
+        return f'Every required faculty and external panel evaluation must be submitted before {action}.'
     return ''
 
 
