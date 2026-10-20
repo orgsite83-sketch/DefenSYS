@@ -1,9 +1,6 @@
 import 'package:defensys/models/team_workflow_status.dart';
 
-enum DeliverablesViewMode {
-  dossier,
-  matrix,
-}
+enum DeliverablesViewMode { dossier, matrix }
 
 enum TeamTriageFilter {
   all,
@@ -16,9 +13,95 @@ enum TeamTriageFilter {
   readyRedefense,
   redefenseScheduled,
   failed,
+  awaitingFiles,
+  changesRequested,
+  scheduled,
+  awaitingEvaluation,
+  evaluating,
+  awaitingVerdict,
+  gradingIncomplete,
+  awaitingResults,
+  awaitingCompletion,
+  pendingPostDefense,
+  archiveReviewPending,
+  revisionsPending,
+  redefenseRequired,
+  completed,
+  moduleConfirmation,
+  sharedAcknowledgment,
+  sharedClearance,
+  paused,
+  postponed,
+  noShow,
+  cancelled,
+  archived,
+  notConfigured,
+  onHold,
 }
 
 class DeliverablesTriageHelper {
+  /// Use the workflow codes behind team badges, rather than the legacy
+  /// four-option server dropdown. Counts follow the selected stage.
+  static const workflowFilters = <TeamTriageFilter, (String, String)>{
+    TeamTriageFilter.awaitingFiles: ('awaiting_files', 'Awaiting files'),
+    TeamTriageFilter.changesRequested: (
+      'changes_requested',
+      'Changes requested',
+    ),
+    TeamTriageFilter.scheduled: ('scheduled', 'Scheduled'),
+    TeamTriageFilter.awaitingEvaluation: (
+      'awaiting_evaluation',
+      'Awaiting evaluation',
+    ),
+    TeamTriageFilter.evaluating: ('evaluating', 'Evaluation in progress'),
+    TeamTriageFilter.awaitingVerdict: ('awaiting_verdict', 'Awaiting verdict'),
+    TeamTriageFilter.gradingIncomplete: (
+      'grading_incomplete',
+      'Grading incomplete',
+    ),
+    TeamTriageFilter.awaitingResults: ('awaiting_results', 'Awaiting results'),
+    TeamTriageFilter.awaitingCompletion: (
+      'awaiting_completion',
+      'Awaiting completion',
+    ),
+    TeamTriageFilter.pendingPostDefense: (
+      'pending_post_defense',
+      'Awaiting post-defense',
+    ),
+    TeamTriageFilter.archiveReviewPending: (
+      'archive_review_pending',
+      'Archive review',
+    ),
+    TeamTriageFilter.revisionsPending: (
+      'revisions_pending',
+      'Revisions pending',
+    ),
+    TeamTriageFilter.redefenseRequired: (
+      'redefense_required',
+      'Re-defense required',
+    ),
+    TeamTriageFilter.completed: ('completed', 'Completed / Passed'),
+    TeamTriageFilter.moduleConfirmation: (
+      'module_confirmation_pending',
+      'Confirm module names',
+    ),
+    TeamTriageFilter.sharedAcknowledgment: (
+      'shared_acknowledgment_pending',
+      'Review shared systems',
+    ),
+    TeamTriageFilter.sharedClearance: (
+      'shared_clearance_pending',
+      'Shared papers pending',
+    ),
+    TeamTriageFilter.paused: ('paused', 'Interrupted'),
+    TeamTriageFilter.postponed: ('postponed', 'Postponed'),
+    TeamTriageFilter.noShow: ('no_show', 'No-show'),
+    TeamTriageFilter.cancelled: ('cancelled', 'Cancelled'),
+    TeamTriageFilter.archived: ('archived', 'Archived'),
+    TeamTriageFilter.notConfigured: ('not_configured', 'Not configured'),
+    TeamTriageFilter.onHold: ('on_hold', 'On hold'),
+  };
+
   /// Dashboard summaries follow the current stage, independent of a historical
   /// stage selected in the deliverables workspace.
   static Map<String, dynamic>? resolveCurrentStage(Map<String, dynamic> team) {
@@ -116,19 +199,46 @@ class DeliverablesTriageHelper {
     return false;
   }
 
-  static bool matchesFilter(Map<String, dynamic> team, TeamTriageFilter filter) {
+  static bool matchesFilter(
+    Map<String, dynamic> team,
+    TeamTriageFilter filter,
+  ) {
+    final workflowFilter = workflowFilters[filter];
+    if (workflowFilter != null) {
+      final status = TeamWorkflowStatus.fromStage(
+        resolveActiveStage(team) ?? {},
+      ).code;
+      return status == workflowFilter.$1 ||
+          filter == TeamTriageFilter.completed && status == 'passed';
+    }
     switch (filter) {
       case TeamTriageFilter.replacementConcepts:
-        return (resolveActiveStage(team)?['concept_workflow'] as Map? ?? {})['status'] == 'replacement_concepts_needed';
+        return (resolveActiveStage(team)?['concept_workflow'] as Map? ??
+                {})['status'] ==
+            'replacement_concepts_needed';
       case TeamTriageFilter.adviserReview:
-        return ['concept_review_pending', 'concept_endorsement_pending', 'module_confirmation_pending', 'shared_acknowledgment_pending'].contains((resolveActiveStage(team)?['concept_workflow'] as Map? ?? {})['status']);
+        return [
+          'concept_review_pending',
+          'concept_endorsement_pending',
+          'module_confirmation_pending',
+          'shared_acknowledgment_pending',
+        ].contains(
+          (resolveActiveStage(team)?['concept_workflow'] as Map? ??
+              {})['status'],
+        );
       case TeamTriageFilter.readyRedefense:
-        return (resolveActiveStage(team)?['concept_workflow'] as Map? ?? {})['status'] == 'ready_to_schedule_redefense';
+        return (resolveActiveStage(team)?['concept_workflow'] as Map? ??
+                {})['status'] ==
+            'ready_to_schedule_redefense';
       case TeamTriageFilter.redefenseScheduled:
-        final workflow = resolveActiveStage(team)?['concept_workflow'] as Map? ?? {};
-        return workflow['status'] == 'scheduled' && (workflow['round'] as int? ?? 1) > 1;
+        final workflow =
+            resolveActiveStage(team)?['concept_workflow'] as Map? ?? {};
+        return workflow['status'] == 'scheduled' &&
+            (workflow['round'] as int? ?? 1) > 1;
       case TeamTriageFilter.failed:
-        return ['failed', 'project_rejected'].contains(TeamWorkflowStatus.fromStage(resolveActiveStage(team) ?? {}).code);
+        return ['failed', 'project_rejected'].contains(
+          TeamWorkflowStatus.fromStage(resolveActiveStage(team) ?? {}).code,
+        );
       case TeamTriageFilter.all:
         return true;
       case TeamTriageFilter.needsReview:
@@ -139,29 +249,17 @@ class DeliverablesTriageHelper {
         return isReadyForDefense(team);
       case TeamTriageFilter.overdue:
         return isOverdueOrMissing(team);
+      default:
+        return false;
     }
   }
 
-  static Map<TeamTriageFilter, int> computeCounts(List<Map<String, dynamic>> teams) {
-    int needsReview = 0;
-    int awaitingEndorsement = 0;
-    int ready = 0;
-    int overdue = 0;
-
-    for (final team in teams) {
-      if (hasPendingReview(team)) needsReview++;
-      if (isAwaitingEndorsement(team)) awaitingEndorsement++;
-      if (isReadyForDefense(team)) ready++;
-      if (isOverdueOrMissing(team)) overdue++;
-    }
-
+  static Map<TeamTriageFilter, int> computeCounts(
+    List<Map<String, dynamic>> teams,
+  ) {
     return {
-      for (final filter in TeamTriageFilter.values) filter: teams.where((team) => matchesFilter(team, filter)).length,
-      TeamTriageFilter.all: teams.length,
-      TeamTriageFilter.needsReview: needsReview,
-      TeamTriageFilter.awaitingEndorsement: awaitingEndorsement,
-      TeamTriageFilter.readyForDefense: ready,
-      TeamTriageFilter.overdue: overdue,
+      for (final filter in TeamTriageFilter.values)
+        filter: teams.where((team) => matchesFilter(team, filter)).length,
     };
   }
 }

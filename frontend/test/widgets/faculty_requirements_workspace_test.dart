@@ -8,6 +8,7 @@ import 'package:defensys/widgets/repository/document_group.dart';
 import 'package:defensys/widgets/repository/requirement_summary.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import '../helpers/auth_test_overrides.dart';
 import '../helpers/pump_app.dart';
 import '../helpers/capture_preview.dart';
@@ -229,7 +230,7 @@ void main() {
   }
 
   testWidgets(
-    'requirement list paginates and retains its view when returning',
+    'all timings appear together and the status filter survives focused review',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1100, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -237,6 +238,9 @@ void main() {
       final items = [
         for (var i = 0; i < 10; i++) _requirement(id: '$i', count: 1),
       ];
+      items[1]['requirement_timing'] = 'defense';
+      items[9]['type'] = 'post';
+      items[9]['submission'] = {'files': <Map<String, dynamic>>[]};
       await pumpDefensysWidget(
         tester,
         SingleChildScrollView(
@@ -248,18 +252,25 @@ void main() {
         ),
       );
       expect(find.text('Requirement 0'), findsOneWidget);
-      expect(find.text('Requirement 8'), findsNothing);
-      await tester.tap(find.text('Next'));
-      await tester.pumpAndSettle();
       expect(find.text('Requirement 8'), findsOneWidget);
-      expect(find.text('Requirement 0'), findsNothing);
-      await tester.tap(find.text('Open').first);
+      expect(find.text('Requirement 9'), findsOneWidget);
+      expect(find.text('Before defense'), findsOneWidget);
+      expect(find.text('Post-defense archive'), findsOneWidget);
+      expect(find.text('Next'), findsNothing);
+      expect(find.byType(ShadTabs<String>), findsNothing);
+      await tester.tap(find.byType(ShadSelect<String>));
       await tester.pumpAndSettle();
-      expect(find.text('Focused Requirement 8'), findsOneWidget);
+      await tester.tap(find.text('Missing files (1)'));
+      await tester.pumpAndSettle();
+      expect(find.text('Requirement 9'), findsOneWidget);
+      expect(find.text('Requirement 0'), findsNothing);
+      await tester.tap(find.text('Requirement 9'));
+      await tester.pumpAndSettle();
+      expect(find.text('Focused Requirement 9'), findsOneWidget);
       await tester.tap(find.text('All deliverables'));
       await tester.pumpAndSettle();
-      expect(find.text('Requirement 8'), findsOneWidget);
-      expect(view.page, 1);
+      expect(find.text('Requirement 9'), findsOneWidget);
+      expect(view.filter, 'missing');
       expect(tester.takeException(), isNull);
     },
   );
@@ -277,12 +288,12 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.text('Open'));
+      await tester.tap(find.byKey(const ValueKey('requirement-link-PITCH')));
       await tester.pumpAndSettle();
       expect(find.text('Local concept papers'), findsOneWidget);
       await tester.tap(find.text('All deliverables'));
       await tester.pumpAndSettle();
-      expect(find.text('Open'), findsOneWidget);
+      expect(find.byTooltip('Deliverable actions'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -432,8 +443,18 @@ void main() {
           'deliverables_configured': true,
           'required_total': 1,
           'required_uploaded': 0,
-          'pre': [_requirement()],
-          'post': <Map<String, dynamic>>[],
+          'pre': [
+            {..._requirement(id: 'PAPER', count: 1), 'label': 'Concept paper'},
+            {..._requirement(), 'requirement_timing': 'defense'},
+          ],
+          'post': [
+            {
+              ..._requirement(id: 'ARCHIVE', count: 1),
+              'label': 'Final manuscript',
+              'type': 'post',
+              'can_upload': false,
+            },
+          ],
           if (width == 720)
             'concept_workflow': {
               'enabled': true,
@@ -468,6 +489,14 @@ void main() {
                       ],
                       'stages': [stage],
                     },
+                    {
+                      'id': 9,
+                      'name': 'Team ResQPoint',
+                      'section': 'BSIT-3A',
+                      'project_title': width == 390 ? '' : 'Selected project',
+                      'members': [],
+                      'stages': [stage],
+                    },
                   ],
                 ),
                 isAdviser: false,
@@ -485,8 +514,15 @@ void main() {
         );
         expect(find.text('Proposed title'), findsNothing);
         expect(find.text('Team details'), findsOneWidget);
-        expect(find.text('Open'), findsOneWidget);
-        expect(tester.widget<Text>(find.text('Open')).maxLines, 1);
+        expect(find.text('More'), findsNothing);
+        expect(find.byTooltip('Deliverable actions'), findsNWidgets(3));
+        expect(find.text('Concept paper'), findsOneWidget);
+        expect(find.text('Pitch Deck'), findsOneWidget);
+        expect(find.text('Final manuscript'), findsOneWidget);
+        expect(find.text('5/5 files uploaded'), findsOneWidget);
+        expect(find.text('Before endorsement'), findsOneWidget);
+        expect(find.text('Before defense'), findsOneWidget);
+        expect(find.text('Post-defense archive'), findsOneWidget);
         expect(find.text('pitch_1.pdf'), findsNothing);
         expect(tester.takeException(), isNull);
         final name = find.text('AgroTrade').last;
@@ -494,6 +530,29 @@ void main() {
           tester.widget<Text>(name).style?.color,
           DefensysTokens.textPrimaryOf(tester.element(name)),
         );
+        if (width == 1500) {
+          final first = find.byKey(const ValueKey('faculty-team-choice-t8'));
+          final second = find.byKey(const ValueKey('faculty-team-choice-t9'));
+          expect(
+            tester.widget<ShadButton>(first).backgroundColor,
+            DefensysTokens.maroonOf(tester.element(first)),
+          );
+          expect(
+            tester.widget<ShadButton>(first).foregroundColor,
+            Colors.white,
+          );
+          await tester.tap(second);
+          await tester.pumpAndSettle();
+          expect(
+            tester.widget<ShadButton>(second).backgroundColor,
+            DefensysTokens.maroonOf(tester.element(second)),
+          );
+          expect(
+            tester.widget<ShadButton>(first).backgroundColor,
+            Colors.transparent,
+          );
+          expect(tester.takeException(), isNull);
+        }
         await capturePreview(
           tester,
           find.byKey(const ValueKey('faculty-workspace-capture')),

@@ -9,6 +9,7 @@ import '../../theme/defensys_tokens.dart';
 import '../../utils/universal_file_viewer.dart';
 import '../shadcn/defensys_shadcn_scope.dart';
 import 'deliverable_file_widgets.dart';
+import 'deliverable_review_navigation.dart';
 import 'workflow_status_style.dart';
 
 class DocumentGroup extends ConsumerStatefulWidget {
@@ -38,56 +39,32 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
   String? error;
   String? selectedSlot;
 
-  List<Map<String, dynamic>> get focusEntries {
-    final item = widget.item;
-    final policy = item['file_policy'] as Map? ?? {};
-    final files = ((item['submission'] as Map?)?['files'] as List? ?? [])
-        .whereType<Map>()
-        .where((file) => file['is_current'] != false)
-        .map((file) => Map<String, dynamic>.from(file))
-        .toList();
-    if (policy['mode'] == 'multiple') {
-      final minimum = (policy['min_files'] as num? ?? 1).toInt();
-      return [
-        for (final (index, file) in files.indexed)
-          {
-            'key': '${file['slot_key'] ?? file['id']}',
-            'label': 'Attachment ${index + 1}',
-            'file': file,
-            'required': index < minimum,
-          },
-        for (var i = files.length; i < minimum; i++)
-          {
-            'key': 'missing-$i',
-            'label': 'Attachment ${i + 1}',
-            'required': true,
-          },
-      ];
-    }
-    return [
-      for (final slot
-          in (item['document_slots'] as List? ?? []).whereType<Map>())
-        {
-          ...Map<String, dynamic>.from(slot),
-          'file': files
-              .where((file) => file['slot_key'] == slot['key'])
-              .firstOrNull,
-        },
-    ];
-  }
+  List<Map<String, dynamic>> get focusEntries =>
+      deliverableReviewEntries(widget.item);
+
+  String? get activeSlot =>
+      DeliverableReviewNavigation.maybeOf(context)?.fileKey ?? selectedSlot;
 
   bool get hasNextFile {
+    final navigation = DeliverableReviewNavigation.maybeOf(context);
+    if (navigation != null) return navigation.onNextFile != null;
     final entries = focusEntries;
     final index = entries.indexWhere(
-      (entry) => '${entry['key']}' == selectedSlot,
+      (entry) => '${entry['key']}' == activeSlot,
     );
     return entries.length > 1 && (index < 0 ? 0 : index) < entries.length - 1;
   }
 
   void nextFile() {
+    if (!mounted) return;
+    final navigation = DeliverableReviewNavigation.maybeOf(context);
+    if (navigation != null) {
+      navigation.onNextFile?.call();
+      return;
+    }
     final entries = focusEntries;
     final index = entries.indexWhere(
-      (entry) => '${entry['key']}' == selectedSlot,
+      (entry) => '${entry['key']}' == activeSlot,
     );
     final next = (index < 0 ? 0 : index) + 1;
     if (mounted && next < entries.length) {
@@ -353,6 +330,11 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                 child: Text(
                   file == null
                       ? label
+                      : widget.focused &&
+                            DeliverableReviewNavigation.maybeOf(context) !=
+                                null &&
+                            focusEntries.length == 1
+                      ? 'Revision ${file['revision'] ?? 1}'
                       : "${label.split('·').first.trim()} · Rev ${file['revision'] ?? 1}",
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -414,7 +396,7 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                         enabled: !busy,
                         onPressed: () async {
                           final saved = await review(file, 'accepted');
-                          if (saved && widget.focused) nextFile();
+                          if (saved && widget.focused && mounted) nextFile();
                         },
                         child: Text(
                           widget.focused && hasNextFile
@@ -455,11 +437,14 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
         child: Text('No file slots are configured for this requirement.'),
       );
     }
-    var index = entries.indexWhere(
-      (entry) => '${entry['key']}' == selectedSlot,
-    );
+    var index = entries.indexWhere((entry) => '${entry['key']}' == activeSlot);
     if (index < 0) index = 0;
     final selected = entries[index];
+    final navigation = DeliverableReviewNavigation.maybeOf(context);
+    final showConceptContext =
+        navigation == null ||
+        widget.projectContext ||
+        widget.concepts.length > 1;
     final conceptKey = '${selected['key']}'.split(':').first;
     final concept = widget.concepts
         .where((concept) => concept['key'] == conceptKey)
@@ -468,32 +453,40 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 12),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: IntrinsicWidth(
-            child: ShadTabs<String>(
-              scrollable: true,
-              value: '${selected['key']}',
-              tabBarAlignment: Alignment.centerLeft,
-              gap: 0,
-              onChanged: busy
-                  ? null
-                  : (key) => setState(() => selectedSlot = key),
-              tabs: [
-                for (final entry in entries)
-                  ShadTab(
-                    value: '${entry['key']}',
-                    child: Text(
-                      widget.projectContext
-                          ? '${entry['label']}'.split('·').first.trim()
-                          : '${entry['label']}',
+        if (entries.length > 1)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: IntrinsicWidth(
+              child: ShadTabs<String>(
+                scrollable: true,
+                value: '${selected['key']}',
+                tabBarAlignment: Alignment.centerLeft,
+                gap: 0,
+                onChanged: busy
+                    ? null
+                    : (key) {
+                        if (navigation != null) {
+                          navigation.onFileSelected(key);
+                        } else {
+                          setState(() => selectedSlot = key);
+                        }
+                      },
+                tabs: [
+                  for (final entry in entries)
+                    ShadTab(
+                      value: '${entry['key']}',
+                      child: Text(
+                        widget.projectContext
+                            ? '${entry['label']}'.split('·').first.trim()
+                            : '${entry['label']}',
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-        if ('${concept?['title'] ?? ''}'.trim().isNotEmpty)
+        if (showConceptContext &&
+            '${concept?['title'] ?? ''}'.trim().isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 12),
             child: Text(
@@ -503,7 +496,8 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
               ),
             ),
           ),
-        if ('${concept?['system_title'] ?? ''}'.trim().isNotEmpty)
+        if (showConceptContext &&
+            '${concept?['system_title'] ?? ''}'.trim().isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
@@ -520,44 +514,46 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
           required: selected['required'] != false,
           fileFormat: selected['file_format']?.toString(),
         ),
-        const SizedBox(height: 10),
-        Wrap(
-          alignment: WrapAlignment.spaceBetween,
-          spacing: 10,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Text(
-              'File ${index + 1} of ${entries.length}',
-              style: DefensysTokens.caption.copyWith(
-                color: DefensysTokens.textSecondaryOf(context),
+        if (navigation == null) ...[
+          const SizedBox(height: 10),
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 10,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                'File ${index + 1} of ${entries.length}',
+                style: DefensysTokens.caption.copyWith(
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
               ),
-            ),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ShadButton.ghost(
-                  size: ShadButtonSize.sm,
-                  enabled: !busy && index > 0,
-                  onPressed: busy || index == 0
-                      ? null
-                      : () => setState(
-                          () => selectedSlot = '${entries[index - 1]['key']}',
-                        ),
-                  child: const Text('Previous'),
-                ),
-                ShadButton.outline(
-                  size: ShadButtonSize.sm,
-                  enabled: !busy && index + 1 < entries.length,
-                  onPressed: busy || index + 1 >= entries.length
-                      ? null
-                      : nextFile,
-                  child: const Text('Next file'),
-                ),
-              ],
-            ),
-          ],
-        ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ShadButton.ghost(
+                    size: ShadButtonSize.sm,
+                    enabled: !busy && index > 0,
+                    onPressed: busy || index == 0
+                        ? null
+                        : () => setState(
+                            () => selectedSlot = '${entries[index - 1]['key']}',
+                          ),
+                    child: const Text('Previous'),
+                  ),
+                  ShadButton.outline(
+                    size: ShadButtonSize.sm,
+                    enabled: !busy && index + 1 < entries.length,
+                    onPressed: busy || index + 1 >= entries.length
+                        ? null
+                        : nextFile,
+                    child: const Text('Next file'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/deliverables_view_types.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/components/deliverables_filter_bar.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/components/cohort_submissions_matrix.dart';
@@ -7,9 +8,11 @@ import 'package:defensys/screens/web/shared/team_deliverables/components/deliver
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 
 import '../helpers/pump_app.dart';
+import '../helpers/capture_preview.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(() => loadPreviewFonts(force: true));
 
   final mockTeams = [
     {
@@ -128,7 +131,7 @@ void main() {
   });
 
   group('DeliverablesFilterBar Widget Tests', () {
-    testWidgets('renders triage chips and view toggle when showViewToggle is true', (tester) async {
+    testWidgets('filters through the status picker and retains the optional view toggle', (tester) async {
       TeamTriageFilter selectedFilter = TeamTriageFilter.all;
       DeliverablesViewMode selectedMode = DeliverablesViewMode.dossier;
 
@@ -154,18 +157,19 @@ void main() {
         ),
       );
 
-      // Verify triage chips exist
-      expect(find.textContaining('All (3)'), findsOneWidget);
-      expect(find.textContaining('Needs Review (1)'), findsOneWidget);
-      expect(find.textContaining('Ready for Defense (1)'), findsOneWidget);
-      expect(find.textContaining('Missing / Overdue (1)'), findsOneWidget);
+      expect(find.text('All teams (3)'), findsOneWidget);
+      expect(find.text('Needs review (1)'), findsNothing);
 
       // Verify segmented view toggle exists
       expect(find.text('Cohort Matrix'), findsOneWidget);
       expect(find.text('Team Dossier'), findsOneWidget);
 
-      // Tap Needs Review triage chip
-      await tester.tap(find.textContaining('Needs Review (1)'));
+      await tester.tap(find.byType(ShadSelect<TeamTriageFilter>));
+      await tester.pumpAndSettle();
+      expect(find.text('Requirements'), findsOneWidget);
+      await tester.enterText(find.byType(EditableText).last, 'needs review');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Needs review (1)'));
       await tester.pumpAndSettle();
       expect(selectedFilter, equals(TeamTriageFilter.needsReview));
 

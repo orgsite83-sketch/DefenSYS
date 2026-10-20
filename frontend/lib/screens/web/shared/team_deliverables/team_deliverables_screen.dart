@@ -158,7 +158,7 @@ class _TeamDeliverablesScreenState
                 ? 'instructor'
                 : 'operations',
             search: widget.initialTeamId != null ? '' : null,
-            status: widget.initialTeamId != null ? '' : null,
+            status: '',
             scope: widget.initialScope,
             selectedStage: widget.initialStage,
             yearLevel: widget.pitYearLevel ?? '',
@@ -378,55 +378,24 @@ class _TeamDeliverablesScreenState
             ),
           ],
           const SizedBox(height: 16),
-          if (isEvaluator)
-            ExpansionTile(
-              tilePadding: EdgeInsets.zero,
-              title: Text(
-                'Search & team filters',
-                style: DefensysTokens.body.copyWith(
-                  color: DefensysTokens.textPrimaryOf(context),
-                ),
-              ),
-              subtitle: state.selectedStage.isEmpty
-                  ? null
-                  : Text(
-                      state.selectedStage,
-                      style: DefensysTokens.caption.copyWith(
-                        color: DefensysTokens.textSecondaryOf(context),
-                      ),
-                    ),
-              children: [
-                DeliverablesFilterBar(
-                  state: state,
-                  searchController: _searchController,
-                  isAdviser: true,
-                  viewMode: _viewMode,
-                  showViewToggle: false,
-                  activeTriageFilter: _triageFilter,
-                  onTriageFilterChanged: (filter) =>
-                      setState(() => _triageFilter = filter),
-                ),
-              ],
-            )
-          else
-            DeliverablesFilterBar(
-              state: state,
-              searchController: _searchController,
-              isAdviser: isEvaluator,
-              viewMode: _viewMode,
-              onViewModeChanged: (mode) {
-                setState(() {
-                  _viewMode = mode;
-                });
-              },
-              activeTriageFilter: _triageFilter,
-              onTriageFilterChanged: (filter) {
-                setState(() {
-                  _triageFilter = filter;
-                });
-              },
-              showViewToggle: showViewToggle,
-            ),
+          DeliverablesFilterBar(
+            state: state,
+            searchController: _searchController,
+            isAdviser: isEvaluator,
+            viewMode: _viewMode,
+            onViewModeChanged: (mode) {
+              setState(() {
+                _viewMode = mode;
+              });
+            },
+            activeTriageFilter: _triageFilter,
+            onTriageFilterChanged: (filter) {
+              setState(() {
+                _triageFilter = filter;
+              });
+            },
+            showViewToggle: showViewToggle,
+          ),
           const SizedBox(height: 16),
           if (!state.isLoading && pendingCount > 0 && !isEvaluator) ...[
             Container(

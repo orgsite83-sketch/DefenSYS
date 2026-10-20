@@ -647,11 +647,15 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   Future<void> _promptRejectDialog(
     Map<String, dynamic> team,
     String stageLabel,
-    Map<String, dynamic> item,
-  ) async {
+    Map<String, dynamic> item, {
+    int? fileId,
+    bool requestRevision = false,
+  }) async {
     final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
     final isDefense = !isPost && item['requirement_timing'] == 'defense';
-    final actionLabel = isPost
+    final actionLabel = requestRevision
+        ? 'Request revision'
+        : isPost
         ? 'Request Revision'
         : isDefense
         ? 'Request corrections'
@@ -712,6 +716,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             deliverableId: item['id'].toString(),
             status: 'rejected',
             feedback: feedback.trim(),
+            fileId: fileId,
           );
     }
   }
@@ -1818,7 +1823,21 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               '$teamId:$selectedStage',
               FacultyRequirementsViewState.new,
             ),
-            items: [...pre, if (showPostChecklist || archiveUnlocked) ...vault],
+            items: [for (final item in [...pre, ...vault]) {
+              ...item,
+              'can_faculty_review': item['can_faculty_review'] is bool
+                  ? item['can_faculty_review']
+                  : (item['type'] == 'post' || item['deliverable_type'] == 'post')
+                      ? stage['can_faculty_review_post'] == true
+                      : stage['can_faculty_review'] == true,
+            }],
+            stageLabel: selectedStage,
+            programScope: programTrack(scope: widget.state.scope, data: team).name,
+            onRequestRevision: (item, file) => _promptRejectDialog(
+              team, selectedStage, item,
+              fileId: usesGroupedDocumentCard(item) ? file['id'] as int : null,
+              requestRevision: true,
+            ),
             buildRequirement: (item) =>
                 _deliverableRow(team, selectedStage, item, setState),
             defenseReadiness: DefenseMaterialReadiness(
@@ -3533,10 +3552,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         ? storedTitle
         : assignedTitle;
     final summaries = TeamWorkflowStatus.items(stage)
-        .where(
-          (item) =>
-              item['type'] != 'post' && item['deliverable_type'] != 'post',
-        )
         .map((item) => RequirementSummary(Map<String, dynamic>.from(item)))
         .toList();
     final uploaded = summaries.fold<int>(
@@ -3712,6 +3727,61 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
+  Widget _facultyTeamButton({
+    required String id,
+    required String label,
+    required bool selected,
+    required VoidCallback onPressed,
+  }) {
+    final foreground = selected
+        ? Colors.white
+        : DefensysTokens.textPrimaryOf(context);
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: ShadButton.ghost(
+        key: ValueKey('faculty-team-choice-$id'),
+        size: ShadButtonSize.sm,
+        width: double.infinity,
+        height: 38,
+        mainAxisAlignment: MainAxisAlignment.start,
+        foregroundColor: foreground,
+        hoverForegroundColor: foreground,
+        backgroundColor: selected
+            ? DefensysTokens.maroonOf(context)
+            : Colors.transparent,
+        hoverBackgroundColor: selected
+            ? DefensysTokens.maroonOf(context)
+            : DefensysTokens.surfaceHigherOf(context),
+        decoration: ShadDecoration(
+          border: ShadBorder.all(
+            color: Colors.transparent,
+            radius: BorderRadius.circular(8),
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        leading: Icon(
+          id.startsWith('p') ? Icons.account_tree_outlined : Icons.groups_2_outlined,
+          size: 17,
+          color: selected ? Colors.white : DefensysTokens.textSecondaryOf(context),
+        ),
+        onPressed: onPressed,
+        child: Flexible(
+          child: Text(
+            label,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: foreground,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildCompactFacultyLayout() {
     final teams = DeliverablesTriageHelper.reviewFirst(
       widget.state.teams.where(
@@ -3844,49 +3914,46 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  for (final entry in selections.entries)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: ShadButton.ghost(
-                        size: ShadButtonSize.sm,
-                        width: double.infinity,
-                        height: 36,
-                        mainAxisAlignment: MainAxisAlignment.start,
-                        foregroundColor:
-                            (entry.key == 'p$_selectedSharedProjectId' &&
-                                    widget.conceptReview ||
-                                entry.key == 't$_selectedTeamId' &&
-                                    selectedReview == null)
-                            ? DefensysTokens.textPrimaryOf(context)
-                            : DefensysTokens.textPrimaryOf(context),
-                        backgroundColor:
-                            (entry.key == 'p$_selectedSharedProjectId' &&
-                                    widget.conceptReview ||
-                                entry.key == 't$_selectedTeamId' &&
-                                    selectedReview == null)
-                            ? DefensysTokens.surfaceHigherOf(context)
-                            : Colors.transparent,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        onPressed: () {
-                          if (entry.key.startsWith('p')) {
-                            setState(
-                              () => _selectedSharedProjectId = int.parse(
-                                entry.key.substring(1),
-                              ),
-                            );
-                          } else {
-                            selectTeam(int.parse(entry.key.substring(1)));
-                          }
-                        },
-                        child: Text(
-                          entry.value,
-                          style: const TextStyle(fontSize: 13),
-                        ),
+                  Container(
+                    key: const ValueKey('faculty-team-list'),
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: DefensysTokens.surfaceOf(context),
+                      border: Border.all(
+                        color: DefensysTokens.borderOf(context),
                       ),
+                      borderRadius: BorderRadius.circular(12),
                     ),
+                    child: Column(
+                      children: [
+                        for (final (index, entry)
+                            in selections.entries.indexed) ...[
+                          if (index > 0) const SizedBox(height: 2),
+                          _facultyTeamButton(
+                            id: entry.key,
+                            label: entry.value,
+                            selected:
+                                entry.key == 'p$_selectedSharedProjectId' &&
+                                    widget.conceptReview ||
+                                entry.key == 't$_selectedTeamId' &&
+                                    selectedReview == null,
+                            onPressed: () {
+                              if (entry.key.startsWith('p')) {
+                                setState(
+                                  () => _selectedSharedProjectId = int.parse(
+                                    entry.key.substring(1),
+                                  ),
+                                );
+                              } else {
+                                selectTeam(int.parse(entry.key.substring(1)));
+                              }
+                            },
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
                   if (!widget.conceptReview)
                     FacultyTeamsOverviewExport(
                       teams: teams,

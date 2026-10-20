@@ -443,6 +443,7 @@ class TeamWorkflowStatus {
       'grading_incomplete',
       'awaiting_completion',
       'assessed',
+      'awaiting_results',
       'paused',
       'postponed',
       'no_show',

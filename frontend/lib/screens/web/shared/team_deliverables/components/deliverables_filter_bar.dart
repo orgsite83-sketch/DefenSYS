@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/screens/web/shared/team_deliverables/deliverables_view_types.dart';
+import 'deliverables_status_filter.dart';
 
 int _asInt(dynamic value) {
   if (value == null) return 0;
@@ -149,11 +150,11 @@ class DeliverablesFilterBar extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<DeliverablesFilterBar> createState() => _DeliverablesFilterBarState();
+  ConsumerState<DeliverablesFilterBar> createState() =>
+      _DeliverablesFilterBarState();
 }
 
 class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
-
   Timer? _debounceTimer;
 
   @override
@@ -162,12 +163,15 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
     super.dispose();
   }
 
-  InputDecoration _toolbarInputDec({required String label, IconData? prefixIcon}) {
+  InputDecoration _toolbarInputDec({
+    required String label,
+    IconData? prefixIcon,
+  }) {
     return InputDecoration(
       labelText: label,
       prefixIcon: prefixIcon != null ? Icon(prefixIcon, size: 18) : null,
       filled: true,
-      fillColor: const Color(0xFFF8FAFC),
+      fillColor: DefensysTokens.surfaceHigherOf(context),
       labelStyle: TextStyle(
         color: DefensysTokens.textSecondaryOf(context),
         fontSize: 12.5,
@@ -184,7 +188,10 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: DefensysTokens.maroonOf(context), width: 1.5),
+        borderSide: BorderSide(
+          color: DefensysTokens.maroonOf(context),
+          width: 1.5,
+        ),
       ),
     );
   }
@@ -206,31 +213,17 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
     final selectedStage = stageOptions.contains(widget.state.selectedStage)
         ? widget.state.selectedStage
         : null;
-    final List<Map<String, dynamic>> statuses = widget.state.statuses.isEmpty
-        ? const <Map<String, dynamic>>[
-            {'value': '', 'label': 'All Teams'},
-            {'value': 'awaiting_endorsement', 'label': 'Awaiting Endorsement'},
-            {'value': 'ready', 'label': 'Endorsed'},
-            {'value': 'scheduled', 'label': 'Defense Scheduled'},
-            {'value': 'pending_post_defense', 'label': 'Pending Post-Defense'},
-            {'value': 'passed', 'label': 'Completed / Passed'},
-            {'value': 'missing', 'label': 'Missing Requirements'},
-          ]
-        : widget.state.statuses;
-
     final searchField = TextField(
       controller: widget.searchController,
       decoration: _toolbarInputDec(
         label: widget.isAdviser
             ? 'Search team, project'
             : (widget.state.scope == 'pit'
-                ? 'Search team, project, instructor'
-                : 'Search team, project, adviser'),
+                  ? 'Search team, project, instructor'
+                  : 'Search team, project, adviser'),
         prefixIcon: Icons.search,
       ),
-      style: const TextStyle(
-        fontSize: 13,
-      ),
+      style: const TextStyle(fontSize: 13),
       onChanged: (value) {
         if (_debounceTimer?.isActive ?? false) {
           _debounceTimer!.cancel();
@@ -257,13 +250,15 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
       decoration: _toolbarInputDec(
         label: widget.state.scope == 'pit' ? 'PIT Event' : 'Stage View',
       ),
-      style: TextStyle(
+      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
         fontSize: 13,
         color: DefensysTokens.textPrimaryOf(context),
       ),
       hint: Text(
         stageOptions.isEmpty
-            ? (widget.state.scope == 'pit' ? 'No events configured' : 'No stages configured')
+            ? (widget.state.scope == 'pit'
+                  ? 'No events configured'
+                  : 'No stages configured')
             : 'Select stage',
         style: const TextStyle(fontSize: 13),
       ),
@@ -274,9 +269,7 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
               child: Text(
                 stage,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13,
-                ),
+                style: const TextStyle(fontSize: 13),
               ),
             ),
           )
@@ -285,36 +278,14 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
           ? null
           : (value) => ref
                 .read(capstoneDeliverablesProvider.notifier)
-                .fetchDeliverables(
-                  selectedStage: value ?? selectedStage ?? '',
-                ),
+                .fetchDeliverables(selectedStage: value ?? selectedStage ?? ''),
     );
 
-    final statusDropdown = DropdownButtonFormField<String>(
-      initialValue: widget.state.status,
-      decoration: _toolbarInputDec(label: 'Status'),
-      style: TextStyle(
-        fontSize: 13,
-        color: DefensysTokens.textPrimaryOf(context),
-      ),
-      isExpanded: true,
-      items: statuses
-          .map(
-            (item) => DropdownMenuItem(
-              value: item['value']?.toString() ?? '',
-              child: Text(
-                item['label']?.toString() ?? '',
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13,
-                ),
-              ),
-            ),
-          )
-          .toList(),
-      onChanged: (value) => ref
-          .read(capstoneDeliverablesProvider.notifier)
-          .fetchDeliverables(status: value ?? ''),
+    final statusFilter = DeliverablesStatusFilter(
+      value: widget.activeTriageFilter,
+      counts: widget.triageCounts ?? DeliverablesTriageHelper.computeCounts(widget.state.teams),
+      isPit: widget.state.scope == 'pit',
+      onChanged: widget.onTriageFilterChanged,
     );
 
     final clearButton = OutlinedButton.icon(
@@ -323,6 +294,7 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
         if (_debounceTimer?.isActive ?? false) {
           _debounceTimer!.cancel();
         }
+        widget.onTriageFilterChanged?.call(TeamTriageFilter.all);
         ref
             .read(capstoneDeliverablesProvider.notifier)
             .fetchDeliverables(search: '', status: '');
@@ -330,18 +302,13 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
       icon: const Icon(Icons.clear_all_rounded, size: 16),
       label: const Text(
         'Clear Filters',
-        style: TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 12.5,
-        ),
+        style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
       ),
       style: OutlinedButton.styleFrom(
-        foregroundColor: const Color(0xFF475569),
+        foregroundColor: DefensysTokens.textSecondaryOf(context),
         side: BorderSide(color: DefensysTokens.borderOf(context)),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
 
@@ -355,23 +322,26 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
               const SizedBox(height: 12),
               stageDropdown,
               const SizedBox(height: 12),
-              statusDropdown,
+              statusFilter,
               const SizedBox(height: 12),
               clearButton,
             ],
           );
         } else if (constraints.maxWidth < 900) {
-          final calculatedWidth = (constraints.maxWidth - 48) / 2;
-          final dropdownWidth = calculatedWidth.clamp(0.0, double.infinity);
-          return Wrap(
-            spacing: 16,
-            runSpacing: 16,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(width: double.infinity, child: searchField),
-              SizedBox(width: dropdownWidth, child: stageDropdown),
-              SizedBox(width: dropdownWidth, child: statusDropdown),
-              SizedBox(width: double.infinity, child: clearButton),
+              searchField,
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(child: stageDropdown),
+                  const SizedBox(width: 16),
+                  Expanded(child: statusFilter),
+                  const SizedBox(width: 16),
+                  clearButton,
+                ],
+              ),
             ],
           );
         }
@@ -381,7 +351,7 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
             const SizedBox(width: 16),
             SizedBox(width: 220, child: stageDropdown),
             const SizedBox(width: 16),
-            SizedBox(width: 220, child: statusDropdown),
+            SizedBox(width: 240, child: statusFilter),
             const SizedBox(width: 16),
             clearButton,
           ],
@@ -396,75 +366,11 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           filterFields,
-          const SizedBox(height: 14),
-          const Divider(height: 1, color: Color(0xFFF1F5F9)),
-          const SizedBox(height: 14),
-          _buildTriageAndToggleRow(),
+          if (widget.showViewToggle) ...[
+            const SizedBox(height: 12),
+            Align(alignment: Alignment.centerRight, child: _buildViewToggle()),
+          ],
         ],
-      ),
-    );
-  }
-
-  Widget _buildTriageChip({
-    required TeamTriageFilter filter,
-    required String label,
-    Color? dotColor,
-    IconData? icon,
-  }) {
-    final isSelected = widget.activeTriageFilter == filter;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () {
-          widget.onTriageFilterChanged?.call(filter);
-        },
-        borderRadius: BorderRadius.circular(8),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? DefensysTokens.maroonOf(context).withValues(alpha: 0.08)
-                : DefensysTokens.surfaceHigherOf(context),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isSelected ? DefensysTokens.maroonOf(context) : DefensysTokens.borderOf(context),
-              width: isSelected ? 1.5 : 1.0,
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (dotColor != null) ...[
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: dotColor,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 6),
-              ],
-              if (icon != null) ...[
-                Icon(
-                  icon,
-                  size: 13,
-                  color: isSelected ? DefensysTokens.maroonTextOf(context) : DefensysTokens.textSecondaryOf(context),
-                ),
-                const SizedBox(width: 5),
-              ],
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                  color: isSelected ? DefensysTokens.maroonTextOf(context) : DefensysTokens.textSecondaryOf(context),
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -543,89 +449,4 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
     );
   }
 
-  Widget _buildTriageAndToggleRow() {
-    final counts = widget.triageCounts ??
-        DeliverablesTriageHelper.computeCounts(widget.state.teams);
-    final allCount = counts[TeamTriageFilter.all] ?? widget.state.teams.length;
-    final needsReviewCount = counts[TeamTriageFilter.needsReview] ?? 0;
-    final endorsementCount = counts[TeamTriageFilter.awaitingEndorsement] ?? 0;
-    final reviewStyle = WorkflowStatusStyle.of(context, WorkflowStatusTone.active);
-    final readyCount = counts[TeamTriageFilter.readyForDefense] ?? 0;
-    final overdueCount = counts[TeamTriageFilter.overdue] ?? 0;
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isNarrow = constraints.maxWidth < 750;
-        final chips = Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            _buildTriageChip(
-              filter: TeamTriageFilter.all,
-              label: 'All ($allCount)',
-            ),
-            _buildTriageChip(
-              filter: TeamTriageFilter.needsReview,
-              label: 'Needs Review ($needsReviewCount)',
-              dotColor: reviewStyle.foreground,
-            ),
-            _buildTriageChip(
-              filter: TeamTriageFilter.awaitingEndorsement,
-              label: 'Awaiting endorsement ($endorsementCount)',
-              dotColor: reviewStyle.foreground,
-            ),
-            _buildTriageChip(
-              filter: TeamTriageFilter.readyForDefense,
-              label: widget.state.scope == 'pit'
-                  ? 'Ready to Schedule ($readyCount)'
-                  : 'Ready for Defense ($readyCount)',
-              dotColor: WorkflowStatusStyle.of(context, WorkflowStatusTone.success).foreground,
-            ),
-            _buildTriageChip(
-              filter: TeamTriageFilter.overdue,
-              label: widget.state.scope == 'pit'
-                  ? 'Files Pending / Overdue ($overdueCount)'
-                  : widget.isAdviser
-                      ? 'Missing Requirements ($overdueCount)'
-                      : 'Missing / Overdue ($overdueCount)',
-              dotColor: WorkflowStatusStyle.of(context, WorkflowStatusTone.attention).foreground,
-            ),
-            if (widget.state.scope == 'capstone') for (final entry in const {
-              TeamTriageFilter.replacementConcepts: 'Replacement concepts',
-              TeamTriageFilter.adviserReview: 'Concept review',
-              TeamTriageFilter.readyRedefense: 'Schedule re-defense',
-              TeamTriageFilter.redefenseScheduled: 'Re-defense scheduled',
-              TeamTriageFilter.failed: 'Failed / rejected',
-            }.entries) _buildTriageChip(label: '${entry.value} (${counts[entry.key] ?? 0})', filter: entry.key),
-
-          ],
-        );
-
-        if (isNarrow) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              chips,
-              if (widget.showViewToggle) ...[
-                const SizedBox(height: 12),
-                _buildViewToggle(),
-              ],
-            ],
-          );
-        }
-
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Expanded(child: chips),
-            if (widget.showViewToggle) ...[
-              const SizedBox(width: 12),
-              _buildViewToggle(),
-            ],
-          ],
-        );
-      },
-    );
-  }
 }

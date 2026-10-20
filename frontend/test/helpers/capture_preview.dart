@@ -19,12 +19,22 @@ Future<void> loadPreviewFonts({bool force = false}) async {
 Future<void> capturePreview(
   WidgetTester tester,
   Finder finder,
-  String name,
-) async {
+  String name, {
+  bool viewport = false,
+}) async {
   if (Platform.environment['DEFENSYS_CAPTURE_PREVIEW'] != '1') return;
-  final boundary = tester.renderObject<RenderRepaintBoundary>(finder);
+  final boundary = viewport
+      ? null
+      : tester.renderObject<RenderRepaintBoundary>(finder);
   await tester.runAsync(() async {
-    final image = await boundary.toImage(pixelRatio: 1);
+    final view = tester.binding.renderViews.single;
+    final scale = view.flutterView.devicePixelRatio;
+    final image = viewport
+        ? await (view.debugLayer! as OffsetLayer).toImage(
+            Offset.zero & (view.size * scale),
+            pixelRatio: 1 / scale,
+          )
+        : await boundary!.toImage(pixelRatio: 1);
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
     final file = File('../.tmp/$name.png');
     await file.parent.create(recursive: true);
