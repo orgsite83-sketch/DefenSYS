@@ -230,6 +230,9 @@ class DeliverableSubmission(models.Model):
 
 
 class DeliverableSubmissionFile(models.Model):
+    concept_round = models.ForeignKey('repository.ConceptRound', null=True, blank=True,
+        on_delete=models.PROTECT, related_name='final_papers')
+    selected_concept_key = models.CharField(max_length=10, blank=True, default='')
     slot_key = models.CharField(max_length=100, default='primary')
     revision = models.PositiveIntegerField(default=1)
     is_current = models.BooleanField(default=True)

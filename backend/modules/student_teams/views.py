@@ -304,13 +304,19 @@ class StudentTeamListCreateView(APIView):
 
         from .pit_rosters import resolve
         roster_context = []
-        for term_id, year in apply_team_scope(visible, scope=request.query_params.get('scope', 'active'), user=request.user).filter(level__icontains='PIT').values_list('semester_id', 'year_level').distinct():
+        seen_sections = set()
+        pit_cohorts = set(apply_team_scope(visible, scope=request.query_params.get('scope', 'active'), user=request.user)
+                          .filter(level__icontains='PIT').order_by().values_list('semester_id', 'year_level'))
+        for term_id, year in pit_cohorts:
             from defense.scheduler.models import PitEventGradingConfig
             selected = PitEventGradingConfig.objects.filter(semester_id=term_id, year_level=year,
                 event_name__iexact=event_name).first() if event_name else None
             visible_sections = set(visible.filter(semester_id=term_id, year_level=year).values_list('section', flat=True))
-            roster_context.extend({**row, 'year_level': year} for row in resolve(term_id, year,
-                selected.pk if selected else None).values() if row['section'] in visible_sections)
+            for row in resolve(term_id, year, selected.pk if selected else None).values():
+                sec = row.get('section')
+                if sec in visible_sections and (year, sec) not in seen_sections:
+                    seen_sections.add((year, sec))
+                    roster_context.append({**row, 'year_level': year})
 
         # Get team_level from query params for filtering students
         team_level_filter = request.query_params.get('team_level', '').strip()
@@ -742,6 +748,15 @@ class BulkImportTeamsView(APIView):
                     team = serializer.save(concept_assignment=result['concept_assignment'])
                     if team.is_pit and not team.current_defense_stage:
                         register([team], request.user)
+                    elif team.is_pit and team.current_defense_stage:
+                        from defense.scheduler.models import PitEventGradingConfig
+                        event = PitEventGradingConfig.objects.filter(
+                            semester=selected_semester,
+                            year_level=team.year_level,
+                            event_name__iexact=team.current_defense_stage,
+                        ).first()
+                        if event:
+                            register([team], request.user, event=event, replace=False)
                     meta = section_meta.get(team.section)
                     if meta:
                         pm_user = None

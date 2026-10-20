@@ -407,7 +407,10 @@ class SectionInstructorAssignmentView(APIView):
             return Response({'detail': 'No active semester is configured.'}, status=status.HTTP_400_BAD_REQUEST)
 
         year_level = _pit_instructor_scope_for(request.user, request.data.get('year_level', ''))
-        section = ' '.join((request.data.get('section') or '').strip().split())
+        raw_section = request.data.get('section')
+        if not isinstance(raw_section, str):
+            return Response({'section': ['Section is required.']}, status=status.HTTP_400_BAD_REQUEST)
+        section = ' '.join(raw_section.strip().split())
         faculty_id = request.data.get('faculty_id') or request.data.get('faculty')
 
         if not year_level:
@@ -422,20 +425,8 @@ class SectionInstructorAssignmentView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        faculty = User.objects.filter(pk=faculty_id, role__in=['faculty', 'admin'], is_active=True).first()
-        if faculty is None:
-            return Response({'faculty_id': ['Select an active faculty user.']}, status=status.HTTP_400_BAD_REQUEST)
-
-        assignment, _created = SectionInstructorAssignment.objects.update_or_create(
-            faculty=faculty,
-            semester=active,
-            year_level=year_level,
-            section=section,
-            defaults={
-                'assigned_by': request.user,
-                'is_active': True,
-            },
-        )
+        from .instructor_assignments import assign_instructor
+        assignment = assign_instructor(request.user, faculty_id, year_level, section, request=request)
         return Response(
             {'assignment': SectionInstructorAssignmentSerializer(assignment).data},
             status=status.HTTP_201_CREATED,
@@ -446,19 +437,11 @@ class SectionInstructorAssignmentDetailView(APIView):
     permission_classes = [IsPitLeadOrAdmin]
 
     def patch(self, request, assignment_id):
-        assignment = get_object_or_404(SectionInstructorAssignment, pk=assignment_id)
-        if not _is_admin(request.user):
-            pit_year = (getattr(request.user, 'pit_lead_year', None) or '').strip()
-            if assignment.year_level != pit_year:
-                return Response({'detail': 'This assignment is outside your PIT scope.'}, status=status.HTTP_403_FORBIDDEN)
-
-        if 'is_active' in request.data:
-            assignment.is_active = request.data.get('is_active') is True
-        if _is_admin(request.user) and request.data.get('section') is not None:
-            assignment.section = request.data.get('section')
-        assignment.assigned_by = request.user
-        assignment.save()
-        return Response({'assignment': SectionInstructorAssignmentSerializer(assignment).data})
+        from .instructor_assignments import update_instructor_assignment
+        assignment, replaced = update_instructor_assignment(
+            request.user, assignment_id, request.data, request=request)
+        return Response({'assignment': SectionInstructorAssignmentSerializer(assignment).data,
+            'replaced_assignment': SectionInstructorAssignmentSerializer(replaced).data if replaced else None})
 
 
 class BulkImportUsersMixin:

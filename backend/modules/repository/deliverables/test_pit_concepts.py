@@ -43,13 +43,14 @@ class PitConceptTests(APITestCase):
         self.configure()
 
     def configure(self, **changes):
+        deliverables = changes.pop('deliverables', None) or [{
+            'deliverable_id': 'CONCEPTS', 'label': 'Concept papers', 'required': True,
+            'deliverable_type': 'pre', 'is_defense_material': True, 'file_policy': {'mode': 'concepts'},
+        }]
         config = {'enabled': True, 'required_count': 3, 'review_policy': 'replacement',
                   'score_carryover': 'reassess', **changes}
         self.client.force_authenticate(self.first)
-        response = self.client.post(fixtures.CONFIG, self.data(concept_config=config, deliverables=[{
-            'deliverable_id': 'CONCEPTS', 'label': 'Concept papers', 'required': True,
-            'deliverable_type': 'pre', 'is_defense_material': True, 'file_policy': {'mode': 'concepts'},
-        }]), format='json')
+        response = self.client.post(fixtures.CONFIG, self.data(concept_config=config, deliverables=deliverables), format='json')
         self.assertEqual(response.status_code, 200, response.data)
         self.event.refresh_from_db()
 
@@ -100,7 +101,8 @@ class PitConceptTests(APITestCase):
 
     def test_config_and_documents_are_persisted_in_assigned_event_only(self):
         self.assertTrue(self.event.concept_config['enabled'])
-        self.assertEqual(self.event.deliverables.get().file_policy, {'mode': 'concepts'})
+        self.assertEqual(self.event.deliverables.get(deliverable_id='CONCEPTS').file_policy, {'mode': 'concepts'})
+        self.assertEqual(self.event.deliverables.filter(file_policy__purpose='approved_concept', required=True).count(), 1)
         self.assertEqual(concepts.stage_for(self.team, self.event.event_name), self.event)
         self.assertIsNone(concepts.stage_for(self.teams[1], self.event.event_name))
         for actor in (self.second, self.unassigned):
@@ -200,9 +202,9 @@ class PitConceptTests(APITestCase):
     def test_pit_lead_can_select_concepts_but_cannot_override_clearance(self):
         self.prepare()
         schedule = self.schedule()
-        response = self.verdict(schedule, actor=self.panelist)
-        self.assertEqual(response.status_code, 403, response.data)
-        self.assertEqual(self.verdict(schedule, actor=self.first).status_code, 200)
+        response = self.verdict(schedule, actor=self.second)
+        self.assertIn(response.status_code, (403, 404))
+        self.assertEqual(self.verdict(schedule, actor=self.panelist).status_code, 200)
         self.client.force_authenticate(self.first)
         response = self.client.post('/api/repository/deliverables/concepts/', {
             'team_id': self.team.pk, 'stage_label': self.event.event_name,

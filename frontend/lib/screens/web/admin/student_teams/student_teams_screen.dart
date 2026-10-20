@@ -1,6 +1,5 @@
 import 'dialogs/current_roster_dialog.dart';
 import 'package:defensys/services/academic/team_formation_service.dart';
-import 'team_creation_page.dart';
 import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/widgets/export/report_export_menu.dart';
@@ -190,7 +189,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     applyDerivedLevelToRow(
       row,
       isCapstoneAdmin: _isCapstoneAdmin,
-      pitLeadYear: _pitLeadYear,
+      pitLeadYear: _pitLeadYear ?? widget.pitYearLevel,
     );
   }
 
@@ -205,6 +204,12 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialBulkImport) {
+      _showBulkImport = true;
+      if (widget.pitSection != null && widget.pitSection!.isNotEmpty) {
+        _section = widget.pitSection;
+      }
+    }
     _unsavedNotifier = ref.read(unsavedChangesProvider.notifier);
     _unsavedDraftNotifier = ref.read(unsavedChangesSaveDraftProvider.notifier);
     _dropSubscription = setupDropzoneListener((files) {
@@ -220,14 +225,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       _fetchTeamsForCurrentRole(event: initialEvent);
       await _loadBulkDraft();
       if (widget.initialBulkImport && mounted) {
-        final state = ref.read(studentTeamsProvider);
-        openTeamCreation(
-          context,
-          importTab: true,
-          level: _isPitLeadManager ? '$_pitLeadYear PIT' : 'Capstone',
-          section: _section,
-          event: state.eventName,
-        );
+        _openBulkImport(section: widget.pitSection);
       }
     });
   }
@@ -269,8 +267,8 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       !_isCapstoneAdmin || state.canCreateCapstoneTeams;
 
   bool _canManageTeams(StudentTeamsState state) {
-    if (_isPitInstructor) return false;
     if (_pitTermIsAudit || state.operatingMode == 'audit') return false;
+    if (_isPitInstructor) return true;
     return _isPitLeadManager ||
         (_isCapstoneAdmin && _teamLevelFilter(state) == 'PIT') ||
         _canCreateCapstoneTeams(state);
@@ -296,13 +294,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       return;
     }
     if (!_canManageTeams(state) || state.isSaving) return;
-    openTeamCreation(
-      context,
-      importTab: true,
-      level: _isPitLeadManager ? '$_pitLeadYear PIT' : 'Capstone',
-      section: _section,
-      event: state.eventName,
-    );
+    _openBulkImport();
   }
 
   void _onCreateTeamPressed(StudentTeamsState state) {
@@ -450,6 +442,18 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       setState(() => _showBulkImport = false);
       await _persistBulkDraft();
     }
+    if (widget.initialBulkImport && mounted) {
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      } else {
+        try {
+          final path = GoRouterState.of(context).uri.path;
+          if (path.endsWith('/creation')) {
+            context.go(path.replaceFirst('/creation', ''));
+          }
+        } catch (_) {}
+      }
+    }
   }
 
   Future<void> _discardBulkDraftConfirmed() async {
@@ -482,12 +486,16 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     await _discardBulkDraftConfirmed();
   }
 
-  void _openBulkImport({bool resumeDraft = false}) {
+  void _openBulkImport({bool resumeDraft = false, String? section}) {
     _bulkImportSessionBaseline = null;
     _bulkImportPersistedSnapshot = null;
     setState(() {
       _templateWarning = null;
       _csvColumns = [];
+      final effectiveSec = section ?? widget.pitSection;
+      if (effectiveSec != null && effectiveSec.isNotEmpty) {
+        _section = effectiveSec;
+      }
     });
     if (resumeDraft && _savedDraft != null) {
       setState(() {
@@ -578,7 +586,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     final result = parseTeamBulkCsvWithContext(
       csv,
       isCapstoneAdmin: _isCapstoneAdmin,
-      pitLeadYear: _pitLeadYear,
+      pitLeadYear: _pitLeadYear ?? widget.pitYearLevel,
     );
     if (result.rows.isEmpty) {
       _snack('Selected file is not a valid DefenSYS team CSV template.');
@@ -689,7 +697,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       final result = parseTeamBulkCsvWithContext(
         _csvDraft,
         isCapstoneAdmin: _isCapstoneAdmin,
-        pitLeadYear: _pitLeadYear,
+        pitLeadYear: _pitLeadYear ?? widget.pitYearLevel,
       );
       if (result.rows.isEmpty) {
         setState(() => _isBulkPreviewLoading = false);
@@ -815,6 +823,18 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         _bulkPreview = null;
       });
       _snack('$created team${created == 1 ? '' : 's'} imported.');
+      if (widget.initialBulkImport && mounted) {
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop(true);
+        } else {
+          try {
+            final path = GoRouterState.of(context).uri.path;
+            if (path.endsWith('/creation')) {
+              context.go(path.replaceFirst('/creation', ''));
+            }
+          } catch (_) {}
+        }
+      }
       return;
     }
 
@@ -847,14 +867,17 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   }
 
   void _addBulkRow() {
+    final effectiveYear = _pitLeadYear ?? widget.pitYearLevel ?? '3rd Year';
+    final effectiveSection = _section ?? widget.pitSection;
     final row = <String, dynamic>{
       'team_name': '',
       'project_title': '',
-      if (!_isCapstoneAdmin) 'year_level': _pitLeadYear ?? '3rd Year',
+      if (!_isCapstoneAdmin) 'year_level': effectiveYear,
       'member_ids': <String>[],
       'leader_id': '',
       'adviser_name': '',
-      if (_section != null && _section!.isNotEmpty) 'section': _section,
+      if (effectiveSection != null && effectiveSection.isNotEmpty)
+        'section': effectiveSection,
     };
     _deriveLevelOnRow(row);
     setState(() {
@@ -1000,8 +1023,9 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       final activeSemester = ref.watch(academicPeriodProvider).activeSemester;
       return StudentTeamsBulkImportView(
         state: state,
+        isPitInstructor: _isPitInstructor,
         isCapstoneAdmin: _isCapstoneAdmin,
-        pitLeadYear: _pitLeadYear,
+        pitLeadYear: _pitLeadYear ?? widget.pitYearLevel,
         parsedBulkRows: _parsedBulkRows,
         bulkCsvDraft: _csvDraft,
         selectedBulkAdviserFilter: _selectedBulkAdviserFilter,
@@ -1030,7 +1054,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         showIssuesOnly: _showIssuesOnly,
         templateWarning: _templateWarning,
         isBulkImportDirty: _isBulkImportDirty,
-        section: _section,
+        section: _section ?? widget.pitSection,
         systemName: _systemName,
         projectManager: _projectManager,
         activeSemester: activeSemester,
@@ -1119,69 +1143,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
             state: displayState,
             isPitContext: _isPitContext(displayState),
           ),
-          if (_isPitContext(displayState)) ...[
-            const SizedBox(height: 14),
-            _notice(
-              displayState.eventName == null
-                  ? 'Current roster · Matching PIT events use these section teams automatically. Import a different roster from an event view only when its teams change.'
-                  : '${displayState.eventName} · ${displayState.rosterContext.any((r) => r['in_use'] == true) ? 'Using saved event rosters' : displayState.rosterContext.any((r) => r['source'] == 'custom') ? 'Includes custom section rosters' : 'Using current roster automatically'}',
-            ),
-            for (final roster in displayState.rosterContext)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '${roster['section']} · ${roster['source_label']} · ${roster['team_count']} teams',
-                      ),
-                    ),
-                    if (_isPitLeadManager && displayState.eventName == null)
-                      TextButton(
-                        onPressed: () async {
-                          try {
-                            final saved = await reviewCurrentRoster(
-                              context,
-                              ref.read(teamFormationServiceProvider),
-                              '${roster['year_level']}',
-                              '${roster['section']}',
-                            );
-                            if (saved == true && mounted) {
-                              _fetchTeamsForCurrentRole();
-                            }
-                          } catch (e) {
-                            if (context.mounted) {
-                              showErrorToast(context, e.toString());
-                            }
-                          }
-                        },
-                        child: Text(
-                          roster['needs_selection'] == true
-                              ? 'Review current roster'
-                              : 'Manage current roster',
-                        ),
-                      ),
-                    if (_isPitLeadManager &&
-                        displayState.eventName != null &&
-                        roster['in_use'] != true)
-                      TextButton(
-                        onPressed: () => openTeamCreation(
-                          context,
-                          importTab: true,
-                          level: '${roster['year_level']} PIT',
-                          section: '${roster['section']}',
-                          event: displayState.eventName,
-                        ),
-                        child: Text(
-                          roster['source'] == 'custom'
-                              ? 'Manage event roster'
-                              : 'Import different roster',
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-          ],
+
           if (displayState.error != null) ...[
             const SizedBox(height: 14),
             _notice(displayState.error!, warning: true),
@@ -1336,6 +1298,12 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                               scope: _teamListScope,
                               yearLevel: _pitLeadYear ?? displayState.yearLevel,
                               section: displayState.section,
+                              onImportSectionRoster: (section) {
+                                _openBulkImport(section: section);
+                              },
+                              onRosterUpdated: () {
+                                _fetchTeamsForCurrentRole();
+                              },
                             ),
                     ),
                     buildSecondaryButton(
@@ -1404,6 +1372,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                         sharedProposalNamesOnly: _isPitLeadManager,
                         state: displayState,
                         isPit: _isPitContext(displayState),
+                        canManageTeams: _canManageTeams(displayState),
                         searchQuery: _searchController.text,
                         onOpenTeamDetail: _openTeamDetailRoute,
                       ),

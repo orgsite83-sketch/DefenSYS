@@ -183,8 +183,14 @@ void main() {
           capstoneDeliverablesProvider.overrideWith(() => notifier),
         ],
       );
-      await tester.ensureVisible(find.text('Review & confirm modules'));
-      await tester.tap(find.text('Review & confirm modules'));
+      final button = find.byWidgetPredicate(
+        (w) =>
+            w is Text &&
+            (w.data == 'Review & confirm modules' ||
+                w.data == 'Edit module names'),
+      );
+      await tester.ensureVisible(button);
+      await tester.tap(button);
       await tester.pumpAndSettle();
       expect(find.byType(TextFormField), findsOneWidget);
       await tester.enterText(
@@ -201,7 +207,7 @@ void main() {
   );
 
   testWidgets(
-    'shared Capstone fields review one module and normalize unrelated choices',
+    'shared Capstone fields keep three proposals and normalize unrelated choices',
     (tester) async {
       List<Map<String, dynamic>>? saved;
       final proposals = conceptRows(sharedWorkflow()['concepts']);
@@ -217,8 +223,8 @@ void main() {
           ),
         ),
       );
-      expect(find.text('Linked module review'), findsOneWidget);
-      expect(find.textContaining('Module proposal 1'), findsNothing);
+      expect(find.text('Module proposals and outcome'), findsOneWidget);
+      expect(find.textContaining('Module proposal 1'), findsOneWidget);
       expect(find.byType(WorkflowChoice), findsOneWidget);
       await tester.tap(find.text('Choose module outcome'));
       await tester.pumpAndSettle();
@@ -244,7 +250,13 @@ void main() {
       ),
     );
     expect(find.byType(WorkflowChoice), findsNothing);
-    expect(find.textContaining('Select the section system'), findsOneWidget);
+    expect(
+      find.textContaining('The section choice is pending'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Module proposal 1'), findsOneWidget);
+    expect(find.textContaining('Module proposal 2'), findsOneWidget);
+    expect(find.textContaining('Module proposal 3'), findsOneWidget);
   });
 
   testWidgets(

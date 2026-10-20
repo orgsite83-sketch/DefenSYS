@@ -67,8 +67,10 @@ def user_display_name(user):
 
 
 class SectionInstructorAssignmentSerializer(serializers.ModelSerializer):
+    faculty_id = serializers.IntegerField(source='faculty.id', read_only=True)
     faculty_name = serializers.SerializerMethodField()
     faculty_username = serializers.CharField(source='faculty.username', read_only=True)
+    faculty_email = serializers.CharField(source='faculty.email', read_only=True)
     assigned_by_name = serializers.SerializerMethodField()
     semester_label = serializers.CharField(source='semester.display_name', read_only=True)
 
@@ -77,8 +79,10 @@ class SectionInstructorAssignmentSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'faculty',
+            'faculty_id',
             'faculty_username',
             'faculty_name',
+            'faculty_email',
             'semester',
             'semester_label',
             'year_level',

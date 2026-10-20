@@ -12,6 +12,7 @@ import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/defensys_skeleton.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import '../../../../widgets/table/defensys_segmented_control.dart';
+import '../../../../widgets/pit/instructor_assignment_actions.dart';
 import '../../admin/user_management/bulk_import/student_batch_enrollment_hub_view.dart';
 import '../../admin/user_management/dialogs/add_student_dialog.dart';
 import '../../admin/user_management/dialogs/download_sample_csv_dialog.dart';
@@ -211,8 +212,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
   }
 
   Future<void> _showAssignInstructorDialog({
-    String? defaultSection,
-    int? defaultFacultyId,
+    Map<String, dynamic>? assignment,
   }) async {
     final instructorState = ref.read(pitInstructorProvider);
     final cohortState = ref.read(pitLeadCohortProvider);
@@ -234,20 +234,22 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
         facultyList: instructorState.faculty,
         availableSections: distinctSections,
         yearLevel: cohortState.pitLeadYear ?? '1st Year',
-        defaultSection: defaultSection,
-        defaultFacultyId: defaultFacultyId,
+        defaultSection: assignment?['section']?.toString(),
+        defaultFacultyId: int.tryParse((assignment?['faculty_id'] ?? assignment?['faculty'])?.toString() ?? ''),
+        replacing: assignment != null,
       ),
     );
 
     if (result != null && mounted) {
-      final success = await ref
-          .read(pitInstructorProvider.notifier)
-          .assignInstructor(
+      final notifier = ref.read(pitInstructorProvider.notifier);
+      final success = assignment != null
+          ? await notifier.replaceInstructor(int.parse(assignment['id'].toString()), result['faculty_id'] as int)
+          : await notifier.assignInstructor(
             facultyId: result['faculty_id'] as int,
             section: result['section'] as String,
           );
       if (success && mounted) {
-        showSuccessToast(context, 'Section instructor assigned successfully.');
+        showSuccessToast(context, assignment != null ? 'Section instructor changed.' : 'Section instructor assigned successfully.');
         _refreshAllData();
       } else if (mounted) {
         final err = ref.read(pitInstructorProvider).error ??
@@ -896,7 +898,8 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
         final name = a['faculty_name']?.toString().toLowerCase() ?? '';
         final sec = a['section']?.toString().toLowerCase() ?? '';
         final sem = a['semester_label']?.toString().toLowerCase() ?? '';
-        return name.contains(query) || sec.contains(query) || sem.contains(query);
+        final id = a['faculty_username']?.toString().toLowerCase() ?? '';
+        return name.contains(query) || sec.contains(query) || sem.contains(query) || id.contains(query);
       }).toList();
     }
 
@@ -904,7 +907,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
     final distinctInstructors = <int>{
       ...instructorState.assignments
           .where((a) => a['is_active'] == true)
-          .map((a) => (a['faculty_id'] is num ? (a['faculty_id'] as num).toInt() : 0))
+          .map((a) => int.tryParse((a['faculty_id'] ?? a['faculty'])?.toString() ?? '') ?? 0)
           .where((id) => id > 0),
     }.length;
 
@@ -929,7 +932,9 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
 
     final activeTerm = instructorState.activeSemester ?? cohortState.activeSemester ?? 'Active Term';
 
-    final start = _instructorPage * _instructorRowsPerPage;
+    final lastPage = assignments.isEmpty ? 0 : (assignments.length - 1) ~/ _instructorRowsPerPage;
+    final currentPage = _instructorPage.clamp(0, lastPage);
+    final start = currentPage * _instructorRowsPerPage;
     final end = (start + _instructorRowsPerPage).clamp(0, assignments.length);
     final visibleRows = (start < assignments.length)
         ? assignments.sublist(start, end)
@@ -1009,7 +1014,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
                             color: _muted,
                             size: 18,
                           ),
-                          hintText: 'Search instructor by name or section...',
+                          hintText: 'Search instructor by name, ID or section...',
                           hintStyle: const TextStyle(color: _muted, fontSize: 13),
                           filled: true,
                           fillColor: const Color(0xFFF9FAFB),
@@ -1093,14 +1098,14 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
                   ),
                 )
               else
-                _buildInstructorsTable(visibleRows, cohortState.pitLeadYear ?? '1st Year', instructorState.isSaving),
+                _buildInstructorsTable(visibleRows, cohortState.pitLeadYear ?? '1st Year'),
 
               const SizedBox(height: 19),
               Container(height: 1, color: _line),
               const SizedBox(height: 15),
               _buildPagination(
                 totalCount: assignments.length,
-                page: _instructorPage,
+                page: currentPage,
                 rowsPerPage: _instructorRowsPerPage,
                 onPageChanged: (p) => setState(() => _instructorPage = p),
                 onRowsPerPageChanged: (r) => setState(() {
@@ -1118,7 +1123,6 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
   Widget _buildInstructorsTable(
     List<Map<String, dynamic>> rows,
     String pitYear,
-    bool isSaving,
   ) {
     return Table(
       columnWidths: const {
@@ -1127,7 +1131,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
         2: FlexColumnWidth(1.4), // Year Level
         3: FlexColumnWidth(2.0), // Academic Period
         4: FlexColumnWidth(1.2), // Status
-        5: FlexColumnWidth(2.0), // Actions
+        5: FlexColumnWidth(0.8), // Actions
       },
       defaultVerticalAlignment: TableCellVerticalAlignment.middle,
       children: [
@@ -1167,8 +1171,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      assignment['faculty_email']?.toString() ??
-                          'ID: ${assignment['faculty_id'] ?? '-'}',
+                      'ID: ${assignment['faculty_username'] ?? '-'}',
                       style: const TextStyle(
                         color: _muted,
                         fontSize: 11.5,
@@ -1269,63 +1272,12 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
               // Action
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                child: Builder(
-                  builder: (context) {
-                    final id = assignment['id'] is num
-                        ? (assignment['id'] as num).toInt()
-                        : int.tryParse(assignment['id']?.toString() ?? '');
-                    final active = assignment['is_active'] == true;
-
-                    return Wrap(
-                      alignment: WrapAlignment.center,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 4,
-                      children: [
-                        TextButton(
-                          onPressed: isSaving || id == null
-                              ? null
-                              : () => _showAssignInstructorDialog(
-                                    defaultSection: assignment['section']?.toString(),
-                                    defaultFacultyId: assignment['faculty_id'] is num
-                                        ? (assignment['faculty_id'] as num).toInt()
-                                        : null,
-                                  ),
-                          style: TextButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          ),
-                          child: const Text('Change'),
-                        ),
-                        if (!active)
-                          TextButton(
-                            onPressed: isSaving || id == null
-                                ? null
-                                : () async {
-                                    final success = await ref
-                                        .read(pitInstructorProvider.notifier)
-                                        .setAssignmentActive(id, true);
-                                    if (!mounted || !context.mounted) return;
-                                    if (success) {
-                                      showSuccessToast(context, 'Instructor restored.');
-                                      _refreshAllData();
-                                    } else {
-                                      showErrorToast(
-                                        context,
-                                        ref.read(pitInstructorProvider).error ??
-                                            'Failed to restore instructor.',
-                                      );
-                                    }
-                                  },
-                            style: TextButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              foregroundColor: const Color(0xFF059669),
-                            ),
-                            child: const Text('Restore'),
-                          ),
-                      ],
-                    );
-                  },
+                child: Center(
+                  child: InstructorAssignmentActions(
+                    assignment: assignment,
+                    onChange: () => _showAssignInstructorDialog(assignment: assignment),
+                    onUpdated: _refreshAllData,
+                  ),
                 ),
               ),
             ],
@@ -1547,6 +1499,7 @@ class _AssignSectionInstructorDialog extends StatefulWidget {
   final String yearLevel;
   final String? defaultSection;
   final int? defaultFacultyId;
+  final bool replacing;
 
   const _AssignSectionInstructorDialog({
     required this.facultyList,
@@ -1554,6 +1507,7 @@ class _AssignSectionInstructorDialog extends StatefulWidget {
     required this.yearLevel,
     this.defaultSection,
     this.defaultFacultyId,
+    this.replacing = false,
   });
 
   @override
@@ -1575,7 +1529,8 @@ class _AssignSectionInstructorDialogState
   @override
   void initState() {
     super.initState();
-    _selectedFacultyId = widget.defaultFacultyId;
+    _selectedFacultyId = widget.facultyList.any((f) => int.tryParse(f['id']?.toString() ?? '') == widget.defaultFacultyId)
+        ? widget.defaultFacultyId : null;
     if (widget.defaultSection != null && widget.defaultSection!.isNotEmpty) {
       _sectionCtrl.text = widget.defaultSection!;
     }
@@ -1627,9 +1582,9 @@ class _AssignSectionInstructorDialogState
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Assign Section Instructor',
-                          style: TextStyle(
+                        Text(
+                          widget.replacing ? 'Change Section Instructor' : 'Assign Section Instructor',
+                          style: const TextStyle(
                             color: _ink,
                             fontSize: 16,
                             fontWeight: FontWeight.w800,
@@ -1694,6 +1649,7 @@ class _AssignSectionInstructorDialogState
               const SizedBox(height: 6),
               TextField(
                 controller: _sectionCtrl,
+                readOnly: widget.replacing,
                 decoration: InputDecoration(
                   hintText: 'e.g. BSIT-1A',
                   contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -1701,7 +1657,7 @@ class _AssignSectionInstructorDialogState
                 ),
                 onChanged: (v) => setState(() {}),
               ),
-              if (widget.availableSections.isNotEmpty) ...[
+              if (widget.availableSections.isNotEmpty && !widget.replacing) ...[
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 6,
@@ -1755,7 +1711,7 @@ class _AssignSectionInstructorDialogState
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                     ),
-                    child: const Text('Confirm Assignment'),
+                    child: Text(widget.replacing ? 'Save change' : 'Confirm Assignment'),
                   ),
                 ],
               ),

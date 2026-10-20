@@ -14,6 +14,8 @@ Future<void> showManageSectionsDialog({
   String scope = 'active',
   String? yearLevel,
   String? section,
+  ValueChanged<String>? onImportSectionRoster,
+  VoidCallback? onRosterUpdated,
 }) => showDialog<void>(
   context: context,
   barrierDismissible: false,
@@ -22,6 +24,8 @@ Future<void> showManageSectionsDialog({
     scope: scope,
     yearLevel: yearLevel,
     section: section,
+    onImportSectionRoster: onImportSectionRoster,
+    onRosterUpdated: onRosterUpdated,
   ),
 );
 
@@ -32,11 +36,15 @@ class ManageSectionsDialog extends ConsumerStatefulWidget {
     this.scope = 'active',
     this.yearLevel,
     this.section,
+    this.onImportSectionRoster,
+    this.onRosterUpdated,
   });
 
   final String level;
   final String scope;
   final String? yearLevel, section;
+  final ValueChanged<String>? onImportSectionRoster;
+  final VoidCallback? onRosterUpdated;
 
   @override
   ConsumerState<ManageSectionsDialog> createState() =>
@@ -127,6 +135,8 @@ class _ManageSectionsDialogState extends ConsumerState<ManageSectionsDialog> {
         scope: widget.scope,
         sectionOptions: _sections,
         onSectionChanged: (id) => setState(() => _selectedTeamId = id),
+        onImportSectionRoster: widget.onImportSectionRoster,
+        onRosterUpdated: widget.onRosterUpdated,
       );
     }
     return DefensysShadcnScope(

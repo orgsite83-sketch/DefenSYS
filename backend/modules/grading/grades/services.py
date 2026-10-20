@@ -1452,7 +1452,8 @@ class GradeContextService:
         from .defense_workflow import passed_and_cleared
         if grade.uses_defense_verdict and not passed_and_cleared(grade):
             raise ValidationError({'status': 'Defense approval and required revision clearance are needed before archiving.'})
-        if grade.uses_defense_verdict:
+        from repository.deliverables.concepts import enabled as concepts_enabled, context_for_grade
+        if grade.uses_defense_verdict or concepts_enabled(context_for_grade(grade)):
             from repository.deliverables.services import post_deliverables_complete
             lbl = grade.defense_stage.label if grade.defense_stage_id else grade.stage_label
             if not post_deliverables_complete(grade.team, lbl):

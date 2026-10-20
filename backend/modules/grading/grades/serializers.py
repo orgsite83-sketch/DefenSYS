@@ -382,10 +382,9 @@ class TeamGradeSerializer(serializers.ModelSerializer):
         return obj.project_title_snapshot or obj.team.project_title
 
     def get_workflow(self, obj):
-        if obj.scope == TeamGrade.SCOPE_PIT:
-            return {}
         from .defense_workflow import workflow_payload
-        return workflow_payload(obj)
+        actor = self.context.get('actor') or getattr(self.context.get('request'), 'user', None)
+        return workflow_payload(obj, actor=actor)
 
     def get_verdict_by_name(self, obj):
         return display_name(obj.verdict_by) if obj.verdict_by else None

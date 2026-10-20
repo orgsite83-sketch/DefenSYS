@@ -1,4 +1,3 @@
-import 'package:defensys/widgets/shadcn/workflow_step_progress.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/import/team_creation_draft.dart';
 import 'components/team_project_setup.dart';
@@ -18,6 +17,7 @@ import 'package:defensys/utils/import/team_bulk_import_csv.dart';
 import 'package:defensys/utils/import/class_list_template.dart';
 import '../widgets/team_bulk_import_review_table.dart';
 import 'dialogs/generate_teams_dialog.dart';
+import 'student_teams_screen.dart';
 
 Future<bool?> openTeamCreation(
   BuildContext context, {
@@ -26,23 +26,54 @@ Future<bool?> openTeamCreation(
   String? section,
   String? event,
 }) {
-  final current = GoRouterState.of(context).uri.path;
+  String current = '';
+  try {
+    current = GoRouterState.of(context).uri.path;
+  } catch (_) {}
   final base = current.startsWith('/admin/')
       ? '/admin/student-teams'
-      : current.startsWith('/faculty/deliverables')
-      ? '/faculty/deliverables'
-      : '/faculty/student-teams';
-  return context.push<bool>(
-    Uri(
-      path: '$base/creation',
-      queryParameters: {
-        'tab': importTab ? 'import' : 'generate',
-        if (level != null && level.isNotEmpty) 'level': level,
-        if (section != null && section.isNotEmpty) 'section': section,
-        if (event != null && event.isNotEmpty) 'event': event,
-      },
-    ).toString(),
-  );
+      : (current.startsWith('/faculty/deliverables') ||
+              (current.isEmpty && section != null && section.isNotEmpty))
+          ? '/faculty/deliverables'
+          : '/faculty/student-teams';
+  final targetUri = Uri(
+    path: '$base/creation',
+    queryParameters: {
+      'tab': importTab ? 'import' : 'generate',
+      if (level != null && level.isNotEmpty) 'level': level,
+      if (section != null && section.isNotEmpty) 'section': section,
+      if (event != null && event.isNotEmpty) 'event': event,
+    },
+  ).toString();
+
+  try {
+    return context.push<bool>(targetUri);
+  } catch (_) {
+    return Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => importTab
+            ? Scaffold(
+                backgroundColor: const Color(0xFFF8FAFC),
+                body: StudentTeamsScreen(
+                  mode: base == '/faculty/deliverables'
+                      ? TeamListMode.pitInstructor
+                      : (base.startsWith('/admin')
+                          ? TeamListMode.capstoneAdmin
+                          : TeamListMode.pitLead),
+                  initialBulkImport: true,
+                  pitYearLevel: level?.replaceAll(' PIT', '').trim(),
+                  pitSection: section,
+                ),
+              )
+            : TeamCreationPage(
+                initialTab: 'generate',
+                initialLevel: level,
+                initialSection: section,
+                initialEvent: event,
+              ),
+      ),
+    );
+  }
 }
 
 List<Map<String, dynamic>> _maps(dynamic value) => (value as List? ?? [])
@@ -509,7 +540,7 @@ class _PreparedTeamsPaneState extends ConsumerState<_PreparedTeamsPane> {
   Map<String, dynamic>? preview;
   String? error;
   bool busy = false, resolveConflicts = false;
-  int revision = 0, step = 1;
+  int revision = 0;
   Map<String, dynamic>? options, savedDraft;
   final projectSetups = <String, Map<String, dynamic>>{};
   TeamCreationDraftStore get draftStore => TeamCreationDraftStore(
@@ -562,10 +593,10 @@ class _PreparedTeamsPaneState extends ConsumerState<_PreparedTeamsPane> {
       );
       resolveConflicts = savedDraft!['resolve_conflicts'] == true;
       preview = null;
-      step = 2;
       savedDraft = null;
     });
     widget.onDirty(true);
+    review();
   }
 
   Timer? debounce;
@@ -603,7 +634,7 @@ class _PreparedTeamsPaneState extends ConsumerState<_PreparedTeamsPane> {
         error = null;
       });
       widget.onDirty(true);
-      // Continue opens the editable review; uploading never commits teams.
+      await review();
     } catch (e) {
       if (mounted) setState(() => error = e.toString());
     }
@@ -760,40 +791,139 @@ class _PreparedTeamsPaneState extends ConsumerState<_PreparedTeamsPane> {
             .toSet()
             .toList()
           ..sort();
-    return Padding(
+
+    final rosterTitle = widget.event == null
+        ? (pit ? 'Current roster' : 'Capstone roster')
+        : '${widget.event} roster';
+
+    final rosterDesc = !pit
+        ? 'Import the finalized Capstone teams for this semester. Project titles and advisors are preserved; each defense stage keeps its own records.'
+        : widget.event == null
+        ? 'Matching PIT events use this roster automatically. Event submissions, schedules and grades are kept separately.'
+        : 'This import replaces the roster only for the sections in this file and this event. Other events keep their roster.';
+
+    final canImport = preview?['ready'] == true && !busy;
+
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          WorkflowStepProgress(
-            currentStep: step,
-            labels: const [
-              'Upload roster',
-              'Resolve & configure',
-              'Review & import',
-            ],
-            compactLabels: const ['Upload', 'Configure', 'Review'],
+          Text(
+            rosterTitle,
+            style: Theme.of(context).textTheme.titleLarge,
           ),
-          const SizedBox(height: 24),
-          if (savedDraft != null)
-            Wrap(
-              spacing: 12,
-              children: [
-                const Text('A saved import draft is available.'),
-                TextButton(
-                  onPressed: resumeDraft,
-                  child: const Text('Resume draft'),
+          const SizedBox(height: 8),
+          Text(rosterDesc),
+          const SizedBox(height: 12),
+          const Text(
+            'Upload team names, members, leaders and sections. Project titles are optional. Existing student accounts are linked.',
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 12,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: busy ? null : template,
+                icon: const Icon(Icons.download_outlined),
+                label: const Text('Download template'),
+              ),
+              OutlinedButton.icon(
+                onPressed: busy ? null : pick,
+                icon: const Icon(Icons.upload_file_outlined),
+                label: const Text('Upload CSV / Excel'),
+              ),
+              if (rows.isNotEmpty) ...[
+                OutlinedButton.icon(
+                  onPressed: busy ? null : review,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Review import'),
+                ),
+                FilledButton.icon(
+                  onPressed: canImport ? save : null,
+                  icon: const Icon(Icons.check),
+                  label: Text(
+                    ready.isNotEmpty
+                        ? 'Import ${ready.length} teams'
+                        : 'Import ${rows.length} teams',
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: busy ? null : saveDraft,
+                  icon: const Icon(Icons.save_outlined),
+                  label: const Text('Save draft'),
                 ),
                 TextButton(
-                  onPressed: () async {
-                    await draftStore.clear();
-                    if (mounted) setState(() => savedDraft = null);
-                  },
-                  child: const Text('Discard'),
+                  onPressed: busy
+                      ? null
+                      : () {
+                          setState(() {
+                            rows.clear();
+                            preview = null;
+                            error = null;
+                          });
+                          widget.onDirty(false);
+                        },
+                  child: const Text('Clear'),
                 ),
               ],
+            ],
+          ),
+          if (savedDraft != null && rows.isEmpty) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: DefensysTokens.surfaceOf(context),
+                border: Border.all(color: DefensysTokens.borderOf(context)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.history_outlined, size: 18),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text('A saved import draft is available.'),
+                  ),
+                  TextButton(
+                    onPressed: resumeDraft,
+                    child: const Text('Resume draft'),
+                  ),
+                  TextButton(
+                    onPressed: () async {
+                      await draftStore.clear();
+                      if (mounted) setState(() => savedDraft = null);
+                    },
+                    child: const Text('Discard'),
+                  ),
+                ],
+              ),
             ),
-          if (busy) const LinearProgressIndicator(minHeight: 2),
+          ],
+          if (widget.canResolveConflicts) ...[
+            const SizedBox(height: 8),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Review changes to existing section assignments'),
+              subtitle: const Text(
+                'Section changes appear in the preview before you import. Historical records are preserved.',
+              ),
+              value: resolveConflicts,
+              onChanged: busy
+                  ? null
+                  : (v) {
+                      setState(() => resolveConflicts = v!);
+                      changed();
+                    },
+            ),
+          ],
+          if (busy)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
           if (error != null)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
@@ -802,180 +932,53 @@ class _PreparedTeamsPaneState extends ConsumerState<_PreparedTeamsPane> {
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ),
-          Expanded(
-            child: SingleChildScrollView(
-              child: Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: DefensysTokens.surfaceOf(context),
-                  border: Border.all(color: DefensysTokens.borderOf(context)),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      widget.event == null
-                          ? (pit ? 'Current roster' : 'Capstone roster')
-                          : '${widget.event} roster',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      !pit
-                          ? 'Import the finalized Capstone teams for this semester. Project titles and advisers are preserved; each defense stage keeps its own records.'
-                          : widget.event == null
-                          ? 'Matching PIT events use this roster automatically. Event submissions, schedules and grades are kept separately.'
-                          : 'This import replaces the roster only for the sections in this file and this event. Other events keep their roster.',
-                    ),
-                    const SizedBox(height: 24),
-                    if (step == 1) ...[
-                      const Text(
-                        'Upload team names, members, leaders and sections. Project titles are optional. Existing student accounts are linked.',
-                      ),
-                      const SizedBox(height: 20),
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 12,
-                        children: [
-                          OutlinedButton.icon(
-                            onPressed: busy ? null : template,
-                            icon: const Icon(Icons.download_outlined),
-                            label: const Text('Download template'),
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: busy ? null : pick,
-                            icon: const Icon(Icons.upload_file_outlined),
-                            label: const Text('Upload CSV / Excel'),
-                          ),
-                        ],
-                      ),
-                      if (rows.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 20),
-                          child: Text(
-                            '${rows.length} teams loaded. Continue to review the rows.',
-                          ),
-                        ),
-                    ],
-                    if (step == 2) ...[
-                      if (widget.canResolveConflicts)
-                        CheckboxListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text(
-                            'Review changes to existing section assignments',
-                          ),
-                          subtitle: const Text(
-                            'Section changes appear in the preview before you import.',
-                          ),
-                          value: resolveConflicts,
-                          onChanged: busy
-                              ? null
-                              : (v) {
-                                  setState(() => resolveConflicts = v!);
-                                  changed();
-                                },
-                        ),
-                      for (final section in sections) projectSection(section),
-                      IgnorePointer(
-                        ignoring: busy,
-                        child: TeamBulkImportReviewTable(
-                          rows: rows,
-                          previewRows: previewRows,
-                          isCapstoneAdmin: !pit,
-                          pitLeadYear: pit
-                              ? widget.level.replaceFirst(' PIT', '')
-                              : null,
-                          showIssuesOnly: false,
-                          sectionOptions: [
-                            if (widget.section != null) widget.section!,
-                          ],
-                          onRowChanged: (_) => changed(),
-                          onDeleteRow: (index) {
-                            rows.removeAt(index);
-                            changed();
-                          },
-                          onAddRow: () {
-                            rows.add({
-                              'team_name': '',
-                              'member_ids': <String>[],
-                              'leader_id': '',
-                              'section': widget.section ?? '',
-                            });
-                            changed();
-                          },
-                        ),
-                      ),
-                    ],
-                    if (step == 3) ...[
-                      Text(
-                        '${ready.where((r) => r['action'] == 'create').length} create · ${ready.where((r) => r['action'] == 'update').length} update · ${previewRows.length - ready.length} blocked / skipped',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 16),
-                      for (final row in previewRows)
-                        ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: Icon(
-                            row['ready'] == true
-                                ? Icons.check_circle_outline
-                                : Icons.error_outline,
-                          ),
-                          title: Text('${row['team_name']}'),
-                          subtitle: Text(
-                            '${row['section']} · ${row['member_count']} members · ${row['action']}\n${[...row['issues'] ?? [], ...row['warnings'] ?? []].join(' ')}',
-                          ),
-                        ),
-                      const SizedBox(height: 12),
-                      const Text(
-                        'Shared sections are imported with their complete project setup. Blocked rows must be resolved before replacing an event roster.',
-                      ),
-                    ],
-                  ],
+          const SizedBox(height: 16),
+          if (rows.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40),
+              child: Center(
+                child: Text(
+                  'Already have teams arranged? Upload their spreadsheet here. '
+                  'The preview and editable verification table will appear immediately.',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ),
-          ),
-          const Divider(height: 32),
-          Row(
-            children: [
-              if (step > 1)
-                OutlinedButton(
-                  onPressed: busy ? null : () => setState(() => step--),
-                  child: const Text('Back'),
-                ),
-              const Spacer(),
-              TextButton(
-                onPressed: busy || rows.isEmpty ? null : saveDraft,
-                child: const Text('Save draft'),
+          if (rows.isNotEmpty) ...[
+            for (final section in sections)
+              if (options?['concept_contexts'] != null &&
+                  _maps(options?['concept_contexts']).isNotEmpty)
+                projectSection(section),
+            IgnorePointer(
+              ignoring: busy,
+              child: TeamBulkImportReviewTable(
+                rows: rows,
+                previewRows: previewRows,
+                isCapstoneAdmin: !pit,
+                pitLeadYear: pit ? widget.level.replaceFirst(' PIT', '') : null,
+                showIssuesOnly: false,
+                sectionOptions: [
+                  if (widget.section != null) widget.section!,
+                ],
+                onRowChanged: (_) => changed(),
+                onDeleteRow: (index) {
+                  rows.removeAt(index);
+                  changed();
+                },
+                onAddRow: () {
+                  rows.add({
+                    'team_name': '',
+                    'member_ids': <String>[],
+                    'leader_id': '',
+                    'section': widget.section ?? '',
+                  });
+                  changed();
+                },
               ),
-              const SizedBox(width: 12),
-              FilledButton.icon(
-                onPressed: busy || rows.isEmpty
-                    ? null
-                    : () async {
-                        if (step == 1) {
-                          setState(() => step = 2);
-                        } else if (step == 2) {
-                          await review();
-                          if (mounted && preview?['ready'] == true) {
-                            setState(() => step = 3);
-                          }
-                        } else {
-                          await save();
-                        }
-                      },
-                icon: Icon(step == 3 ? Icons.check : Icons.arrow_forward),
-                label: Text(
-                  step == 3
-                      ? 'Import ${ready.length} teams'
-                      : step == 2
-                      ? 'Review import'
-                      : 'Continue',
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ],
       ),
     );

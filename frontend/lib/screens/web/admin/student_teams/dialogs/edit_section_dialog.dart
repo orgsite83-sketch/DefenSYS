@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import 'package:defensys/services/academic/team_formation_service.dart';
 import 'package:defensys/services/student_teams_provider.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/feedback/defensys_loading.dart';
@@ -11,6 +12,8 @@ import 'package:defensys/widgets/repository/document_policy_editor.dart';
 import 'package:defensys/widgets/repository/section_concept_setup_dialog.dart';
 import 'package:defensys/widgets/repository/section_concept_workspace.dart';
 
+import 'current_roster_dialog.dart';
+
 class EditSectionDialog extends ConsumerStatefulWidget {
   const EditSectionDialog({
     super.key,
@@ -18,12 +21,16 @@ class EditSectionDialog extends ConsumerStatefulWidget {
     this.scope,
     this.sectionOptions = const [],
     this.onSectionChanged,
+    this.onImportSectionRoster,
+    this.onRosterUpdated,
   });
 
   final int teamId;
   final String? scope;
   final List<Map<String, dynamic>> sectionOptions;
   final ValueChanged<int>? onSectionChanged;
+  final ValueChanged<String>? onImportSectionRoster;
+  final VoidCallback? onRosterUpdated;
 
   @override
   ConsumerState<EditSectionDialog> createState() => _EditSectionDialogState();
@@ -694,6 +701,169 @@ class _EditSectionDialogState extends ConsumerState<EditSectionDialog> {
                                     ],
                                   ),
                                 ),
+                                if (_details?['is_pit'] == true ||
+                                    widget.scope == 'pit' ||
+                                    _conceptContexts.any((c) => c['key'].toString().startsWith('pit:'))) ...[
+                                  const SizedBox(height: 16),
+                                  Builder(
+                                    builder: (context) {
+                                      final roster = _details!['roster_info'] as Map<String, dynamic>? ?? {};
+                                      final needsSelection = roster['needs_selection'] == true;
+                                      final teamCount = _details!['team_count'] ?? 0;
+                                      final canManage = _details!['can_manage_roster'] != false;
+
+                                      return Container(
+                                        decoration: BoxDecoration(
+                                          color: cardBg,
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(color: cardBorder),
+                                        ),
+                                        padding: const EdgeInsets.all(18),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                const Icon(LucideIcons.users, size: 16, color: DefensysTokens.maroon),
+                                                const SizedBox(width: 8),
+                                                const Text(
+                                                  'Team Roster',
+                                                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              'Manage the active team membership for this section. Unstarted events inherit these teams automatically.',
+                                              style: TextStyle(color: secondary, fontSize: 12),
+                                            ),
+                                            const SizedBox(height: 14),
+                                            if (needsSelection) ...[
+                                              Container(
+                                                margin: const EdgeInsets.only(bottom: 12),
+                                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFFEF3C7),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                  border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.5)),
+                                                ),
+                                                child: Row(
+                                                  children: const [
+                                                    Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFF92400E)),
+                                                    SizedBox(width: 8),
+                                                    Expanded(
+                                                      child: Text(
+                                                        'Teams require review before events can be scheduled.',
+                                                        style: TextStyle(color: Color(0xFF92400E), fontSize: 12, fontWeight: FontWeight.w600),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    '$teamCount ${teamCount == 1 ? 'team' : 'teams'} currently assigned to this section',
+                                                    style: TextStyle(
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.w500,
+                                                      color: isDark ? DefensysTokens.textSecondaryDark : const Color(0xFF4B5563),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            if (canManage) ...[
+                                              const SizedBox(height: 12),
+                                              Wrap(
+                                                spacing: 8,
+                                                runSpacing: 8,
+                                                children: [
+                                                  OutlinedButton.icon(
+                                                    key: const Key('manage-roster-btn'),
+                                                    icon: Icon(
+                                                      Icons.checklist_rounded,
+                                                      size: 15,
+                                                      color: DefensysTokens.maroonTextOf(context),
+                                                    ),
+                                                    label: Text(
+                                                      needsSelection ? 'Review Roster (Action Required)' : 'Review / Manage Roster',
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        fontWeight: FontWeight.w600,
+                                                        color: DefensysTokens.maroonTextOf(context),
+                                                      ),
+                                                    ),
+                                                    style: OutlinedButton.styleFrom(
+                                                      side: BorderSide(color: DefensysTokens.maroonTextOf(context).withValues(alpha: 0.4)),
+                                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                                    ),
+                                                    onPressed: _saving
+                                                        ? null
+                                                        : () async {
+                                                            final year = '${_details!['year_level']}';
+                                                            final sec = _section.text.trim();
+                                                            try {
+                                                              final saved = await reviewCurrentRoster(
+                                                                context,
+                                                                ref.read(teamFormationServiceProvider),
+                                                                year,
+                                                                sec,
+                                                              );
+                                                              if (saved == true && mounted) {
+                                                                await _load();
+                                                                widget.onRosterUpdated?.call();
+                                                              }
+                                                            } catch (e) {
+                                                              if (mounted) {
+                                                                setState(() {
+                                                                  _error = e.toString().replaceFirst('Exception: ', '');
+                                                                });
+                                                              }
+                                                            }
+                                                          },
+                                                  ),
+                                                  if (widget.onImportSectionRoster != null)
+                                                    OutlinedButton.icon(
+                                                      key: const Key('import-roster-btn'),
+                                                      icon: Icon(
+                                                        Icons.upload_file_rounded,
+                                                        size: 15,
+                                                        color: isDark ? DefensysTokens.textPrimaryDark : DefensysTokens.textPrimary,
+                                                      ),
+                                                      label: Text(
+                                                        'Import Section Roster',
+                                                        style: TextStyle(
+                                                          fontSize: 12,
+                                                          fontWeight: FontWeight.w600,
+                                                          color: isDark ? DefensysTokens.textPrimaryDark : DefensysTokens.textPrimary,
+                                                        ),
+                                                      ),
+                                                      style: OutlinedButton.styleFrom(
+                                                        side: BorderSide(color: cardBorder),
+                                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                                      ),
+                                                      onPressed: _saving
+                                                          ? null
+                                                          : () {
+                                                              final sec = _section.text.trim();
+                                                              Navigator.of(context).pop();
+                                                              widget.onImportSectionRoster!(sec);
+                                                            },
+                                                    ),
+                                                ],
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
                                 if (_conceptContexts.isNotEmpty) ...[
                                   const SizedBox(height: 16),
                                   for (final c in _conceptContexts.where((c) => c['section_project_id'] != null))

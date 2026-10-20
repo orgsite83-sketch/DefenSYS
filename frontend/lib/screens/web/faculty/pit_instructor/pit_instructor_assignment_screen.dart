@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../services/pit_instructor_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/widgets.dart';
+import '../../../../widgets/pit/instructor_assignment_actions.dart';
 import '../../admin/widgets/defensys_admin_shell.dart';
 
 class PitInstructorAssignmentScreen extends ConsumerStatefulWidget {
@@ -20,6 +21,7 @@ class _PitInstructorAssignmentScreenState
     extends ConsumerState<PitInstructorAssignmentScreen> {
   final _sectionController = TextEditingController();
   int? _selectedFacultyId;
+  int? _editingAssignmentId;
 
   @override
   void initState() {
@@ -110,10 +112,19 @@ class _PitInstructorAssignmentScreenState
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Assign Instructor${state.yearLevel == null ? '' : ' - ${state.yearLevel}'}',
+                  '${_editingAssignmentId == null ? 'Assign' : 'Change'} Instructor${state.yearLevel == null ? '' : ' - ${state.yearLevel}'}',
                   style: DefensysUi.sectionTitle,
                 ),
               ),
+              if (_editingAssignmentId != null)
+                TextButton(
+                  onPressed: state.isSaving ? null : () => setState(() {
+                    _editingAssignmentId = null;
+                    _selectedFacultyId = null;
+                    _sectionController.clear();
+                  }),
+                  child: const Text('Cancel change'),
+                ),
             ],
           ),
           const SizedBox(height: 16),
@@ -121,6 +132,7 @@ class _PitInstructorAssignmentScreenState
             builder: (context, constraints) {
               final narrow = constraints.maxWidth < 760;
               final facultyField = DropdownButtonFormField<int>(
+                key: ValueKey('assignment-faculty-$_editingAssignmentId-$_selectedFacultyId'),
                 initialValue: _selectedFacultyId,
                 decoration: const InputDecoration(
                   labelText: 'Faculty',
@@ -133,6 +145,7 @@ class _PitInstructorAssignmentScreenState
               );
               final sectionField = TextField(
                 controller: _sectionController,
+                readOnly: _editingAssignmentId != null,
                 enabled: !state.isSaving,
                 decoration: const InputDecoration(
                   labelText: 'Section',
@@ -142,7 +155,7 @@ class _PitInstructorAssignmentScreenState
               );
               final assignButton = DefensysSaveButton(
                 height: 48,
-                label: 'Assign Instructor',
+                label: _editingAssignmentId == null ? 'Assign Instructor' : 'Save change',
                 savingLabel: 'Assigning…',
                 isSaving: state.isSaving,
                 onPressed: _assignInstructor,
@@ -215,14 +228,14 @@ class _PitInstructorAssignmentScreenState
                   DataColumn(label: Text('Action')),
                 ],
                 rows: state.assignments.map((assignment) {
-                  final id = _asInt(assignment['id']);
                   final active = assignment['is_active'] == true;
                   return DataRow(
                     cells: [
                       DataCell(
-                        Text(
-                          assignment['faculty_name']?.toString() ?? 'Faculty',
-                        ),
+                        Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(assignment['faculty_name']?.toString() ?? 'Faculty'),
+                          Text('ID: ${assignment['faculty_username'] ?? '-'}', style: const TextStyle(fontSize: 12)),
+                        ]),
                       ),
                       DataCell(Text(assignment['section']?.toString() ?? '-')),
                       DataCell(
@@ -230,20 +243,12 @@ class _PitInstructorAssignmentScreenState
                       ),
                       DataCell(_statusBadge(active)),
                       DataCell(
-                        active
-                            ? const SizedBox.shrink()
-                            : TextButton.icon(
-                                icon: const Icon(
-                                  Icons.restore_outlined,
-                                  size: 17,
-                                ),
-                                label: const Text('Restore'),
-                                onPressed: id == null || state.isSaving
-                                    ? null
-                                    : () => ref
-                                          .read(pitInstructorProvider.notifier)
-                                          .setAssignmentActive(id, true),
-                              ),
+                        InstructorAssignmentActions(assignment: assignment, onChange: () => setState(() {
+                          _editingAssignmentId = _asInt(assignment['id']);
+                          final facultyId = _asInt(assignment['faculty_id'] ?? assignment['faculty']);
+                          _selectedFacultyId = state.faculty.any((f) => _asInt(f['id']) == facultyId) ? facultyId : null;
+                          _sectionController.text = assignment['section']?.toString() ?? '';
+                        })),
                       ),
                     ],
                   );
@@ -303,12 +308,14 @@ class _PitInstructorAssignmentScreenState
       return;
     }
 
-    final saved = await ref
-        .read(pitInstructorProvider.notifier)
-        .assignInstructor(facultyId: facultyId, section: section);
+    final notifier = ref.read(pitInstructorProvider.notifier);
+    final saved = _editingAssignmentId == null
+        ? await notifier.assignInstructor(facultyId: facultyId, section: section)
+        : await notifier.replaceInstructor(_editingAssignmentId!, facultyId);
     if (!mounted || !saved) return;
     setState(() {
       _selectedFacultyId = null;
+      _editingAssignmentId = null;
       _sectionController.clear();
     });
   }

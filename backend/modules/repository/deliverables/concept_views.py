@@ -25,7 +25,11 @@ class ConceptActionView(APIView):
         data.is_valid(raise_exception=True)
         attrs = data.validated_data
         team = get_allowed_team(request, attrs['team_id'])
-        if not check_deliverable_write_permission(request.user, team):
+        if attrs['action'] in ('pit_decision', 'clear_pit_revisions'):
+            from .pit_decisions import can_manage
+            if not can_manage(request.user, team):
+                return Response({'detail': 'You cannot manage this team’s concepts.'}, status=403)
+        elif not check_deliverable_write_permission(request.user, team):
             return Response({'detail': 'You cannot manage this team’s concepts.'}, status=403)
         stage = concepts.stage_for(team, attrs['stage_label'])
         if not concepts.enabled(stage):
@@ -40,6 +44,9 @@ class ConceptActionView(APIView):
                     return Response({'detail': 'The module names or system connections changed. Refresh and review the current names.'}, status=409)
                 concepts.save_titles(team, stage, attrs.get('concepts'), actor=request.user)
             elif attrs['action'] in ('pit_decision', 'clear_pit_revisions'):
+                current = concepts.latest_round(team, stage)
+                if current and current.section_round_id and not request.data.get('module_review'):
+                    raise concepts.ValidationError('Module decisions for a shared section system must be managed in the shared section workspace.')
                 from .pit_decisions import record_decision
                 record_decision(team, stage, request.user, attrs.get('concepts'),
                     token=attrs.get('review_token'), reason=attrs.get('reason', ''),

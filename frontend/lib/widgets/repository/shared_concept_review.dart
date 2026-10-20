@@ -269,7 +269,7 @@ class SharedModuleReviewTable extends StatelessWidget {
     Map<String, dynamic> team,
     Map<String, dynamic>? selected,
     BuildContext context,
-  ) => selected != null
+  ) => selected != null && '${team['verdict'] ?? ''}'.isNotEmpty
       ? Text(
           '${selected['title']}'.trim().isEmpty
               ? 'Module name needed'
@@ -283,7 +283,7 @@ class SharedModuleReviewTable extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
-                  '${m['system_title'] ?? m['key']} → ${'${m['title'] ?? ''}'.trim().isEmpty ? 'Module name needed' : m['title']}',
+                  '${m['key'] == project['selected_key'] ? 'Selected system · ' : ''}${m['system_title'] ?? m['key']} → ${'${m['title'] ?? ''}'.trim().isEmpty ? 'Module name needed' : m['title']}',
                   style: TextStyle(
                     fontSize: 12,
                     height: 1.5,
@@ -332,8 +332,9 @@ class SharedModuleReviewTable extends StatelessWidget {
     final secondary = DefensysTokens.textSecondaryOf(context);
     final border = DefensysTokens.borderOf(context);
     String status(Map<String, dynamic> team) {
-      if (selectedKey.isEmpty)
+      if (selectedKey.isEmpty) {
         return moduleReviewLabel('awaiting_system_selection');
+      }
       final outcome = '${team['verdict'] ?? ''}';
       if (outcome == 'approved_with_revisions' &&
           team['concept_revisions_cleared'] == true) {

@@ -87,6 +87,40 @@ class _SectionNotifier extends StudentTeamsNotifier {
   }
 }
 
+class _PitSectionNotifier extends _SectionNotifier {
+  @override
+  Future<List<Map<String, dynamic>>> fetchSectionTeams({
+    required String level,
+    String scope = 'active',
+    String? yearLevel,
+    String? section,
+  }) async => [
+    {
+      'id': 50,
+      'section': 'BSIT-3A',
+      'year_level': '3rd Year',
+      'semester_id': 1,
+      'is_editable': true,
+    },
+  ];
+
+  @override
+  Future<Map<String, dynamic>> fetchSectionDetails(int teamId) async => {
+    'is_pit': true,
+    'roster_info': {'needs_selection': true},
+    'section': 'BSIT-3A',
+    'system_name': 'Agro System',
+    'project_manager_id': 1,
+    'project_manager_name': 'Juan Cruz',
+    'year_level': '3rd Year',
+    'semester_label': '1st Semester 2026-2027',
+    'team_count': 8,
+    'students': [
+      {'id': 1, 'name': 'Juan Cruz', 'username': 'student-1'},
+    ],
+  };
+}
+
 void main() {
   Future<void> pumpEditor(
     WidgetTester tester,
@@ -377,4 +411,39 @@ void main() {
       expect(notifier.loadedTeamIds, isEmpty);
     },
   );
+
+  testWidgets('pit section displays Team Roster card with import callback', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final notifier = _PitSectionNotifier();
+    String? importedSection;
+    await pumpDefensysWidget(
+      tester,
+      Builder(
+        builder: (context) => TextButton(
+          onPressed: () => showManageSectionsDialog(
+            context: context,
+            level: 'PIT',
+            scope: 'pit',
+            onImportSectionRoster: (sec) => importedSection = sec,
+          ),
+          child: const Text('Open Manage Sections'),
+        ),
+      ),
+      overrides: [studentTeamsProvider.overrideWith(() => notifier)],
+    );
+    await tester.tap(find.text('Open Manage Sections'));
+    await tester.pumpAndSettle();
+    expect(find.text('Team Roster'), findsOneWidget);
+    expect(find.text('Teams require review before events can be scheduled.'), findsOneWidget);
+    expect(find.byKey(const Key('manage-roster-btn')), findsOneWidget);
+    expect(find.byKey(const Key('import-roster-btn')), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('import-roster-btn')));
+    await tester.tap(find.byKey(const Key('import-roster-btn')));
+    await tester.pumpAndSettle();
+    expect(importedSection, 'BSIT-3A');
+    expect(find.byType(ShadDialog), findsNothing);
+  });
 }

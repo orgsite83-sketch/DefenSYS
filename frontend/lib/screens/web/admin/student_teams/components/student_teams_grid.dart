@@ -197,6 +197,7 @@ class GroupedSectionView extends StatefulWidget {
     required this.searchQuery,
     required this.onOpenTeamDetail,
     this.sharedProposalNamesOnly = false,
+    this.canManageTeams = false,
   });
 
   final StudentTeamsState state;
@@ -204,6 +205,7 @@ class GroupedSectionView extends StatefulWidget {
   final String searchQuery;
   final ValueChanged<int> onOpenTeamDetail;
   final bool sharedProposalNamesOnly;
+  final bool canManageTeams;
 
   @override
   State<GroupedSectionView> createState() => _GroupedSectionViewState();

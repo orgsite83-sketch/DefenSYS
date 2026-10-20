@@ -445,6 +445,12 @@ def archive_unlocked(team, stage_label, deliverable_type='post'):
     if is_stage_unlocked_by_admin(team, stage_label, deliverable_type='post') or is_stage_unlocked_by_admin(team, stage_label, deliverable_type='all') or is_stage_unlocked_by_admin(team, stage_label):
         return True
 
+    from .concepts import stage_for
+    from .concept_completion import post_defense_state
+    concept_access = post_defense_state(team, stage_for(team, stage_label))
+    if concept_access is not None:
+        return concept_access['unlocked']
+
     from grading.grades.models import TeamGrade
     stage_grade = latest_stage_grade(team, stage_label)
     if stage_grade and stage_grade.uses_defense_verdict:
@@ -559,6 +565,15 @@ def post_deliverables_complete(team, stage_label):
     ]
     if not post_required:
         return True
+    from .concepts import stage_for, enabled, latest_round
+    stage = stage_for(team, stage_label)
+    if enabled(stage):
+        from .concept_completion import final_paper_complete, shared_final_complete
+        if not final_paper_complete(team, stage):
+            return False
+        hearing = latest_round(team, stage)
+        if hearing and hearing.section_round_id and not shared_final_complete(hearing.section_round):
+            return False
 
     from grading.grades.models import TeamGrade
     stage_grade = latest_stage_grade(team, stage_label)
@@ -757,6 +772,13 @@ def is_stage_defense_done(team, stage_label):
 
     has_panel_scored = bool(stage_grade and stage_grade.panel_score is not None)
 
+    from .concepts import latest_round, stage_for
+    c_stage = stage_for(team, stage_label)
+    if c_stage:
+        c_round = latest_round(team, c_stage)
+        if c_round and c_round.verdict in ('approved', 'approved_with_revisions'):
+            return True
+
     return (
         progress_status in [TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_GRADING]
         or has_done_schedule
@@ -933,6 +955,10 @@ def stage_payload(team, stage_label, evaluator=None):
     from .concepts import latest_round, enabled as concepts_enabled
     concept_context = document_context(team, stage_label)
     open_concepts = latest_round(team, concept_context)
+    from .concept_completion import post_defense_state
+    concept_access = post_defense_state(team, concept_context)
+    if concept_access is not None:
+        can_faculty_review_post = concept_access['unlocked']
     if open_concepts and not open_concepts.schedule_id:
         can_faculty_review_pre = True
 
@@ -1168,6 +1194,7 @@ def stage_payload(team, stage_label, evaluator=None):
         'vault_unlocked': unlocked or any(item.get('can_upload') for item in archive_items),
         'pre_unlocked': archive_unlocked(team, stage_label, deliverable_type='pre'),
         'post_unlocked': archive_unlocked(team, stage_label, deliverable_type='post'),
+        'post_unavailable_reason': concept_access['reason'] if concept_access else '',
         'required_complete': configured and required_complete(team, stage_label),
         'status': team_stage_status(team, stage_label),
         'stage_progress_status': progress_status,
@@ -1744,7 +1771,13 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
     concept_round = latest_round(team, stage_for(team, stage_label))
     if concept_round and not concept_round.schedule_id:
         is_defense_done = False
+    elif concept_round and concept_round.verdict in ('approved', 'approved_with_revisions'):
+        is_defense_done = True
     is_post = submission.deliverable_type == DeliverableSubmission.TYPE_POST
+    from .concept_completion import post_defense_state
+    concept_access = post_defense_state(team, stage_for(team, stage_label))
+    if is_post and concept_access is not None and not concept_access['unlocked']:
+        raise PermissionError(concept_access['reason'])
     admin_unlocked = is_stage_unlocked_by_admin(team, stage_label, deliverable_type=submission.deliverable_type)
 
     current_target = submission.files.filter(pk=file_id, is_current=True).first() if file_id else None
@@ -1772,6 +1805,15 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
 
     from .documents import review_files
     stage = document_context(team, stage_label)
+    from defense.document_policy import is_approved_concept
+    if concept_access is not None and is_approved_concept(definition or {}) and status_val == 'accepted':
+        selected = next((c['key'] for c in concept_round.concepts if c.get('decision') in ('approved', 'approved_with_revisions')), '') if concept_round else ''
+        targets = submission.files.filter(is_current=True)
+        if file_id:
+            targets = targets.filter(pk=file_id)
+        if not targets.exists() or any(f.concept_round_id != getattr(concept_round, 'pk', None)
+                or f.selected_concept_key != selected for f in targets):
+            raise ValueError('Review the final paper uploaded for the current selected concept and hearing.')
     review_files(submission, definition or {}, status_val, feedback_val or '', reviewer_user, file_id=file_id, stage=stage)
     submission.status = status_val
     submission.feedback = (feedback_val or '').strip()
@@ -1793,6 +1835,10 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
         invalidate_clearance(team, stage_label, deliverable_id)
 
     if is_post and status_val == DeliverableSubmission.STATUS_ACCEPTED:
+        if clear_defense_revisions and concept_access is not None:
+            from .concept_completion import final_paper_complete
+            if not is_approved_concept(definition or {}) or not final_paper_complete(team, stage, required=True):
+                raise ValueError('Clear concept revisions with the accepted final paper for the selected concept.')
         from grading.grades.models import TeamGrade
         stage_grade = TeamGrade.objects.filter(
             Q(defense_stage__label=stage_label) | Q(stage_label=stage_label),
@@ -1807,6 +1853,23 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
         elif stage_grade and stage_grade.verdict in ('approved', 'approved_with_revisions'):
             from grading.grades.services import maybe_auto_finalize_passed_grade
             maybe_auto_finalize_passed_grade(stage_grade, user=reviewer_user)
+        if (is_approved_concept(definition or {}) and team.is_pit and concept_round
+                and concept_round.verdict == 'approved_with_revisions' and not concept_round.revisions_cleared_at):
+            from .concept_completion import final_paper_complete
+            if not final_paper_complete(team, stage, required=True):
+                return submission
+            concept_round.revisions_cleared_at = timezone.now()
+            concept_round.revisions_cleared_by = reviewer_user
+            concept_round.save(update_fields=['revisions_cleared_at', 'revisions_cleared_by'])
+            from authentication_access_control.audit import log_high_impact_action
+            from authentication_access_control.models import SystemAuditLog
+            log_high_impact_action(
+                category=SystemAuditLog.CATEGORY_REPOSITORY,
+                action='repository.pit_concept_revisions_cleared',
+                target=concept_round, actor=reviewer_user,
+                reason=(feedback_val or '').strip() or f"Post-defense deliverable '{submission.label or deliverable_id}' approved.",
+                new_values={'team_id': team.pk, 'round': concept_round.number}, strict=True
+            )
 
     # Re-evaluate team readiness if we are rejecting a required pre-defense deliverable
     if status_val == DeliverableSubmission.STATUS_REJECTED and not is_defense_done:

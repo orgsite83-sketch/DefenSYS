@@ -85,13 +85,21 @@ def section_payload(team, teams, students, assignment, *, actor=None):
         reviewers = reviewers.filter(pk__in=SectionInstructorAssignment.objects.filter(
             semester=team.semester, year_level=team.year_level, section=team.section,
             is_active=True).values('faculty_id'))
+    roster_info = None
+    if team.is_pit:
+        from .pit_rosters import resolve
+        resolved = resolve(team.semester_id, team.year_level)
+        roster_info = resolved.get(team.section)
     return {
         **details,
+        'is_pit': team.is_pit,
         'semester_label': team.semester.display_name,
         'team_count': len(teams),
+        'roster_info': roster_info,
         'concept_contexts': policy_context_payload(team, teams, assignment),
         'can_manage_concepts': can_manage_concept_policies(actor, team),
         'can_setup_shared_system': can_setup,
+        'can_manage_roster': can_setup,
         'system_reviewers': [{'id': r.pk, 'name': display_name(r)} for r in reviewers] if can_setup else [],
         'students': [
             {'id': student.pk, 'name': display_name(student), 'username': student.username}

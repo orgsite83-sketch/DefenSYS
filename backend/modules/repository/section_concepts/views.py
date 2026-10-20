@@ -26,7 +26,7 @@ class SetupSerializer(serializers.Serializer):
 class ActionSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=['save_titles', 'review', 'endorse', 'confirm_modules',
         'schedule_hearing', 'decide', 'module_verdict', 'module_decision', 'clear_module_revisions',
-        'reassign', 'clear_revisions', 'acknowledge'])
+        'reassign', 'clear_revisions', 'acknowledge', 'start_presentation'])
     round_id = serializers.IntegerField(min_value=1)
     review_token = serializers.CharField(required=False, max_length=64)
     module_review_token = serializers.CharField(required=False, max_length=64)
@@ -42,6 +42,7 @@ class ActionSerializer(serializers.Serializer):
     project_manager_id = serializers.IntegerField(min_value=1, required=False)
     reviewer_id = serializers.IntegerField(min_value=1, required=False)
     revision_deadline = serializers.DateField(required=False, allow_null=True)
+    team_outcomes = serializers.ListField(child=serializers.DictField(), required=False, max_length=100)
 
 
 class SectionAPIView(ReadAPIView):
@@ -111,7 +112,7 @@ class SectionProjectDetailView(SectionAPIView):
         round = services.latest(project)
         if d['round_id'] != round.pk:
             return Response({'detail': 'The section proposal round changed. Refresh before submitting.'}, status=409)
-        if d['action'] in ('review', 'endorse', 'decide', 'save_titles', 'clear_revisions', 'acknowledge') and d.get('review_token') != services.review_token(round):
+        if d['action'] in ('review', 'endorse', 'decide', 'save_titles', 'clear_revisions', 'acknowledge', 'start_presentation') and d.get('review_token') != services.review_token(round):
             return Response({'detail': 'The section names or papers changed. Refresh and review the current versions.'}, status=409)
         action, actor = d['action'], request.user
         if action == 'save_titles':
@@ -128,7 +129,9 @@ class SectionProjectDetailView(SectionAPIView):
         elif action == 'schedule_hearing':
             services.schedule_hearing(project, actor, d.get('schedule_ids'))
         elif action == 'decide':
-            services.decide(project, actor, d.get('concepts'), d.get('verdict'), d['remarks'])
+            services.decide(project, actor, d.get('concepts'), d.get('verdict'), d['remarks'], team_outcomes=d.get('team_outcomes'))
+        elif action == 'start_presentation':
+            services.start_presentation(project, actor)
         elif action == 'reassign':
             services.reassign(project, actor, d.get('project_manager_id'), d.get('reviewer_id'))
         elif action == 'clear_revisions':
@@ -178,7 +181,8 @@ class SectionPaperUploadView(SectionAPIView):
         round_id = serializers.IntegerField(min_value=1).run_validation(request.data.get('round_id'))
         if services.latest(project).pk != round_id:
             return Response({'detail': 'The section round changed. Refresh before uploading.'}, status=409)
-        services.upload(project, request.user, request.data.get('key'), request.FILES.get('file'))
+        purpose = serializers.ChoiceField(choices=['proposal', 'final']).run_validation(request.data.get('purpose', 'proposal'))
+        services.upload(project, request.user, request.data.get('key'), request.FILES.get('file'), purpose=purpose)
         return Response(services.payload(project, request.user), status=status.HTTP_201_CREATED)
 
 

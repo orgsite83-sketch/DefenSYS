@@ -118,7 +118,7 @@ class CanManageTeams(BasePermission):
             return True
 
         # Allow PIT/Section Instructors to read/update assigned-section teams.
-        if request.method in ('GET', 'PATCH', 'DELETE'):
+        if request.method in ('GET', 'POST', 'PATCH', 'DELETE'):
             from user_management.models import SectionInstructorAssignment
 
             if SectionInstructorAssignment.objects.filter(faculty=user, is_active=True).exists():

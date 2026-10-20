@@ -75,12 +75,14 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   final Map<String, TextEditingController> _studentRemarksControllers = {};
   TextEditingController _teamRemarksController = TextEditingController();
   TextEditingController _verdictRemarksController = TextEditingController();
+  TextEditingController _pitDecisionRemarksController = TextEditingController();
   String? _selectedVerdict;
   DateTime? _revisionDeadline;
   bool _redefenseVerificationRequired = false;
   List<Map<String, dynamic>> _conceptDecisions = [];
   int? _sectionProjectId;
   bool _isSubmittingVerdict = false;
+  bool _isSubmittingPitDecision = false;
   int _selectedStudentIndex = 0;
   String _identity(TeamData team) => json.encode([
     team.scheduleId,
@@ -108,6 +110,7 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     }
     _teamRemarksController.dispose();
     _verdictRemarksController.dispose();
+    _pitDecisionRemarksController.dispose();
     super.dispose();
   }
 
@@ -176,6 +179,10 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       final conceptWorkflow = (team.workflowGrade?['workflow'] as Map? ?? {})['concept_workflow'] as Map?;
       _sectionProjectId = conceptWorkflow?['section_project_id'] as int?;
       _conceptDecisions = ((conceptWorkflow?['hearing_concepts'] ?? conceptWorkflow?['concepts']) as List? ?? []).whereType<Map>().map((c) => Map<String, dynamic>.from(c)).toList();
+      _pitDecisionRemarksController.dispose();
+      _pitDecisionRemarksController = TextEditingController(
+        text: conceptWorkflow?['decision_remarks']?.toString() ?? '',
+      );
       _revisionDeadline = team.revisionDeadline != null
           ? DateTime.tryParse(team.revisionDeadline!)
           : null;
@@ -542,6 +549,13 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               _buildChairVerdictCard(team)
             else
               _buildPanelistVerdictCard(team),
+          ],
+          if (!team.usesDefenseVerdict && team.hasConceptWorkflow && !team.isLockedByDate) ...[
+            const SizedBox(height: 14),
+            if (team.isChair)
+              _buildChairPitConceptCard(team)
+            else
+              _buildPanelistPitConceptCard(team),
           ],
         ],
       ),
@@ -2274,6 +2288,531 @@ class GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         setState(() => _isSubmittingVerdict = false);
         dismissFeedbackToasts();
         showErrorToast(context, 'Error submitting verdict: $e');
+      }
+    }
+  }
+
+  Widget _buildChairPitConceptCard(TeamData team) {
+    final hasDecision = team.hasPitConceptDecision;
+    final canRecord = team.canRecordPitConceptDecision && !_isSubmittingPitDecision;
+    final unavailableReason = team.pitDecisionUnavailableReason.isNotEmpty
+        ? team.pitDecisionUnavailableReason
+        : team.gradingUnavailableReason.isNotEmpty
+        ? team.gradingUnavailableReason
+        : !team.isPosted
+        ? 'Panel grading must be submitted before recording the concept decision.'
+        : 'The concept decision is currently unavailable. Refresh this assignment for the latest status.';
+
+    final bool isSharedSection = _sectionProjectId != null;
+    final bool isSingleProject = !isSharedSection && _conceptDecisions.length == 1;
+    final bool sectionSystemSelected = _conceptDecisions.any((c) => c['section_selected'] == true);
+
+    Color cardBorderColor;
+    if (hasDecision) {
+      final d = team.pitConceptDecision;
+      if (d == 'approved') {
+        cardBorderColor = Colors.green.shade300;
+      } else if (d == 'approved_with_revisions') {
+        cardBorderColor = Colors.amber.shade300;
+      } else {
+        cardBorderColor = Colors.red.shade300;
+      }
+    } else {
+      cardBorderColor = DefensysTokens.borderOf(context);
+    }
+
+    return Card(
+      key: const ValueKey('chair-pit-concept-card'),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: cardBorderColor, width: 1.5),
+      ),
+      elevation: 3,
+      color: DefensysTokens.surfaceOf(context),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: DefensysTokens.surfaceHigherOf(context),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    isSingleProject ? Icons.gavel_rounded : Icons.lightbulb_rounded,
+                    size: 20,
+                    color: DefensysTokens.maroonOf(context),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isSingleProject
+                            ? 'Panel Chair Project Verdict'
+                            : 'Panel Chair Concept Selection',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: DefensysTokens.maroonOf(context),
+                        ),
+                      ),
+                      Text(
+                        isSingleProject
+                            ? 'Issue the defense verdict for ${team.name}.'
+                            : (isSharedSection
+                                ? 'Record the linked module outcome for ${team.name}.'
+                                : 'Select the approved project concept for ${team.name}.'),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: DefensysTokens.textSecondaryOf(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (hasDecision) _verdictStatusChip(team.pitConceptDecision!),
+              ],
+            ),
+
+            if (hasDecision) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.surfaceHigherOf(context),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: DefensysTokens.borderOf(context)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (team.pitSelectedTitle?.isNotEmpty == true) ...[
+                      Row(
+                        children: [
+                          Icon(Icons.check_circle_outline, size: 16, color: Colors.green.shade700),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              isSingleProject
+                                  ? 'Project Proposal: ${team.pitSelectedTitle}'
+                                  : 'Selected Project: ${team.pitSelectedTitle}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: DefensysTokens.textPrimaryOf(context),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                    ],
+                    if (team.conceptWorkflow?['decided_by_name']?.toString().isNotEmpty == true)
+                      Text(
+                        'Recorded by: ${team.conceptWorkflow!['decided_by_name']}',
+                        style: TextStyle(fontSize: 11, color: DefensysTokens.textSecondaryOf(context)),
+                      ),
+                    if (team.conceptWorkflow?['decision_remarks']?.toString().isNotEmpty == true) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Feedback / Directives: ${team.conceptWorkflow!['decision_remarks']}',
+                        style: TextStyle(fontSize: 12, color: DefensysTokens.textPrimaryOf(context)),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+
+            if (!hasDecision && !team.canRecordPitConceptDecision) ...[
+              const SizedBox(height: 12),
+              Container(
+                key: const ValueKey('chair-pit-concept-unavailable'),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.surfaceHigherOf(context),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: DefensysTokens.borderOf(context)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.lock_outline,
+                      size: 18,
+                      color: DefensysTokens.textSecondary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            unavailableReason,
+                            style: const TextStyle(fontSize: 12, height: 1.4),
+                          ),
+                          if (isSharedSection && !sectionSystemSelected) ...[
+                            const SizedBox(height: 8),
+                            TextButton.icon(
+                              icon: const Icon(Icons.account_tree_outlined, size: 16),
+                              label: const Text('Open Section System Proposals'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: DefensysTokens.maroonOf(context),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              ),
+                              onPressed: () async {
+                                await Navigator.of(context).push(MaterialPageRoute<void>(
+                                  builder: (_) => SectionConceptWorkspace(projectId: _sectionProjectId!),
+                                ));
+                                await widget.onRefresh?.call();
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            if (!hasDecision && team.canRecordPitConceptDecision) ...[
+              const SizedBox(height: 14),
+              const Divider(height: 1),
+              const SizedBox(height: 14),
+              if (isSharedSection) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'SHARED SECTION PROJECT',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.open_in_new, size: 14),
+                      label: const Text('Section Workspace', style: TextStyle(fontSize: 12)),
+                      style: TextButton.styleFrom(
+                        foregroundColor: DefensysTokens.maroonOf(context),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      ),
+                      onPressed: () async {
+                        await Navigator.of(context).push(MaterialPageRoute<void>(
+                          builder: (_) => SectionConceptWorkspace(projectId: _sectionProjectId!),
+                        ));
+                        await widget.onRefresh?.call();
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
+              ConceptVerdictFields(
+                concepts: _conceptDecisions,
+                enabled: canRecord,
+                pit: true,
+                onChanged: (value) => setState(() => _conceptDecisions = value),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                isSingleProject
+                    ? 'PROJECT VERDICT FEEDBACK / REMARKS'
+                    : 'CONCEPT DECISION FEEDBACK / REMARKS',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+              TextField(
+                key: const ValueKey('pit-concept-remarks-input'),
+                controller: _pitDecisionRemarksController,
+                readOnly: !canRecord,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: isSingleProject
+                      ? 'Enter verdict feedback, directives, or required revisions for this project...'
+                      : 'Enter feedback, directives, or required revisions for this decision...',
+                  hintStyle: TextStyle(
+                    fontSize: 12,
+                    color: DefensysTokens.textSecondaryOf(context),
+                  ),
+                  filled: true,
+                  fillColor: DefensysTokens.surfaceHigherOf(context),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: DefensysTokens.borderOf(context)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(
+                      color: DefensysTokens.maroonOf(context),
+                      width: 1.5,
+                    ),
+                  ),
+                  contentPadding: const EdgeInsets.all(12),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: TactileButton.primary(
+                  key: const ValueKey('submit-pit-concept-decision-btn'),
+                  label: _isSubmittingPitDecision
+                      ? (isSingleProject ? 'Submitting Verdict...' : 'Submitting Decision...')
+                      : (isSingleProject ? 'Submit Project Verdict' : 'Submit Concept Decision'),
+                  isLoading: _isSubmittingPitDecision,
+                  onPressed: _isSubmittingPitDecision || !canRecord
+                      ? null
+                      : () => _confirmSubmitPitConceptDecision(team),
+                  icon: const Icon(
+                    Icons.check_circle_outline,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPanelistPitConceptCard(TeamData team) {
+    final bool isSharedSection = _sectionProjectId != null;
+    final bool isSingleProject = !isSharedSection && _conceptDecisions.length == 1;
+
+    if (!team.hasPitConceptDecision) {
+      return Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        elevation: 1,
+        color: DefensysTokens.surfaceHigherOf(context),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Icon(Icons.info_outline, size: 20, color: DefensysTokens.textSecondaryOf(context)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  isSingleProject
+                      ? 'The official project verdict will be submitted by the Panel Chair or PIT Lead.'
+                      : 'The official concept decision will be selected by the Panel Chair or PIT Lead.',
+                  style: TextStyle(fontSize: 12, color: DefensysTokens.textPrimaryOf(context)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final d = team.pitConceptDecision;
+    Color color;
+    if (d == 'approved') {
+      color = Colors.green.shade300;
+    } else if (d == 'approved_with_revisions') {
+      color = Colors.amber.shade300;
+    } else {
+      color = Colors.red.shade300;
+    }
+
+    return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: color, width: 1.5),
+      ),
+      elevation: 2,
+      color: DefensysTokens.surfaceOf(context),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  isSingleProject ? Icons.gavel_rounded : Icons.lightbulb_rounded,
+                  size: 18,
+                  color: DefensysTokens.maroon,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isSingleProject
+                        ? 'Official Project Verdict'
+                        : 'Official Concept Decision',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: DefensysTokens.maroonOf(context),
+                    ),
+                  ),
+                ),
+                _verdictStatusChip(team.pitConceptDecision!),
+              ],
+            ),
+            if (team.pitSelectedTitle?.isNotEmpty == true) ...[
+              const SizedBox(height: 8),
+              Text(
+                isSingleProject
+                    ? 'Project Proposal: ${team.pitSelectedTitle}'
+                    : 'Selected Project: ${team.pitSelectedTitle}',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: DefensysTokens.textPrimaryOf(context)),
+              ),
+            ],
+            if (team.conceptWorkflow?['decided_by_name']?.toString().isNotEmpty == true) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Recorded by: ${team.conceptWorkflow!['decided_by_name']}',
+                style: TextStyle(fontSize: 11, color: DefensysTokens.textSecondaryOf(context)),
+              ),
+            ],
+            if (team.conceptWorkflow?['decision_remarks']?.toString().isNotEmpty == true) ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.surfaceHigherOf(context),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: DefensysTokens.borderOf(context)),
+                ),
+                child: Text(
+                  team.conceptWorkflow!['decision_remarks'].toString(),
+                  style: TextStyle(fontSize: 12, color: DefensysTokens.textPrimaryOf(context)),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmSubmitPitConceptDecision(TeamData team) async {
+    if (!team.canRecordPitConceptDecision || _isSubmittingPitDecision) return;
+
+    final bool isSharedSection = _sectionProjectId != null;
+    final bool isSingleProject = !isSharedSection && _conceptDecisions.length == 1;
+
+    final selectedApproved = _conceptDecisions.where(
+      (c) => c['decision'] == 'approved' || c['decision'] == 'approved_with_revisions',
+    ).toList();
+    if (!isSingleProject && selectedApproved.length > 1) {
+      showValidationToast(context, 'Select only one approved concept.');
+      return;
+    }
+    final allHandled = _conceptDecisions.isNotEmpty && _conceptDecisions.every(
+      (c) => (c['decision']?.toString().isNotEmpty ?? false),
+    );
+    if (!allHandled) {
+      showValidationToast(
+        context,
+        isSingleProject
+            ? 'Select a verdict for this project proposal.'
+            : 'Record a decision for every concept proposal.',
+      );
+      return;
+    }
+
+    final outcome = selectedApproved.isNotEmpty ? selectedApproved.first['decision'] : 'for_redefense';
+    final remarks = _pitDecisionRemarksController.text.trim();
+    if (outcome != 'approved' && remarks.isEmpty) {
+      showValidationToast(
+        context,
+        isSingleProject
+            ? 'Record the required changes or directives for this verdict.'
+            : 'Record the required changes or reason for another concept review.',
+      );
+      return;
+    }
+
+    final confirmed = await confirmLock(
+      context,
+      title: isSingleProject ? 'Confirm Project Verdict' : 'Confirm Concept Decision',
+      message: isSingleProject
+          ? '${team.name}: Submit official defense verdict for this project proposal?\n\nThis records the panel evaluation.'
+          : '${team.name}: Submit official concept decision?\n\nThis records the approved project concept.',
+      confirmLabel: isSingleProject ? 'Submit Verdict' : 'Submit Decision',
+    );
+    if (!confirmed || !mounted) return;
+
+    await _submitPitConceptDecision(team);
+  }
+
+  Future<void> _submitPitConceptDecision(TeamData team) async {
+    final bool isSingleProject = _sectionProjectId == null && _conceptDecisions.length == 1;
+    setState(() => _isSubmittingPitDecision = true);
+    showInfoToast(
+      context,
+      isSingleProject ? 'Recording project verdict...' : 'Recording concept decision...',
+    );
+
+    try {
+      final httpClient = ref.read(authenticatedHttpClientProvider);
+      final reviewToken = team.pitDecisionReviewToken;
+      final remarks = _pitDecisionRemarksController.text.trim();
+
+      final url = Uri.parse(
+        '${ApiConfig.baseUrl}/repository/deliverables/concepts/?response_mode=team',
+      );
+      final payload = <String, dynamic>{
+        'team_id': int.tryParse(team.teamId) ?? 0,
+        'stage_label': team.defenseStage,
+        'action': 'pit_decision',
+        'review_token': reviewToken,
+        'reason': remarks,
+        'concepts': _conceptDecisions,
+      };
+
+      final response = await httpClient.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(payload),
+      );
+
+      if (!mounted) return;
+      dismissFeedbackToasts();
+      setState(() => _isSubmittingPitDecision = false);
+
+      if (response.statusCode == 200) {
+        if (widget.onRefresh != null) {
+          await widget.onRefresh!();
+        }
+        widget.onGradesSubmitted?.call();
+      } else {
+        showErrorToast(
+          context,
+          friendlyHttpErrorMessage(response.statusCode, response.body),
+        );
+      }
+    } on SessionExpiredException {
+      if (mounted) setState(() => _isSubmittingPitDecision = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSubmittingPitDecision = false);
+        dismissFeedbackToasts();
+        showErrorToast(context, 'Error submitting decision: $e');
       }
     }
   }

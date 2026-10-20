@@ -1,6 +1,7 @@
 from django.db.models import Q
 from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
+from django.http import Http404
 from rest_framework import status
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
@@ -45,7 +46,10 @@ class CanManageDeliverables(BasePermission):
             if getattr(user, 'is_adviser', False) or getattr(user, 'is_pit_lead', False):
                 return True
             from user_management.models import SectionInstructorAssignment
-            return SectionInstructorAssignment.objects.filter(faculty=user, is_active=True).exists()
+            if SectionInstructorAssignment.objects.filter(faculty=user, is_active=True).exists():
+                return True
+            from defense.scheduler.models import SchedulePanelist
+            return SchedulePanelist.objects.filter(panelist=user, is_chair=True).exists()
         return False
 
 
@@ -181,7 +185,15 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
 
 
 def get_allowed_team(request, team_id):
-    return get_object_or_404(workspace_deliverable_teams(request), pk=team_id)
+    qs = workspace_deliverable_teams(request)
+    team = qs.filter(pk=team_id).first()
+    if not team:
+        from student_teams.models import StudentTeam
+        from repository.deliverables.pit_decisions import can_manage
+        team = StudentTeam.objects.filter(pk=team_id).first()
+        if not team or not can_manage(request.user, team):
+            raise Http404('No StudentTeam matches the given query.')
+    return team
 
 
 def deliverables_action_payload(request, team, stage_label):
@@ -192,7 +204,12 @@ def deliverables_action_payload(request, team, stage_label):
     if request.query_params.get('response_mode') == 'team':
         # Re-read after the transaction: review/endorsement may update a different
         # model instance and invalidate the pre-write prefetched submissions.
-        updated = get_object_or_404(queryset, pk=team.pk)
+        updated = queryset.filter(pk=team.pk).first()
+        if not updated:
+            from student_teams.models import StudentTeam
+            updated = StudentTeam.objects.filter(pk=team.pk).first()
+            if not updated:
+                raise Http404('No StudentTeam matches the given query.')
         return {
             'response_mode': 'team',
             'team': team_payload(updated, selected_stage=selected_stage, evaluator=request.user),

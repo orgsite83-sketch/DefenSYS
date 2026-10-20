@@ -983,14 +983,9 @@ class _PitLeadCohortSectionDetailScreenState
   }
 
   Future<void> _replaceInstructor(int currentAssignmentId, int newFacultyId) async {
-    final deactivated = await ref
-        .read(pitInstructorProvider.notifier)
-        .setAssignmentActive(currentAssignmentId, false);
-    if (!deactivated || !mounted) return;
-
     final assigned = await ref
         .read(pitInstructorProvider.notifier)
-        .assignInstructor(facultyId: newFacultyId, section: widget.sectionName);
+        .replaceInstructor(currentAssignmentId, newFacultyId);
 
     if (assigned && mounted) {
       setState(() {

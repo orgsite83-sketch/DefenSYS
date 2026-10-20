@@ -51,14 +51,19 @@ class SectionConceptService {
     Map<String, dynamic> project,
     String key,
     String name,
-    Uint8List bytes,
-  ) async {
+    Uint8List bytes, {
+    String purpose = 'proposal',
+  }) async {
     final request =
         http.MultipartRequest(
             'POST',
             Uri.parse('$base/${project['id']}/upload/'),
           )
-          ..fields.addAll({'round_id': '${project['round_id']}', 'key': key})
+          ..fields.addAll({
+            'round_id': '${project['round_id']}',
+            'key': key,
+            'purpose': purpose,
+          })
           ..files.add(
             http.MultipartFile.fromBytes('file', bytes, filename: name),
           );

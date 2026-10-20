@@ -5,9 +5,35 @@ from django.core.exceptions import ValidationError
 
 
 def with_concept_papers(items, config):
-    """Add the default once; existing concept documents keep their authored settings."""
+    """Normalize required proposal/final papers without replacing authored IDs."""
     items = deepcopy(items)
-    if not config.get('enabled') or any((d.get('file_policy') or {}).get('mode') == 'concepts' for d in items):
+    if not config.get('enabled'):
+        return items
+    finals = [d for d in items if is_approved_concept(d) or (
+        d.get('deliverable_type') == 'post' and str(d.get('label', '')).strip().lower() in (
+            'approved concept paper', 'approved concept papers'))]
+    if len(finals) > 1:
+        raise ValidationError('Keep one Approved Concept Paper requirement; resolve duplicate definitions first.')
+    if finals:
+        final = finals[0]
+        final.update(required=True, deliverable_type='post')
+        final.setdefault('requirement_timing', 'scheduling')
+        final.setdefault('deadline_hours_before', 24)
+        final['file_policy'] = {**(final.get('file_policy') or {}), 'mode': 'single', 'purpose': 'approved_concept'}
+    else:
+        used = {d.get('deliverable_id') for d in items}
+        number, suffix = 'APPROVED_CONCEPT', 1
+        while number in used:
+            suffix += 1
+            number = f'APPROVED_CONCEPT_{suffix}'
+        items.append({'deliverable_id': number, 'label': 'Approved Concept Paper', 'deliverable_type': 'post',
+            'requirement_timing': 'scheduling', 'deadline_hours_before': 24,
+            'required': True, 'display_order': max((d.get('display_order', 0) for d in items), default=0) + 1,
+            'file_format': 'pdf', 'file_policy': {'mode': 'single', 'purpose': 'approved_concept'}})
+    concept_items = [d for d in items if (d.get('file_policy') or {}).get('mode') == 'concepts']
+    if concept_items:
+        for item in concept_items:
+            item.update(required=True, deliverable_type='pre', requirement_timing='scheduling')
         return items
     used = {d.get('deliverable_id') for d in items}
     number, suffix = 'CONCEPT_PAPERS', 1
@@ -23,10 +49,18 @@ def with_concept_papers(items, config):
     return items
 
 
+def is_approved_concept(definition):
+    return (definition.get('file_policy') or {}).get('purpose') == 'approved_concept'
+
+
 def validate_file_policy(value):
     if not isinstance(value, dict):
         raise ValidationError('Document settings must be an object.')
     mode = value.get('mode', 'single')
+    if value.get('purpose') not in (None, '', 'approved_concept'):
+        raise ValidationError('Choose a supported document purpose.')
+    if value.get('purpose') == 'approved_concept' and mode != 'single':
+        raise ValidationError('The approved concept paper is one final paper for the selected concept.')
     if mode not in ('single', 'named', 'multiple', 'concepts'):
         raise ValidationError('Choose single, named, multiple, or concept documents.')
     slots = value.get('slots', [])

@@ -48,6 +48,7 @@ def file_payload(f):
             'is_current': f.is_current, 'file_name': f.file_name, 'file_size': f.file_size,
             'file_url': f.file.url if f.file else None, 'uploaded_at': f.uploaded_at.isoformat(),
             'status': f.status, 'feedback': f.feedback,
+            'concept_round_id': f.concept_round_id, 'selected_concept_key': f.selected_concept_key,
             'reviewed_at': f.reviewed_at.isoformat() if f.reviewed_at else None}
 
 
@@ -103,6 +104,7 @@ def store_revision(submission, definition, *, file, file_name, file_size, slot_k
         # Preserve the original stored bytes in a separate historical revision.
         row = old[0]
         archive = DeliverableSubmissionFile(submission=submission, slot_key=key, is_current=False,
+            concept_round_id=row.concept_round_id, selected_concept_key=row.selected_concept_key,
             revision=row.revision, file=row.file, file_name=row.file_name, file_size=row.file_size,
             status=row.status, feedback=row.feedback, reviewed_at=row.reviewed_at, reviewed_by=row.reviewed_by,
             extracted_text=row.extracted_text, topics=row.topics, summary=row.summary,
@@ -118,6 +120,15 @@ def store_revision(submission, definition, *, file, file_name, file_size, slot_k
             status='accepted' if preserve_approval else 'pending')
     if file is not None:
         row.file = ContentFile(file.read(), name=replacement_file_name(file_name.strip()))
+    from defense.document_policy import is_approved_concept
+    from .concepts import enabled
+    if is_approved_concept(definition) and enabled(stage):
+        from .concepts import latest_round
+        hearing = latest_round(submission.team, stage)
+        selected = next((c['key'] for c in hearing.concepts if c.get('decision') in ('approved', 'approved_with_revisions')), '') if hearing else ''
+        if not hearing or not hearing.schedule_id or not selected:
+            raise ValidationError('The chair must record the selected concept before uploading its final paper.')
+        row.concept_round, row.selected_concept_key = hearing, selected
     row.save()
     return row
 

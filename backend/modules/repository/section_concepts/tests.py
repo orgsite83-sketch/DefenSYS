@@ -28,7 +28,15 @@ class SharedSystemConceptTests(APITestCase):
     rubric = fixtures.PitConceptTests.rubric
     data = fixtures.PitConceptTests.data
     slot = fixtures.PitConceptTests.slot
-    configure = fixtures.PitConceptTests.configure
+
+    def configure(self, **changes):
+        deliverables = changes.pop('deliverables', None) or [
+            {'deliverable_id': 'CONCEPTS', 'label': 'Concept papers', 'required': True,
+             'deliverable_type': 'pre', 'is_defense_material': True, 'file_policy': {'mode': 'concepts'}},
+            {'deliverable_id': 'APPROVED_PAPER', 'label': 'Approved concept paper', 'required': True,
+             'deliverable_type': 'post'},
+        ]
+        return fixtures.PitConceptTests.configure(self, deliverables=deliverables, **changes)
 
     def setUp(self):
         fixtures.PitConceptTests.setUp(self)
@@ -327,10 +335,12 @@ class SharedSystemConceptTests(APITestCase):
         self.prepare_shared()
         self.assertIn('confirm all three', concepts.clearance_blocker(self.team, self.event))
 
-    def test_shared_system_decision_requires_completed_panel_assessments(self):
+    def test_shared_system_decision_can_precede_panel_assessments_but_final_uploads_stay_locked(self):
         self.hearing(evaluated=False)
-        self.assertEqual(self.select().status_code, 400)
-        self.assertFalse(services.latest(self.project).selected_key)
+        response = self.select()
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(services.latest(self.project).selected_key, 'c2')
+        self.assertFalse(response.data['post_unlocked'])
 
     def test_pit_lead_selects_one_system_without_approving_any_team(self):
         self.hearing()
@@ -339,8 +349,11 @@ class SharedSystemConceptTests(APITestCase):
         self.assertEqual(response.data['selected_key'], 'c2')
         for team in (self.team, self.module_team):
             self.assertEqual(concepts.latest_round(team, self.event).verdict, '')
+            team.refresh_from_db()
+            self.assertEqual(team.project_title, 'Module c2')
+            self.assertFalse(team.project_pending)
         self.assertEqual(self.action('decide', self.pm, concepts=[], verdict='approved').status_code, 403)
-        self.assertEqual(self.select(actor=self.panelist).status_code, 403)
+        self.assertEqual(self.select(actor=self.panelist).status_code, 400)
         self.assertEqual(self.select(actor=self.second).status_code, 404)
 
     def test_module_approval_must_match_selected_system(self):
@@ -432,8 +445,10 @@ class SharedSystemConceptTests(APITestCase):
         token = review_token(concepts.latest_round(self.team, self.event))
         response = self.action('module_decision', self.panelist, team_id=self.team.pk, verdict='approved',
                                module_review_token=token)
-        self.assertEqual(response.status_code, 403, response.data)
-        self.assertEqual(concepts.latest_round(self.team, self.event).verdict, '')
+        self.assertEqual(response.status_code, 200, response.data)
+        response = self.action('module_decision', self.second, team_id=self.team.pk, verdict='approved',
+                               module_review_token=token)
+        self.assertIn(response.status_code, (403, 404), response.data)
 
     def test_module_retry_allows_only_the_linked_module_name_to_change(self):
         self.hearing()
@@ -463,16 +478,17 @@ class SharedSystemConceptTests(APITestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(self.action('clear_module_revisions', team_id=self.team.pk,
                                     remarks='No new paper yet.').status_code, 400)
-        submission = upsert_submission(self.team, self.event.label, 'CONCEPTS', 'revised.pdf', '10 B',
-            self.team.leader, file=SimpleUploadedFile('revised.pdf', b'%PDF-1.4 revised module'), slot_key='c2:paper')
-        paper = submission.files.get(slot_key='c2:paper', is_current=True)
-        review_submission(self.team, self.event.label, 'CONCEPTS', 'accepted', '', self.first, file_id=paper.pk)
+        self.assertEqual(self.action('module_decision', team_id=self.module_team.pk, verdict='approved').status_code, 200)
+        submission = upsert_submission(self.team, self.event.label, 'APPROVED_PAPER', 'revised.pdf', '10 B',
+            self.team.leader, file=SimpleUploadedFile('revised.pdf', b'%PDF-1.4 revised module'))
+        paper = submission.files.first()
+        review_submission(self.team, self.event.label, 'APPROVED_PAPER', 'accepted', '', self.first, file_id=paper.pk)
         response = self.action('clear_module_revisions', team_id=self.team.pk, module_key='c2',
                                remarks='Reviewed the accepted revised module paper.')
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(concepts.latest_round(self.team, self.event).revisions_cleared_by, self.first)
         self.assertEqual(services.latest(self.project).selected_key, 'c2')
-        self.assertEqual(concepts.latest_round(self.module_team, self.event).verdict, '')
+        self.assertEqual(concepts.latest_round(self.module_team, self.event).verdict, 'approved')
         self.assertEqual(concepts.latest_round(self.team, self.event).schedule.grade_records.get().verdict, '')
 
     def test_scheduled_names_and_papers_are_locked(self):
@@ -514,10 +530,14 @@ class SharedSystemConceptTests(APITestCase):
         from grading.grades.defense_workflow import passed_and_cleared
         self.assertFalse(passed_and_cleared(grade))
         self.assertEqual(self.action('clear_revisions', remarks='Reviewed integration.').status_code, 400)
-        row = services.upload(self.project, self.pm, 'c2', SimpleUploadedFile('revised.pdf', b'%PDF-1.4 revised integration'))
+        self.assertEqual(self.action('module_decision', team_id=self.module_team.pk, verdict='approved').status_code, 200)
+        row = services.upload(self.project, self.pm, 'c2', SimpleUploadedFile('revised.pdf', b'%PDF-1.4 revised integration'), purpose='final')
         services.review(self.project, self.first, row.pk, 'accepted')
-        response = self.action('clear_revisions', remarks='Reviewed the revised integration design.')
-        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIsNotNone(services.latest(self.project).revisions_cleared_at)
+        final = upsert_submission(self.team, self.event.label, 'APPROVED_PAPER', 'module-final.pdf', '10 B', self.team.leader,
+            file=SimpleUploadedFile('module-final.pdf', b'%PDF-1.4 final module'))
+        review_submission(self.team, self.event.label, 'APPROVED_PAPER', 'accepted', '', self.first,
+            file_id=final.files.get(is_current=True).pk)
         from repository.deliverables.pit_decisions import completion_blocker
         self.assertFalse(completion_blocker(grade))
 

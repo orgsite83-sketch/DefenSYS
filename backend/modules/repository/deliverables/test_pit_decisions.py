@@ -68,13 +68,13 @@ class PitConceptDecisionTests(APITestCase):
         grade.refresh_from_db()
         self.assertEqual(grade.result, 'failed')
 
-    def test_students_panel_chairs_and_other_year_leads_cannot_choose(self):
+    def test_students_non_chair_panelists_and_other_year_leads_cannot_choose_while_chair_can(self):
         self.ready()
-        for actor in (self.team.leader, self.panelist, self.second, self.unassigned):
+        for actor in (self.team.leader, self.second, self.unassigned):
             with self.subTest(actor=actor.username):
                 self.assertIn(self.request(actor=actor).status_code, (403, 404))
         self.assertEqual(concepts.latest_round(self.team, self.event).verdict, '')
-        self.assertEqual(self.request(actor=self.admin).status_code, 200)
+        self.assertEqual(self.request(actor=self.panelist).status_code, 200)
 
     def test_selection_requires_every_panel_evaluation(self):
         schedule, _ = self.ready(evaluated=False)
@@ -99,6 +99,10 @@ class PitConceptDecisionTests(APITestCase):
             StageCompletionService.complete_group(semester=self.semester, scope='pit', stage_label=self.event.label,
                                                   config=self.event, user=self.first)
         self.assertEqual(self.request().status_code, 200)
+        post = upsert_submission(self.team, self.event.label, 'APPROVED_CONCEPT', 'approved.pdf', '10 B', self.team.leader,
+            file=SimpleUploadedFile('approved.pdf', b'%PDF-1.4 approved concept'))
+        review_submission(self.team, self.event.label, 'APPROVED_CONCEPT', 'accepted', '', self.first,
+            file_id=post.files.get(is_current=True).pk)
         readiness = group_completion_readiness(semester=self.semester, scope='pit', stage_label=self.event.label, user=self.first)
         self.assertTrue(readiness['can_complete'], readiness)
         StageCompletionService.complete_group(semester=self.semester, scope='pit', stage_label=self.event.label,
@@ -168,6 +172,12 @@ class PitConceptDecisionTests(APITestCase):
         self.assertEqual(concepts.latest_round(self.team, self.event).verdict, '')
 
     def test_revisions_block_completion_until_required_documents_are_accepted(self):
+        self.configure(deliverables=[
+            {'deliverable_id': 'CONCEPTS', 'label': 'Concept papers', 'required': True,
+             'deliverable_type': 'pre', 'is_defense_material': True, 'file_policy': {'mode': 'concepts'}},
+            {'deliverable_id': 'APPROVED_PAPER', 'label': 'Approved concept paper', 'required': True,
+             'deliverable_type': 'post'},
+        ])
         _, grade = self.ready()
         response = self.request(decisions=[
             {'key': f'c{i}', 'decision': 'approved_with_revisions' if i == 2 else 'not_selected',
@@ -176,16 +186,14 @@ class PitConceptDecisionTests(APITestCase):
         self.assertTrue(pit_decisions.completion_blocker(grade))
         self.assertEqual(self.request(action='clear_pit_revisions').status_code, 400)
         current = concepts.latest_round(self.team, self.event)
-        submission = self.team.deliverable_submissions.get()
+        submission = self.team.deliverable_submissions.get(deliverable_id='CONCEPTS')
         file = submission.files.get(slot_key='c2:paper', is_current=True)
-        self.assertEqual(file.status, 'rejected')
+        self.assertEqual(file.status, 'accepted')
         self.assertEqual(submission.files.get(slot_key='c1:paper', is_current=True).status, 'accepted')
-        self.assertEqual(self.request(action='clear_pit_revisions').status_code, 400)
-        submission = upsert_submission(self.team, self.event.label, 'CONCEPTS', 'revised.pdf', '10 B',
-            self.team.leader, file=SimpleUploadedFile('revised.pdf', b'concept revisions'), slot_key='c2:paper')
-        revised = submission.files.get(slot_key='c2:paper', is_current=True)
-        review_submission(self.team, self.event.label, 'CONCEPTS', 'accepted', '', self.first, file_id=revised.pk)
-        self.assertEqual(self.request(action='clear_pit_revisions').status_code, 200)
+        post_sub = upsert_submission(self.team, self.event.label, 'APPROVED_PAPER', 'approved_c2.pdf', '10 B',
+            self.team.leader, file=SimpleUploadedFile('approved_c2.pdf', b'approved paper content'))
+        post_file = post_sub.files.first()
+        review_submission(self.team, self.event.label, 'APPROVED_PAPER', 'accepted', 'Revisions accepted', self.first, file_id=post_file.pk)
         current.refresh_from_db()
         self.assertEqual(current.revisions_cleared_by, self.first)
         self.assertFalse(pit_decisions.completion_blocker(grade))

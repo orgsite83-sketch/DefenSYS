@@ -121,7 +121,27 @@ class StudentTeamsHeaderActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isPitInstructor) {
-      return const SizedBox.shrink();
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (onDownloadTemplate != null) ...[
+            OutlinedButton.icon(
+              onPressed: canTapActions ? onDownloadTemplate : null,
+              style: DefensysButtonStyles.secondary(context),
+              icon: const Icon(Icons.download_outlined),
+              label: const Text('Download template'),
+            ),
+            const SizedBox(width: 10),
+          ],
+          if (onBulkImport != null)
+            ElevatedButton.icon(
+              onPressed: canTapActions ? onBulkImport : null,
+              style: DefensysButtonStyles.primary(context),
+              icon: const Icon(Icons.upload_file_outlined),
+              label: Text(importLabel),
+            ),
+        ],
+      );
     }
 
     return Row(

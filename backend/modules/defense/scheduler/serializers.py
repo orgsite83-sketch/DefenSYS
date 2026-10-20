@@ -148,6 +148,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
     leader_name = serializers.SerializerMethodField()
     adviser_name = serializers.SerializerMethodField()
     instructor_name = serializers.SerializerMethodField()
+    instructors = serializers.SerializerMethodField()
     display_semester = serializers.CharField(source='semester.display_name', read_only=True)
     completed_stages = serializers.SerializerMethodField()
     scheduled_stages = serializers.SerializerMethodField()
@@ -173,6 +174,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             'adviser',
             'adviser_name',
             'instructor_name',
+            'instructors',
             'completed_stages',
             'scheduled_stages',
             'redefense_stages',
@@ -190,19 +192,35 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
         return display_name(obj.adviser)
 
     def get_instructor_name(self, obj):
-        if getattr(obj, 'is_capstone', False) or not obj.section:
-            return None
+        people = self.get_instructors(obj)
+        return ', '.join(person['name'] for person in people) or None
+
+    def get_instructors(self, obj):
+        """Batch actual PIT assignments; names alone are not faculty identities."""
+        if not obj.is_pit or not obj.section:
+            return []
         from user_management.models import SectionInstructorAssignment
         from student_teams.team_levels import normalize_year_level
-        assignment = SectionInstructorAssignment.objects.filter(
-            semester=obj.semester,
-            year_level=normalize_year_level(obj.year_level),
-            section=obj.section,
-            is_active=True
-        ).first()
-        if assignment and assignment.faculty:
-            return display_name(assignment.faculty)
-        return None
+        cache_key = '_schedule_section_instructors'
+        if cache_key not in self.context:
+            source = getattr(self.parent, 'instance', None)
+            teams = list(source) if source is not None else [obj]
+            keys = {(team.semester_id, normalize_year_level(team.year_level), team.section)
+                    for team in teams if team.is_pit and team.section}
+            assignments = SectionInstructorAssignment.objects.filter(
+                semester_id__in={key[0] for key in keys},
+                year_level__in={key[1] for key in keys},
+                section__in={key[2] for key in keys},
+                is_active=True, faculty__is_active=True,
+            ).select_related('faculty').order_by('faculty__last_name', 'faculty__first_name', 'faculty_id')
+            mapping = {key: [] for key in keys}
+            for assignment in assignments:
+                key = (assignment.semester_id, assignment.year_level, assignment.section)
+                if key in mapping:
+                    mapping[key].append({'id': assignment.faculty_id, 'name': display_name(assignment.faculty)})
+            self.context[cache_key] = mapping
+        key = (obj.semester_id, normalize_year_level(obj.year_level), obj.section)
+        return self.context[cache_key].get(key, [])
 
     def get_completed_stages(self, obj):
         from grading.grades.models import TeamGrade

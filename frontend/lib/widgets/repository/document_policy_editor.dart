@@ -7,8 +7,57 @@ void ensureConceptPapers(
   List<Map<String, dynamic>> items,
   Map<String, dynamic> config,
 ) {
-  if (config['enabled'] != true ||
-      items.any((d) => (d['file_policy'] as Map?)?['mode'] == 'concepts')) {
+  if (config['enabled'] != true) {
+    return;
+  }
+  final finals = items
+      .where(
+        (d) =>
+            (d['file_policy'] as Map?)?['purpose'] == 'approved_concept' ||
+            (d['deliverable_type'] == 'post' &&
+                const [
+                  'approved concept paper',
+                  'approved concept papers',
+                ].contains('${d['label'] ?? ''}'.trim().toLowerCase())),
+      )
+      .toList();
+  if (finals.isNotEmpty) {
+    for (final item in finals) {
+      item['required'] = true;
+      item['deliverable_type'] = 'post';
+      item['file_policy'] = {
+        ...Map<String, dynamic>.from(item['file_policy'] as Map? ?? {}),
+        'mode': 'single',
+        'purpose': 'approved_concept',
+      };
+    }
+  } else {
+    var id = 'APPROVED_CONCEPT';
+    var suffix = 1;
+    while (items.any((d) => d['deliverable_id'] == id)) {
+      id = 'APPROVED_CONCEPT_${++suffix}';
+    }
+    items.add({
+      'deliverable_id': id,
+      'label': 'Approved Concept Paper',
+      'deliverable_type': 'post',
+      'requirement_timing': 'scheduling',
+      'deadline_hours_before': 24,
+      'required': true,
+      'file_format': 'pdf',
+      'display_order': items.length + 1,
+      'file_policy': {'mode': 'single', 'purpose': 'approved_concept'},
+    });
+  }
+  final proposals = items
+      .where((d) => (d['file_policy'] as Map?)?['mode'] == 'concepts')
+      .toList();
+  if (proposals.isNotEmpty) {
+    for (final item in proposals) {
+      item['required'] = true;
+      item['deliverable_type'] = 'pre';
+      item['requirement_timing'] = 'scheduling';
+    }
     return;
   }
   var number = 'CONCEPT_PAPERS';
@@ -62,10 +111,8 @@ class WorkflowChoice extends StatelessWidget {
         enabled: enabled,
         minWidth: width,
         maxWidth: width,
-        selectedOptionBuilder: (_, value) => Text(
-          options[value] ?? value,
-          overflow: TextOverflow.ellipsis,
-        ),
+        selectedOptionBuilder: (_, value) =>
+            Text(options[value] ?? value, overflow: TextOverflow.ellipsis),
         options: options.entries.map(
           (e) => ShadOption(value: e.key, child: Text(e.value)),
         ),
@@ -153,8 +200,11 @@ class ConceptSettings extends StatelessWidget {
                           color: secondaryColor,
                         ),
                       ),
-                      onChanged: (v) =>
-                          onChanged({'required_count': 3, ...value, 'enabled': v}),
+                      onChanged: (v) => onChanged({
+                        'required_count': 3,
+                        ...value,
+                        'enabled': v,
+                      }),
                     ),
                   ),
                   if (value['enabled'] == true) ...[
@@ -236,13 +286,16 @@ class ConceptSettings extends StatelessWidget {
                                           child: Text(
                                             'Custom count · 4–10',
                                             style: theme.textTheme.bodySmall
-                                                ?.copyWith(color: secondaryColor),
+                                                ?.copyWith(
+                                                  color: secondaryColor,
+                                                ),
                                           ),
                                         ),
                                         IconButton(
                                           tooltip: 'Fewer concepts',
                                           visualDensity: VisualDensity.compact,
-                                          onPressed: enabled && requiredCount > 4
+                                          onPressed:
+                                              enabled && requiredCount > 4
                                               ? () => onChanged({
                                                   ...value,
                                                   'required_count':
@@ -271,7 +324,8 @@ class ConceptSettings extends StatelessWidget {
                                         IconButton(
                                           tooltip: 'More concepts',
                                           visualDensity: VisualDensity.compact,
-                                          onPressed: enabled && requiredCount < 10
+                                          onPressed:
+                                              enabled && requiredCount < 10
                                               ? () => onChanged({
                                                   ...value,
                                                   'required_count':
@@ -419,7 +473,9 @@ class DocumentPolicyEditor extends StatelessWidget {
             visualDensity: VisualDensity.compact,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-            onPressed: isEnabled && count > min ? () => onStep(count - 1) : null,
+            onPressed: isEnabled && count > min
+                ? () => onStep(count - 1)
+                : null,
             icon: const Icon(Icons.remove_rounded, size: 16),
           ),
           SizedBox(
@@ -438,7 +494,9 @@ class DocumentPolicyEditor extends StatelessWidget {
             visualDensity: VisualDensity.compact,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-            onPressed: isEnabled && count < max ? () => onStep(count + 1) : null,
+            onPressed: isEnabled && count < max
+                ? () => onStep(count + 1)
+                : null,
             icon: const Icon(Icons.add_rounded, size: 16),
           ),
         ],
@@ -451,13 +509,22 @@ class DocumentPolicyEditor extends StatelessWidget {
     final mode = value['mode']?.toString() ?? 'single';
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final primaryColor = isDark ? const Color(0xFFF1F5F9) : const Color(0xFF1E293B);
-    final secondaryColor = isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B);
+    final primaryColor = isDark
+        ? const Color(0xFFF1F5F9)
+        : const Color(0xFF1E293B);
+    final secondaryColor = isDark
+        ? const Color(0xFF94A3B8)
+        : const Color(0xFF64748B);
 
-    final minFiles = (value['min_files'] is int) ? value['min_files'] as int : 1;
-    final maxFiles = (value['max_files'] is int) ? value['max_files'] as int : 10;
+    final minFiles = (value['min_files'] is int)
+        ? value['min_files'] as int
+        : 1;
+    final maxFiles = (value['max_files'] is int)
+        ? value['max_files'] as int
+        : 10;
 
     void selectMode(String newMode) {
+      if (value['purpose'] == 'approved_concept') return;
       final slotLabel = (deliverableLabel?.trim().isNotEmpty == true)
           ? deliverableLabel!.trim()
           : 'Concept paper';
@@ -494,7 +561,7 @@ class DocumentPolicyEditor extends StatelessWidget {
                   width: isCompact ? double.infinity : 220,
                   child: WorkflowChoice(
                     value: mode == 'named' ? 'single' : mode,
-                    enabled: enabled,
+                    enabled: enabled && value['purpose'] != 'approved_concept',
                     options: {
                       'single': 'One file',
                       if (allowConcepts || mode == 'concepts')
@@ -596,7 +663,11 @@ class DocumentPolicyEditor extends StatelessWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Icon(Icons.info_outline_rounded, size: 14, color: secondaryColor),
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 14,
+                    color: secondaryColor,
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(

@@ -162,11 +162,18 @@ void main() {
     () {
       final items = <Map<String, dynamic>>[];
       ensureConceptPapers(items, {'enabled': true});
-      items.single['label'] = 'Department Concept Papers';
+      final proposal = items.singleWhere(
+        (d) => d['file_policy']['mode'] == 'concepts',
+      );
+      proposal['label'] = 'Department Concept Papers';
       ensureConceptPapers(items, {'enabled': true});
-      expect(items, hasLength(1));
-      expect(items.single['label'], 'Department Concept Papers');
-      expect(items.single['file_policy']['mode'], 'concepts');
+      expect(items, hasLength(2));
+      expect(proposal['label'], 'Department Concept Papers');
+      final approved = items.singleWhere(
+        (d) => d['file_policy']['purpose'] == 'approved_concept',
+      );
+      expect(approved['required'], isTrue);
+      expect(approved['deliverable_type'], 'post');
     },
   );
 }

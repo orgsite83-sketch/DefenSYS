@@ -157,7 +157,7 @@ class PitInstructorNotifier extends Notifier<PitInstructorState> {
           isSaving: false,
           message: isActive
               ? 'Instructor restored.'
-              : 'Instructor deactivated.',
+              : 'Instructor removed from this section.',
         );
         _markDependentDataChanged();
         return true;
@@ -172,6 +172,39 @@ class PitInstructorNotifier extends Notifier<PitInstructorState> {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');
       return false;
     }
+  }
+
+  Future<bool> replaceInstructor(int assignmentId, int facultyId) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+    try {
+      final response = await _client.patch(
+        Uri.parse('$baseUrl/$assignmentId/'),
+        body: jsonEncode({'faculty_id': facultyId}),
+      );
+      if (!ref.mounted) return false;
+      if (response.statusCode == 200) {
+        await fetchAssignments();
+        if (!ref.mounted) return false;
+        state = state.copyWith(
+          isSaving: false,
+          message: 'Section instructor changed.',
+        );
+        _markDependentDataChanged();
+        return true;
+      }
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+    } catch (e) {
+      if (!ref.mounted) return false;
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+    }
+    return false;
   }
 
   List<Map<String, dynamic>> _readMapList(dynamic value) {

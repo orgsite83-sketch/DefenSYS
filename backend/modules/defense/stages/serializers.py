@@ -53,6 +53,15 @@ class StageDeliverableSerializer(serializers.ModelSerializer):
         policy = attrs.get('file_policy', self.instance.file_policy if self.instance else {})
         if policy.get('mode') == 'concepts' and not (stage and stage.concept_config.get('enabled')):
             raise serializers.ValidationError('Enable concept selection in this stage before configuring concept documents.')
+        if stage and stage.concept_config.get('enabled'):
+            from defense.document_policy import is_approved_concept
+            original = self.instance.file_policy if self.instance else {}
+            if (original or {}).get('purpose') == 'approved_concept' and not is_approved_concept({'file_policy': policy}):
+                raise serializers.ValidationError('The required approved concept paper must retain its document purpose.')
+            if is_approved_concept({'file_policy': policy}):
+                attrs.update(required=True, deliverable_type='post', requirement_timing='scheduling')
+            elif policy.get('mode') == 'concepts':
+                attrs.update(required=True, deliverable_type='pre', requirement_timing='scheduling')
         return attrs
 
 

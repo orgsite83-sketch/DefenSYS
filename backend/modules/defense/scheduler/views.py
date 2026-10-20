@@ -560,6 +560,7 @@ class PanelistAssignmentsView(APIView):
                 submissions=submissions_data,
                 is_chair=is_chair,
                 team_grade=team_grade,
+                actor=request.user,
             )
             team_payload['draft'] = None if is_posted else draft_payload(
                 drafts.get(schedule.id), team_payload['evaluation_context'],
@@ -849,7 +850,7 @@ class PanelistGradeSubmissionView(APIView):
             )
 
 
-def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_chair=False, team_grade=None):
+def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_chair=False, team_grade=None, actor=None):
     from grading.grades.serializers import TeamGradeSerializer
     from .progress import schedule_progress
     team = schedule.team
@@ -909,6 +910,15 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
             for file in files:
                 name = labels.get(file.get('slot_key'), item.get('label') or 'Defense material')
                 defense_materials.append({**item, **file, 'name': name, 'label': name})
+
+    if hearing and hearing.section_round_id and hearing.section_round.selected_key:
+        selected_key = hearing.section_round.selected_key
+        for material in defense_materials:
+            key = str(material.get('slot_key', '')).split(':')[0]
+            material['is_selected_concept'] = key == selected_key
+            if key == selected_key:
+                material['name'] = material['label'] = f'Selected system · {material["name"]}'
+        defense_materials.sort(key=lambda material: not material.get('is_selected_concept', False))
 
     leader_name = ''
     if getattr(team, 'leader', None):
@@ -980,7 +990,7 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
         'verdict_by_name': verdict_by_name,
         'revision_deadline': revision_deadline,
         'redefense_verification_required': team_grade.redefense_verification_required if team_grade else False,
-        'grade_record': TeamGradeSerializer(team_grade).data if team_grade and team_grade.schedule_id == schedule.pk else None,
+        'grade_record': TeamGradeSerializer(team_grade, context={'actor': actor}).data if team_grade and team_grade.schedule_id == schedule.pk else None,
         'attempt_count': attempt_count,
         'grade_id': grade_id,
         'members': [
@@ -1091,6 +1101,7 @@ class GuestPanelistAssignmentsView(APIView):
             is_posted=is_posted,
             submissions=submissions_data,
             team_grade=team_grade,
+            actor=principal,
         )
         draft = PanelistEvaluationDraft.objects.filter(
             schedule=schedule, guest_code_id=principal.guest_code_id,

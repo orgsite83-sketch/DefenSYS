@@ -132,10 +132,33 @@ class TeamData {
     return DateTime(now.year, now.month, now.day);
   }
 
+  String get defenseStage => stageName.isNotEmpty ? stageName : eventName;
   bool get isToday => scheduledDate == manilaToday;
   bool get usesDefenseVerdict => isCapstone;
-  bool get panelWorkFinished =>
-      isCompleted || (isPosted && (!usesDefenseVerdict || !isChair || hasVerdict));
+  Map<String, dynamic>? get conceptWorkflow {
+    final raw = (workflowGrade?['workflow'] as Map? ?? {})['concept_workflow'];
+    return raw is Map ? Map<String, dynamic>.from(raw) : null;
+  }
+  bool get hasConceptWorkflow => conceptWorkflow != null;
+  bool get hasPitConceptDecision =>
+      conceptWorkflow?['decision']?.toString().isNotEmpty ?? false;
+  String? get pitConceptDecision => conceptWorkflow?['decision']?.toString();
+  String? get pitSelectedTitle => conceptWorkflow?['selected_title']?.toString();
+  bool get canManagePitConceptDecision =>
+      conceptWorkflow?['can_manage_decision'] == true;
+  bool get canRecordPitConceptDecision =>
+      conceptWorkflow?['can_record_decision'] == true;
+  String get pitDecisionUnavailableReason =>
+      conceptWorkflow?['decision_unavailable_reason']?.toString() ?? '';
+  String get pitDecisionReviewToken =>
+      conceptWorkflow?['decision_review_token']?.toString() ?? '';
+  bool get panelWorkFinished {
+    if (isCompleted) return true;
+    if (!isPosted) return false;
+    if (usesDefenseVerdict && isChair && !hasVerdict) return false;
+    if (!usesDefenseVerdict && isChair && canManagePitConceptDecision && !hasPitConceptDecision) return false;
+    return true;
+  }
   bool get gradingAvailable =>
       !isCompleted &&
       !isPosted &&

@@ -5,7 +5,7 @@ import 'package:defensys/theme/defensys_tokens.dart';
 import '../models/schedule_import_models.dart';
 import 'scheduler_people_picker.dart';
 
-/// Session membership is selected explicitly; adviser filtering is a shortcut.
+/// Session membership is explicit; section and assigned faculty narrow the list.
 class SchedulerTeamPicker extends StatefulWidget {
   const SchedulerTeamPicker({
     super.key,
@@ -13,12 +13,14 @@ class SchedulerTeamPicker extends StatefulWidget {
     required this.selected,
     required this.assignedElsewhere,
     required this.sessionNumber,
+    this.scope = 'capstone',
   });
 
   final List<Map<String, dynamic>> teams;
   final Set<int> selected;
   final Map<int, String> assignedElsewhere;
   final int sessionNumber;
+  final String scope;
 
   static Future<Set<int>?> show(
     BuildContext context, {
@@ -26,6 +28,7 @@ class SchedulerTeamPicker extends StatefulWidget {
     required Set<int> selected,
     required Map<int, String> assignedElsewhere,
     required int sessionNumber,
+    required String scope,
   }) => showDialog<Set<int>>(
     context: context,
     builder: (_) => SchedulerTeamPicker(
@@ -33,6 +36,7 @@ class SchedulerTeamPicker extends StatefulWidget {
       selected: selected,
       assignedElsewhere: assignedElsewhere,
       sessionNumber: sessionNumber,
+      scope: scope,
     ),
   );
 
@@ -43,25 +47,79 @@ class SchedulerTeamPicker extends StatefulWidget {
 class _SchedulerTeamPickerState extends State<SchedulerTeamPicker> {
   late final Set<int> _selected = Set.of(widget.selected);
   String _query = '';
-  int _adviser = 0;
+  int _faculty = 0;
+  String _section = '';
+  static const _unassignedSection = '__unassigned_section__';
 
-  int? _adviserId(Map<String, dynamic> team) => asInt(team['adviser']);
+  bool get _isPit => widget.scope == 'pit';
+
+  List<Map<String, dynamic>> _facultyFor(Map<String, dynamic> team) {
+    if (_isPit) {
+      final people = team['instructors'];
+      return people is List
+          ? people
+                .whereType<Map>()
+                .map((person) => Map<String, dynamic>.from(person))
+                .toList()
+          : const [];
+    }
+    final id = asInt(team['adviser']);
+    return id == null
+        ? const []
+        : [
+            {'id': id, 'name': team['adviser_name']},
+          ];
+  }
+
+  String _facultyName(Map<String, dynamic> team) {
+    final names = _facultyFor(team)
+        .map((person) => person['name']?.toString().trim() ?? '')
+        .where((name) => name.isNotEmpty)
+        .join(', ');
+    if (names.isNotEmpty) return names;
+    // Keep rows readable when an older response has only its display name.
+    final legacy =
+        team[_isPit ? 'instructor_name' : 'adviser_name']?.toString().trim() ??
+        '';
+    return legacy.isEmpty
+        ? _isPit
+              ? 'No instructor assigned'
+              : 'No adviser assigned'
+        : legacy;
+  }
+
+  String _sectionOf(Map<String, dynamic> team) =>
+      team['section']?.toString().trim() ?? '';
 
   @override
   Widget build(BuildContext context) {
-    final advisers = <int, String>{
+    final faculty = <int, String>{
       for (final team in widget.teams)
-        if (_adviserId(team) != null)
-          _adviserId(team)!: team['adviser_name']?.toString() ?? 'Adviser',
+        for (final person in _facultyFor(team))
+          if (asInt(person['id']) != null)
+            asInt(person['id'])!:
+                person['name']?.toString() ??
+                (_isPit ? 'Instructor' : 'Adviser'),
     };
+    final facultyOptions = faculty.entries.toList()
+      ..sort((a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase()));
+    final sections =
+        widget.teams.map(_sectionOf).where((s) => s.isNotEmpty).toSet().toList()
+          ..sort();
     final shown = widget.teams
         .where(
           (team) =>
-              (_adviser == 0 ||
-                  (_adviser == -1
-                      ? _adviserId(team) == null
-                      : _adviserId(team) == _adviser)) &&
-              '${team['name']} ${team['project_title']} ${team['adviser_name']} ${team['section']}'
+              (_section.isEmpty ||
+                  (_section == _unassignedSection
+                      ? _sectionOf(team).isEmpty
+                      : _sectionOf(team) == _section)) &&
+              (_faculty == 0 ||
+                  (_faculty == -1
+                      ? _facultyFor(team).isEmpty
+                      : _facultyFor(
+                          team,
+                        ).any((person) => asInt(person['id']) == _faculty))) &&
+              '${team['name'] ?? ''} ${team['project_title'] ?? ''} ${_facultyName(team)} ${_sectionOf(team)}'
                   .toLowerCase()
                   .contains(_query.trim().toLowerCase()),
         )
@@ -89,7 +147,7 @@ class _SchedulerTeamPickerState extends State<SchedulerTeamPicker> {
                   children: [
                     Expanded(
                       child: Text(
-                        'Choose teams for Session ${widget.sessionNumber}',
+                        'Choose teams for Session\u00a0${widget.sessionNumber}',
                         style: const TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
@@ -105,47 +163,122 @@ class _SchedulerTeamPickerState extends State<SchedulerTeamPicker> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Choose individual teams or select an adviser’s available advisees. Teams assigned to another session stay there.',
+                  _isPit
+                      ? 'Choose teams or filter by section and instructor. Teams assigned to another session stay there.'
+                      : 'Choose teams or filter by section and adviser. Teams assigned to another session stay there.',
                   style: TextStyle(fontSize: 12, color: secondary),
                 ),
                 const SizedBox(height: 16),
                 ShadInput(
                   key: const ValueKey('session-team-search'),
-                  placeholder: const Text('Search teams, projects or advisers'),
+                  placeholder: Text(
+                    _isPit
+                        ? 'Search teams or instructors'
+                        : 'Search teams or advisers',
+                  ),
                   onChanged: (query) => setState(() => _query = query),
                 ),
-                if (advisers.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  LayoutBuilder(
-                    builder: (_, constraints) => ShadSelect<int>(
-                      key: ValueKey('session-team-adviser-$_adviser'),
-                      initialValue: _adviser,
-                      minWidth: constraints.maxWidth,
-                      maxWidth: constraints.maxWidth,
-                      options: [
-                        const ShadOption(value: 0, child: Text('All advisers')),
-                        for (final entry in advisers.entries)
-                          ShadOption(
-                            value: entry.key,
-                            child: Text(entry.value),
+                const SizedBox(height: 12),
+                LayoutBuilder(
+                  builder: (_, constraints) {
+                    final showFaculty = _isPit || faculty.isNotEmpty;
+                    final stacked = constraints.maxWidth < 460;
+                    final width = showFaculty && !stacked
+                        ? (constraints.maxWidth - 12) / 2
+                        : constraints.maxWidth;
+                    return Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        SizedBox(
+                          width: width,
+                          child: ShadSelect<String>(
+                            key: ValueKey('session-team-section-$_section'),
+                            initialValue: _section,
+                            minWidth: width,
+                            maxWidth: width,
+                            options: [
+                              const ShadOption(
+                                value: '',
+                                child: Text('All sections'),
+                              ),
+                              for (final section in sections)
+                                ShadOption(
+                                  value: section,
+                                  child: Text(section),
+                                ),
+                              if (widget.teams.any(
+                                (team) => _sectionOf(team).isEmpty,
+                              ))
+                                const ShadOption(
+                                  value: _unassignedSection,
+                                  child: Text('No section assigned'),
+                                ),
+                            ],
+                            selectedOptionBuilder: (_, section) => Text(
+                              section.isEmpty
+                                  ? 'All sections'
+                                  : section == _unassignedSection
+                                  ? 'No section assigned'
+                                  : section,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onChanged: (value) =>
+                                setState(() => _section = value ?? ''),
                           ),
-                        const ShadOption(
-                          value: -1,
-                          child: Text('No adviser assigned'),
                         ),
+                        if (showFaculty)
+                          SizedBox(
+                            width: width,
+                            child: ShadSelect<int>(
+                              key: ValueKey(
+                                'session-team-${_isPit ? 'instructor' : 'adviser'}-$_faculty',
+                              ),
+                              initialValue: _faculty,
+                              minWidth: width,
+                              maxWidth: width,
+                              options: [
+                                ShadOption(
+                                  value: 0,
+                                  child: Text(
+                                    _isPit ? 'All instructors' : 'All advisers',
+                                  ),
+                                ),
+                                for (final entry in facultyOptions)
+                                  ShadOption(
+                                    value: entry.key,
+                                    child: Text(entry.value),
+                                  ),
+                                ShadOption(
+                                  value: -1,
+                                  child: Text(
+                                    _isPit
+                                        ? 'No instructor assigned'
+                                        : 'No adviser assigned',
+                                  ),
+                                ),
+                              ],
+                              selectedOptionBuilder: (_, id) => Text(
+                                id == 0
+                                    ? _isPit
+                                          ? 'All instructors'
+                                          : 'All advisers'
+                                    : id == -1
+                                    ? _isPit
+                                          ? 'No instructor assigned'
+                                          : 'No adviser assigned'
+                                    : faculty[id] ??
+                                          (_isPit ? 'Instructor' : 'Adviser'),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              onChanged: (id) =>
+                                  setState(() => _faculty = id ?? 0),
+                            ),
+                          ),
                       ],
-                      selectedOptionBuilder: (_, id) => Text(
-                        id == 0
-                            ? 'All advisers'
-                            : id == -1
-                            ? 'No adviser assigned'
-                            : advisers[id] ?? 'Adviser',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      onChanged: (id) => setState(() => _adviser = id ?? 0),
-                    ),
-                  ),
-                ],
+                    );
+                  },
+                ),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 8,
@@ -163,8 +296,12 @@ class _SchedulerTeamPickerState extends State<SchedulerTeamPicker> {
                             },
                       leading: const Icon(LucideIcons.listChecks, size: 14),
                       child: Text(
-                        _adviser > 0 && _query.trim().isEmpty
-                            ? 'Select adviser’s teams'
+                        _faculty > 0 &&
+                                _query.trim().isEmpty &&
+                                _section.isEmpty
+                            ? _isPit
+                                  ? 'Select instructor’s teams'
+                                  : 'Select adviser’s teams'
                             : 'Select shown teams',
                       ),
                     ),
@@ -222,9 +359,18 @@ class _SchedulerTeamPickerState extends State<SchedulerTeamPicker> {
                                 ),
                               ),
                               subtitle: Text(
-                                assigned != null
-                                    ? 'Assigned to $assigned'
-                                    : '${team['adviser_name'] ?? 'No adviser'}${(team['project_title']?.toString() ?? '').isEmpty ? '' : ' · ${team['project_title']}'}',
+                                [
+                                  if (_sectionOf(team).isNotEmpty)
+                                    _sectionOf(team),
+                                  _facultyName(team),
+                                  if ((team['project_title']
+                                              ?.toString()
+                                              .trim() ??
+                                          '')
+                                      .isNotEmpty)
+                                    team['project_title'].toString().trim(),
+                                  if (assigned != null) 'Assigned to $assigned',
+                                ].join(' · '),
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: secondary,

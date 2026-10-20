@@ -99,6 +99,7 @@ class _PitConceptDecisionPanelState
       setState(() => error = validation);
       return;
     }
+    final bool isSingle = decisions.length == 1;
     final token = widget.workflow['decision_review_token']?.toString();
     final accepted = await showDialog<bool>(
       context: context,
@@ -107,11 +108,15 @@ class _PitConceptDecisionPanelState
           title: Text(
             clearRevisions
                 ? 'Clear concept revisions?'
+                : isSingle
+                ? 'Save project verdict?'
                 : 'Save concept decision?',
           ),
           description: Text(
             clearRevisions
                 ? 'Record that the required concept changes have been reviewed and resolved.'
+                : isSingle
+                ? 'Submit official defense verdict for “${selected.isNotEmpty ? selected.single['title'] : (decisions.isNotEmpty ? decisions.first['title'] : '')}”.'
                 : selected.isNotEmpty
                 ? '“${selected.single['title']}” will become the team’s official project title.'
                 : 'This records the current review and opens the next concept set. Earlier papers and feedback remain in the history.',
@@ -123,7 +128,13 @@ class _PitConceptDecisionPanelState
             ),
             ShadButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(clearRevisions ? 'Clear revisions' : 'Save decision'),
+              child: Text(
+                clearRevisions
+                    ? 'Clear revisions'
+                    : isSingle
+                    ? 'Save verdict'
+                    : 'Save decision',
+              ),
             ),
           ],
         ),
@@ -168,6 +179,7 @@ class _PitConceptDecisionPanelState
   Widget build(BuildContext context) {
     final workflow = widget.workflow;
     if (isSharedConceptWorkflow(workflow)) return const SizedBox.shrink();
+    final bool isSingle = decisions.length == 1;
     final manager = workflow['can_manage_decision'] == true;
     final recorded = '${workflow['decision'] ?? ''}'.isNotEmpty;
     final canClear = workflow['can_clear_concept_revisions'] == true;
@@ -184,7 +196,9 @@ class _PitConceptDecisionPanelState
             children: [
               Expanded(
                 child: Text(
-                  recorded ? 'Team concept decision' : 'Select team concept',
+                  recorded
+                      ? (isSingle ? 'Team project verdict' : 'Team concept decision')
+                      : (isSingle ? 'Team project verdict' : 'Select team concept'),
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -200,14 +214,16 @@ class _PitConceptDecisionPanelState
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Choose the official project topic for this team.',
+                isSingle
+                    ? 'Evaluate this project proposal: determine whether it is approved, requires revisions, or needs re-defense.'
+                    : 'Choose the official project topic for this team.',
                 style: TextStyle(fontSize: 13, height: 1.5, color: secondary),
               ),
               const SizedBox(height: 16),
               if (recorded) ...[
                 Text(
                   selectedTitle.isEmpty
-                      ? 'Another concept review is required'
+                      ? (isSingle ? 'Re-defense required' : 'Another concept review is required')
                       : selectedTitle,
                   style: TextStyle(
                     fontSize: 16,
@@ -220,11 +236,11 @@ class _PitConceptDecisionPanelState
                 Text(
                   workflow['decision'] == 'approved_with_revisions'
                       ? workflow['concept_revisions_cleared'] == true
-                            ? 'Selected · Revisions cleared'
-                            : 'Selected · Revisions pending'
+                            ? 'Approved · Revisions cleared'
+                            : 'Approved · Revisions pending'
                       : selectedTitle.isEmpty
                       ? 'Review the feedback in the concept history.'
-                      : 'Selected concept',
+                      : (isSingle ? 'Official project verdict' : 'Selected concept'),
                   style: TextStyle(fontSize: 13, color: secondary),
                 ),
                 if ('${workflow['decided_by_name'] ?? ''}'.isNotEmpty) ...[
@@ -321,12 +337,19 @@ class _PitConceptDecisionPanelState
                   child: ShadButton(
                     enabled: !busy && (canEdit || canClear),
                     onPressed: () => submit(clearRevisions: canClear),
-                    child: Text(
-                      busy
-                          ? 'Saving…'
-                          : canClear
-                          ? 'Clear concept revisions'
-                          : 'Save concept decision',
+                    child: Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          busy
+                              ? 'Saving…'
+                              : canClear
+                              ? 'Clear concept revisions'
+                              : isSingle
+                              ? 'Save project verdict'
+                              : 'Save concept decision',
+                        ),
+                      ),
                     ),
                   ),
                 ),

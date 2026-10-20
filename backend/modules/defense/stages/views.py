@@ -394,6 +394,11 @@ class StageDeliverableDetailView(APIView):
                 {'detail': reason or 'Deliverables cannot be deleted because this stage is locked.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        from defense.document_policy import is_approved_concept
+        if deliverable.defense_stage.concept_config.get('enabled') and (
+                (deliverable.file_policy or {}).get('mode') == 'concepts'
+                or is_approved_concept({'file_policy': deliverable.file_policy})):
+            return Response({'detail': 'Disable concept selection before removing its required papers.'}, status=status.HTTP_400_BAD_REQUEST)
         deliverable.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 

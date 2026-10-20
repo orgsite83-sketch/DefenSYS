@@ -250,12 +250,13 @@ void main() {
   });
 
   testWidgets(
-    'import opens upload with its own steps and no generation controls',
+    'import opens as a direct single view and no generation controls',
     (tester) async {
       await pump(tester, tab: 'import');
-      expect(find.text('Upload roster'), findsOneWidget);
       expect(find.text('Upload CSV / Excel'), findsOneWidget);
+      expect(find.text('Download template'), findsOneWidget);
       expect(find.text('Current roster'), findsOneWidget);
+      expect(find.text('Upload roster'), findsNothing);
       expect(find.text('Import Class List'), findsNothing);
       expect(requests.where((r) => r.method == 'POST'), isEmpty);
       await capturePreview(
@@ -286,10 +287,8 @@ void main() {
       await pump(tester, tab: 'import');
       await tester.tap(find.text('Resume draft'));
       await tester.pumpAndSettle();
-      expect(find.text('Project architecture'), findsOneWidget);
-      await tester.tap(find.text('Review import'));
-      await tester.pumpAndSettle();
       expect(find.text('Import 1 teams'), findsOneWidget);
+      expect(find.text('Prepared team'), findsWidgets);
       expect(requests.where((r) => r.url.path.endsWith('/create/')), isEmpty);
       final preview =
           jsonDecode(
@@ -337,7 +336,7 @@ void main() {
     );
   }
 
-  testWidgets('import upload and step labels fit a phone width', (
+  testWidgets('import upload and table fit a phone width', (
     tester,
   ) async {
     await pump(tester, tab: 'import', size: const Size(390, 844));

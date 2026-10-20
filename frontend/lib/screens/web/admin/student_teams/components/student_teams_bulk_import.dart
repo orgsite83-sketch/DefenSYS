@@ -105,6 +105,7 @@ class StudentTeamsBulkImportView extends StatefulWidget {
     required this.onAdviserFilterChanged,
     required this.onShowIssuesOnlyChanged,
     this.onClearStaged,
+    this.isPitInstructor = false,
     this.isPreviewLoading = false,
     this.fileImportError,
     this.onRetryPreview,
@@ -113,6 +114,7 @@ class StudentTeamsBulkImportView extends StatefulWidget {
   });
 
   final StudentTeamsState state;
+  final bool isPitInstructor;
   final bool isCapstoneAdmin;
   final String? pitLeadYear;
   final List<Map<String, dynamic>> parsedBulkRows;
@@ -226,7 +228,7 @@ class _StudentTeamsBulkImportViewState extends State<StudentTeamsBulkImportView>
                   OutlinedButton.icon(
                     onPressed: widget.state.isSaving ? null : () => widget.onRequestClose(),
                     icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                    label: const Text('Back to Teams'),
+                    label: Text(widget.isPitInstructor ? 'Back to Deliverables' : 'Back to Teams'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: _ink,
                       side: const BorderSide(color: _line),

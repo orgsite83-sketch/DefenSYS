@@ -450,6 +450,7 @@ def payload(team, stage, *, history=True, actor=None):
         'section_project_id': policy.get('section_project_id'),
         'shared_review': shared_review,
         'section_selected_key': shared_round.selected_key if shared_round else '',
+        'section_presenting': bool(shared_round and shared_round.presentation_started_at),
         'section_revisions_pending': bool(shared_round and shared_round.verdict == 'approved_with_revisions' and not shared_round.revisions_cleared_at),
         'faculty_names_required': shared_policy and policy.get('title_mode') == 'faculty_provided',
         'module_names_confirmed': shared_policy and all(c.get('faculty_confirmed') for c in concepts),

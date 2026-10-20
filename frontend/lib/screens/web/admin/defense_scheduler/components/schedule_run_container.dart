@@ -375,6 +375,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             for (final id in _sessions[i].teamIds) id: 'Session ${i + 1}',
       },
       sessionNumber: number,
+      scope: widget.scope,
     );
     if (chosen != null && mounted) {
       setState(() => session.teamIds = chosen);
@@ -410,7 +411,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
         const SizedBox(height: 8),
         Text(
           names.isEmpty
-              ? 'Choose teams individually or select an adviser’s advisees.'
+              ? widget.scope == 'pit'
+                    ? 'Choose teams individually or filter by section and instructor.'
+                    : 'Choose teams individually or filter by section and adviser.'
               : names.join(', '),
           maxLines: 3,
           overflow: TextOverflow.ellipsis,

@@ -107,4 +107,75 @@ void main() {
       );
     },
   );
+
+  for (final status in [200, 400, 500]) {
+    test('replacement uses one atomic PATCH and handles $status', () async {
+      final requests = <http.Request>[];
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          requests.add(request);
+          if (request.method == 'GET') {
+            return http.Response(
+              '{"assignments":[{"id":8,"faculty_id":11,"is_active":true}]}',
+              200,
+            );
+          }
+          return http.Response(
+            status == 200 ? '{}' : '{"detail":"Assignment unchanged"}',
+            status,
+          );
+        }),
+      );
+      final container = ProviderContainer(overrides: authTestOverrides());
+      addTearDown(container.dispose);
+      final notifier = container.read(pitInstructorProvider.notifier);
+      expect(await notifier.replaceInstructor(7, 11), status == 200);
+      expect(requests.first.method, 'PATCH');
+      expect(requests.first.url.path, endsWith('/pit-instructors/7/'));
+      expect(jsonDecode(requests.first.body), {'faculty_id': 11});
+      expect(
+        requests.map((r) => r.method),
+        status == 200 ? ['PATCH', 'GET'] : ['PATCH'],
+      );
+      expect(container.read(pitInstructorProvider).isSaving, isFalse);
+      if (status != 200) {
+        expect(
+          container.read(pitInstructorProvider).error,
+          'Assignment unchanged',
+        );
+      }
+    });
+  }
+
+  test(
+    'removal sends a status change rather than deleting the account',
+    () async {
+      final requests = <http.Request>[];
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          requests.add(request);
+          return http.Response(
+            request.method == 'GET'
+                ? '{"assignments":[{"id":7,"is_active":false}]}'
+                : '{}',
+            200,
+          );
+        }),
+      );
+      final container = ProviderContainer(overrides: authTestOverrides());
+      addTearDown(container.dispose);
+      expect(
+        await container
+            .read(pitInstructorProvider.notifier)
+            .setAssignmentActive(7, false),
+        isTrue,
+      );
+      expect(requests.map((r) => r.method), ['PATCH', 'GET']);
+      expect(jsonDecode(requests.first.body), {'is_active': false});
+      expect(
+        container.read(pitInstructorProvider).assignments.single['is_active'],
+        isFalse,
+      );
+    },
+  );
 }

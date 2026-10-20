@@ -697,16 +697,17 @@ void main() {
       final project = projectFixture()
         ..['selected_key'] = 'c2'
         ..['verdict'] = 'approved_with_revisions'
-        ..['shared_revisions_pending'] = true;
+        ..['shared_revisions_pending'] = true
+        ..['post_unlocked'] = true;
       final systems = project['systems'] as List;
-      systems[1]['can_upload'] = true;
-      systems[1]['papers'] = [
+      systems[1]['can_upload_final'] = true;
+      systems[1]['final_papers'] = [
         {
           'id': 21,
           'revision': 1,
           'file_name': 'clinic.pdf',
           'is_current': true,
-          'status': 'accepted',
+          'status': 'rejected',
           'feedback': '',
         },
       ];
@@ -718,7 +719,7 @@ void main() {
         const SectionConceptWorkspace(projectId: 7),
         overrides: [authProvider.overrideWith(_Student.new)],
       );
-      expect(find.text('Upload revised paper'), findsOneWidget);
+      expect(find.text('Upload corrected final paper'), findsOneWidget);
       expect(find.text('Upload concept paper'), findsNothing);
       expect(
         find.textContaining('Module approvals cannot complete progression'),
@@ -727,39 +728,196 @@ void main() {
     },
   );
 
-  testWidgets('PIT Lead records module selection through the concept decision action', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(1100, 1200));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+  testWidgets(
+    'PIT Lead records module selection through the concept decision action',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1100, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final project = projectFixture()
+        ..['scope'] = 'pit'
+        ..['selected_key'] = 'c2'
+        ..['verdict'] = 'approved';
+      final team = (project['teams'] as List).first as Map;
+      team['can_record_decision'] = true;
+      team['decision_review_token'] = 'current-module-papers';
+      final actions = <Map<String, dynamic>>[];
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          if (request.method == 'POST') {
+            actions.add(jsonDecode(request.body) as Map<String, dynamic>);
+          }
+          return http.Response(jsonEncode(project), 200);
+        }),
+      );
+      await pumpDefensysWidget(
+        tester,
+        const SectionConceptWorkspace(projectId: 7),
+        overrides: authTestOverrides(),
+      );
+      await tester.scrollUntilVisible(
+        find.text('Review module'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.ensureVisible(find.text('Review module'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Review module'));
+      await tester.pumpAndSettle();
+      final dialog = find.byType(AlertDialog);
+      expect(
+        find.descendant(of: dialog, matching: find.text('Review module')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: dialog, matching: find.text('Module 2')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: dialog, matching: find.textContaining('Module 1')),
+        findsOneWidget,
+      );
+      expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
+      await tester.tap(find.text('Save module review'));
+      await tester.pumpAndSettle();
+      expect(actions.single['action'], 'module_decision');
+      expect(actions.single['module_review_token'], 'current-module-papers');
+      expect(actions.single['team_id'], team['id']);
+      expect(actions.single['module_key'], 'c2');
+    },
+  );
+
+  testWidgets('PM final-paper requirements fit phone and desktop in both themes', (tester) async {
     final project = projectFixture()
-      ..['scope'] = 'pit'
       ..['selected_key'] = 'c2'
-      ..['verdict'] = 'approved';
-    final team = (project['teams'] as List).first as Map;
-    team['can_record_decision'] = true;
-    team['decision_review_token'] = 'current-module-papers';
-    final actions = <Map<String, dynamic>>[];
-    setApiHttpClientForTesting(MockClient((request) async {
-      if (request.method == 'POST') actions.add(jsonDecode(request.body) as Map<String, dynamic>);
-      return http.Response(jsonEncode(project), 200);
-    }));
-    await pumpDefensysWidget(tester, const SectionConceptWorkspace(projectId: 7), overrides: authTestOverrides());
-    await tester.scrollUntilVisible(find.text('Review module'), 300, scrollable: find.byType(Scrollable).first);
-    await tester.ensureVisible(find.text('Review module'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Review module'));
-    await tester.pumpAndSettle();
-    final dialog = find.byType(AlertDialog);
-    expect(find.descendant(of: dialog, matching: find.text('Review module')), findsOneWidget);
-    expect(find.descendant(of: dialog, matching: find.text('Module 2')), findsOneWidget);
-    expect(find.descendant(of: dialog, matching: find.text('Module 1')), findsNothing);
-    expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
-    await tester.tap(find.text('Save module review'));
-    await tester.pumpAndSettle();
-    expect(actions.single['action'], 'module_decision');
-    expect(actions.single['module_review_token'], 'current-module-papers');
-    expect(actions.single['team_id'], team['id']);
-    expect(actions.single['module_key'], 'c2');
+      ..['verdict'] = 'approved'
+      ..['post_unlocked'] = true;
+    (project['systems'] as List)[1]['can_upload_final'] = true;
+    setApiHttpClientForTesting(MockClient((request) async => http.Response(jsonEncode(project), 200)));
+    const preview = ValueKey('shared-final-paper-preview');
+    for (final dark in [false, true]) {
+      for (final size in [const Size(1100, 1000), const Size(390, 1000)]) {
+        await tester.binding.setSurfaceSize(size);
+        await pumpDefensysWidget(tester, const RepaintBoundary(key: preview,
+          child: SingleChildScrollView(padding: EdgeInsets.all(20),
+            child: SectionConceptWorkspace(projectId: 7, embedded: true))),
+          theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
+          overrides: [authProvider.overrideWith(_Student.new)]);
+        await tester.ensureVisible(find.text('Approved shared concept paper'));
+        await tester.pumpAndSettle();
+        expect(find.text('Upload approved concept paper'), findsOneWidget);
+        expect(find.textContaining('Module 1'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await capturePreview(tester, find.byKey(preview),
+          'shared-final-paper-${size.width.toInt()}-${dark ? 'dark' : 'light'}');
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    }
+    await tester.binding.setSurfaceSize(null);
   });
+
+  testWidgets(
+    'chair starts the shared hearing without posting grades or choosing a module',
+    (tester) async {
+      final project = projectFixture()..['can_start_presentation'] = true;
+      final actions = <Map<String, dynamic>>[];
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          if (request.method == 'POST') {
+            actions.add(jsonDecode(request.body) as Map<String, dynamic>);
+            project['can_start_presentation'] = false;
+            project['can_decide'] = true;
+            project['presentation_started_at'] = '2026-10-20T09:00:00+08:00';
+          }
+          return http.Response(jsonEncode(project), 200);
+        }),
+      );
+      await pumpDefensysWidget(
+        tester,
+        const SectionConceptWorkspace(projectId: 7),
+        overrides: authTestOverrides(),
+      );
+      await tester.scrollUntilVisible(
+        find.text('Start shared presentation'),
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('Start shared presentation'));
+      await tester.pumpAndSettle();
+      expect(actions.single['action'], 'start_presentation');
+      expect(actions.single.containsKey('team_outcomes'), isFalse);
+      expect(find.text('Select section system'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'late system selection finalizes an assessed earlier team with its revision notes',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1100, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final project = projectFixture()..['can_decide'] = true;
+      final teams = project['teams'] as List;
+      final alpha = teams.first as Map;
+      alpha['can_finalize_with_selection'] = true;
+      alpha['module_outcome_review_token'] = 'alpha-current-assessment';
+      teams.add(<String, Object?>{
+        ...Map<String, Object?>.from(alpha),
+        'id': 8,
+        'name': 'Team Beta',
+        'can_finalize_with_selection': false,
+        'module_assessment_reason': 'Every panelist must finish grading.',
+      });
+      Map<String, dynamic>? posted;
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          if (request.method == 'POST') {
+            posted = jsonDecode(request.body) as Map<String, dynamic>;
+          }
+          return http.Response(jsonEncode(project), 200);
+        }),
+      );
+      await pumpDefensysWidget(
+        tester,
+        const SectionConceptWorkspace(projectId: 7),
+        overrides: authTestOverrides(),
+      );
+      await tester.scrollUntilVisible(
+        find.text('Select section system'),
+        250,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('Select section system'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(DropdownButtonFormField<String>).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Clinic Management').last);
+      await tester.pumpAndSettle();
+      final outcome = find.byKey(const ValueKey('batch-outcome-5-c2'));
+      await tester.ensureVisible(outcome);
+      await tester.tap(outcome);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Approved with revisions').last);
+      await tester.pumpAndSettle();
+      final notes = find.byKey(const ValueKey('batch-notes-5-c2'));
+      await tester.ensureVisible(notes);
+      await tester.enterText(notes, 'Clarify the module permissions.');
+      await tester.tap(find.text('Save section decision'));
+      await tester.pumpAndSettle();
+      expect(posted?['team_outcomes'], [
+        {
+          'team_id': 5,
+          'verdict': 'approved_with_revisions',
+          'remarks': 'Clarify the module permissions.',
+          'review_token': 'alpha-current-assessment',
+        },
+      ]);
+      expect(
+        (posted?['concepts'] as List).singleWhere(
+          (c) => c['decision'] == 'approved',
+        )['key'],
+        'c2',
+      );
+    },
+  );
 
   testWidgets(
     'generation preview includes the PM, faculty reviewer and shared workflow',

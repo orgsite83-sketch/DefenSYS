@@ -804,10 +804,12 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final currentStageObj = _stagePayload(stages, stageLabel);
     final endorsed = currentStageObj['endorsed'] == true;
     final subStatus = submission?['status']?.toString();
-    final locked = item['can_upload'] is bool ? item['can_upload'] != true :
-        item['locked'] == true || subStatus == 'accepted';
     final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
-    final postLocked = isPost && locked;
+    final archiveUnlocked = currentStageObj['archive_unlocked'] == true || currentStageObj['post_unlocked'] == true;
+    final postLocked = isPost && !archiveUnlocked;
+    final locked = isPost
+        ? (postLocked || subStatus == 'accepted')
+        : (item['can_upload'] is bool ? item['can_upload'] != true : item['locked'] == true || subStatus == 'accepted');
     final isDefense = !isPost && item['requirement_timing'] == 'defense';
     final displayCleared = subStatus == 'accepted' || (isDefense && uploaded && subStatus != 'rejected');
     final canFacultyReview = item['can_faculty_review'] is bool
@@ -944,6 +946,14 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   Text(item['materials_status'] == 'overdue' ? 'Overdue' : 'Missing',
                       style: TextStyle(fontSize: 11, color: item['materials_status'] == 'overdue' ? AppColors.danger : DefensysTokens.textSecondaryOf(context))),
                   const SizedBox(width: 8),
+                ],
+                if (isFaculty && !isAdmin) ...[
+                  if (isPost) ...[
+                    Text(
+                      archiveUnlocked ? 'Awaiting submission' : 'Locked (Awaiting defense)',
+                      style: TextStyle(fontSize: 11, color: DefensysTokens.textSecondaryOf(context)),
+                    ),
+                  ],
                 ],
                 if (!isFaculty || isAdmin)
                   if (!locked)

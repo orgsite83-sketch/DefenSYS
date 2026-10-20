@@ -163,10 +163,23 @@ class _TeamDeliverablesScreenState
     super.dispose();
   }
 
-  Future<void> _openCreation({bool importTab = false}) async {
-    final saved = await openTeamCreation(context, importTab: importTab,
+  Future<void> _openCreation() async {
+    final saved = await openTeamCreation(context,
       level: widget.pitYearLevel == null ? null : '${widget.pitYearLevel} PIT',
       section: widget.pitSection);
+    if (saved == true && mounted) {
+      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
+      ref.read(pitInstructorDefenseProvider.notifier).fetch();
+    }
+  }
+
+  Future<void> _openImport() async {
+    final saved = await openTeamCreation(
+      context,
+      importTab: true,
+      level: widget.pitYearLevel == null ? null : '${widget.pitYearLevel} PIT',
+      section: widget.pitSection,
+    );
     if (saved == true && mounted) {
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
       ref.read(pitInstructorDefenseProvider.notifier).fetch();
@@ -247,7 +260,7 @@ class _TeamDeliverablesScreenState
                 ),
                 if (widget.isPitInstructor) ...[
                   OutlinedButton.icon(
-                    onPressed: state.isSaving ? null : () => _openCreation(importTab: true),
+                    onPressed: state.isSaving ? null : () => _openImport(),
                     style: DefensysButtonStyles.secondary(context),
                     icon: const Icon(Icons.upload_file_rounded),
                     label: const Text('Import'),

@@ -582,8 +582,13 @@ class _SectionConceptWorkspaceState
       return;
     }
     await perform(
-      () =>
-          service.upload(project!, '${system['key']}', file.name, file.bytes!),
+      () => service.upload(
+        project!,
+        '${system['key']}',
+        file.name,
+        file.bytes!,
+        purpose: '${system['paper_purpose'] ?? 'proposal'}',
+      ),
     );
   }
 
@@ -673,6 +678,8 @@ class _SectionConceptWorkspaceState
         selectedKey: '${snapshot['selected_key']}',
         pit: snapshot['scope'] == 'pit',
         module: module,
+        teams: team == null ? _rows(snapshot['teams']) : const [],
+        proposals: team == null ? const [] : _rows(team['concepts']),
         onViewPaper: viewPaper,
       ),
     );
@@ -718,6 +725,72 @@ class _SectionConceptWorkspaceState
     onConfirmNames: (team) => editNames(team: team),
     onClearRevisions: clearModuleRevisions,
   );
+
+  Widget presentationControl(Map<String, dynamic> p) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      if (p['can_start_presentation'] == true)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: ShadButton.outline(
+            enabled: !busy,
+            onPressed: () =>
+                perform(() => service.action(p, 'start_presentation', {})),
+            child: const Text('Start shared presentation'),
+          ),
+        ),
+      if (p['presentation_started_at'] != null &&
+          '${p['selected_key'] ?? ''}'.isEmpty)
+        const Padding(
+          padding: EdgeInsets.only(bottom: 12),
+          child: Text(
+            'Presentation in progress. The chair can select a shared system during the hearing. Module grading remains separate.',
+          ),
+        ),
+    ],
+  );
+
+  Widget finalPaper(Map<String, dynamic> p, {bool inline = false}) {
+    final selected = _rows(
+      p['systems'],
+    ).where((s) => s['key'] == p['selected_key']).firstOrNull;
+    if (selected == null) return const SizedBox.shrink();
+    final finalSystem = {
+      ...selected,
+      'paper_purpose': 'final',
+      'papers': selected['final_papers'] ?? [],
+      'can_upload': selected['can_upload_final'] == true,
+      'can_review': selected['can_review_final'] == true,
+    };
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Approved shared concept paper',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            p['post_unlocked'] == true
+                ? 'Required · The project manager submits the selected system’s final paper. The assigned instructor/adviser reviews and archives it.'
+                : '${p['post_unavailable_reason'] ?? 'Final uploads open after the section defense is complete.'}',
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.5,
+              color: DefensysTokens.textSecondaryOf(context),
+            ),
+          ),
+          if (p['post_unlocked'] == true ||
+              _rows(selected['final_papers']).isNotEmpty) ...[
+            const SizedBox(height: 12),
+            if (inline) _inlineSystem(finalSystem) else _system(finalSystem),
+          ],
+        ],
+      ),
+    );
+  }
 
   Future<void> reassign() async {
     final result = await showDialog<Map<String, dynamic>>(
@@ -945,6 +1018,7 @@ class _SectionConceptWorkspaceState
                       const SizedBox(height: 20),
                       SharedSystemSelectionBanner(project: p),
                       const SizedBox(height: 20),
+                      presentationControl(p),
                       if (p['shared_revisions_pending'] == true)
                         const Text(
                           'Shared system revisions are outstanding. Module approvals cannot complete progression until the revised system paper is accepted and cleared.',
@@ -986,11 +1060,7 @@ class _SectionConceptWorkspaceState
                           ),
                         ),
                       const SizedBox(height: 20),
-                      if (p['shared_revisions_pending'] == true)
-                        for (final system in _rows(
-                          p['systems'],
-                        ).where((s) => s['key'] == p['selected_key']))
-                          _system(system),
+                      finalPaper(p),
                       moduleReviews(p),
                       if ('${p['selected_key'] ?? ''}'.isNotEmpty)
                         ExpansionTile(
@@ -1004,11 +1074,7 @@ class _SectionConceptWorkspaceState
                             ),
                           ),
                           children: [
-                            for (final system in _rows(p['systems']).where(
-                              (s) =>
-                                  p['shared_revisions_pending'] != true ||
-                                  s['key'] != p['selected_key'],
-                            ))
+                            for (final system in _rows(p['systems']))
                               _system(system),
                           ],
                         ),
@@ -1290,10 +1356,12 @@ class _SectionConceptWorkspaceState
                 ),
               ],
             ),
+            presentationControl(p),
+            finalPaper(p, inline: true),
             const SizedBox(height: 6),
             Text(
               p['scope'] == 'pit'
-                  ? 'Title confirmation and paper acceptance clear the shared set for hearing. The assigned PIT Lead records the final system selection.'
+                  ? 'Title confirmation and paper acceptance clear the shared set for hearing. The current chair or authorized PIT Lead/admin selects the shared system.'
                   : 'Title confirmation and paper acceptance clear the shared set for hearing. The panel chair records the final system selection.',
               style: TextStyle(fontSize: 11, height: 1.5, color: secondary),
             ),
@@ -1340,11 +1408,12 @@ class _SectionConceptWorkspaceState
   };
 
   Widget _inlineSystem(Map<String, dynamic> system) {
+    final isFinal = system['paper_purpose'] == 'final';
     final papers = _rows(system['papers']);
     final paper = papers.where((p) => p['is_current'] == true).firstOrNull;
     final secondary = DefensysTokens.textSecondaryOf(context);
     final status = switch (paper?['status']) {
-      'accepted' => 'Accepted for hearing',
+      'accepted' => isFinal ? 'Archived' : 'Accepted for hearing',
       'rejected' => 'Corrections requested',
       _ => paper == null ? 'Awaiting upload' : 'Awaiting review',
     };
@@ -1388,7 +1457,9 @@ class _SectionConceptWorkspaceState
                   children: [
                     Text(
                       paper == null
-                          ? 'Concept paper not submitted'
+                          ? isFinal
+                                ? 'Approved concept paper not submitted'
+                                : 'Concept paper not submitted'
                           : '${paper['file_name']}',
                       style: const TextStyle(
                         fontSize: 13,
@@ -1464,7 +1535,11 @@ class _SectionConceptWorkspaceState
                 onPressed: busy ? null : () => upload(system),
                 icon: const Icon(Icons.upload_file_outlined, size: 15),
                 label: Text(
-                  paper == null
+                  isFinal
+                      ? paper == null
+                            ? 'Upload approved concept paper'
+                            : 'Upload corrected final paper'
+                      : paper == null
                       ? 'Upload concept paper'
                       : 'Upload revised paper',
                 ),
@@ -1495,6 +1570,7 @@ class _SectionConceptWorkspaceState
   }
 
   Widget _system(Map<String, dynamic> system) {
+    final isFinal = system['paper_purpose'] == 'final';
     final papers = _rows(system['papers']);
     final current = papers.where((p) => p['is_current'] == true).firstOrNull;
     final selected = project!['selected_key'] == system['key'];
@@ -1585,18 +1661,20 @@ class _SectionConceptWorkspaceState
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: const Color(0xFFFDE68A)),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(
+                    const Icon(
                       Icons.warning_amber_rounded,
                       size: 16,
                       color: Color(0xFFD97706),
                     ),
-                    SizedBox(width: 8),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Concept paper missing · Upload the shared system proposal manuscript.',
-                        style: TextStyle(
+                        isFinal
+                            ? 'Approved paper missing · The project manager submits the selected system’s final manuscript.'
+                            : 'Concept paper missing · Upload the shared system proposal manuscript.',
+                        style: const TextStyle(
                           fontSize: 11.5,
                           color: Color(0xFF92400E),
                         ),
@@ -1642,11 +1720,11 @@ class _SectionConceptWorkspaceState
                         ),
                         const SizedBox(width: 6),
                         if (current['status'] == 'accepted')
-                          const ShadBadge(
+                          ShadBadge(
                             backgroundColor: Color(0xFF16A34A),
                             child: Text(
-                              'Accepted',
-                              style: TextStyle(
+                              isFinal ? 'Archived' : 'Accepted',
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 9.5,
                               ),
@@ -1697,7 +1775,11 @@ class _SectionConceptWorkspaceState
                         const Icon(Icons.upload_file_outlined, size: 14),
                         const SizedBox(width: 6),
                         Text(
-                          current == null
+                          isFinal
+                              ? current == null
+                                    ? 'Upload approved concept paper'
+                                    : 'Upload corrected final paper'
+                              : current == null
                               ? 'Upload concept paper'
                               : 'Upload revised paper',
                         ),
@@ -1928,6 +2010,8 @@ class _SectionDecisionDialog extends StatefulWidget {
     this.pit = false,
     this.module,
     this.onViewPaper,
+    this.teams = const [],
+    this.proposals = const [],
   });
   final List<Map<String, dynamic>> systems;
   final String selectedKey;
@@ -1935,6 +2019,8 @@ class _SectionDecisionDialog extends StatefulWidget {
   final bool pit;
   final Map<String, dynamic>? module;
   final Future<void> Function(Map<String, dynamic>)? onViewPaper;
+  final List<Map<String, dynamic>> teams;
+  final List<Map<String, dynamic>> proposals;
   @override
   State<_SectionDecisionDialog> createState() => _SectionDecisionDialogState();
 }
@@ -1945,6 +2031,8 @@ class _SectionDecisionDialogState extends State<_SectionDecisionDialog> {
   final notes = TextEditingController();
   final form = GlobalKey<FormState>();
   bool openingPaper = false;
+  final Map<int, String> teamOutcomes = {};
+  final Map<int, String> teamNotes = {};
   @override
   void initState() {
     super.initState();
@@ -2042,7 +2130,11 @@ class _SectionDecisionDialogState extends State<_SectionDecisionDialog> {
                       ),
                   ],
                   validator: (v) => v == null ? 'Select one system.' : null,
-                  onChanged: (v) => setState(() => selected = v),
+                  onChanged: (v) => setState(() {
+                    selected = v;
+                    teamOutcomes.clear();
+                    teamNotes.clear();
+                  }),
                 ),
               DropdownButtonFormField<String>(
                 initialValue: verdict,
@@ -2106,9 +2198,112 @@ class _SectionDecisionDialogState extends State<_SectionDecisionDialog> {
               ),
               Text(
                 widget.module == null
-                    ? 'This selection applies to the whole section. Each team’s linked module receives a separate review.'
+                    ? 'This selection applies to the whole section, including teams that already presented. Finalize only the modules the panel has assessed; preserve their required corrections.'
                     : 'This review applies to the linked module for this team. Its grades and revision clearance remain separate.',
               ),
+              if (widget.module != null && widget.proposals.length > 1)
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  initiallyExpanded: true,
+                  title: const Text(
+                    'All proposed modules',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                  children: [
+                    for (final proposal in widget.proposals)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          '${proposal['system_title']} → ${proposal['title']}',
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        subtitle: proposal['key'] == selected
+                            ? const Text('Selected shared direction')
+                            : null,
+                      ),
+                  ],
+                ),
+              if (widget.module == null &&
+                  selected != null &&
+                  verdict != 'for_redefense') ...[
+                const SizedBox(height: 20),
+                const Text(
+                  'Already-presented teams',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Finalize assessed matching modules in this same save. Leaving a team pending preserves its current grading and outcome.',
+                ),
+                for (final team in widget.teams) ...[
+                  const Divider(height: 24),
+                  Text(
+                    '${team['name']}',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    '${_rows(team['concepts']).where((c) => c['key'] == selected).firstOrNull?['title'] ?? ''}',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  if (team['can_finalize_with_selection'] == true) ...[
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      key: ValueKey('batch-outcome-${team['id']}-$selected'),
+                      initialValue: teamOutcomes[team['id']] ?? '',
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Module outcome',
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: '',
+                          child: Text('Leave awaiting module decision'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'approved',
+                          child: Text('Approved'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'approved_with_revisions',
+                          child: Text('Approved with revisions'),
+                        ),
+                      ],
+                      onChanged: (value) => setState(
+                        () => teamOutcomes[team['id'] as int] = value ?? '',
+                      ),
+                    ),
+                    if (teamOutcomes[team['id']] == 'approved_with_revisions')
+                      TextFormField(
+                        key: ValueKey('batch-notes-${team['id']}-$selected'),
+                        initialValue: teamNotes[team['id']] ?? '',
+                        maxLength: 5000,
+                        minLines: 2,
+                        maxLines: 4,
+                        decoration: const InputDecoration(
+                          labelText: 'Required module corrections',
+                        ),
+                        onChanged: (value) =>
+                            teamNotes[team['id'] as int] = value,
+                        validator: (value) =>
+                            value == null || value.trim().isEmpty
+                            ? 'Record the required corrections.'
+                            : null,
+                      ),
+                  ] else
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        '${team['verdict'] ?? ''}'.isNotEmpty
+                            ? 'Recorded outcome: ${team['verdict']}'
+                            : '${team['module_assessment_reason'] ?? 'Panel grading is pending.'}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                ],
+              ],
             ],
           ),
         ),
@@ -2128,6 +2323,18 @@ class _SectionDecisionDialogState extends State<_SectionDecisionDialog> {
                 Navigator.pop(context, {
                   'verdict': verdict,
                   'remarks': remarks,
+                  if (widget.teamName == null)
+                    'team_outcomes': [
+                      for (final team in widget.teams)
+                        if (verdict != 'for_redefense' &&
+                            (teamOutcomes[team['id']] ?? '').isNotEmpty)
+                          {
+                            'team_id': team['id'],
+                            'verdict': teamOutcomes[team['id']],
+                            'remarks': (teamNotes[team['id']] ?? '').trim(),
+                            'review_token': team['module_outcome_review_token'],
+                          },
+                    ],
                   if (widget.teamName == null)
                     'concepts': [
                       for (final s in widget.systems)

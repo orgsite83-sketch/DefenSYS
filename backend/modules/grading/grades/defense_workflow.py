@@ -112,14 +112,14 @@ def record_verdict(grade, *, actor, verdict, remarks='', deadline=None, verifica
     return grade
 
 
-def workflow_payload(grade):
+def workflow_payload(grade, actor=None):
     from repository.deliverables.models import DeliverableSubmission
     from defense.scheduler.models import DefenseSchedule
     authorization = recovery_for(grade.team, grade.defense_stage) if grade.defense_stage_id else None
     records = grade.team.recovery_authorizations.select_related('authorized_by', 'defense_stage', 'semester')
     from repository.deliverables.concepts import payload as concept_payload, clearance_blocker, context_for_grade
     concept_context = context_for_grade(grade)
-    concept_workflow = concept_payload(grade.team, concept_context)
+    concept_workflow = concept_payload(grade.team, concept_context, actor=actor)
     if concept_workflow and grade.schedule_id:
         from repository.deliverables.models import ConceptRound
         hearing = ConceptRound.objects.filter(schedule_id=grade.schedule_id).first()
@@ -183,6 +183,12 @@ def apply_workflow_action(grade, *, actor, action, reason='', project_title='', 
         if action == 'clear_revisions':
             if not reason.strip():
                 raise ValidationError('Record which corrections and evidence were verified.')
+            from repository.deliverables.concepts import context_for_grade, enabled
+            stage = context_for_grade(grade)
+            if enabled(stage):
+                from repository.deliverables.concept_completion import final_paper_complete
+                if not final_paper_complete(team, stage, required=True):
+                    raise ValidationError('Accept the final paper for the selected concept before clearing revisions.')
             grade.revisions_cleared_at = timezone.now()
             grade.revisions_cleared_by = actor
             grade.clearance_remarks = reason.strip()

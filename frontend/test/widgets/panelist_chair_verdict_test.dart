@@ -14,6 +14,7 @@ TeamData _chairAssignment({
   bool posted = false,
   bool chair = true,
   bool pitConcepts = false,
+  int conceptCount = 3,
   String? reason,
 }) => TeamData(
   name: 'Team AgriSense',
@@ -30,8 +31,11 @@ TeamData _chairAssignment({
             'concept_workflow': {
               'enabled': true,
               'round': 1,
+              'can_manage_decision': true,
+              'can_record_decision': ready,
+              'decision_review_token': 'pit-token-1',
               'concepts': [
-                for (var i = 1; i <= 3; i++)
+                for (var i = 1; i <= conceptCount; i++)
                   {'key': 'c$i', 'title': 'PIT idea $i', 'decision': ''},
               ],
             },
@@ -82,14 +86,14 @@ void main() {
     });
 
     testWidgets(
-      'PIT concept chair grades without a formal verdict or concept selection controls',
+      'PIT concept chair receives concept decisions and displays Panel Chair Concept Selection',
       (tester) async {
         tester.view.physicalSize = const Size(800, 1400);
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.resetPhysicalSize);
         addTearDown(tester.view.resetDevicePixelRatio);
         final waiting = _chairAssignment(pitConcepts: true, posted: true);
-        expect(waiting.panelWorkFinished, isTrue);
+        expect(waiting.panelWorkFinished, isFalse);
         expect(waiting.canIssueVerdict, isFalse);
         final team = _chairAssignment(
           pitConcepts: true,
@@ -97,6 +101,7 @@ void main() {
           ready: true,
         );
         expect(team.canIssueVerdict, isFalse);
+        expect(team.canRecordPitConceptDecision, isTrue);
         await pumpDefensysWidget(
           tester,
           GradeSheetTab(
@@ -106,9 +111,46 @@ void main() {
           ),
         );
         expect(find.text('Panel Chair Official Verdict'), findsNothing);
-        expect(find.text('PIT idea 1'), findsNothing);
-        expect(find.text('PIT idea 2'), findsNothing);
-        expect(find.text('PIT idea 3'), findsNothing);
+        expect(find.text('Panel Chair Concept Selection'), findsOneWidget);
+        expect(find.text('PIT idea 1'), findsOneWidget);
+        expect(find.text('PIT idea 2'), findsOneWidget);
+        expect(find.text('PIT idea 3'), findsOneWidget);
+        expect(find.byKey(const ValueKey('submit-pit-concept-decision-btn')), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'PIT chair with single assigned project displays Panel Chair Project Verdict instead of concept picker',
+      (tester) async {
+        tester.view.physicalSize = const Size(800, 1400);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final team = _chairAssignment(
+          pitConcepts: true,
+          conceptCount: 1,
+          posted: true,
+          ready: true,
+        );
+        expect(team.canIssueVerdict, isFalse);
+        expect(team.canRecordPitConceptDecision, isTrue);
+        await pumpDefensysWidget(
+          tester,
+          GradeSheetTab(
+            teams: [team],
+            selectedTeamIndex: 0,
+            onTeamChanged: (_) {},
+          ),
+        );
+        expect(find.text('Panel Chair Project Verdict'), findsOneWidget);
+        expect(
+          find.text('Issue the defense verdict for Team AgriSense.'),
+          findsOneWidget,
+        );
+        expect(find.text('PROJECT VERDICT FEEDBACK / REMARKS'), findsOneWidget);
+        expect(find.text('Submit Project Verdict'), findsOneWidget);
+        expect(find.text('Panel Chair Concept Selection'), findsNothing);
         expect(tester.takeException(), isNull);
       },
     );

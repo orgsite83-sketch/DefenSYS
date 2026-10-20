@@ -7,6 +7,7 @@ import '../screens/app/panelist_dashboard.dart';
 import '../notifications/notification_request_screen.dart';
 import '../screens/web/shared/team_deliverables/team_deliverables_screen.dart';
 import '../screens/web/admin/student_teams/team_creation_page.dart';
+import '../screens/web/admin/student_teams/student_teams_screen.dart';
 import '../screens/app/documenter_dashboard.dart';
 import '../screens/web/faculty/documenter/minutes_form_screen.dart';
 import '../screens/app/student_dashboard.dart';
@@ -565,13 +566,33 @@ List<GoRoute> _facultySectionRoutes() {
 
 GoRoute _teamCreationRoute({bool instructor = false}) => GoRoute(
   path: 'creation',
-  builder: (_, state) => TeamCreationPage(
-    key: ValueKey(state.uri.toString()),
-    initialTab: state.uri.queryParameters['tab'] ?? 'generate',
-    initialLevel: state.uri.queryParameters['level'],
-    initialSection: state.uri.queryParameters['section'],
-    initialEvent: state.uri.queryParameters['event'],
-  ),
+  builder: (_, state) {
+    if (state.uri.queryParameters['tab'] == 'import') {
+      final base = state.uri.path.replaceFirst('/creation', '');
+      final levelParam = state.uri.queryParameters['level'];
+      final normalizedLevel = levelParam?.replaceAll(' PIT', '').trim();
+      return Scaffold(
+        backgroundColor: const Color(0xFFF8FAFC),
+        body: StudentTeamsScreen(
+          mode: instructor
+              ? TeamListMode.pitInstructor
+              : (base.startsWith('/admin')
+                  ? TeamListMode.capstoneAdmin
+                  : TeamListMode.pitLead),
+          initialBulkImport: true,
+          pitYearLevel: normalizedLevel ?? levelParam,
+          pitSection: state.uri.queryParameters['section'],
+        ),
+      );
+    }
+    return TeamCreationPage(
+      key: ValueKey(state.uri.toString()),
+      initialTab: 'generate',
+      initialLevel: state.uri.queryParameters['level'],
+      initialSection: state.uri.queryParameters['section'],
+      initialEvent: state.uri.queryParameters['event'],
+    );
+  },
 );
 
 Page<void> _adminSectionPage(

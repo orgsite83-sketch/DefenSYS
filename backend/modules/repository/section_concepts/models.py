@@ -51,6 +51,9 @@ class SectionConceptRound(models.Model):
     endorsement_snapshot = models.JSONField(default=dict, blank=True)
     decision_snapshot = models.JSONField(default=dict, blank=True)
     decided_at = models.DateTimeField(null=True, blank=True)
+    presentation_started_at = models.DateTimeField(null=True, blank=True)
+    presentation_started_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.PROTECT, related_name='started_section_hearings')
     revisions_cleared_at = models.DateTimeField(null=True, blank=True)
     revisions_cleared_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
         on_delete=models.PROTECT, related_name='cleared_section_rounds')
@@ -99,6 +102,7 @@ class SectionConceptAcknowledgment(models.Model):
 
 class SectionConceptPaper(models.Model):
     concept = models.ForeignKey(SectionSystemConcept, on_delete=models.PROTECT, related_name='papers')
+    purpose = models.CharField(max_length=10, default='proposal', choices=[('proposal', 'Proposal'), ('final', 'Approved concept paper')])
     file = models.FileField(upload_to='section_concepts/%Y/%m/')
     file_name = models.CharField(max_length=255)
     revision = models.PositiveIntegerField(default=1)
@@ -115,6 +119,6 @@ class SectionConceptPaper(models.Model):
     class Meta:
         app_label = 'repository'
         constraints = [
-            models.UniqueConstraint(fields=['concept'], condition=models.Q(is_current=True), name='section_paper_current_unique'),
-            models.UniqueConstraint(fields=['concept', 'revision'], name='section_paper_revision_unique'),
+            models.UniqueConstraint(fields=['concept', 'purpose'], condition=models.Q(is_current=True), name='section_paper_current_unique'),
+            models.UniqueConstraint(fields=['concept', 'purpose', 'revision'], name='section_paper_revision_unique'),
         ]
