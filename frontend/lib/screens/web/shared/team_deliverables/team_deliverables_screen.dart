@@ -8,7 +8,6 @@ import 'package:defensys/services/defense/adviser_defense_provider.dart';
 import 'package:defensys/services/defense/team_defense_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
-import 'package:defensys/theme/defensys_button_styles.dart';
 import 'package:defensys/widgets/shadcn/defensys_shadcn_scope.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'components/deliverables_filter_bar.dart';
@@ -17,6 +16,8 @@ import 'components/faculty_teams_overview_export.dart';
 import 'components/cohort_submissions_matrix.dart';
 import 'deliverables_view_types.dart';
 import 'package:defensys/widgets/repository/section_concept_workspace.dart';
+import 'package:defensys/widgets/repository/requirement_summary.dart';
+import 'package:defensys/models/team_workflow_status.dart';
 import '../../admin/student_teams/team_creation_page.dart';
 export 'deliverables_view_types.dart';
 
@@ -62,7 +63,8 @@ bool _stageNotConfigured(CapstoneDeliverablesState state) {
     }
   }
   final counts = state.counts;
-  final configured = counts['deliverables_configured'] == true ||
+  final configured =
+      counts['deliverables_configured'] == true ||
       (counts['deliverables_configured'] is int &&
           counts['deliverables_configured'] == 1);
   return !configured;
@@ -103,21 +105,38 @@ class _TeamDeliverablesScreenState
   late DeliverablesViewMode _viewMode;
   TeamTriageFilter _triageFilter = TeamTriageFilter.all;
   int? _activeTeamId;
+  bool _showConceptReview = false;
+  int? _conceptReviewProjectId;
   final _sharedReviewKeys = <int, GlobalKey<SectionConceptOverviewState>>{};
 
   GlobalKey<SectionConceptOverviewState> _sharedReviewKey(int projectId) =>
-      _sharedReviewKeys.putIfAbsent(projectId, () => GlobalKey<SectionConceptOverviewState>());
+      _sharedReviewKeys.putIfAbsent(
+        projectId,
+        () => GlobalKey<SectionConceptOverviewState>(),
+      );
 
   void _openSharedReview(int projectId) async {
+    if (widget.isAdviser || widget.isPitInstructor) {
+      setState(() {
+        _viewMode = DeliverablesViewMode.dossier;
+        _showConceptReview = true;
+        _conceptReviewProjectId = projectId;
+      });
+      return;
+    }
     final review = _sharedReviewKey(projectId).currentState;
     if (review != null) {
       review.openReview();
       return;
     }
-    await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => SectionConceptWorkspace(projectId: projectId),
-    ));
-    if (mounted) await ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SectionConceptWorkspace(projectId: projectId),
+      ),
+    );
+    if (mounted) {
+      await ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
+    }
   }
 
   @override
@@ -125,19 +144,26 @@ class _TeamDeliverablesScreenState
     super.initState();
     _activeTeamId = widget.initialTeamId;
     final isEvaluator = widget.isAdviser || widget.isPitInstructor;
-    _viewMode = widget.initialViewMode ??
-        (isEvaluator ? DeliverablesViewMode.dossier : DeliverablesViewMode.matrix);
+    _viewMode = isEvaluator
+        ? DeliverablesViewMode.dossier
+        : widget.initialViewMode ?? DeliverablesViewMode.matrix;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
-        workspace: widget.isAdviser ? 'adviser' : widget.isPitInstructor ? 'instructor' : 'operations',
-        search: widget.initialTeamId != null ? '' : null,
-        status: widget.initialTeamId != null ? '' : null,
-        scope: widget.initialScope,
-        selectedStage: widget.initialStage,
-        yearLevel: widget.pitYearLevel ?? '',
-        section: widget.pitSection ?? '',
-      );
+      ref
+          .read(capstoneDeliverablesProvider.notifier)
+          .fetchDeliverables(
+            workspace: widget.isAdviser
+                ? 'adviser'
+                : widget.isPitInstructor
+                ? 'instructor'
+                : 'operations',
+            search: widget.initialTeamId != null ? '' : null,
+            status: widget.initialTeamId != null ? '' : null,
+            scope: widget.initialScope,
+            selectedStage: widget.initialStage,
+            yearLevel: widget.pitYearLevel ?? '',
+            section: widget.pitSection ?? '',
+          );
       ref.read(adviserGradingProvider.notifier).fetchAll();
       ref.read(weeklyProgressProvider.notifier).fetchReports();
       if (widget.isAdviser) {
@@ -151,9 +177,16 @@ class _TeamDeliverablesScreenState
   @override
   void didUpdateWidget(covariant TeamDeliverablesScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialTeamId != widget.initialTeamId &&
+        widget.initialTeamId != null) {
+      _activeTeamId = widget.initialTeamId;
+      _showConceptReview = false;
+    }
     if (widget.initialViewMode != null &&
         widget.initialViewMode != oldWidget.initialViewMode) {
-      _viewMode = widget.initialViewMode!;
+      _viewMode = widget.isAdviser || widget.isPitInstructor
+          ? DeliverablesViewMode.dossier
+          : widget.initialViewMode!;
     }
   }
 
@@ -164,9 +197,11 @@ class _TeamDeliverablesScreenState
   }
 
   Future<void> _openCreation() async {
-    final saved = await openTeamCreation(context,
+    final saved = await openTeamCreation(
+      context,
       level: widget.pitYearLevel == null ? null : '${widget.pitYearLevel} PIT',
-      section: widget.pitSection);
+      section: widget.pitSection,
+    );
     if (saved == true && mounted) {
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
       ref.read(pitInstructorDefenseProvider.notifier).fetch();
@@ -191,38 +226,62 @@ class _TeamDeliverablesScreenState
     final state = ref.watch(capstoneDeliverablesProvider);
     final isWide = MediaQuery.of(context).size.width >= 900;
     final isEvaluator = widget.isAdviser || widget.isPitInstructor;
-    final isPit = widget.initialScope == 'pit' ||
+    final isPit =
+        widget.initialScope == 'pit' ||
         widget.pitYearLevel != null ||
         widget.pitSection != null ||
         state.scope == 'pit';
-    final showViewToggle = isEvaluator && (state.teams.length >= 3 || widget.isPitInstructor);
+    const showViewToggle = false;
+    final sharedReviews = sharedReviewsForTeams(
+      state.teams,
+      stageLabel: state.selectedStage,
+    );
+    final hasConceptReview =
+        sharedReviews.isNotEmpty ||
+        state.teams.any((team) {
+          final stage = DeliverablesTriageHelper.resolveActiveStage(team) ?? {};
+          return (stage['concept_workflow'] as Map?)?['enabled'] == true ||
+              TeamWorkflowStatus.items(stage).any(isConceptRequirement);
+        });
 
     final String pageTitle;
     final String pageSubtitle;
     if (widget.isPitInstructor) {
       pageTitle = 'PIT Teams';
       pageSubtitle = widget.pitSection != null
-          ? 'Section ${widget.pitSection} · Evaluation & Stage Deliverables'
-          : (state.activeSemester?['display_name']?.toString() ?? 'Active Semester');
+          ? 'Section ${widget.pitSection} · Concepts & team deliverables'
+          : (state.activeSemester?['display_name']?.toString() ??
+                'Active Semester');
     } else if (widget.isAdviser) {
       pageTitle = 'Capstone Teams';
-      pageSubtitle = state.activeSemester?['display_name']?.toString() ?? 'Active Semester';
+      pageSubtitle =
+          state.activeSemester?['display_name']?.toString() ??
+          'Active Semester';
     } else if (isPit) {
       pageTitle = 'PIT Cohort Deliverables';
       pageSubtitle = widget.pitYearLevel != null
           ? '${widget.pitYearLevel} Cohort · Deliverables Tracking & Reminders'
-          : (state.activeSemester?['display_name']?.toString() ?? 'Active Semester');
+          : (state.activeSemester?['display_name']?.toString() ??
+                'Active Semester');
     } else {
       pageTitle = 'Capstone Cohort Deliverables';
       pageSubtitle = 'All Teams · Deliverables Tracking & Reminders';
     }
 
-    final filteredTeams = DeliverablesTriageHelper.reviewFirst(state.teams
-        .where((t) => DeliverablesTriageHelper.matchesFilter(t, _triageFilter)));
+    final filteredTeams = DeliverablesTriageHelper.reviewFirst(
+      state.teams.where(
+        (t) => DeliverablesTriageHelper.matchesFilter(t, _triageFilter),
+      ),
+    );
 
-    final pendingCount = state.teams.fold<int>(0,
-        (count, team) => count + DeliverablesTriageHelper.pendingReviewCount(team));
-    final reviewTeamCount = state.teams.where(DeliverablesTriageHelper.hasPendingReview).length;
+    final pendingCount = state.teams.fold<int>(
+      0,
+      (count, team) =>
+          count + DeliverablesTriageHelper.pendingReviewCount(team),
+    );
+    final reviewTeamCount = state.teams
+        .where(DeliverablesTriageHelper.hasPendingReview)
+        .length;
     final content = SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -240,36 +299,49 @@ class _TeamDeliverablesScreenState
               children: [
                 Tooltip(
                   message: 'Refresh',
-                  child: OutlinedButton.icon(
+                  child: ShadButton.outline(
+                    height: 40,
+                    enabled: !state.isSaving,
                     onPressed: state.isSaving
                         ? null
                         : () {
-                            ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
+                            ref
+                                .read(capstoneDeliverablesProvider.notifier)
+                                .fetchDeliverables();
                             if (widget.isAdviser) {
                               ref.read(adviserDefenseProvider.notifier).fetch();
-                              ref.read(adviserGradingProvider.notifier).fetchAll();
+                              ref
+                                  .read(adviserGradingProvider.notifier)
+                                  .fetchAll();
                             } else if (widget.isPitInstructor) {
-                              ref.read(pitInstructorDefenseProvider.notifier).fetch();
-                              ref.read(adviserGradingProvider.notifier).fetchAll();
+                              ref
+                                  .read(pitInstructorDefenseProvider.notifier)
+                                  .fetch();
+                              ref
+                                  .read(adviserGradingProvider.notifier)
+                                  .fetchAll();
                             }
                           },
-                    style: DefensysButtonStyles.secondary(context),
-                    icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('Refresh'),
+                    leading: const Icon(Icons.refresh_rounded, size: 16),
+                    child: const Text('Refresh'),
                   ),
                 ),
                 if (widget.isPitInstructor) ...[
-                  OutlinedButton.icon(
+                  ShadButton.outline(
+                    height: 40,
+                    enabled: !state.isSaving,
                     onPressed: state.isSaving ? null : () => _openImport(),
-                    style: DefensysButtonStyles.secondary(context),
-                    icon: const Icon(Icons.upload_file_rounded),
-                    label: const Text('Import'),
+                    leading: const Icon(Icons.upload_file_rounded, size: 16),
+                    child: const Text('Import'),
                   ),
-                  ElevatedButton.icon(
+                  ShadButton(
+                    height: 40,
+                    enabled: !state.isSaving,
+                    backgroundColor: DefensysTokens.maroonOf(context),
+                    foregroundColor: Colors.white,
                     onPressed: state.isSaving ? null : () => _openCreation(),
-                    style: DefensysButtonStyles.primary(context),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Generate teams'),
+                    leading: const Icon(Icons.add, size: 16),
+                    child: const Text('Generate teams'),
                   ),
                 ],
               ],
@@ -281,7 +353,11 @@ class _TeamDeliverablesScreenState
           ],
           if (state.message != null) ...[
             const SizedBox(height: 12),
-            _notice(Icons.check_circle_outline, state.message!, AppColors.success),
+            _notice(
+              Icons.check_circle_outline,
+              state.message!,
+              AppColors.success,
+            ),
           ],
           if (_stageNotConfigured(state)) ...[
             const SizedBox(height: 12),
@@ -289,39 +365,70 @@ class _TeamDeliverablesScreenState
               Icons.info_outline,
               state.scope == 'pit'
                   ? (state.stageOptions.isEmpty
-                      ? 'No PIT events configured for this semester or year level. Add them in PIT Events Setup.'
-                      : 'No deliverables configured for ${state.selectedStage}. Add them in PIT Events Setup.')
+                        ? 'No PIT events configured for this semester or year level. Add them in PIT Events Setup.'
+                        : 'No deliverables configured for ${state.selectedStage}. Add them in PIT Events Setup.')
                   : widget.isAdviser
-                      ? (state.stageOptions.isEmpty
-                          ? 'No defense stages configured.'
-                          : 'No deliverables configured for ${state.selectedStage}.')
-                      : (state.stageOptions.isEmpty
-                          ? 'No defense stages configured. Add them in Defense Stages Setup.'
-                          : 'No deliverables configured for ${state.selectedStage}. Add them in Defense Stages Setup so Required progress can be tracked.'),
+                  ? (state.stageOptions.isEmpty
+                        ? 'No defense stages configured.'
+                        : 'No deliverables configured for ${state.selectedStage}.')
+                  : (state.stageOptions.isEmpty
+                        ? 'No defense stages configured. Add them in Defense Stages Setup.'
+                        : 'No deliverables configured for ${state.selectedStage}. Add them in Defense Stages Setup so Required progress can be tracked.'),
               AppColors.gold,
             ),
           ],
           const SizedBox(height: 16),
-          DeliverablesFilterBar(
-            state: state,
-            searchController: _searchController,
-            isAdviser: isEvaluator,
-            viewMode: _viewMode,
-            onViewModeChanged: (mode) {
-              setState(() {
-                _viewMode = mode;
-              });
-            },
-            activeTriageFilter: _triageFilter,
-            onTriageFilterChanged: (filter) {
-              setState(() {
-                _triageFilter = filter;
-              });
-            },
-            showViewToggle: showViewToggle,
-          ),
+          if (isEvaluator)
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: Text(
+                'Search & team filters',
+                style: DefensysTokens.body.copyWith(
+                  color: DefensysTokens.textPrimaryOf(context),
+                ),
+              ),
+              subtitle: state.selectedStage.isEmpty
+                  ? null
+                  : Text(
+                      state.selectedStage,
+                      style: DefensysTokens.caption.copyWith(
+                        color: DefensysTokens.textSecondaryOf(context),
+                      ),
+                    ),
+              children: [
+                DeliverablesFilterBar(
+                  state: state,
+                  searchController: _searchController,
+                  isAdviser: true,
+                  viewMode: _viewMode,
+                  showViewToggle: false,
+                  activeTriageFilter: _triageFilter,
+                  onTriageFilterChanged: (filter) =>
+                      setState(() => _triageFilter = filter),
+                ),
+              ],
+            )
+          else
+            DeliverablesFilterBar(
+              state: state,
+              searchController: _searchController,
+              isAdviser: isEvaluator,
+              viewMode: _viewMode,
+              onViewModeChanged: (mode) {
+                setState(() {
+                  _viewMode = mode;
+                });
+              },
+              activeTriageFilter: _triageFilter,
+              onTriageFilterChanged: (filter) {
+                setState(() {
+                  _triageFilter = filter;
+                });
+              },
+              showViewToggle: showViewToggle,
+            ),
           const SizedBox(height: 16),
-          if (!state.isLoading && pendingCount > 0) ...[
+          if (!state.isLoading && pendingCount > 0 && !isEvaluator) ...[
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               decoration: BoxDecoration(
@@ -331,7 +438,11 @@ class _TeamDeliverablesScreenState
               ),
               child: Row(
                 children: [
-                  const Icon(LucideIcons.clock, size: 16, color: Color(0xFF1D4ED8)),
+                  const Icon(
+                    LucideIcons.clock,
+                    size: 16,
+                    color: Color(0xFF1D4ED8),
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
@@ -351,20 +462,76 @@ class _TeamDeliverablesScreenState
                     trailing: const Icon(LucideIcons.arrowRight, size: 14),
                     onPressed: () => setState(() {
                       _triageFilter = TeamTriageFilter.needsReview;
-                      _activeTeamId = int.tryParse(DeliverablesTriageHelper.reviewFirst(state.teams).first['id'].toString());
+                      _activeTeamId = int.tryParse(
+                        DeliverablesTriageHelper.reviewFirst(
+                          state.teams,
+                        ).first['id'].toString(),
+                      );
                       if (isEvaluator) {
                         _viewMode = DeliverablesViewMode.dossier;
                       }
                     }),
-                    child: const Text('View submissions', style: TextStyle(fontWeight: FontWeight.bold)),
+                    child: const Text(
+                      'View submissions',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 12),
           ],
-          if (!state.isLoading && _viewMode == DeliverablesViewMode.dossier)
-            for (final review in sharedReviewsForTeams(state.teams, stageLabel: state.selectedStage))
+          if (isEvaluator) ...[
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (hasConceptReview)
+                  SizedBox(
+                    width: 280,
+                    child: ShadTabs<bool>(
+                      value: _showConceptReview,
+                      gap: 0,
+                      onChanged: (concepts) => setState(() {
+                        _viewMode = DeliverablesViewMode.dossier;
+                        _showConceptReview = concepts;
+                        _conceptReviewProjectId =
+                            !concepts || sharedReviews.isEmpty
+                            ? null
+                            : sharedReviews.first['project_id'] as int;
+                      }),
+                      tabs: const [
+                        ShadTab(value: true, child: Text('Concept review')),
+                        ShadTab(value: false, child: Text('By team')),
+                      ],
+                    ),
+                  )
+                else
+                  const Text(
+                    'By team',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                if (pendingCount > 0)
+                  TextButton(
+                    onPressed: () => setState(() {
+                      _triageFilter = TeamTriageFilter.needsReview;
+                      _viewMode = DeliverablesViewMode.dossier;
+                      _showConceptReview = false;
+                    }),
+                    child: Text('$pendingCount awaiting review'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (!isEvaluator &&
+              !state.isLoading &&
+              _viewMode == DeliverablesViewMode.dossier)
+            for (final review in sharedReviewsForTeams(
+              state.teams,
+              stageLabel: state.selectedStage,
+            ))
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
                 child: SectionConceptOverview(
@@ -372,9 +539,14 @@ class _TeamDeliverablesScreenState
                   projectId: review['project_id'] as int,
                   section: '${review['section']}',
                   stageLabel: '${review['stage_label']}',
-                  systems: (review['systems'] as List? ?? []).whereType<Map>().map((s) => Map<String, dynamic>.from(s)).toList(),
+                  systems: (review['systems'] as List? ?? [])
+                      .whereType<Map>()
+                      .map((s) => Map<String, dynamic>.from(s))
+                      .toList(),
                   summary: review,
-                  onChanged: () => ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(),
+                  onChanged: () => ref
+                      .read(capstoneDeliverablesProvider.notifier)
+                      .fetchDeliverables(),
                 ),
               ),
           state.isLoading
@@ -385,45 +557,60 @@ class _TeamDeliverablesScreenState
                   ),
                 )
               : (_viewMode == DeliverablesViewMode.matrix
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (widget.isAdviser || widget.isPitInstructor) ...[
-                          FacultyTeamsOverviewExport(
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (widget.isAdviser || widget.isPitInstructor) ...[
+                            FacultyTeamsOverviewExport(
+                              teams: filteredTeams,
+                              workspace: widget.isAdviser
+                                  ? 'adviser'
+                                  : 'pit_instructor',
+                              selectedStage: state.selectedStage,
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          CohortSubmissionsMatrix(
                             teams: filteredTeams,
-                            workspace: widget.isAdviser ? 'adviser' : 'pit_instructor',
-                            selectedStage: state.selectedStage,
+                            state: state,
+                            isAdviser: isEvaluator,
+                            sharedReviewKey: _sharedReviewKey,
+                            onOpenSharedReview: _openSharedReview,
+                            initialExpandedTeamId:
+                                _activeTeamId ?? widget.initialTeamId,
+                            onSelectTeam: (teamId) {
+                              setState(() {
+                                _activeTeamId = teamId;
+                                if (isEvaluator) {
+                                  _viewMode = DeliverablesViewMode.dossier;
+                                }
+                              });
+                            },
                           ),
-                          const SizedBox(height: 12),
                         ],
-                        CohortSubmissionsMatrix(
-                          teams: filteredTeams,
-                          state: state,
-                          isAdviser: isEvaluator,
-                          sharedReviewKey: _sharedReviewKey,
-                          onOpenSharedReview: _openSharedReview,
-                          initialExpandedTeamId: _activeTeamId ?? widget.initialTeamId,
-                          onSelectTeam: (teamId) {
-                            setState(() {
-                              _activeTeamId = teamId;
-                              if (isEvaluator) {
-                                _viewMode = DeliverablesViewMode.dossier;
-                              }
-                            });
-                          },
-                        )
-                      ],
-                    )
-                  : DeliverablesTablePane(
-                      state: state,
-                      isAdviser: widget.isAdviser,
-                      isPitInstructor: widget.isPitInstructor,
-                      key: ValueKey(_activeTeamId),
-                      initialTeamId: _activeTeamId ?? widget.initialTeamId,
-                      initialTab: widget.initialTab,
-                      activeTriageFilter: _triageFilter,
-                      onOpenSharedReview: _openSharedReview,
-                    )),
+                      )
+                    : DeliverablesTablePane(
+                        state: state,
+                        isAdviser: widget.isAdviser,
+                        isPitInstructor: widget.isPitInstructor,
+                        key: isEvaluator
+                            ? const ValueKey('faculty-workspace')
+                            : ValueKey(_activeTeamId),
+                        initialTeamId: _activeTeamId ?? widget.initialTeamId,
+                        initialTab: widget.initialTab,
+                        activeTriageFilter: _triageFilter,
+                        onOpenSharedReview: _openSharedReview,
+                        compactFaculty: isEvaluator,
+                        conceptReview:
+                            isEvaluator &&
+                            hasConceptReview &&
+                            _showConceptReview,
+                        conceptReviewProjectId: _conceptReviewProjectId,
+                        onSelectedTeamChanged: (teamId) =>
+                            _activeTeamId = teamId,
+                        onReturnToTeam: () =>
+                            setState(() => _showConceptReview = false),
+                      )),
         ],
       ),
     );
@@ -435,12 +622,12 @@ class _TeamDeliverablesScreenState
         child: isWide
             ? content
             : RefreshIndicator(
-                onRefresh: () =>
-                    ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(),
+                onRefresh: () => ref
+                    .read(capstoneDeliverablesProvider.notifier)
+                    .fetchDeliverables(),
                 child: content,
               ),
       ),
     );
   }
 }
-

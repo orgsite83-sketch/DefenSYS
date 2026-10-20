@@ -10,6 +10,7 @@ import '../../theme/defensys_tokens.dart';
 
 import 'pit_concept_decision_panel.dart';
 import 'shared_concept_review.dart';
+import 'proposal_names_editor.dart';
 export 'concept_decision_fields.dart';
 export 'pit_concept_decision_panel.dart';
 
@@ -20,11 +21,13 @@ class ConceptWorkspace extends ConsumerStatefulWidget {
     required this.stageLabel,
     required this.stage,
     this.onOpenSharedReview,
+    this.paperContent,
   });
   final int teamId;
   final String stageLabel;
   final Map<String, dynamic> stage;
   final ValueChanged<int>? onOpenSharedReview;
+  final Widget? paperContent;
   @override
   ConsumerState<ConceptWorkspace> createState() => _ConceptWorkspaceState();
 }
@@ -33,6 +36,8 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
   final controllers = <String, TextEditingController>{};
   bool busy = false;
   String? error;
+  bool editingNames = false;
+  String? nameReviewToken;
   Map<String, dynamic> get workflow =>
       Map<String, dynamic>.from(widget.stage['concept_workflow'] as Map? ?? {});
   List<Map<String, dynamic>> get concepts =>
@@ -105,13 +110,15 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
     super.dispose();
   }
 
-  Future<void> perform(Future<bool> Function() action) async {
+  Future<bool> perform(Future<bool> Function() action) async {
+    var saved = false;
     setState(() {
       busy = true;
       error = null;
     });
     try {
       final ok = await action();
+      saved = ok;
       if (mounted && !ok) {
         setState(
           () => error =
@@ -124,6 +131,110 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
     } finally {
       if (mounted) setState(() => busy = false);
     }
+    return saved;
+  }
+
+  Widget compactReview(bool titlesEditable, bool shared, bool admin) {
+    final confirmed =
+        concepts.isNotEmpty &&
+        concepts.every((c) => c['faculty_confirmed'] == true);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (editingNames)
+          ProposalNamesEditor(
+            key: ValueKey('names-$identity'),
+            rows: visibleConcepts,
+            shared: shared,
+            busy: busy,
+            onBack: () => setState(() => editingNames = false),
+            onConfirm: (rows) async {
+              final saved = await perform(
+                () => ref
+                    .read(capstoneDeliverablesProvider.notifier)
+                    .conceptAction(
+                      widget.teamId,
+                      widget.stageLabel,
+                      'save_titles',
+                      concepts: [
+                        for (final c in concepts)
+                          rows
+                                  .where((row) => row['key'] == c['key'])
+                                  .firstOrNull ??
+                              c,
+                      ],
+                      reviewToken: shared ? nameReviewToken : null,
+                    ),
+              );
+              if (saved && mounted) setState(() => editingNames = false);
+            },
+          )
+        else ...[
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              Text(
+                shared
+                    ? (confirmed
+                          ? 'Module names confirmed'
+                          : 'Module names need confirmation')
+                    : 'Project concepts',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+              if (titlesEditable)
+                ShadButton.outline(
+                  size: ShadButtonSize.sm,
+                  enabled: !busy,
+                  onPressed: () => setState(() {
+                    nameReviewToken = workflow['module_review_token']
+                        ?.toString();
+                    editingNames = true;
+                  }),
+                  child: Text(
+                    shared ? 'Confirm module names' : 'Edit concept names',
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          widget.paperContent!,
+        ],
+        if (busy) const LinearProgressIndicator(),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        if (!shared && workflow['decision_scope'] == 'pit')
+          PitConceptDecisionPanel(
+            teamId: widget.teamId,
+            stageLabel: widget.stageLabel,
+            workflow: workflow,
+          ),
+        if (admin &&
+            workflow['can_edit'] == true &&
+            workflow['clearance_valid'] != true)
+          Align(
+            alignment: Alignment.centerRight,
+            child: ShadButton.ghost(
+              size: ShadButtonSize.sm,
+              enabled: !busy,
+              onPressed: overrideClearance,
+              child: const Text('Clearance exception'),
+            ),
+          ),
+        ConceptHistory(workflow: workflow),
+      ],
+    );
   }
 
   Future<void> overrideClearance() async {
@@ -281,6 +392,11 @@ class _ConceptWorkspaceState extends ConsumerState<ConceptWorkspace> {
                 workflow['module_names_confirmed'] != true));
     final assigned = workflow['assigned'] == true;
     final shared = workflow['section_project_id'] != null;
+    if (widget.paperContent != null) {
+      return DefensysShadcnScope(
+        child: compactReview(titlesEditable, shared, admin),
+      );
+    }
     final confirmedCount = concepts
         .where((c) => c['faculty_confirmed'] == true)
         .length;

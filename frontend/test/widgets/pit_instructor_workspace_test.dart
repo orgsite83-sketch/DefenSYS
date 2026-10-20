@@ -191,7 +191,13 @@ void main() {
         tester.getTopLeft(find.text('My actions')).dx,
         greaterThan(tester.getTopLeft(find.text('My teams')).dx),
       );
-      expect(find.descendant(of: find.byKey(const Key('team-requirement-badge')), matching: find.text('Ready to schedule')), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('team-requirement-badge')),
+          matching: find.text('Ready to schedule'),
+        ),
+        findsOneWidget,
+      );
       expect(find.textContaining('Room 301'), findsOneWidget);
       expect(find.textContaining('Room 302'), findsNothing);
       expect(find.text('Ready to schedule'), findsNWidgets(2));
@@ -608,7 +614,7 @@ void main() {
   });
 
   testWidgets(
-    'instructor defaults to dossier workspace and matrix exposes assigned teams export',
+    'instructor keeps By team and exports when opening an old matrix link',
     (tester) async {
       tester.view.physicalSize = const Size(1500, 1100);
       tester.view.devicePixelRatio = 1;
@@ -632,7 +638,7 @@ void main() {
       await tester.pump();
       expect(find.byType(DeliverablesTablePane), findsOneWidget);
 
-      // When matrix view is explicitly selected:
+      // Existing links to the removed faculty matrix resolve to By team.
       await pumpDefensysWidget(
         tester,
         const TeamDeliverablesScreen(
@@ -650,7 +656,9 @@ void main() {
         ],
       );
       await tester.pump();
-      expect(find.byType(CohortSubmissionsMatrix), findsOneWidget);
+      expect(find.byType(CohortSubmissionsMatrix), findsNothing);
+      expect(find.byType(DeliverablesTablePane), findsOneWidget);
+      expect(find.text('Cohort Matrix'), findsNothing);
       expect(find.text('Export teams'), findsOneWidget);
     },
   );

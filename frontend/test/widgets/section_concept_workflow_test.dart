@@ -292,7 +292,7 @@ void main() {
         ),
         overrides: authTestOverrides(),
       );
-      expect(find.text('Shared system review'), findsOneWidget);
+      expect(find.text('Shared concepts'), findsOneWidget);
       expect(find.byType(Scaffold), findsOneWidget);
       expect(find.text('Endorse shared papers'), findsNothing);
       await tester.tap(find.text('Accept paper'));
@@ -303,6 +303,129 @@ void main() {
       expect(actions.single['action'], 'review');
       expect(find.text('Shared papers cleared for hearing'), findsOneWidget);
       expect(find.byType(Scaffold), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'focused shared review reuses Details and saves before advancing',
+    (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      for (final dark in [false, true]) {
+        await tester.binding.setSurfaceSize(
+          dark ? const Size(390, 1000) : const Size(1280, 1000),
+        );
+        final project = reviewFixture();
+        final actions = <Map<String, dynamic>>[];
+        setApiHttpClientForTesting(
+          MockClient((request) async {
+            if (request.method == 'POST') {
+              final action = jsonDecode(request.body) as Map<String, dynamic>;
+              actions.add(action);
+              project['systems'][0]['papers'][0]['status'] = 'accepted';
+            }
+            return http.Response(jsonEncode(project), 200);
+          }),
+        );
+        await pumpDefensysWidget(
+          tester,
+          const RepaintBoundary(
+            key: ValueKey('focused-shared-preview'),
+            child: SingleChildScrollView(
+              child: SectionConceptWorkspace(
+                projectId: 7,
+                embedded: true,
+                focused: true,
+              ),
+            ),
+          ),
+          theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
+          overrides: authTestOverrides(),
+        );
+        expect(find.text('Read paper'), findsNothing);
+        expect(find.text('Details'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('shared-module-review-table')),
+          findsNothing,
+        );
+        await tester.tap(find.text('Details'));
+        await tester.pumpAndSettle();
+        expect(find.text('View Document'), findsOneWidget);
+        expect(find.text('Replace File'), findsNothing);
+        await tester.tap(find.byTooltip('Close details'));
+        await tester.pumpAndSettle();
+        await capturePreview(
+          tester,
+          find.byKey(const ValueKey('focused-shared-preview')),
+          'focused-shared-${dark ? 'dark-phone' : 'light-desktop'}',
+        );
+        await tester.ensureVisible(find.text('Accept & next'));
+        await tester.tap(find.text('Accept & next'));
+        await tester.pumpAndSettle();
+        expect(actions.single['paper_id'], 41);
+        expect(actions.single['round_id'], 12);
+        expect(actions.single['review_token'], 'reviewed-current-content');
+        expect(find.text('Clinic Management'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    },
+  );
+
+  testWidgets(
+    'focused shared name confirmation is inline and retains the review snapshot on failure',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final project = reviewFixture();
+      final actions = <Map<String, dynamic>>[];
+      var succeed = false;
+      setApiHttpClientForTesting(
+        MockClient((request) async {
+          if (request.method == 'POST') {
+            actions.add(jsonDecode(request.body) as Map<String, dynamic>);
+            if (!succeed) {
+              return http.Response(
+                jsonEncode({'detail': 'Could not confirm names.'}),
+                400,
+              );
+            }
+          }
+          return http.Response(jsonEncode(project), 200);
+        }),
+      );
+      await pumpDefensysWidget(
+        tester,
+        const SingleChildScrollView(
+          child: SectionConceptWorkspace(
+            projectId: 7,
+            embedded: true,
+            focused: true,
+          ),
+        ),
+        overrides: authTestOverrides(),
+      );
+      await tester.tap(find.text('Confirm system names'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.text('Back to papers'), findsOneWidget);
+      expect(find.text('Details'), findsNothing);
+      await tester.enterText(
+        find.byType(EditableText).first,
+        'Confirmed campus system',
+      );
+      await tester.tap(find.text('Confirm names'));
+      await tester.pumpAndSettle();
+      expect(find.text('Could not confirm names.'), findsOneWidget);
+      expect(find.text('Back to papers'), findsOneWidget);
+      succeed = true;
+      await tester.tap(find.text('Confirm names'));
+      await tester.pumpAndSettle();
+      expect(find.text('Details'), findsOneWidget);
+      expect(actions.last['action'], 'save_titles');
+      expect(actions.last['round_id'], 12);
+      expect(actions.last['review_token'], 'reviewed-current-content');
+      expect(actions.last['concepts'][0]['title'], 'Confirmed campus system');
       expect(tester.takeException(), isNull);
     },
   );
@@ -786,34 +909,51 @@ void main() {
     },
   );
 
-  testWidgets('PM final-paper requirements fit phone and desktop in both themes', (tester) async {
-    final project = projectFixture()
-      ..['selected_key'] = 'c2'
-      ..['verdict'] = 'approved'
-      ..['post_unlocked'] = true;
-    (project['systems'] as List)[1]['can_upload_final'] = true;
-    setApiHttpClientForTesting(MockClient((request) async => http.Response(jsonEncode(project), 200)));
-    const preview = ValueKey('shared-final-paper-preview');
-    for (final dark in [false, true]) {
-      for (final size in [const Size(1100, 1000), const Size(390, 1000)]) {
-        await tester.binding.setSurfaceSize(size);
-        await pumpDefensysWidget(tester, const RepaintBoundary(key: preview,
-          child: SingleChildScrollView(padding: EdgeInsets.all(20),
-            child: SectionConceptWorkspace(projectId: 7, embedded: true))),
-          theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
-          overrides: [authProvider.overrideWith(_Student.new)]);
-        await tester.ensureVisible(find.text('Approved shared concept paper'));
-        await tester.pumpAndSettle();
-        expect(find.text('Upload approved concept paper'), findsOneWidget);
-        expect(find.textContaining('Module 1'), findsOneWidget);
-        expect(tester.takeException(), isNull);
-        await capturePreview(tester, find.byKey(preview),
-          'shared-final-paper-${size.width.toInt()}-${dark ? 'dark' : 'light'}');
-        await tester.pumpWidget(const SizedBox.shrink());
+  testWidgets(
+    'PM final-paper requirements fit phone and desktop in both themes',
+    (tester) async {
+      final project = projectFixture()
+        ..['selected_key'] = 'c2'
+        ..['verdict'] = 'approved'
+        ..['post_unlocked'] = true;
+      (project['systems'] as List)[1]['can_upload_final'] = true;
+      setApiHttpClientForTesting(
+        MockClient((request) async => http.Response(jsonEncode(project), 200)),
+      );
+      const preview = ValueKey('shared-final-paper-preview');
+      for (final dark in [false, true]) {
+        for (final size in [const Size(1100, 1000), const Size(390, 1000)]) {
+          await tester.binding.setSurfaceSize(size);
+          await pumpDefensysWidget(
+            tester,
+            const RepaintBoundary(
+              key: preview,
+              child: SingleChildScrollView(
+                padding: EdgeInsets.all(20),
+                child: SectionConceptWorkspace(projectId: 7, embedded: true),
+              ),
+            ),
+            theme: dark ? AppTheme.mistDarkTheme : AppTheme.theme,
+            overrides: [authProvider.overrideWith(_Student.new)],
+          );
+          await tester.ensureVisible(
+            find.text('Approved shared concept paper'),
+          );
+          await tester.pumpAndSettle();
+          expect(find.text('Upload approved concept paper'), findsOneWidget);
+          expect(find.textContaining('Module 1'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+          await capturePreview(
+            tester,
+            find.byKey(preview),
+            'shared-final-paper-${size.width.toInt()}-${dark ? 'dark' : 'light'}',
+          );
+          await tester.pumpWidget(const SizedBox.shrink());
+        }
       }
-    }
-    await tester.binding.setSurfaceSize(null);
-  });
+      await tester.binding.setSurfaceSize(null);
+    },
+  );
 
   testWidgets(
     'chair starts the shared hearing without posting grades or choosing a module',

@@ -102,7 +102,6 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
   tearDown(resetApiHttpClientForTesting);
 
-
   testWidgets(
     'instructor has one section review across team selection and matrix switching',
     (tester) async {
@@ -144,31 +143,37 @@ void main() {
           pitInstructorDefenseProvider.overrideWith(_Defense.new),
         ],
       );
-      expect(find.byType(SectionConceptOverview), findsOneWidget);
-      expect(find.text('Shared system review'), findsOneWidget);
-      expect(find.text('Team module concepts'), findsOneWidget);
+      expect(find.byType(SectionConceptOverview), findsNothing);
+      expect(find.text('Shared concepts'), findsNothing);
+      expect(find.text('By team'), findsOneWidget);
+      expect(requests, isEmpty);
       await tester.ensureVisible(find.text('Module team 2').first);
       await tester.tap(find.text('Module team 2').first);
       await tester.pumpAndSettle();
-      expect(find.byType(SectionConceptOverview), findsOneWidget);
-      await tester.ensureVisible(find.text('View shared papers'));
-      await tester.tap(find.text('View shared papers'));
+      expect(find.byType(SectionConceptOverview), findsNothing);
+      expect(requests, isEmpty);
+      await tester.ensureVisible(find.text('Concept review').first);
+      await tester.tap(find.text('Concept review').first);
       await tester.pumpAndSettle();
       expect(requests, ['/api/repository/section-concepts/7/']);
-      await tester.ensureVisible(find.text('Cohort Matrix'));
-      await tester.tap(find.text('Cohort Matrix'));
-      await tester.pumpAndSettle();
-      expect(find.byType(SectionConceptOverview), findsOneWidget);
-      expect(find.text('Shared system review'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await tester.tap(find.text('Shared system papers · BSIT-3A · Mini Capstone'));
-      await tester.pumpAndSettle();
-      expect(find.text('Shared system review'), findsNothing);
-      await tester.tap(
-        find.text('Shared system papers · BSIT-3A · Mini Capstone'),
+      expect(find.text('Shared concepts'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('shared-module-review-table')),
+        findsNothing,
       );
+      expect(find.text('Cohort Matrix'), findsNothing);
+      await tester.ensureVisible(find.text('By team'));
+      await tester.tap(find.text('By team'));
       await tester.pumpAndSettle();
-      expect(find.text('Shared system review'), findsOneWidget);
+      expect(find.byType(SectionConceptOverview), findsNothing);
+      expect(find.text('Shared concepts'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('Concept review').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Shared concepts'), findsOneWidget);
+      await tester.tap(find.text('By team'));
+      await tester.pumpAndSettle();
+      expect(find.text('Shared concepts'), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
@@ -240,7 +245,7 @@ void main() {
             find.text('Shared system papers · BSIT-3A · Mini Capstone'),
           );
           await tester.pumpAndSettle();
-          expect(find.text('Shared system review'), findsOneWidget);
+          expect(find.text('Shared concepts'), findsOneWidget);
           expect(tester.takeException(), isNull);
           await capturePreview(
             tester,
@@ -312,7 +317,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(requests, ['/api/repository/section-concepts/7/']);
-      expect(find.text('Shared system review'), findsOneWidget);
+      expect(find.text('Shared concepts'), findsOneWidget);
       expect(find.text('Endorse shared papers'), findsNothing);
       expect(tester.takeException(), isNull);
     },
@@ -334,12 +339,15 @@ void main() {
         ),
         overrides: authTestOverrides(),
       );
-      expect(find.text('Team module concepts'), findsOneWidget);
-      expect(find.text('Shared papers awaiting upload'), findsOneWidget);
+      expect(find.text('Shared section system'), findsOneWidget);
+      expect(
+        find.textContaining('Your linked module will appear here'),
+        findsOneWidget,
+      );
       expect(find.byType(SectionConceptWorkspace), findsNothing);
-      await tester.tap(find.text('View shared papers'));
+      await tester.tap(find.text('Open section systems'));
       expect(opened, 7);
-      expect(find.text('Team module concepts'), findsOneWidget);
+      expect(find.text('Shared section system'), findsOneWidget);
     },
   );
 

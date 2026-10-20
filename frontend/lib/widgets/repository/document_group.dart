@@ -18,11 +18,17 @@ class DocumentGroup extends ConsumerStatefulWidget {
     required this.stageLabel,
     required this.item,
     this.programScope,
+    this.focused = false,
+    this.concepts = const [],
+    this.projectContext = false,
   });
   final int teamId;
   final String stageLabel;
   final Map<String, dynamic> item;
   final String? programScope;
+  final bool focused;
+  final bool projectContext;
+  final List<Map<String, dynamic>> concepts;
   @override
   ConsumerState<DocumentGroup> createState() => _DocumentGroupState();
 }
@@ -30,8 +36,66 @@ class DocumentGroup extends ConsumerStatefulWidget {
 class _DocumentGroupState extends ConsumerState<DocumentGroup> {
   bool busy = false;
   String? error;
+  String? selectedSlot;
 
-  Future<void> perform(Future<bool> Function() action) async {
+  List<Map<String, dynamic>> get focusEntries {
+    final item = widget.item;
+    final policy = item['file_policy'] as Map? ?? {};
+    final files = ((item['submission'] as Map?)?['files'] as List? ?? [])
+        .whereType<Map>()
+        .where((file) => file['is_current'] != false)
+        .map((file) => Map<String, dynamic>.from(file))
+        .toList();
+    if (policy['mode'] == 'multiple') {
+      final minimum = (policy['min_files'] as num? ?? 1).toInt();
+      return [
+        for (final (index, file) in files.indexed)
+          {
+            'key': '${file['slot_key'] ?? file['id']}',
+            'label': 'Attachment ${index + 1}',
+            'file': file,
+            'required': index < minimum,
+          },
+        for (var i = files.length; i < minimum; i++)
+          {
+            'key': 'missing-$i',
+            'label': 'Attachment ${i + 1}',
+            'required': true,
+          },
+      ];
+    }
+    return [
+      for (final slot
+          in (item['document_slots'] as List? ?? []).whereType<Map>())
+        {
+          ...Map<String, dynamic>.from(slot),
+          'file': files
+              .where((file) => file['slot_key'] == slot['key'])
+              .firstOrNull,
+        },
+    ];
+  }
+
+  bool get hasNextFile {
+    final entries = focusEntries;
+    final index = entries.indexWhere(
+      (entry) => '${entry['key']}' == selectedSlot,
+    );
+    return entries.length > 1 && (index < 0 ? 0 : index) < entries.length - 1;
+  }
+
+  void nextFile() {
+    final entries = focusEntries;
+    final index = entries.indexWhere(
+      (entry) => '${entry['key']}' == selectedSlot,
+    );
+    final next = (index < 0 ? 0 : index) + 1;
+    if (mounted && next < entries.length) {
+      setState(() => selectedSlot = '${entries[next]['key']}');
+    }
+  }
+
+  Future<bool> perform(Future<bool> Function() action) async {
     setState(() {
       busy = true;
       error = null;
@@ -45,8 +109,10 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
               'The action could not be saved.',
         );
       }
+      return ok;
     } catch (e) {
       if (mounted) setState(() => error = 'Could not complete the action: $e');
+      return false;
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -115,7 +181,7 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
     }
   }
 
-  Future<void> review(Map<String, dynamic> file, String status) async {
+  Future<bool> review(Map<String, dynamic> file, String status) async {
     var feedback = '';
     if (status == 'rejected') {
       final controller = TextEditingController();
@@ -152,9 +218,9 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
       );
       feedback = controller.text.trim();
       controller.dispose();
-      if (saved != true || !mounted) return;
+      if (saved != true || !mounted) return false;
     }
-    await perform(
+    return perform(
       () => ref
           .read(capstoneDeliverablesProvider.notifier)
           .reviewDeliverable(
@@ -261,19 +327,23 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
 
     return Container(
       margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: DefensysTokens.panelOf(context),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: accepted
-              ? Color.alphaBlend(
-                  DefensysTokens.success.withValues(alpha: .3),
-                  DefensysTokens.borderOf(context),
-                )
-              : DefensysTokens.borderOf(context),
-        ),
-      ),
+      padding: widget.focused
+          ? const EdgeInsets.symmetric(vertical: 12)
+          : const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: widget.focused
+          ? null
+          : BoxDecoration(
+              color: DefensysTokens.panelOf(context),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: accepted
+                    ? Color.alphaBlend(
+                        DefensysTokens.success.withValues(alpha: .3),
+                        DefensysTokens.borderOf(context),
+                      )
+                    : DefensysTokens.borderOf(context),
+              ),
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -342,8 +412,15 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                       ShadButton.outline(
                         size: ShadButtonSize.sm,
                         enabled: !busy,
-                        onPressed: () => review(file, 'accepted'),
-                        child: const Text('Accept'),
+                        onPressed: () async {
+                          final saved = await review(file, 'accepted');
+                          if (saved && widget.focused) nextFile();
+                        },
+                        child: Text(
+                          widget.focused && hasNextFile
+                              ? 'Accept & next'
+                              : 'Accept',
+                        ),
                       ),
                     ShadButton.ghost(
                       size: ShadButtonSize.sm,
@@ -370,6 +447,121 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
     );
   }
 
+  Widget focusedDocuments() {
+    final entries = focusEntries;
+    if (entries.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Text('No file slots are configured for this requirement.'),
+      );
+    }
+    var index = entries.indexWhere(
+      (entry) => '${entry['key']}' == selectedSlot,
+    );
+    if (index < 0) index = 0;
+    final selected = entries[index];
+    final conceptKey = '${selected['key']}'.split(':').first;
+    final concept = widget.concepts
+        .where((concept) => concept['key'] == conceptKey)
+        .firstOrNull;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: IntrinsicWidth(
+            child: ShadTabs<String>(
+              scrollable: true,
+              value: '${selected['key']}',
+              tabBarAlignment: Alignment.centerLeft,
+              gap: 0,
+              onChanged: busy
+                  ? null
+                  : (key) => setState(() => selectedSlot = key),
+              tabs: [
+                for (final entry in entries)
+                  ShadTab(
+                    value: '${entry['key']}',
+                    child: Text(
+                      widget.projectContext
+                          ? '${entry['label']}'.split('·').first.trim()
+                          : '${entry['label']}',
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        if ('${concept?['title'] ?? ''}'.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Text(
+              '${concept!['title']}',
+              style: DefensysTokens.body.copyWith(
+                color: DefensysTokens.textPrimaryOf(context),
+              ),
+            ),
+          ),
+        if ('${concept?['system_title'] ?? ''}'.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Linked to ${concept!['system_title']}',
+              style: DefensysTokens.caption.copyWith(
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+            ),
+          ),
+        documentRow(
+          '${selected['label']}',
+          '${selected['key']}',
+          selected['file'] as Map<String, dynamic>?,
+          required: selected['required'] != false,
+          fileFormat: selected['file_format']?.toString(),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          spacing: 10,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            Text(
+              'File ${index + 1} of ${entries.length}',
+              style: DefensysTokens.caption.copyWith(
+                color: DefensysTokens.textSecondaryOf(context),
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ShadButton.ghost(
+                  size: ShadButtonSize.sm,
+                  enabled: !busy && index > 0,
+                  onPressed: busy || index == 0
+                      ? null
+                      : () => setState(
+                          () => selectedSlot = '${entries[index - 1]['key']}',
+                        ),
+                  child: const Text('Previous'),
+                ),
+                ShadButton.outline(
+                  size: ShadButtonSize.sm,
+                  enabled: !busy && index + 1 < entries.length,
+                  onPressed: busy || index + 1 >= entries.length
+                      ? null
+                      : nextFile,
+                  child: const Text('Next file'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
@@ -379,6 +571,7 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
     );
     final files = (submission['files'] as List? ?? [])
         .whereType<Map>()
+        .where((file) => file['is_current'] != false)
         .map((f) => Map<String, dynamic>.from(f))
         .toList();
     final history = (submission['file_history'] as List? ?? [])
@@ -460,51 +653,55 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
     return DefensysShadcnScope(
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: DefensysTokens.surfaceOf(context),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: cardBorderColor, width: 1.2),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.025),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
+        padding: widget.focused ? EdgeInsets.zero : const EdgeInsets.all(14),
+        decoration: widget.focused
+            ? null
+            : BoxDecoration(
+                color: DefensysTokens.surfaceOf(context),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: cardBorderColor, width: 1.2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.025),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${item['label']}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: DefensysTokens.textPrimaryOf(context),
+            if (!widget.projectContext) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${item['label']}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: DefensysTokens.textPrimaryOf(context),
+                      ),
                     ),
                   ),
-                ),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 180),
-                  child: DeliverableStatusBadge(
-                    label: groupStatus,
-                    tone: groupTone,
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 180),
+                    child: DeliverableStatusBadge(
+                      label: groupStatus,
+                      tone: groupTone,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              progress,
-              style: TextStyle(
-                fontSize: 11.5,
-                color: DefensysTokens.textSecondaryOf(context),
+                ],
               ),
-            ),
+              const SizedBox(height: 4),
+              Text(
+                progress,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: DefensysTokens.textSecondaryOf(context),
+                ),
+              ),
+            ],
             if (multiple)
               Text(
                 'Up to ${policy['max_files'] ?? 10} attachments',
@@ -530,7 +727,9 @@ class _DocumentGroupState extends ConsumerState<DocumentGroup> {
                 ),
               ),
             const SizedBox(height: 4),
-            if (multiple) ...[
+            if (widget.focused)
+              focusedDocuments()
+            else if (multiple) ...[
               for (final (index, file) in files.indexed)
                 documentRow(
                   'Attachment ${index + 1}',
